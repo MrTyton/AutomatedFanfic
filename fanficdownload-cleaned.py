@@ -6,6 +6,7 @@ import subprocess
 import time
 import logging
 from optparse import OptionParser
+import re
 
 logging.getLogger("fanficfare").setLevel(logging.ERROR)
 
@@ -117,8 +118,31 @@ if __name__ == "__main__":
     
     option_parser.add_option('-l', '--library', action='store', dest='library', default="", help="calibre library db location. If none is passed, the default is the calibre system library location. Make sure to enclose the path in quotes.")
     
+    option_parser.add_option('-c', '--config', action='store', dest-'config', help='Config file for inputs. One argument per line, format of field=value')
+    
     (options, args) = option_parser.parse_args()
-    if options.user is None or options.password is None:
+    
+    if options.config:
+        user = re.compile('user=(.*?)')
+        passwrd = re.compile('password=(.*?)')
+        serv = re.compile('server=(.*?)')
+        mailbox = re.compile('mailbox=(.*?)')
+        lib = re.compile('library=(.*?)')
+        with open(options.config, 'r') as configfile:
+            for line in configfile.readlines():
+                line = line.tolower().strip()
+                if user.search(line):
+                    options.user = user.search(line).group(1)
+                elif passwrd.search(line):
+                    options.password = passwrd.search(line).group(1)
+                elif serv.search(line):
+                    options.server = serv.search(line).group(1)
+                elif mailbox.search(line):
+                    options.label = mailbox.search(line).group(1)
+                elif lib.search(line):
+                    options.library = mailbox.search(line).group(1)
+                    
+    if not (options.user or options.password):
         raise ValueError("User or Password not given")
     
     main(options.user, options.password, options.server, options.label, options.library)
