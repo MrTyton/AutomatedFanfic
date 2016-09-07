@@ -103,7 +103,7 @@ def main(user, password, server, label, inout_file, path ):
                     
                     check_regexes(res)
                     
-                    if chapter_difference(res):
+                    if chapter_difference.search(res):
                         print "\tForcing download update\n"
                         res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)
                         check_regexes(res)
