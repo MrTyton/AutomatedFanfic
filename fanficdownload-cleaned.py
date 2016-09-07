@@ -156,22 +156,28 @@ if __name__ == "__main__":
     (options, args) = option_parser.parse_args()
     
     if options.config:
+        touch(options.config)
         config = ConfigParser(allow_no_value=True)
         config.read(options.config)
         
         updater = lambda option, newval : newval if newval != "" else option
+        try: options.user = updater(options.user, config.get('login', 'user').strip())
+        except: pass
         
-        options.user = updater(options.user, config.get('login', 'user').strip())
+        try: options.password = updater(options.password, config.get('login', 'password').strip())
+        except: pass
         
-        options.password = updater(options.password, config.get('login', 'password').strip())
+        try: options.server = updater(options.server, config.get('login', 'server').strip())
+        except: pass
         
-        options.server = updater(options.server, config.get('login', 'server').strip())
+        try: options.mailbox = updater(options.mailbox, config.get('login', 'mailbox').strip())
+        except: pass
         
-        options.mailbox = updater(options.mailbox, config.get('login', 'mailbox').strip())
+        try: options.library = updater(options.library, config.get('locations', 'library').strip())
+        except: pass
         
-        options.library = updater(options.library, config.get('locations', 'library').strip())
-        
-        options.input = updater(options.input, config.get('locations', 'input').strip())
+        try: options.input = updater(options.input, config.get('locations', 'input').strip())
+        except: pass
         
     if not (options.user or options.password):
         raise ValueError("User or Password not given")
