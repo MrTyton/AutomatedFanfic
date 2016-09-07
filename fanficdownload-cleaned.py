@@ -1,7 +1,7 @@
 from fanficfare import geturls
-from os import listdir, remove, rename, utime
+from os import listdir, remove, rename, utime, errno, devnull
 from os.path import isfile, join
-from subprocess import check_output, STDOUT
+from subprocess import check_output, STDOUT, call
 import logging
 from optparse import OptionParser
 import re
@@ -18,6 +18,7 @@ def touch(fname, times=None):
 
 ffnet = re.compile('(fanfiction.net/s/\d*)/?.*')
 neutral = re.compile('https?://(.*)')
+story_name = re.compile('(.*)-.*')
 
 def parse_url(url):
     if ffnet.search(url):
@@ -37,10 +38,19 @@ def get_files(mypath, filetype=None, fullpath=False):
     else:
         return ans
 
-def main(user, password, server, label, inout_file, path="", ):
+def main(user, password, server, label, inout_file, path ):
 
-    if path != "":
+
+
+    if path:
         path = '--with-library "{}"'.format(path)
+        try:
+            with open(devnull, 'w') as nullout:
+               call(['calibredb'], stdout=nullout, stderr=nullout)
+        except OSError as e:
+            if errno == ENOENT:
+                print "Calibredb is not installed on this system. Cannot search the calibre library or update it."
+                return
         
     touch(inout_file)
 
@@ -63,47 +73,57 @@ def main(user, password, server, label, inout_file, path="", ):
             print "Working with url {}".format(url)
             storyId = None
             try:
-                res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True,stderr=STDOUT) 
-                storyId = res
-                print "\tStory is in calibre with id {}".format(storyId)
-                print "\tExporting file"
-                res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir --to-dir "{}" {}'.format(storyId, loc, path), shell=True)
-                cur = get_files(loc, ".epub", True)[0]
-                print '\tDownloading with fanficfare, updating file "{}"'.format(cur)
-                moving=""
-            except:
-                #story is not in calibre
-                cur = url
-                moving = 'cd "{}" && '.format(loc)
-            try:
-                res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)    
-                
-                if "already contains" in res:
-                    raise ValueError("Issue with story, site is broken. Story likely hasn't updated on site yet.")
-                elif "Story does not exist" in res:
-                    raise ValueError("Invalid URL")
-                elif "more recently than Story" in res:
-                    print "\tForcing download update\n"
-                    res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)
-                cur = get_files(loc, '.epub', True)[0]
+                if path:
+                    try:
+                        res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True,stderr=STDOUT) 
+                        storyId = res
+                        print "\tStory is in calibre with id {}".format(storyId)
+                        print "\tExporting file"
+                        res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir --to-dir "{}" {}'.format(storyId, loc, path), shell=True)
+                        cur = get_files(loc, ".epub", True)[0]
+                        print '\tDownloading with fanficfare, updating file "{}"'.format(cur)
+                        moving=""
+                    except:
+                        #story is not in calibre
+                        cur = url
+                        moving = 'cd "{}" && '.format(loc)
+                    
+                        res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)    
+                        
+                    if "already contains" in res:
+                        raise ValueError("Issue with story, site is broken. Story likely hasn't updated on site yet.")
+                    elif "Story does not exist" in res:
+                        raise ValueError("Invalid URL")
+                    elif "more recently than Story" in res:
+                        print "\tForcing download update\n"
+                        res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)
+                    cur = get_files(loc, '.epub', True)[0]
+
+                    
+                    if storyId:    
+                        print "\tRemoving {} from library".format(storyId)
+                        res = check_output('calibredb remove {} {}'.format(storyId, path), shell=True,stderr=STDOUT)
+                    
+                    print "\tAdding {} to library".format(cur)
+                    res = check_output('calibredb add "{}" {}'.format(cur, path), shell=True,stderr=STDOUT)
+                    res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT)
+                    print "\tAdded {} to library with id {}".format(cur, res)
+                    remove(cur)
+                else:
+                    res = check_output('cd "{}" && fanficfare -u "{}" --update-cover'.format(loc, url), shell=True,stderr=STDOUT)
+                    if "Story does not exist" in res:
+                        raise ValueError("Invalid URL")
+                    cur = get_files(loc, '.epub', True)[0]
+                    name = get_files(loc, '.epub', False)[0]
+                    rename(cur, name)
+                    print "Downloaded story {} to {}".format(story_name.search(name).group(1), name)
             except Exception as e:
                 print "Exception: {}".format(e)
                 rmtree(loc)
                 loc = mkdtemp()
                 fp.write("{}\n".format(url))
                 continue
-            
-            if storyId:    
-                print "\tRemoving {} from library".format(storyId)
-                res = check_output('calibredb remove {} {}'.format(storyId, path), shell=True,stderr=STDOUT)
-            
-            print "\tAdding {} to library".format(cur)
-            res = check_output('calibredb add "{}" {}'.format(cur, path), shell=True,stderr=STDOUT)
-            res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT)
-            print "\tAdded {} to library with id {}".format(cur, res)
-            
-            remove(cur)
-            
+ 
         rmtree(loc)
 
 
@@ -118,7 +138,7 @@ if __name__ == "__main__":
     
     option_parser.add_option('-m', '--mailbox', action='store', dest='mailbox', default='INBOX', help='Email Label. Default is "INBOX".')
     
-    option_parser.add_option('-l', '--library', action='store', dest='library', default="", help="calibre library db location. If none is passed, the default is the calibre system library location. Make sure to enclose the path in quotes.")
+    option_parser.add_option('-l', '--library', action='store', dest='library', help="calibre library db location. If none is passed, then this merely scrapes the email and error file for new stories and downloads them into the current directory.")
     
     option_parser.add_option('-i', '--input', action='store', dest='input', default="./fanfiction.txt", help="Error file. Any urls that fail will be output here, and file will be read to find any urls that failed previously. If file does not exist will create. File is overwitten every time the program is run.")
     
