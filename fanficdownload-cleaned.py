@@ -50,11 +50,11 @@ def main(user, password, server, label, inout_file, path="", ):
             print "Working with url {}".format(url)
             try:
                 res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True,stderr=STDOUT) 
-                id = res
-                print "\tStory is in calibre with id {}".format(id)
+                storyId = res
+                print "\tStory is in calibre with id {}".format(storyId)
                 try:
                     print "\tExporting file"
-                    res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir {}'.format(id, path), shell=True)
+                    res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir {}'.format(storyId, path), shell=True)
                     onlyfiles = files(".")
                     for cur in onlyfiles:
                         if not cur.endswith(".epub"): continue
@@ -73,8 +73,8 @@ def main(user, password, server, label, inout_file, path="", ):
                             print "\tForcing download update\n"
                             res = check_output('fanficfare -u "{}" --force --update-cover'.format(cur), shell=True,stderr=STDOUT)
                     
-                        print "\tRemoving {} from library".format(id)
-                        res = check_output('calibredb remove {} {}'.format(id, path), shell=True,stderr=STDOUT)
+                        print "\tRemoving {} from library".format(storyId)
+                        res = check_output('calibredb remove {} {}'.format(storyId, path), shell=True,stderr=STDOUT)
                         #print res
                         print "\tAdding {} to library".format(cur)
                         res = check_output('calibredb add "{}" {}'.format(cur, path), shell=True,stderr=STDOUT)
@@ -144,7 +144,6 @@ if __name__ == "__main__":
         
         options.input = updater(options.input, config.get('locations', 'input').strip())
         
-    print options
     if not (options.user or options.password):
         raise ValueError("User or Password not given")
     
