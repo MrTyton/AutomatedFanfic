@@ -122,7 +122,7 @@ if __name__ == "__main__":
     
     option_parser.add_option('-i', '--input', action='store', dest='input', default="./fanfiction.txt", help="Error file. Any urls that fail will be output here, and file will be read to find any urls that failed previously. If file does not exist will create. File is overwitten every time the program is run.")
     
-    option_parser.add_option('-c', '--config', action='store', dest='config', help='Config file for inputs. Example config file is provided. No default. If an option is present in whatever config file is passed it, the option will overwrite whatever is passed in through command line arguments unless the option is blank.')
+    option_parser.add_option('-c', '--config', action='store', dest='config', help='Config file for inputs. Blank config file is provided. No default. If an option is present in whatever config file is passed it, the option will overwrite whatever is passed in through command line arguments unless the option is blank. Do not put any quotation marks in the options.')
     
     (options, args) = option_parser.parse_args()
     
