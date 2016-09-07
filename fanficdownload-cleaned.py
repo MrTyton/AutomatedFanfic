@@ -41,12 +41,12 @@ def main(user, password, server="imap.gmail.com", label="INBOX", path=""):
     for url in urls:
         print "Working with url {}".format(url)
         try:
-            res = subprocess.check_output('calibredb search "Identifiers:{}"'.format(url, path), shell=True,stderr=subprocess.STDOUT) 
+            res = subprocess.check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True,stderr=subprocess.STDOUT) 
             id = res
             print "\tStory is in calibre with id {}".format(id)
             try:
                 print "\tExporting file"
-                res = subprocess.check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir'.format(id, path), shell=True)
+                res = subprocess.check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir {}'.format(id, path), shell=True)
                 onlyfiles = files(".")
                 for cur in onlyfiles:
                     if not cur.endswith(".epub"): continue
@@ -67,11 +67,11 @@ def main(user, password, server="imap.gmail.com", label="INBOX", path=""):
                         res = subprocess.check_output('fanficfare -u "{}" --force --update-cover'.format(cur), shell=True,stderr=subprocess.STDOUT)
                 
                     print "\tRemoving {} from library".format(id)
-                    res = subprocess.check_output('calibredb remove {}'.format(id, path), shell=True,stderr=subprocess.STDOUT)
+                    res = subprocess.check_output('calibredb remove {} {}'.format(id, path), shell=True,stderr=subprocess.STDOUT)
                     #print res
                     print "\tAdding {} to library".format(cur)
-                    res = subprocess.check_output('calibredb add "{}"'.format(cur, path), shell=True,stderr=subprocess.STDOUT)
-                    res = subprocess.check_output('calibredb search "Identifiers:{}"'.format(url, path), shell=True, stderr=subprocess.STDOUT)
+                    res = subprocess.check_output('calibredb add "{}" {}'.format(cur, path), shell=True,stderr=subprocess.STDOUT)
+                    res = subprocess.check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=subprocess.STDOUT)
                     print "\tAdded {} to library with id {}".format(cur, res)
                     #print res
                     remove(cur)
@@ -90,7 +90,7 @@ def main(user, password, server="imap.gmail.com", label="INBOX", path=""):
                     if not cur.endswith(".epub"): continue
                     try:
                         print "\tAdding {} to library".format(cur)
-                        res = subprocess.check_output('calibredb add "{}"'.format(cur, path), shell=True, stderr=subprocess.STDOUT)
+                        res = subprocess.check_output('calibredb add "{}" {}'.format(cur, path), shell=True, stderr=subprocess.STDOUT)
                         #print res
                         remove(cur)
                     except Exception:
