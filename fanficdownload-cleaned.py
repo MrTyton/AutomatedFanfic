@@ -20,6 +20,12 @@ ffnet = re.compile('(fanfiction.net/s/\d*)/?.*')
 neutral = re.compile('https?://(.*)')
 story_name = re.compile('(.*)-.*')
 
+equal_chapters = re.compile('.* already contains \d* chapters.')
+chapter_difference = re.compile('.* contains \d* chapters, more than source: \d*.')
+bad_chapters = re.compile(".* doesn't contain any recognizable chapters, probably from a different source.  Not updating.")
+no_url = re.compile('No story URL found in epub to update.')
+
+
 def parse_url(url):
     if ffnet.search(url):
         url = "www." + ffnet.search(url).group(1)
@@ -37,11 +43,16 @@ def get_files(mypath, filetype=None, fullpath=False):
         return [join(mypath, f) for f in ans]
     else:
         return ans
+        
+def check_regexes(output):
+    if equal_chapters.search(output):
+        raise ValueError("Issue with story, site is broken. Story likely hasn't updated on site yet.")
+    if bad_chapters.search(output):
+        raise ValueError("Something is messed up with the site or the epub. No chapters found.")
+    if no_url.search(output):
+        raise ValueError("No URL in epub to update from. Fix the metadata.")
 
 def main(user, password, server, label, inout_file, path ):
-
-
-
     if path:
         path = '--with-library "{}"'.format(path)
         try:
@@ -88,15 +99,14 @@ def main(user, password, server, label, inout_file, path ):
                         cur = url
                         moving = 'cd "{}" && '.format(loc)
                     
-                        res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)    
-                        
-                    if "already contains" in res:
-                        raise ValueError("Issue with story, site is broken. Story likely hasn't updated on site yet.")
-                    elif "Story does not exist" in res:
-                        raise ValueError("Invalid URL")
-                    elif "more recently than Story" in res:
+                    res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)    
+                    
+                    check_regexes(res)
+                    
+                    if chapter_difference(res):
                         print "\tForcing download update\n"
                         res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)
+                        check_regexes(res)
                     cur = get_files(loc, '.epub', True)[0]
 
                     
@@ -111,8 +121,7 @@ def main(user, password, server, label, inout_file, path ):
                     remove(cur)
                 else:
                     res = check_output('cd "{}" && fanficfare -u "{}" --update-cover'.format(loc, url), shell=True,stderr=STDOUT)
-                    if "Story does not exist" in res:
-                        raise ValueError("Invalid URL")
+                    check_regexes(res)
                     cur = get_files(loc, '.epub', True)[0]
                     name = get_files(loc, '.epub', False)[0]
                     rename(cur, name)
