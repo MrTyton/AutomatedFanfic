@@ -1,7 +1,7 @@
 from fanficfare import geturls
 from os import listdir, remove, rename, utime, errno, devnull
 from os.path import isfile, join
-from subprocess import check_output, STDOUT, call
+from subprocess import check_output, STDOUT, call,PIPE
 import logging
 from optparse import OptionParser
 import re
@@ -24,6 +24,7 @@ equal_chapters = re.compile('.* already contains \d* chapters.')
 chapter_difference = re.compile('.* contains \d* chapters, more than source: \d*.')
 bad_chapters = re.compile(".* doesn't contain any recognizable chapters, probably from a different source.  Not updating.")
 no_url = re.compile('No story URL found in epub to update.')
+more_chapters = re.compile(".*File\(.*\.epub\) Updated\(.*\) more recently than Story\(.*\) - Skipping")
 
 
 def parse_url(url):
@@ -86,11 +87,11 @@ def main(user, password, server, label, inout_file, path ):
             try:
                 if path:
                     try:
-                        res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True,stderr=STDOUT) 
+                        res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True,stderr=STDOUT,stdin=PIPE, ) 
                         storyId = res
                         print "\tStory is in calibre with id {}".format(storyId)
                         print "\tExporting file"
-                        res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir --to-dir "{}" {}'.format(storyId, loc, path), shell=True)
+                        res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir --to-dir "{}" {}'.format(storyId, loc, path), shell=True, stdin=PIPE, stderr=STDOUT)
                         cur = get_files(loc, ".epub", True)[0]
                         print '\tDownloading with fanficfare, updating file "{}"'.format(cur)
                         moving=""
@@ -98,29 +99,27 @@ def main(user, password, server, label, inout_file, path ):
                         #story is not in calibre
                         cur = url
                         moving = 'cd "{}" && '.format(loc)
-                    
-                    res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)    
-                    
+                    print '{}fanficfare -u "{}" --update-cover'.format(moving, cur)
+                    res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
                     check_regexes(res)
-                    
-                    if chapter_difference.search(res):
+                    if chapter_difference.search(res) or more_chapters.search(res):
                         print "\tForcing download update\n"
-                        res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT)
+                        res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
                         check_regexes(res)
                     cur = get_files(loc, '.epub', True)[0]
 
                     
                     if storyId:    
                         print "\tRemoving {} from library".format(storyId)
-                        res = check_output('calibredb remove {} {}'.format(storyId, path), shell=True,stderr=STDOUT)
+                        res = check_output('calibredb remove {} {}'.format(storyId, path), shell=True,stderr=STDOUT,stdin=PIPE, )
                     
                     print "\tAdding {} to library".format(cur)
-                    res = check_output('calibredb add "{}" {}'.format(cur, path), shell=True,stderr=STDOUT)
-                    res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT)
+                    res = check_output('calibredb add "{}" -d {}'.format(cur, path), shell=True,stderr=STDOUT,stdin=PIPE, )
+                    res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT,stdin=PIPE, )
                     print "\tAdded {} to library with id {}".format(cur, res)
                     remove(cur)
                 else:
-                    res = check_output('cd "{}" && fanficfare -u "{}" --update-cover'.format(loc, url), shell=True,stderr=STDOUT)
+                    res = check_output('cd "{}" && fanficfare -u "{}" --update-cover'.format(loc, url), shell=True,stderr=STDOUT,stdin=PIPE, )
                     check_regexes(res)
                     cur = get_files(loc, '.epub', True)[0]
                     name = get_files(loc, '.epub', False)[0]
