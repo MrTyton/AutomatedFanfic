@@ -17,6 +17,7 @@ def touch(fname, times=None):
 
 
 ffnet = re.compile('(fanfiction.net/s/\d*)/?.*')
+aooo = re.compile('(archiveofourown.org/works/\d*)/?.')
 neutral = re.compile('https?://(.*)')
 story_name = re.compile('(.*)-.*')
 
@@ -30,6 +31,8 @@ more_chapters = re.compile(".*File\(.*\.epub\) Updated\(.*\) more recently than 
 def parse_url(url):
     if ffnet.search(url):
         url = "www." + ffnet.search(url).group(1)
+    elif aooo.search(url):
+        url = aooo.search(url).group(1)
     elif neutral.search(url):
         url = neutral.search(url).group(1)
     return url
@@ -115,8 +118,11 @@ def main(user, password, server, label, inout_file, path ):
                     
                     print "\tAdding {} to library".format(cur)
                     res = check_output('calibredb add "{}" -d {}'.format(cur, path), shell=True,stderr=STDOUT,stdin=PIPE, )
-                    res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT,stdin=PIPE, )
-                    print "\tAdded {} to library with id {}".format(cur, res)
+                    try:
+                        res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT,stdin=PIPE, )
+                        print "\tAdded {} to library with id {}".format(cur, res)
+                    except:
+                        print "It's been added to library, but not sure what the ID is."
                     remove(cur)
                 else:
                     res = check_output('cd "{}" && fanficfare -u "{}" --update-cover'.format(loc, url), shell=True,stderr=STDOUT,stdin=PIPE, )
