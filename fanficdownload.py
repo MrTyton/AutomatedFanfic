@@ -9,8 +9,12 @@ from ConfigParser import ConfigParser
 from tempfile import mkdtemp
 from shutil import rmtree
 import socket
+from time import strftime, localtime
 
 logging.getLogger("fanficfare").setLevel(logging.ERROR)
+
+def log(msg):
+    print '{}: \t {}'.format(strftime('%m/%d/%Y %H:%M:%S', localtime()), msg)
 
 def touch(fname, times=None):
     with open(fname, 'a'):
@@ -58,6 +62,7 @@ def check_regexes(output):
         raise ValueError("No URL in epub to update from. Fix the metadata.")
 
 def main(user, password, server, label, inout_file, path ):
+
     if path:
         path = '--with-library "{}" --username calibre --password pornoboobies'.format(path)
         try:
@@ -65,7 +70,7 @@ def main(user, password, server, label, inout_file, path ):
                call(['calibredb'], stdout=nullout, stderr=nullout)
         except OSError as e:
             if errno == ENOENT:
-                print "Calibredb is not installed on this system. Cannot search the calibre library or update it."
+                log("Calibredb is not installed on this system. Cannot search the calibre library or update it.")
                 return
         
     touch(inout_file)
@@ -81,7 +86,7 @@ def main(user, password, server, label, inout_file, path ):
         urls |= geturls.get_urls_from_imap(server, user, password, label)
         socket.setdefaulttimeout(None)
     except Exception as e:
-        print "Broke while getting URLs: {}".format(e)
+        log("Broke while getting URLs: {}".format(e))
         with open(inout_file, "w") as fp:
             for cur in urls:
                  fp.write("{}\n".format(cur))
@@ -91,60 +96,60 @@ def main(user, password, server, label, inout_file, path ):
     urls = set(parse_url(x) for x in urls)
     
     
-    if len(urls): print "URLs to parse: {}".format(", ".join(urls))
+    if len(urls): log("URLs to parse: {}".format(", ".join(urls)))
 
     loc = mkdtemp()
 
 
     
     for url in urls:
-        print "Working with url {}".format(url)
+        log("Working with url {}".format(url))
         storyId = None
         try:
             if path:
                 try:
                     res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True,stderr=STDOUT,stdin=PIPE, ) 
                     storyId = res
-                    print "\tStory is in calibre with id {}".format(storyId)
-                    print "\tExporting file"
+                    log("\tStory is in calibre with id {}".format(storyId))
+                    log("\tExporting file")
                     res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir --to-dir "{}" {}'.format(storyId, loc, path), shell=True, stdin=PIPE, stderr=STDOUT)
                     cur = get_files(loc, ".epub", True)[0]
-                    print '\tDownloading with fanficfare, updating file "{}"'.format(cur)
+                    loggin.info('\tDownloading with fanficfare, updating file "{}"'.format(cur))
                     moving=""
                 except:
                     #story is not in calibre
                     cur = url
                     moving = 'cd "{}" && '.format(loc)
                 res = check_output('cp personal.ini {}/personal.ini'.format(loc), shell=True, stderr=STDOUT, stdin=PIPE,)
-                print '{}fanficfare -u "{}" --update-cover'.format(moving, cur)
+                log('\tRunning: {}fanficfare -u "{}" --update-cover'.format(moving, cur))
                 res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
                 check_regexes(res)
                 if chapter_difference.search(res) or more_chapters.search(res):
-                    print "\tForcing download update due to: {}\n".format(res)
+                    log("\tForcing download update due to: {}\n".format(res))
                     res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
                     check_regexes(res)
                 cur = get_files(loc, '.epub', True)[0]
 
                 
                 if storyId:    
-                    print "\tRemoving {} from library".format(storyId)
+                    log("\tRemoving {} from library".format(storyId))
                     try:
                         res = check_output('calibredb remove {} {}'.format(path, storyId), shell=True,stderr=STDOUT,stdin=PIPE, )
                     except:
                         raise
                 
-                print "\tAdding {} to library".format(cur)
+                log("\tAdding {} to library".format(cur))
                 try:
                     res = check_output('calibredb add -d {} "{}"'.format(path, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
                 except Exception as e:
-                    print e
+                    log(e)
                     raise
                 try:
                     res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT,stdin=PIPE, )
-                    print "\tAdded {} to library with id {}".format(cur, res)
+                    log("\tAdded {} to library with id {}".format(cur, res))
                 except:
-                    print "It's been added to library, but not sure what the ID is."
-                    print "Added file to library with id 0"
+                    log("It's been added to library, but not sure what the ID is.")
+                    log("Added file to library with id 0")
                 remove(cur)
             else:
                 res = check_output('cd "{}" && fanficfare -u "{}" --update-cover'.format(loc, url), shell=True,stderr=STDOUT,stdin=PIPE, )
@@ -152,9 +157,9 @@ def main(user, password, server, label, inout_file, path ):
                 cur = get_files(loc, '.epub', True)[0]
                 name = get_files(loc, '.epub', False)[0]
                 rename(cur, name)
-                print "Downloaded story {} to {}".format(story_name.search(name).group(1), name)
+                log("Downloaded story {} to {}".format(story_name.search(name).group(1), name))
         except Exception as e:
-            print "Exception: {}".format(e)
+            log("Exception: {}".format(e))
             rmtree(loc)
             loc = mkdtemp()
             with open(inout_file, "a") as fp:

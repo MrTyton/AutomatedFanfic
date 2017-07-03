@@ -47,8 +47,10 @@ def main(options):
     except Exception as e:
         print e
         res = None
-    if not res: return
-    if res: print res
+    if not res:
+        return
+    else:
+        print res
     buf = StringIO(res)
     regex = re.compile("Added (?:.*/)?(.*)-.* to library with id \d*")
     searcher = regex.search
