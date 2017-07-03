@@ -11,6 +11,7 @@ from os.path import join
 elif platform == "win32":
     from ballonNotify import Notification'''
 from notifications import Notification
+from pushbullet import Pushbullet
 
 from optparse import OptionParser
 from ConfigParser import ConfigParser
@@ -54,8 +55,6 @@ def main(options):
     regex = re.compile("Added (?:.*/)?(.*)-.* to library with id \d*")
     searcher = regex.search
     stripper = False
-    if options.pushbullet:
-        from pushbullet import Pushbullet
     for line in buf.readlines():
         r = searcher(line)
         if r:
@@ -111,6 +110,6 @@ if __name__ == "__main__":
     if options.pbdevice and not options.pushbullet:
         raise ValueError("Can't use a pushbullet device without key")
     if options.tag and not options.library:
-	raise ValueError("Can't strip tags from calibre library without a library location.")
+        raise ValueError("Can't strip tags from calibre library without a library location.")
         
     main(options)
