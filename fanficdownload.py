@@ -114,7 +114,7 @@ def main(user, password, server, label, inout_file, path ):
                     log("\tExporting file")
                     res = check_output('calibredb export {} --dont-save-cover --dont-write-opf --single-dir --to-dir "{}" {}'.format(storyId, loc, path), shell=True, stdin=PIPE, stderr=STDOUT)
                     cur = get_files(loc, ".epub", True)[0]
-                    loggin.info('\tDownloading with fanficfare, updating file "{}"'.format(cur))
+                    log('\tDownloading with fanficfare, updating file "{}"'.format(cur))
                     moving=""
                 except:
                     #story is not in calibre

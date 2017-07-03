@@ -14,7 +14,6 @@ from notifications import Notification
 
 from optparse import OptionParser
 from ConfigParser import ConfigParser
-import sqlite3
 
 
 def enable_notifications(options):
@@ -55,6 +54,8 @@ def main(options):
     regex = re.compile("Added (?:.*/)?(.*)-.* to library with id \d*")
     searcher = regex.search
     stripper = False
+    if options.pushbullet:
+        from pushbullet import Pushbullet
     for line in buf.readlines():
         r = searcher(line)
         if r:
@@ -63,6 +64,7 @@ def main(options):
             for notify in enable_notifications(options):
                 notify.send_notification("New Fanfiction Download", story)
     if stripper and options.tag:
+        import sqlite3
         with sqlite3.connect(join(options.library_path, "metadata.db")) as conn:
             c = conn.cursor()
             c.execute("delete from books_tags_link where id in (select id from books_tags_link where tag in (select id from tags where name like '%Last Update%'));")
@@ -110,7 +112,5 @@ if __name__ == "__main__":
         raise ValueError("Can't use a pushbullet device without key")
     if options.tag and not options.library:
 	raise ValueError("Can't strip tags from calibre library without a library location.")
-    if options.pushbullet:
-        from pushbullet import Pushbullet
         
     main(options)
