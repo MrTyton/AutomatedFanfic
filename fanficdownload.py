@@ -124,7 +124,7 @@ def main(user, password, server, label, inout_file, path ):
     urls = set(parse_url(x) for x in urls)
     log("URLs to parse:", 'HEADER')
     for url in urls:
-        log("\t{}".format(url), 'OKBLUE')
+        log("\t{}".format(url), 'BLUE')
 
     loc = mkdtemp()
 
