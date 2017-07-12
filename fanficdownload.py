@@ -122,7 +122,9 @@ def main(user, password, server, label, inout_file, path ):
     
     if not urls: return
     urls = set(parse_url(x) for x in urls)
-    log("URLs to parse: {}".format(", ".join(urls)), 'HEADER')
+    log("URLs to parse:", 'HEADER')
+    for url in urls:
+        log("\t{}".format(url), 'OKBLUE')
 
     loc = mkdtemp()
 
