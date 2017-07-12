@@ -65,7 +65,7 @@ def parse_url(url):
     if ffnet.search(url):
         url = "www." + ffnet.search(url).group(1)
     elif aooo.search(url):
-        url = "www." + aooo.search(url).group(1)
+        url = aooo.search(url).group(1)
     elif neutral.search(url):
         url = neutral.search(url).group(1)
     return url
