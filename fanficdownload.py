@@ -122,14 +122,10 @@ def main(user, password, server, label, inout_file, path ):
     
     if not urls: return
     urls = set(parse_url(x) for x in urls)
-    
-    
-    if len(urls): log("URLs to parse: {}".format(", ".join(urls)), 'BLUE')
+    log("URLs to parse: {}".format(", ".join(urls)), 'HEADER')
 
     loc = mkdtemp()
 
-
-    
     for url in urls:
         log("Working with url {}".format(url), 'HEADER')
         storyId = None
@@ -153,7 +149,10 @@ def main(user, password, server, label, inout_file, path ):
                 res = check_output('{}fanficfare -u "{}" --update-cover'.format(moving, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
                 check_regexes(res)
                 if chapter_difference.search(res) or more_chapters.search(res):
-                    log("\tForcing download update due to:\n\t\t\t{}".format(res.replace("\n", "\n\t\t\t")), 'WARNING')
+                    log("\tForcing download update due to:", 'WARNING')
+                    for line in res.split("\n"):
+                        if line:
+                            log("\t\t{}".format(line), 'WARNING')
                     res = check_output('{}fanficfare -u "{}" --force --update-cover'.format(moving, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
                     check_regexes(res)
                 cur = get_files(loc, '.epub', True)[0]
@@ -188,13 +187,16 @@ def main(user, password, server, label, inout_file, path ):
                 log("Downloaded story {} to {}".format(story_name.search(name).group(1), name), 'GREEN')
         except Exception as e:
             log("Exception: {}".format(e), 'FAIL')
-            rmtree(loc)
+            try:
+                rmtree(loc)
+            except:
+                pass
             loc = mkdtemp()
             with open(inout_file, "a") as fp:
                 fp.write("{}\n".format(url))
             continue
  
-        rmtree(loc)
+    rmtree(loc)
     return
 
 
