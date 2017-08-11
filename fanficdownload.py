@@ -167,7 +167,6 @@ def downloader(args):
             rmtree(loc)
         except:
             pass
-        loc = mkdtemp()
         with open(inout_file, "a") as fp:
             fp.write("{}\n".format(url))
     
