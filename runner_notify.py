@@ -6,10 +6,6 @@ from sys import platform
 from os import utime
 from os.path import join
 
-'''if platform == "linux" or platform == "linux2":
-    from giNotify import Notification
-elif platform == "win32":
-    from ballonNotify import Notification'''
 from notifications import Notification
 from pushbullet import Pushbullet
 
