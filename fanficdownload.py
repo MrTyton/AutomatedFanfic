@@ -136,6 +136,7 @@ def downloader(args):
                 try:
                     res = check_output('calibredb remove {} {}'.format(path, storyId), shell=True,stderr=STDOUT,stdin=PIPE, )
                 except:
+                    if not live: print output.strip()
                     raise
             
             output += log("\tAdding {} to library".format(cur), 'BLUE', live)
@@ -143,6 +144,7 @@ def downloader(args):
                 res = check_output('calibredb add -d {} "{}"'.format(path, cur), shell=True,stderr=STDOUT,stdin=PIPE, )
             except Exception as e:
                 output += log(e)
+                if not live: print output.strip()
                 raise
             try:
                 res = check_output('calibredb search "Identifiers:{}" {}'.format(url, path), shell=True, stderr=STDOUT,stdin=PIPE, )
@@ -207,9 +209,11 @@ def main(user, password, server, label, inout_file, path, live ):
     log("URLs to parse ({}):".format(len(urls)), 'HEADER')
     for url in urls:
         log("\t{}".format(url), 'BLUE')
-
-    p = Pool()
-    p.map(downloader, [[url, inout_file, path, live] for url in urls])
+    if len(urls) == 1:
+        downloader([urls[0], inout_file, path, live])
+    else:
+        p = Pool()
+        p.map(downloader, [[url, inout_file, path, live] for url in urls])
 
     return
 
