@@ -210,7 +210,7 @@ def main(user, password, server, label, inout_file, path, live ):
     for url in urls:
         log("\t{}".format(url), 'BLUE')
     if len(urls) == 1:
-        downloader([urls[0], inout_file, path, live])
+        downloader([list(urls)[0], inout_file, path, True])
     else:
         p = Pool()
         p.map(downloader, [[url, inout_file, path, live] for url in urls])
