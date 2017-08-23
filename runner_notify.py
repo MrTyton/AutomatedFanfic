@@ -15,16 +15,23 @@ from ConfigParser import ConfigParser
 
 def enable_notifications(options):
     if options.pushbullet:
-        pb = Pushbullet(options.pushbullet)
-        if options.pbdevice:
+        fail = False
+        try:
+            pb = Pushbullet(options.pushbullet)
+        except:
+            print "Problem wtih connecting to pushbullet. API Key likely invalid"
+            fail = True
+        if options.pbdevice and not fail:
             try:
                 pb = pb.get_device(options.pbdevice)
             except:
                 print "Cannot get this device."
+                fail = True
                 pass
-        temp_note = Notification()
-        temp_note.send_notification = pb.push_note
-        yield temp_note
+        if not fail:
+            temp_note = Notification()
+            temp_note.send_notification = pb.push_note
+            yield temp_note
         
     if options.notify:
         notary = Notification()
