@@ -74,6 +74,7 @@ def touch(fname, times=None):
 
 ffnet = re.compile('(fanfiction.net/s/\d*)/?.*')
 aooo = re.compile('(archiveofourown.org/works/\d*)/?.*')
+ficpress = re.compile('(fictionpress.com/s/\d*)/?.*')
 neutral = re.compile('https?://(.*)')
 story_name = re.compile('(.*)-.*')
 
@@ -92,6 +93,8 @@ def parse_url(url):
         url = "www." + ffnet.search(url).group(1)
     elif aooo.search(url):
         url = aooo.search(url).group(1)
+    elif ficpress.search(url):
+        url = ficpress.search(url).group(1)
     elif neutral.search(url):
         url = neutral.search(url).group(1)
     return url
@@ -208,7 +211,7 @@ def downloader(args):
                     "It's been added to library, but not sure what the ID is.",
                     'WARNING',
                     live)
-                output += log("Added file to library with id 0", 'GREEN', live)
+                output += log("Added /Story-file to library with id 0", 'GREEN', live)
             remove(cur)
         else:
             res = check_output(
