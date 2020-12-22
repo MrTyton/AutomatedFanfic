@@ -5,7 +5,7 @@ from subprocess import check_output, STDOUT, call, PIPE
 import logging
 from optparse import OptionParser
 import re
-from ConfigParser import ConfigParser
+from configparser import ConfigParser
 from tempfile import mkdtemp
 from shutil import rmtree
 import socket
@@ -61,7 +61,7 @@ def log(msg, color=None, output=True):
             bcolors.ENDC,
             msg)
     if output:
-        print line
+        print(line)
         return ""
     else:
         return line + "\n"
@@ -72,10 +72,11 @@ def touch(fname, times=None):
         utime(fname, times)
 
 
-ffnet = re.compile('(fanfiction.net/s/\d*)/?.*')
-aooo = re.compile('(archiveofourown.org/works/\d*)/?.*')
-ficpress = re.compile('(fictionpress.com/s/\d*)/?.*')
-neutral = re.compile('https?://(.*)')
+url_parsers = [(re.compile('(fanfiction.net/s/\d*)/?.*'), "www."), #ffnet
+               (re.compile('(archiveofourown.org/works/\d*)/?.*'), ""), #ao3
+               (re.compile('(fictionpress.com/s/\d*)/?.*'), ""), #fictionpress
+			   (re.compile('(royalroad.com/fiction/\d*)/?.*'), ""), #royalroad
+               (re.compile('https?://(.*)'), "")] #other sites
 story_name = re.compile('(.*)-.*')
 
 equal_chapters = re.compile('.* already contains \d* chapters.')
@@ -89,14 +90,10 @@ more_chapters = re.compile(
 
 
 def parse_url(url):
-    if ffnet.search(url):
-        url = "www." + ffnet.search(url).group(1)
-    elif aooo.search(url):
-        url = aooo.search(url).group(1)
-    elif ficpress.search(url):
-        url = ficpress.search(url).group(1)
-    elif neutral.search(url):
-        url = neutral.search(url).group(1)
+    for cur_parser, cur_prefix in url_parsers:
+        if cur_parser.search(url):
+            url = cur_prefix + cur_parser.search(url).group(1)
+            return url
     return url
 
 
@@ -135,12 +132,12 @@ def downloader(args):
             try:
                 storyId = check_output(
                     'calibredb search "Identifiers:{}" {}'.format(
-                        url, path), shell=True, stderr=STDOUT, stdin=PIPE, )
+                        url, path), shell=True, stderr=STDOUT, stdin=PIPE, ).decode('utf-8')
                 output += log("\tStory is in calibre with id {}".format(storyId), 'BLUE', live)
                 output += log("\tExporting file", 'BLUE', live)
                 res = check_output(
                     'calibredb export {} --dont-save-cover --dont-write-opf --single-dir --to-dir "{}" {}'.format(
-                        storyId, loc, path), shell=True, stdin=PIPE, stderr=STDOUT)
+                        storyId, loc, path), shell=True, stdin=PIPE, stderr=STDOUT).decode('utf-8')
                 cur = get_files(loc, ".epub", True)[0]
                 output += log(
                     '\tDownloading with fanficfare, updating file "{}"'.format(cur),
@@ -156,11 +153,11 @@ def downloader(args):
                 shell=True,
                 stderr=STDOUT,
                 stdin=PIPE,
-            )
+            ).decode('utf-8')
             output += log('\tRunning: {}fanficfare -u "{}" --update-cover'.format(
                 moving, cur), 'BLUE', live)
             res = check_output('{}fanficfare -u "{}" --update-cover'.format(
-                moving, cur), shell=True, stderr=STDOUT, stdin=PIPE)
+                moving, cur), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
             check_regexes(res)
             if chapter_difference.search(res) or more_chapters.search(res):
                 output += log("\tForcing download update due to:",
@@ -170,7 +167,7 @@ def downloader(args):
                         output += log("\t\t{}".format(line), 'WARNING', live)
                 res = check_output(
                     '{}fanficfare -u "{}" --force --update-cover'.format(
-                        moving, cur), shell=True, stderr=STDOUT, stdin=PIPE)
+                        moving, cur), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
                 check_regexes(res)
             cur = get_files(loc, '.epub', True)[0]
 
@@ -185,25 +182,25 @@ def downloader(args):
                         shell=True,
                         stderr=STDOUT,
                         stdin=PIPE,
-                    )
+                    ).decode('utf-8')
                 except BaseException:
                     if not live:
-                        print output.strip()
+                        print(output.strip())
                     raise
 
             output += log("\tAdding {} to library".format(cur), 'BLUE', live)
             try:
                 res = check_output(
-                    'calibredb add -d {} "{}"'.format(path, cur), shell=True, stderr=STDOUT, stdin=PIPE, )
+                    'calibredb add -d {} "{}"'.format(path, cur), shell=True, stderr=STDOUT, stdin=PIPE, ).decode('utf-8')
             except Exception as e:
                 output += log(e)
                 if not live:
-                    print output.strip()
+                    print(output.strip())
                 raise
             try:
                 res = check_output(
                     'calibredb search "Identifiers:{}" {}'.format(
-                        url, path), shell=True, stderr=STDOUT, stdin=PIPE)
+                        url, path), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
                 output += log("\tAdded {} to library with id {}".format(cur,
                                                                         res), 'GREEN', live)
             except BaseException:
@@ -216,7 +213,7 @@ def downloader(args):
         else:
             res = check_output(
                 'cd "{}" && fanficfare -u "{}" --update-cover'.format(
-                    loc, url), shell=True, stderr=STDOUT, stdin=PIPE)
+                    loc, url), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
             check_regexes(res)
             cur = get_files(loc, '.epub', True)[0]
             name = get_files(loc, '.epub', False)[0]
@@ -228,12 +225,12 @@ def downloader(args):
                 'GREEN',
                 live)
         if not live:
-            print output.strip()
+            print(output.strip())
         rmtree(loc)
     except Exception as e:
         output += log("Exception: {}".format(e), 'FAIL', live)
         if not live:
-            print output.strip()
+            print(output.strip())
         try:
             rmtree(loc)
         except BaseException:
@@ -409,7 +406,6 @@ if __name__ == "__main__":
 
     if not (options.user or options.password):
         raise ValueError("User or Password not given")
-
     main(
         options.user,
         options.password,

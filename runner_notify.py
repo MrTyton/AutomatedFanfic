@@ -1,4 +1,4 @@
-from StringIO import StringIO
+from io import StringIO
 import re
 from subprocess import check_output, STDOUT
 
@@ -9,7 +9,7 @@ from notifications import Notification
 from pushbullet import Pushbullet
 
 from optparse import OptionParser
-from ConfigParser import ConfigParser
+from configparser import ConfigParser
 
 
 def enable_notifications(options):
@@ -18,13 +18,13 @@ def enable_notifications(options):
         try:
             pb = Pushbullet(options.pushbullet)
         except BaseException:
-            print "Problem wtih connecting to pushbullet. API Key likely invalid"
+            print("Problem wtih connecting to pushbullet. API Key likely invalid")
             fail = True
         if options.pbdevice and not fail:
             try:
                 pb = pb.get_device(options.pbdevice)
             except BaseException:
-                print "Cannot get this device."
+                print("Cannot get this device.")
                 fail = True
                 pass
         if not fail:
@@ -45,16 +45,17 @@ def touch(fname, times=None):
 def main(options):
     try:
         res = check_output(
-            "python fanficdownload.py -c config.ini",
+            "python3 fanficdownload.py -c config.ini",
             shell=True,
             stderr=STDOUT)
     except Exception as e:
-        print e
+        print(e)
         res = None
     if not res:
         return
     else:
-        print res
+        res = res.decode('utf-8')
+        print(res)
     buf = StringIO(res)
     regex = re.compile("Added (?:.*/)?(.*)-.* to library with id \d*")
     searcher = regex.search
