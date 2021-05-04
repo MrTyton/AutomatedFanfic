@@ -10,6 +10,7 @@ from tempfile import mkdtemp
 from shutil import rmtree
 import socket
 from time import strftime, localtime
+import errno
 from errno import ENOENT
 
 from multiprocessing import Pool
