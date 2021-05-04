@@ -1,5 +1,5 @@
 from fanficfare import geturls
-from os import listdir, remove, rename, utime, errno, devnull
+from os import listdir, remove, rename, utime, devnull
 from os.path import isfile, join
 from subprocess import check_output, STDOUT, call, PIPE
 import logging
