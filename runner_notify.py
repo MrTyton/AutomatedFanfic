@@ -1,6 +1,8 @@
 from io import StringIO
 import re
 from subprocess import check_output, STDOUT
+from time import sleep
+import ntpath
 
 from os import utime
 from os.path import join
@@ -63,7 +65,7 @@ def main(options):
     for line in buf.readlines():
         r = searcher(line)
         if r:
-            story = r.group(1).strip()
+            story = ntpath.basename(r.group(1).strip())
             stripper = True
             for notify in enable_notifications(options):
                 notify.send_notification("New Fanfiction Download", story)
@@ -180,4 +182,6 @@ if __name__ == "__main__":
         raise ValueError(
             "Can't strip tags from calibre library without a library location.")
 
-    main(options)
+    while(True):
+        main(options)
+        sleep(60)

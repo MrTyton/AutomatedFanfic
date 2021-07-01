@@ -7,11 +7,11 @@ from optparse import OptionParser
 import re
 from configparser import ConfigParser
 from tempfile import mkdtemp
-from shutil import rmtree
+from shutil import rmtree, copyfile
 import socket
 from time import strftime, localtime
+import os
 import errno
-from errno import ENOENT
 
 from multiprocessing import Pool
 
@@ -73,7 +73,7 @@ def touch(fname, times=None):
         utime(fname, times)
 
 
-url_parsers = [(re.compile('(fanfiction.net/s/\d*)/?.*'), "www."), #ffnet
+url_parsers = [(re.compile('(fanfiction.net/s/\d*/?).*'), "www."), #ffnet
                (re.compile('(archiveofourown.org/works/\d*)/?.*'), ""), #ao3
                (re.compile('(fictionpress.com/s/\d*)/?.*'), ""), #fictionpress
 			   (re.compile('(royalroad.com/fiction/\d*)/?.*'), ""), #royalroad
@@ -149,15 +149,10 @@ def downloader(args):
                 # story is not in calibre
                 cur = url
                 moving = 'cd "{}" && '.format(loc)
-            res = check_output(
-                'cp personal.ini {}/personal.ini'.format(loc),
-                shell=True,
-                stderr=STDOUT,
-                stdin=PIPE,
-            ).decode('utf-8')
-            output += log('\tRunning: {}fanficfare -u "{}" --update-cover'.format(
+            copyfile("personal.ini", "{}/personal.ini".format(loc))
+            output += log('\tRunning: {}python -m fanficfare.cli -u "{}" --update-cover --non-interactive'.format(
                 moving, cur), 'BLUE', live)
-            res = check_output('{}fanficfare -u "{}" --update-cover'.format(
+            res = check_output('{}python -m fanficfare.cli -u "{}" --update-cover'.format(
                 moving, cur), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
             check_regexes(res)
             if chapter_difference.search(res) or more_chapters.search(res):
@@ -167,7 +162,7 @@ def downloader(args):
                     if line:
                         output += log("\t\t{}".format(line), 'WARNING', live)
                 res = check_output(
-                    '{}fanficfare -u "{}" --force --update-cover'.format(
+                    '{}python -m fanficfare.cli -u "{}" --force --update-cover --non-interactive'.format(
                         moving, cur), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
                 check_regexes(res)
             cur = get_files(loc, '.epub', True)[0]
@@ -248,8 +243,8 @@ def main(user, password, server, label, inout_file, path, live):
         try:
             with open(devnull, 'w') as nullout:
                 call(['calibredb'], stdout=nullout, stderr=nullout)
-        except OSError:
-            if errno == ENOENT:
+        except OSError as e:
+            if e.errno == errno.ENOENT:
                 log("Calibredb is not installed on this system. Cannot search the calibre library or update it.", 'FAIL')
                 return
 
