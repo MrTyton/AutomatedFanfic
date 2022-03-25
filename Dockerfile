@@ -8,7 +8,7 @@ LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} 
 
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS="2" \
     PUID="911" \
-    PGID="911" \
+    PGID="911"
 
 RUN set -x && \
     addgroup --gid "$PGID" abc && \
