@@ -1,11 +1,14 @@
 FROM python:3.9-alpine
 
 # set version label
-ARG BUILD_DATE
 ARG VERSION
 ARG CALIBRE_RELEASE
 ARG FFF_RELEASE
-LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} FFF: ${FFF_RELEASE} Build-date:- ${BUILD_DATE}"
+LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} FFF: ${FFF_RELEASE}"
+
+ENV S6_BEHAVIOUR_IF_STAGE2_FAILS="2" \
+    PUID="911" \
+    PGID="911" \
 
 RUN set -x && \
     addgroup --gid "$PGID" abc && \
