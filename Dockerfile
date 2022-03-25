@@ -63,9 +63,9 @@ RUN echo *** Install Packages *** && \
 	set -x && \
 	apk add --no-cache --upgrade py-pillow && \
     if [ -z ${FFF_RELEASE+x} ]; then \
-        python3 -m pip --no-cache-dir install FanFicFare \
+        python3 -m pip --no-cache-dir install FanFicFare; \
     else \
-        python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE} \
+        python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
     fi && \
 	python3 -m pip --no-cache-dir install pushbullet.py && \
     ln -s /opt/calibre/calibredb /bin/calibredb
