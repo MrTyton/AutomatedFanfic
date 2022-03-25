@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv bash
+
+sleep 30s
+exec s6-setuidgid abc /app/run.sh

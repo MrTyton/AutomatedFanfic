@@ -98,11 +98,3 @@ ENV/
 # mypy
 .mypy_cache/
 
-# Personal Files
-config.ini
-defaults.ini
-fanfiction_file
-notifications.py
-personal.ini
-run.sh
-

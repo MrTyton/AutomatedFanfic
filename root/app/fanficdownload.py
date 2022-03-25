@@ -149,11 +149,12 @@ def downloader(args):
                 # story is not in calibre
                 cur = url
                 moving = 'cd "{}" && '.format(loc)
-            copyfile("personal.ini", "{}/personal.ini".format(loc))
-            output += log('\tRunning: {}python -m fanficfare.cli -u "{}" --update-cover --non-interactive'.format(
+            copyfile("/config/personal.ini", "{}/personal.ini".format(loc))
+            copyfile("/config/defaults.ini", "{}/defaults.ini".format(moving))
+            output += log('\tRunning: {}python3.9 -m fanficfare.cli -u "{}" --update-cover --non-interactive'.format(
                 moving, cur), 'BLUE', live)
-            res = check_output('{}python -m fanficfare.cli -u "{}" --update-cover'.format(
-                moving, cur), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
+            res = check_output('{}python3.9 -m fanficfare.cli -u "{}" --update-cover --non-interactive --config={}/personal.ini'.format(
+                moving, cur, loc), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
             check_regexes(res)
             if chapter_difference.search(res) or more_chapters.search(res):
                 output += log("\tForcing download update due to:",
@@ -162,8 +163,8 @@ def downloader(args):
                     if line:
                         output += log("\t\t{}".format(line), 'WARNING', live)
                 res = check_output(
-                    '{}python -m fanficfare.cli -u "{}" --force --update-cover --non-interactive'.format(
-                        moving, cur), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
+                    '{}python3.9 -m fanficfare.cli -u "{}" --force --update-cover --non-interactive --config={}/personal.ini'.format(
+                        moving, cur, loc), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
                 check_regexes(res)
             cur = get_files(loc, '.epub', True)[0]
 
@@ -275,9 +276,12 @@ def main(user, password, server, label, inout_file, path, live):
     if len(urls) == 1:
         downloader([list(urls)[0], inout_file, path, True])
     else:
-        p = Pool()
-        p.map(downloader, [[url, inout_file, path, live] for url in urls])
-
+        for url in urls:
+            downloader([url, inout_file, path, True])
+    with open(inout_file, "r") as fp:
+        urls = set([x.replace("\n", "") for x in fp.readlines()])
+    with open(inout_file, "w") as fp:
+        fp.writelines(["{}\n".format(x) for x in urls])
     return
 
 

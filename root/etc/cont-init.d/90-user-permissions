@@ -1,0 +1,10 @@
+
+#!/usr/bin/with-contenv bash
+
+groupmod -o -g "$PGID" abc
+usermod -o -u "$PUID" abc
+
+chown -R abc:abc /app
+chown -R abc:abc /config
+
+chmod +x /app/run.sh
