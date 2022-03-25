@@ -38,7 +38,7 @@ jobs:
       - name: Print image tag
         run: |
           echo "Branch: $CI_ACTION_REF_NAME"
-          echo "Image Tag: ${{ env.IMAGE_TAG }}"
+          echo "Release Version: ${{ env.RELEASE_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
           echo "FFF Version: ${{ env.FFF_VERSION }}"
           
