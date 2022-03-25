@@ -54,7 +54,6 @@ RUN echo "**** install calibre ****" && \
  dbus-uuidgen > /etc/machine-id
  
 RUN echo "**** cleanup ****" && \
- apk cache clean && \
  rm -rf \
 	/tmp/* \
 	/var/lib/apt/lists/* \
