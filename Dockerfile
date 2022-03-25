@@ -1,4 +1,4 @@
-FROM python:3.9-alpine
+FROM python:3.9-slim
 
 # set version label
 ARG VERSION
@@ -11,8 +11,8 @@ ENV S6_BEHAVIOUR_IF_STAGE2_FAILS="2" \
     PGID="911"
 
 RUN mkdir -p /opt/calibre && \
-    apk update && \
-    apk add --no-cache --upgrade \
+    apt-get update && \
+    apt-get install --no-cache --upgrade \
     bash \
     ca-certificates \
     gcc \
@@ -51,6 +51,7 @@ RUN echo "**** install calibre ****" && \
 	"$CALIBRE_URL" && \
  tar xvf /tmp/calibre-tarball.txz -C \
 	/opt/calibre && \
+ /opt/calibre/calibre_postinstall && \
  dbus-uuidgen > /etc/machine-id
  
 RUN echo "**** cleanup ****" && \
@@ -61,7 +62,7 @@ RUN echo "**** cleanup ****" && \
 	/var/tmp/*
 
 RUN echo *** Install Packages *** && \
-	apk add --no-cache --upgrade py-pillow && \
+	apt-get install --no-cache --upgrade py-pillow && \
     if [ -z ${FFF_RELEASE+x} ]; then \
         python3 -m pip --no-cache-dir install FanFicFare \
     else \
