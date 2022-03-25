@@ -51,11 +51,10 @@ RUN echo "**** install calibre ****" && \
 	"$CALIBRE_URL" && \
  tar xvf /tmp/calibre-tarball.txz -C \
 	/opt/calibre && \
- /opt/calibre/calibre_postinstall && \
  dbus-uuidgen > /etc/machine-id
  
 RUN echo "**** cleanup ****" && \
- apk clean && \
+ apk cache clean && \
  rm -rf \
 	/tmp/* \
 	/var/lib/apt/lists/* \
