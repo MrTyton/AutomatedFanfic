@@ -1,0 +1,47 @@
+name: Publish DOcker Image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: 
+      - 'master'
+    paths:
+      - 'release-versions/latest.txt'
+
+jobs:
+  Push-New-Release-Version-Image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Get environment variables
+        uses: FranzDiebold/github-env-vars-action@v2
+
+      - name: Set version
+        run: |
+          RELEASE_VERSION=$(cat release-versions/latest.txt)
+          CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+          FFF_VERSION=$(cat release-versions/fff.txt)
+          
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{RELEASE_VERSION}}
+          build-args: VERSION=${{RELEASE_VERSION}}, CALIBRE_RELEASE=${{CALIBRE_VERSION}}, FFF_RELEASE=${{FFF_VERSION}}
