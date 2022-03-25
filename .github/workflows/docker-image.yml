@@ -27,8 +27,11 @@ jobs:
       - name: Set version
         run: |
           RELEASE_VERSION=$(cat release-versions/latest.txt)
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
           CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+          echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           FFF_VERSION=$(cat release-versions/fff.txt)
+          echo "FFF_VERSION=$FFF_VERSION" >> $GITHUB_ENV
           
       - name: Login to DockerHub
         uses: docker/login-action@v1
@@ -43,5 +46,5 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{RELEASE_VERSION}}
-          build-args: VERSION=${{RELEASE_VERSION}}, CALIBRE_RELEASE=${{CALIBRE_VERSION}}, FFF_RELEASE=${{FFF_VERSION}}
+          tags: ${{env.RELEASE_VERSION}}
+          build-args: VERSION=${{env.RELEASE_VERSION}}, CALIBRE_RELEASE=${{env.CALIBRE_VERSION}}, FFF_RELEASE=${{env.FFF_VERSION}}
