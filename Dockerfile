@@ -6,11 +6,10 @@ ARG CALIBRE_RELEASE
 ARG FFF_RELEASE
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} FFF: ${FFF_RELEASE}"
 
-ENV S6_BEHAVIOUR_IF_STAGE2_FAILS="2" \
-    PUID="911" \
+ENV PUID="911" \
     PGID="911"
 
-RUN mkdir -p /opt/calibre && \
+RUN set -x && \
     apt-get update && \
     apt-get install --no-cache --upgrade \
     bash \
@@ -38,6 +37,7 @@ RUN set -x && \
         abc 
 		
 RUN echo "**** install calibre ****" && \
+ set -x && \
  mkdir -p \
 	/opt/calibre && \
  if [ -z ${CALIBRE_RELEASE+x} ]; then \
@@ -62,6 +62,7 @@ RUN echo "**** cleanup ****" && \
 	/var/tmp/*
 
 RUN echo *** Install Packages *** && \
+	set -x && \
 	apt-get install --no-cache --upgrade py-pillow && \
     if [ -z ${FFF_RELEASE+x} ]; then \
         python3 -m pip --no-cache-dir install FanFicFare \
