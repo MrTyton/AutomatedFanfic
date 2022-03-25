@@ -7,7 +7,10 @@ on:
       - 'master'
     paths:
       - 'release-versions/latest.txt'
-
+env:
+  IMAGE_REPO: mrtyton
+  IMAGE_NAME: automated-ffdl
+  
 jobs:
   Push-New-Release-Version-Image:
     runs-on: ubuntu-latest
@@ -32,6 +35,12 @@ jobs:
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           FFF_VERSION=$(cat release-versions/fff.txt)
           echo "FFF_VERSION=$FFF_VERSION" >> $GITHUB_ENV
+      - name: Print image tag
+        run: |
+          echo "Branch: $CI_ACTION_REF_NAME"
+          echo "Image Tag: ${{ env.IMAGE_TAG }}"
+          echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
+          echo "FFF Version: ${{ env.FFF_VERSION }}"
           
       - name: Login to DockerHub
         uses: docker/login-action@v1
@@ -46,4 +55,5 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          tags: ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:v${{ env.RELEASE_VERSION }}
           build-args: VERSION=${{env.RELEASE_VERSION}}, CALIBRE_RELEASE=${{env.CALIBRE_VERSION}}, FFF_RELEASE=${{env.FFF_VERSION}}
