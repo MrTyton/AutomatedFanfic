@@ -10,17 +10,6 @@ ENV S6_BEHAVIOUR_IF_STAGE2_FAILS="2" \
     PUID="911" \
     PGID="911"
 
-RUN set -x && \
-    addgroup --gid "$PGID" abc && \
-    adduser \
-        --gecos "" \
-        --disabled-password \
-        --no-create-home \
-        --uid "$PUID" \
-        --ingroup abc \
-        --shell /bin/bash \
-        abc 
-
 RUN mkdir -p /opt/calibre && \
     apk update && \
     apk add --no-cache --upgrade \
@@ -36,24 +25,34 @@ RUN mkdir -p /opt/calibre && \
     dbus \
 	jq \
 	python3
-
+	
+RUN set -x && \
+    addgroup --gid "$PGID" abc && \
+    adduser \
+        --gecos "" \
+        --disabled-password \
+        --no-create-home \
+        --uid "$PUID" \
+        --ingroup abc \
+        --shell /bin/bash \
+        abc 
+		
 RUN echo "**** install calibre ****" && \
-  mkdir -p \
-    /opt/calibre && \
-  if [ -z ${CALIBRE_RELEASE+x} ]; then \
-    CALIBRE_RELEASE=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" \
-    | jq -r .tag_name); \
-  fi && \
-  CALIBRE_VERSION="$(echo ${CALIBRE_RELEASE} | cut -c2-)" && \
-  CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
-  curl -o \
-    /tmp/calibre-tarball.txz -L \
-    "$CALIBRE_URL" && \
-  tar xvf /tmp/calibre-tarball.txz -C \
-    /opt/calibre && \
-   ls /opt/calibre && \
-  /opt/calibre/calibre_postinstall && \
-  dbus-uuidgen > /etc/machine-id
+ mkdir -p \
+	/opt/calibre && \
+ if [ -z ${CALIBRE_RELEASE+x} ]; then \
+	CALIBRE_RELEASE=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" \
+	| jq -r .tag_name); \
+ fi && \
+ CALIBRE_VERSION="$(echo ${CALIBRE_RELEASE} | cut -c2-)" && \
+ CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
+ curl -o \
+	/tmp/calibre-tarball.txz -L \
+	"$CALIBRE_URL" && \
+ tar xvf /tmp/calibre-tarball.txz -C \
+	/opt/calibre && \
+ /opt/calibre/calibre_postinstall && \
+ dbus-uuidgen > /etc/machine-id
  
 RUN echo "**** cleanup ****" && \
  apt-get clean && \
