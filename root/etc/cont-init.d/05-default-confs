@@ -1,0 +1,25 @@
+#!/usr/bin/with-contenv sh
+
+if ! [ -f "/config/config.ini" ]
+then
+  echo "[default-confs] restoring default 'config.ini'."
+  cp /config.default/config.ini /config/
+fi
+
+if ! [ -f "/config/defaults.ini" ]
+then
+  echo "[default-confs] restoring default 'defaults.ini'."
+  cp /config.default/defaults.ini /config/
+fi
+
+if ! [ -f "/config/personal.ini" ]
+then
+  echo "[default-confs] restoring default 'personal.ini'."
+  cp /config.default/personal.ini /config/
+fi
+
+if ! [ -f "/config/fanfiction_file" ]
+then
+  echo "[default-confs] restoring default 'fanfiction_file'."
+  cp /config.default/fanfiction_file /config/
+fi

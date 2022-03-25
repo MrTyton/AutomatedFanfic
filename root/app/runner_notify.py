@@ -7,12 +7,10 @@ import ntpath
 from os import utime
 from os.path import join
 
-from notifications import Notification
 from pushbullet import Pushbullet
 
 from optparse import OptionParser
 from configparser import ConfigParser
-
 
 def enable_notifications(options):
     if options.pushbullet:
@@ -34,10 +32,6 @@ def enable_notifications(options):
             temp_note.send_notification = pb.push_note
             yield temp_note
 
-    if options.notify:
-        notary = Notification()
-        yield notary
-
 
 def touch(fname, times=None):
     with open(fname, 'a'):
@@ -47,7 +41,7 @@ def touch(fname, times=None):
 def main(options):
     try:
         res = check_output(
-            "python3 fanficdownload.py -c config.ini",
+            "python3.9 fanficdownload.py -c config.ini",
             shell=True,
             stderr=STDOUT)
     except Exception as e:
@@ -133,13 +127,6 @@ if __name__ == "__main__":
         config.read(options.config)
 
         def updater(option, newval): return newval if newval != "" else option
-
-        try:
-            options.notify = updater(
-                options.notify, config.getboolean(
-                    'runner', 'notification'))
-        except BaseException:
-            pass
 
         try:
             options.pushbullet = updater(
