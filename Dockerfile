@@ -60,13 +60,12 @@ RUN echo "**** s6 omsta;; ****" && \
 
 RUN echo *** Install Packages *** && \
 	set -x && \
-	apt-get install -y --upgrade py-pillow && \
     if [ -z ${FFF_RELEASE+x} ]; then \
         python3 -m pip --no-cache-dir install FanFicFare; \
     else \
         python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
     fi && \
-	python3 -m pip --no-cache-dir install pushbullet.py && \
+	python3 -m pip --no-cache-dir install pushbullet.py pillow && \
     ln -s /opt/calibre/calibredb /bin/calibredb
 
 COPY root/ /
