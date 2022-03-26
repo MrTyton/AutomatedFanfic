@@ -236,11 +236,11 @@ def downloader(args):
             fp.write("{}\n".format(url))
 
 
-def main(user, password, server, label, inout_file, path, live):
+def main(user, password, server, label, inout_file, path, lib_user, lib_password, live):
 
     if path:
-        path = '--with-library "{}" --username calibre --password pornoboobies'.format(
-            path)
+        path = '--with-library "{}" --username {} --password {}'.format(
+            path, lib_user, lib_password)
         try:
             with open(devnull, 'w') as nullout:
                 call(['calibredb'], stdout=nullout, stderr=nullout)
@@ -346,7 +346,21 @@ if __name__ == "__main__":
         action='store_true',
         dest='live',
         help='Include this if you want all the output to be saved and posted live. Useful when multithreading.')
+        
+    option_parser.add_option(
+        '-q',
+        '--libuser',
+        action='store',
+        dest='libuser',
+        help='Calibre User. Required.')
 
+    option_parser.add_option(
+        '-w',
+        '--libpassword',
+        action='store',
+        dest='libpassword',
+        help='Calibre Password. Required.')
+        
     (options, args) = option_parser.parse_args()
 
     if options.config:
@@ -366,6 +380,20 @@ if __name__ == "__main__":
             options.password = updater(
                 options.password, config.get(
                     'login', 'password').strip())
+        except BaseException:
+            pass
+            
+        try:
+            options.libuser = updater(
+                options.libuser, config.get(
+                    'login', 'libuser').strip())
+        except BaseException:
+            pass
+
+        try:
+            options.libpassword = updater(
+                options.libpassword, config.get(
+                    'login', 'libpassword').strip())
         except BaseException:
             pass
 
@@ -413,4 +441,6 @@ if __name__ == "__main__":
         options.mailbox,
         options.input,
         options.library,
+        options.libuser,
+        options.libpassword,
         options.live)
