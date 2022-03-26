@@ -168,6 +168,4 @@ if __name__ == "__main__":
     if options.tag and not options.library:
         raise ValueError(
             "Can't strip tags from calibre library without a library location.")
-    print(options)
     main(options)
-    print("Done with runner_notify.")
