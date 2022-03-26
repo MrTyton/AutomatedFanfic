@@ -147,6 +147,7 @@ def downloader(args):
                 moving = ""
             except BaseException:
                 # story is not in calibre
+                output += log("\tStory is not in Calibre", 'WARNING', live)
                 cur = url
                 moving = 'cd "{}" && '.format(loc)
             copyfile("/config/personal.ini", "{}/personal.ini".format(loc))
@@ -434,6 +435,7 @@ if __name__ == "__main__":
 
     if not (options.user or options.password):
         raise ValueError("User or Password not given")
+    print(options)
     main(
         options.user,
         options.password,
