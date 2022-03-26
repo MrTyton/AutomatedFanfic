@@ -15,11 +15,8 @@ RUN set -x && \
     bash \
     ca-certificates \
     gcc \
-    mesa-gl \
-    qt5-qtbase-x11 \
     wget \
     xdg-utils \
-    xz \
     curl \
     dbus \
 	jq \
