@@ -85,7 +85,8 @@ RUN echo *** Install Packages *** && \
 	python3 -m pip --no-cache-dir install pushbullet.py && \
     ln -s /opt/calibre/calibredb /bin/calibredb
 
-COPY root/ /
+COPY root/ / && \ 
+	chmod +x /app/run.sh
 
 VOLUME /config
 
