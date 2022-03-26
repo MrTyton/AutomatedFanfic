@@ -58,6 +58,21 @@ RUN echo "**** cleanup ****" && \
 	/tmp/* \
 	/var/lib/apt/lists/* \
 	/var/tmp/*
+	
+RUN echo "**** s6 omsta;; ****" && \
+	set -ex && \
+    ARCH=`uname -m` && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        s6_package="s6-overlay-amd64.tar.gz" ; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        s6_package="s6-overlay-aarch64.tar.gz" ; \
+    else \
+        echo "unknown arch: ${ARCH}" && \
+        exit 1 ; \
+    fi && \
+    wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/${s6_package} && \
+    tar -xzf /tmp/${s6_package} -C / && \
+    rm -rf /tmp/*
 
 RUN echo *** Install Packages *** && \
 	set -x && \
@@ -76,4 +91,4 @@ VOLUME /config
 
 WORKDIR /config
 
-ENTRYPOINT ["/sbin/init"]
+ENTRYPOINT ["/init"]
