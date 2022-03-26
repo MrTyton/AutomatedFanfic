@@ -38,12 +38,7 @@ RUN echo "**** install calibre ****" && \
  apt-get install -y calibre && \
  dbus-uuidgen > /etc/machine-id
  
-RUN echo "**** cleanup ****" && \
- rm -rf \
-	/tmp/* \
-	/var/lib/apt/lists/* \
-	/var/tmp/*
-	
+
 RUN echo "**** s6 omsta;; ****" && \
 	set -ex && \
     ARCH=`uname -m` && \
@@ -67,6 +62,12 @@ RUN echo *** Install Packages *** && \
     fi && \
 	python3 -m pip --no-cache-dir install pushbullet.py pillow && \
     ln -s /opt/calibre/calibredb /bin/calibredb
+	
+RUN echo "**** cleanup ****" && \
+ rm -rf \
+	/tmp/* \
+	/var/lib/apt/lists/* \
+	/var/tmp/*
 
 COPY root/ /
 
