@@ -56,4 +56,4 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.RELEASE_VERSION }}
-          build-args: VERSION=${{env.RELEASE_VERSION}},CALIBRE_RELEASE=${{env.CALIBRE_VERSION}},FFF_RELEASE=${{env.FFF_VERSION}}
+          build-args: VERSION=${{env.RELEASE_VERSION}}
