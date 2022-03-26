@@ -11,8 +11,8 @@ ENV PUID="911" \
 	GUIAUTOSTART="false"
 
 RUN set -x && \
-    apk update && \
-    apk add --no-cache --upgrade \
+    apt-get update && \
+    apt-get install --upgrade \
     bash \
     ca-certificates \
     gcc \
