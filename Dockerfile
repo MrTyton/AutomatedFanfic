@@ -11,7 +11,7 @@ ENV PUID="911" \
 
 RUN set -x && \
     apt-get update && \
-    apt-get install --upgrade \
+    apt-get install -y --upgrade \
     bash \
     ca-certificates \
     gcc \
@@ -35,7 +35,7 @@ RUN set -x && \
 		
 RUN echo "**** install calibre ****" && \
  set -x && \
- apt-get install calibre && \
+ apt-get install -y calibre && \
  dbus-uuidgen > /etc/machine-id
  
 RUN echo "**** cleanup ****" && \
@@ -60,7 +60,7 @@ RUN echo "**** s6 omsta;; ****" && \
 
 RUN echo *** Install Packages *** && \
 	set -x && \
-	apt-get install --upgrade py-pillow && \
+	apt-get install -y --upgrade py-pillow && \
     if [ -z ${FFF_RELEASE+x} ]; then \
         python3 -m pip --no-cache-dir install FanFicFare; \
     else \
