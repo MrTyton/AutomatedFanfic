@@ -435,7 +435,6 @@ if __name__ == "__main__":
 
     if not (options.user or options.password):
         raise ValueError("User or Password not given")
-    print(options)
     main(
         options.user,
         options.password,
