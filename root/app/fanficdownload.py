@@ -150,7 +150,7 @@ def downloader(args):
                 cur = url
                 moving = 'cd "{}" && '.format(loc)
             copyfile("/config/personal.ini", "{}/personal.ini".format(loc))
-            copyfile("/config/defaults.ini", "{}/defaults.ini".format(moving))
+            copyfile("/config/defaults.ini", "{}/defaults.ini".format(loc))
             output += log('\tRunning: {}python3.9 -m fanficfare.cli -u "{}" --update-cover --non-interactive'.format(
                 moving, cur), 'BLUE', live)
             res = check_output('{}python3.9 -m fanficfare.cli -u "{}" --update-cover --non-interactive --config={}/personal.ini'.format(
