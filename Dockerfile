@@ -87,8 +87,6 @@ RUN echo *** Install Packages *** && \
 
 COPY root/ /
 
-RUN chmod +x /app/run.sh
-
 VOLUME /config
 
 WORKDIR /config
