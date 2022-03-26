@@ -56,7 +56,6 @@ RUN echo "**** install calibre ****" && \
  
 RUN echo "**** cleanup ****" && \
  rm -rf \
-	/tmp/* \
 	/var/lib/apt/lists/* \
 	/var/tmp/*
 	
@@ -72,8 +71,7 @@ RUN echo "**** s6 omsta;; ****" && \
         exit 1 ; \
     fi && \
     wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/${s6_package} && \
-    tar -xzf /tmp/${s6_package} -C / && \
-    rm -rf /tmp/*
+    tar -xzf /tmp/${s6_package} -C /
 
 RUN echo *** Install Packages *** && \
 	set -x && \
