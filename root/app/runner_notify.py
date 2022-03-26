@@ -41,7 +41,7 @@ def touch(fname, times=None):
 def main(options):
     try:
         res = check_output(
-            "python3.9 fanficdownload.py -c config.ini",
+            f"python3.9 /app/fanficdownload.py -c {options.config}",
             shell=True,
             stderr=STDOUT)
     except Exception as e:
