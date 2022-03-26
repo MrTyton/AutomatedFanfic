@@ -8,7 +8,7 @@ LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} 
 
 ENV PUID="911" \
     PGID="911"
-	CALIBRE_INSTALLER_SOURCE_CODE_URL https://raw.githubusercontent.com/kovidgoyal/calibre/master/setup/linux-installer.py
+
 RUN set -x && \
     apk update && \
     apk add --no-cache --upgrade \
@@ -38,8 +38,21 @@ RUN set -x && \
         abc 
 		
 RUN echo "**** install calibre ****" && \
- wget -O- ${CALIBRE_INSTALLER_SOURCE_CODE_URL} | python -c "import sys; main=lambda:sys.stderr.write('Download failed\n'); exec(sys.stdin.read()); main(install_dir='/opt', isolated=True)" && \
-     rm -rf /tmp/calibre-installer-cache
+ set -x && \
+ mkdir -p \
+	/opt/calibre && \
+ if [ -z ${CALIBRE_RELEASE+x} ]; then \
+	CALIBRE_RELEASE=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" \
+	| jq -r .tag_name); \
+ fi && \
+ CALIBRE_VERSION="$(echo ${CALIBRE_RELEASE} | cut -c2-)" && \
+ CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
+ curl -o \
+	/tmp/calibre-tarball.txz -L \
+	"$CALIBRE_URL" && \
+ tar xvf /tmp/calibre-tarball.txz -C \
+	/opt/calibre && \
+ dbus-uuidgen > /etc/machine-id
  
 RUN echo "**** cleanup ****" && \
  rm -rf \
