@@ -7,6 +7,7 @@ import ntpath
 from os import utime
 from os.path import join
 
+from notifications import Notification
 from pushbullet import Pushbullet
 
 from optparse import OptionParser
