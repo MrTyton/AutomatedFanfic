@@ -122,7 +122,6 @@ if __name__ == "__main__":
         options.library_path = options.library
 
     if options.config:
-        touch(options.config)
         config = ConfigParser(allow_no_value=True)
         config.read(options.config)
 
