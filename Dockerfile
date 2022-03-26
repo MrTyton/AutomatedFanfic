@@ -76,4 +76,4 @@ VOLUME /config
 
 WORKDIR /config
 
-ENTRYPOINT ["/init"]
+ENTRYPOINT ["/sbin/init"]
