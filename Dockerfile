@@ -1,4 +1,4 @@
-FROM python:3.9-alpine
+FROM python:3.9-slim
 
 # set version label
 ARG VERSION
@@ -10,8 +10,8 @@ ENV PUID="911" \
     PGID="911"
 
 RUN set -x && \
-    apk update && \
-    apk add --no-cache --upgrade \
+    apt-get update && \
+    apt-get install --upgrade \
     bash \
     ca-certificates \
     gcc \
@@ -23,8 +23,7 @@ RUN set -x && \
     curl \
     dbus \
 	jq \
-	python3 \
-	shadow
+	python3
 	
 RUN set -x && \
     addgroup --gid "$PGID" abc && \
@@ -56,6 +55,7 @@ RUN echo "**** install calibre ****" && \
  
 RUN echo "**** cleanup ****" && \
  rm -rf \
+	/tmp/*
 	/var/lib/apt/lists/* \
 	/var/tmp/*
 	
@@ -75,7 +75,7 @@ RUN echo "**** s6 omsta;; ****" && \
 
 RUN echo *** Install Packages *** && \
 	set -x && \
-	apk add --no-cache --upgrade py-pillow && \
+	apt-get install --upgrade py-pillow && \
     if [ -z ${FFF_RELEASE+x} ]; then \
         python3 -m pip --no-cache-dir install FanFicFare; \
     else \
