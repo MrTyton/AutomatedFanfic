@@ -55,9 +55,11 @@ RUN echo "**** s6 omsta;; ****" && \
 
 RUN echo *** Install Packages *** && \
 	set -x && \
-    if [ -z ${FFF_RELEASE+x} ]; then \
+    if [ -z ${FFF_RELEASE} ]; then \
+		echo "FFF Using Default Release"; \
         python3 -m pip --no-cache-dir install FanFicFare; \
     else \
+		echo "FF Using ${FFF_RELEASE} Release"; \
         python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
     fi && \
 	python3 -m pip --no-cache-dir install pushbullet.py pillow && \
