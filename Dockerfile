@@ -20,8 +20,7 @@ RUN set -x && \
     curl \
     dbus \
 	jq \
-	python3 \
-        vi
+	python3
 	
 RUN set -x && \
     addgroup --gid "$PGID" abc && \
