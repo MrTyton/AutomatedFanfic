@@ -20,7 +20,8 @@ RUN set -x && \
     curl \
     dbus \
 	jq \
-	python3
+	python3 \
+        vi
 	
 RUN set -x && \
     addgroup --gid "$PGID" abc && \
@@ -53,7 +54,7 @@ RUN echo "**** s6 omsta;; ****" && \
     wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/${s6_package} && \
     tar -xzf /tmp/${s6_package} -C /
 
-RUN echo *** Install Packages *** && \
+RUN echo "*** Install FFF ***" && \
 	set -x && \
     if [ -z ${FFF_RELEASE} ]; then \
 		echo "FFF Using Default Release"; \
@@ -61,8 +62,11 @@ RUN echo *** Install Packages *** && \
     else \
 		echo "FF Using ${FFF_RELEASE} Release"; \
         python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
-    fi && \
-	python3 -m pip --no-cache-dir install pushbullet.py pillow && \
+    fi
+ RUN echo "*** Install Other Python Packages ***" && \
+	python3 -m pip --no-cache-dir install pushbullet.py pillow
+
+ RUN echo "*** SymLink Calibredb ***" && \
     ln -s /opt/calibre/calibredb /bin/calibredb
 	
 RUN echo "**** cleanup ****" && \
