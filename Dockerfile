@@ -53,10 +53,13 @@ RUN echo "**** s6 omsta;; ****" && \
     wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/${s6_package} && \
     tar -xzf /tmp/${s6_package} -C /
 
-RUN set -x && \
+RUN echo "*** Install FFF ***" && \
+	set -x && \
     if [ -z ${FFF_RELEASE} ]; then \
+		echo "FFF Using Default Release"; \
         python3 -m pip --no-cache-dir install FanFicFare; \
     else \
+		echo "FF Using ${FFF_RELEASE} Release"; \
         python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
     fi
  RUN echo "*** Install Other Python Packages ***" && \
