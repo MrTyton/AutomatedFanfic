@@ -63,7 +63,8 @@ RUN echo "**** cleanup ****" && \
 
 COPY root/ /
 
-RUN chmod -R +777 /
+RUN chmod -R +777 /etc/cont-init.d/
+RUN chmod -R +777 /etc/services.d/
 
 VOLUME /config
 
