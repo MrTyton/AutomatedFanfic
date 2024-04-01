@@ -63,7 +63,7 @@ RUN echo "**** cleanup ****" && \
 
 COPY root/ /
 
-RUN chmod +777 -R /
+RUN chmod -R +777 /
 
 VOLUME /config
 
