@@ -35,15 +35,12 @@ jobs:
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           FFF_VERSION=$(cat release-versions/fff.txt)
           echo "FFF_VERSION=$FFF_VERSION" >> $GITHUB_ENV
-          S6_OVERLAY_VERSION=$(cat release-versions/s6.txt)
-          echo "S6_OVERLAY_VERSION=$S6_OVERLAY_VERSION" >> $GITHUB_ENV
       - name: Print image tag
         run: |
           echo "Branch: $CI_ACTION_REF_NAME"
           echo "Release Version: ${{ env.RELEASE_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
           echo "FFF Version: ${{ env.FFF_VERSION }}"
-          echo "S6 Overlay Version: ${{ env.S6_OVERLAY_VERSION }}"
           
       - name: Login to DockerHub
         uses: docker/login-action@v3.0.0
@@ -63,4 +60,3 @@ jobs:
             VERSION=${{ env.RELEASE_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
             FFF_RELEASE=${{ env.FFF_VERSION }}
-            S6_OVERLAY_VERSION=${{ env.S6_OVERLAY_VERSION }}
