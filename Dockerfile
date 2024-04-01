@@ -42,7 +42,7 @@ RUN echo "**** s6 omsta;; ****" && \
     ARCH=`uname -m` && \
     if [ "$ARCH" = "x86_64" ]; then \
         s6_package="s6-overlay-x86_64.tar.xz" ; \
-    if [ "$ARCH" = "amd64" ]; then \
+    elif [ "$ARCH" = "amd64" ]; then \
         s6_package="s6-overlay-x86_64.tar.xz" ; \
     elif [ "$ARCH" = "aarch64" ]; then \
         s6_package="s6-overlay-aarch64.tar.gz" ; \
