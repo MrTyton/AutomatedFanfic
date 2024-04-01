@@ -35,24 +35,15 @@ RUN addgroup --gid "$PGID" abc && \
 RUN echo "**** install calibre ****" && \
  apt-get install -y calibre && \
  dbus-uuidgen > /etc/machine-id
- 
 
-RUN echo "**** s6 omsta;; ****" && \
-    ARCH=`uname -m` && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        s6_package="s6-overlay-amd64.tar.gz" ; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        s6_package="s6-overlay-aarch64.tar.gz" ; \
+RUN echo "*** Install FFF ***" && \
+    if [ -z ${FFF_RELEASE} ]; then \
+		echo "FFF Using Default Release"; \
+        python3 -m pip --no-cache-dir install FanFicFare; \
     else \
-        echo "unknown arch: ${ARCH}" && \
-        exit 1 ; \
-    fi && \
-    wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/${s6_package} && \
-    tar -xzf /tmp/${s6_package} -C /
-
-RUN echo "FF Using ${FFF_RELEASE} Release"; && \
-    python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}
-	
+		echo "FF Using ${FFF_RELEASE} Release"; \
+        python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
+    fi
 
 RUN echo "*** Install Other Python Packages ***" && \
 	python3 -m pip --no-cache-dir install pushbullet.py pillow
