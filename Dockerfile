@@ -33,7 +33,7 @@ RUN addgroup --gid "$PGID" abc && \
         --shell /bin/bash \
         abc 
 		
-RUN echo "**** install calibre ****" && 
+RUN echo "**** install calibre ****" && \
  apt-get install -y calibre && \
  dbus-uuidgen > /etc/machine-id
  
