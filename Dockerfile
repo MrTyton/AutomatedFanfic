@@ -38,20 +38,8 @@ RUN echo "**** install calibre ****" && \
  dbus-uuidgen > /etc/machine-id
  
 
-RUN echo "**** s6 omsta;; ****" && \
-    ARCH=`uname -m` && \
-    if [ "$ARCH" = "x86_64" ]; then \
-        s6_package="s6-overlay-x86_64.tar.xz" ; \
-    elif [ "$ARCH" = "amd64" ]; then \
-        s6_package="s6-overlay-x86_64.tar.xz" ; \
-    elif [ "$ARCH" = "aarch64" ]; then \
-        s6_package="s6-overlay-aarch64.tar.gz" ; \
-    else \
-        echo "unknown arch: ${ARCH}" && \
-        exit 1 ; \
-    fi && \
-    wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/${s6_package} && \
-    tar -xzf /tmp/${s6_package} -C /
+ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-x86_64.tar.xz /tmp
+RUN tar -C / -Jxpf /tmp/s6-overlay-x86_64.tar.xz
 
 RUN echo "*** Install FFF ***" && \
     if [ -z ${FFF_RELEASE} ]; then \
