@@ -22,8 +22,7 @@ RUN set -ex && \
 	jq \
 	python3
 	
-RUN set -ex && \
-    addgroup --gid "$PGID" abc && \
+RUN addgroup --gid "$PGID" abc && \
     adduser \
         --gecos "" \
         --disabled-password \
@@ -34,13 +33,11 @@ RUN set -ex && \
         abc 
 		
 RUN echo "**** install calibre ****" && \
- set -ex && \
  apt-get install -y calibre && \
  dbus-uuidgen > /etc/machine-id
  
 
 RUN echo "**** s6 omsta;; ****" && \
-	set -ex && \
     ARCH=`uname -m` && \
     if [ "$ARCH" = "x86_64" ]; then \
         s6_package="s6-overlay-amd64.tar.gz" ; \
@@ -53,8 +50,7 @@ RUN echo "**** s6 omsta;; ****" && \
     wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/${s6_package} && \
     tar -xzf /tmp/${s6_package} -C /
 
-RUN set -ex && \
-    echo "FF Using ${FFF_RELEASE} Release"; && \
+RUN echo "FF Using ${FFF_RELEASE} Release"; && \
     python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}
 	
 
