@@ -42,7 +42,7 @@ def touch(fname, times=None):
 def main(options):
     try:
         res = check_output(
-            f"python3.9 /app/fanficdownload.py -c {options.config}",
+            f"python3 /app/fanficdownload.py -c {options.config}",
             shell=True,
             stderr=STDOUT)
     except Exception as e:

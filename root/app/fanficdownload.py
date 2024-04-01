@@ -152,9 +152,9 @@ def downloader(args):
                 moving = 'cd "{}" && '.format(loc)
             copyfile("/config/personal.ini", "{}/personal.ini".format(loc))
             copyfile("/config/defaults.ini", "{}/defaults.ini".format(loc))
-            output += log('\tRunning: {}python3.9 -m fanficfare.cli -u "{}" --update-cover --non-interactive'.format(
+            output += log('\tRunning: {}python3 -m fanficfare.cli -u "{}" --update-cover --non-interactive'.format(
                 moving, cur), 'BLUE', live)
-            res = check_output('{}python3.9 -m fanficfare.cli -u "{}" --update-cover --non-interactive --config={}/personal.ini'.format(
+            res = check_output('{}python3 -m fanficfare.cli -u "{}" --update-cover --non-interactive --config={}/personal.ini'.format(
                 moving, cur, loc), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
             check_regexes(res)
             if chapter_difference.search(res) or more_chapters.search(res):
@@ -164,7 +164,7 @@ def downloader(args):
                     if line:
                         output += log("\t\t{}".format(line), 'WARNING', live)
                 res = check_output(
-                    '{}python3.9 -m fanficfare.cli -u "{}" --force --update-cover --non-interactive --config={}/personal.ini'.format(
+                    '{}python3 -m fanficfare.cli -u "{}" --force --update-cover --non-interactive --config={}/personal.ini'.format(
                         moving, cur, loc), shell=True, stderr=STDOUT, stdin=PIPE).decode('utf-8')
                 check_regexes(res)
             cur = get_files(loc, '.epub', True)[0]
