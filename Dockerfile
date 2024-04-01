@@ -4,7 +4,8 @@ FROM python:3-slim
 ARG VERSION
 ARG CALIBRE_RELEASE
 ARG FFF_RELEASE
-LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} FFF: ${FFF_RELEASE}"
+ARG S6_OVERLAY_VERSION
+LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} FFF: ${FFF_RELEASE} S6_OVERLAY_VERSION: ${S6_OVERLAY_VERSION}"
 
 ENV PUID="911" \
     PGID="911"
@@ -32,21 +33,35 @@ RUN addgroup --gid "$PGID" abc && \
         --shell /bin/bash \
         abc 
 		
-RUN echo "**** install calibre ****" && \
+RUN echo "**** install calibre ****" && 
  apt-get install -y calibre && \
  dbus-uuidgen > /etc/machine-id
+ 
 
-RUN echo "*** Install FFF ***" && \
-    if [ -z ${FFF_RELEASE} ]; then \
-		echo "FFF Using Default Release"; \
-        python3 -m pip --no-cache-dir install FanFicFare; \
+RUN echo "**** s6 omsta;; ****" && 
+    ARCH=`uname -m` && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        s6_package="s6-overlay-x86_64.tar.xz" ; \
+    if [ "$ARCH" = "amd64" ]; then \
+        s6_package="s6-overlay-x86_64.tar.xz" ; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        s6_package="s6-overlay-aarch64.tar.gz" ; \
     else \
-		echo "FF Using ${FFF_RELEASE} Release"; \
-        python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
-    fi
+        echo "unknown arch: ${ARCH}" && \
+        exit 1 ; \
+    fi && \
+    wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/${s6_package} && \
+    tar -xzf /tmp/${s6_package} -C /
+
+RUN echo "FF Using ${FFF_RELEASE} Release"; && \
+    python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}
+	
 
 RUN echo "*** Install Other Python Packages ***" && \
 	python3 -m pip --no-cache-dir install pushbullet.py pillow
+
+RUN echo "*** SymLink Calibredb ***" && \
+	ln -s /opt/calibre/calibredb /bin/calibredb
 	
 RUN echo "**** cleanup ****" && \
  rm -rf \
