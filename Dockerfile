@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+	FROM python:3.9-slim
 
 # set version label
 ARG VERSION
@@ -9,7 +9,7 @@ LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} 
 ENV PUID="911" \
     PGID="911"
 
-RUN set -x && \
+RUN set -ex && \
     apt-get update && \
     apt-get install -y --upgrade \
     bash \
@@ -22,7 +22,7 @@ RUN set -x && \
 	jq \
 	python3
 	
-RUN set -x && \
+RUN set -ex && \
     addgroup --gid "$PGID" abc && \
     adduser \
         --gecos "" \
@@ -34,7 +34,7 @@ RUN set -x && \
         abc 
 		
 RUN echo "**** install calibre ****" && \
- set -x && \
+ set -ex && \
  apt-get install -y calibre && \
  dbus-uuidgen > /etc/machine-id
  
@@ -53,20 +53,16 @@ RUN echo "**** s6 omsta;; ****" && \
     wget -P /tmp/ https://github.com/just-containers/s6-overlay/releases/download/v2.2.0.3/${s6_package} && \
     tar -xzf /tmp/${s6_package} -C /
 
-RUN echo "*** Install FFF ***" && \
-	set -x && \
-    if [ -z ${FFF_RELEASE} ]; then \
-		echo "FFF Using Default Release"; \
-        python3 -m pip --no-cache-dir install FanFicFare; \
-    else \
-		echo "FF Using ${FFF_RELEASE} Release"; \
-        python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
-    fi
- RUN echo "*** Install Other Python Packages ***" && \
+RUN set -ex && \
+    echo "FF Using ${FFF_RELEASE} Release"; && \
+    python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}
+	
+
+RUN echo "*** Install Other Python Packages ***" && \
 	python3 -m pip --no-cache-dir install pushbullet.py pillow
 
- RUN echo "*** SymLink Calibredb ***" && \
-    ln -s /opt/calibre/calibredb /bin/calibredb
+RUN echo "*** SymLink Calibredb ***" && \
+	ln -s /opt/calibre/calibredb /bin/calibredb
 	
 RUN echo "**** cleanup ****" && \
  rm -rf \
