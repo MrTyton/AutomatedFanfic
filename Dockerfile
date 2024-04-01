@@ -47,9 +47,6 @@ RUN echo "*** Install FFF ***" && \
 
 RUN echo "*** Install Other Python Packages ***" && \
 	python3 -m pip --no-cache-dir install pushbullet.py pillow
-
-RUN echo "*** SymLink Calibredb ***" && \
-	ln -s /opt/calibre/calibredb /bin/calibredb
 	
 RUN echo "**** cleanup ****" && \
  rm -rf \
