@@ -67,3 +67,4 @@ VOLUME /config
 WORKDIR /config
 
 ENTRYPOINT ["/init"]
+
