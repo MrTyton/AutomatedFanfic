@@ -54,7 +54,7 @@ def main(options):
         res = res.decode('utf-8')
         print(res)
     buf = StringIO(res)
-    regex = re.compile("Added (?:.*/)?(.*)-.* to library with id \d*")
+    regex = re.compile(r"Added (?:.*/)?(.*)-.* to library with id \d*")
     searcher = regex.search
     stripper = False
     for line in buf.readlines():
