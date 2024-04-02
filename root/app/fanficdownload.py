@@ -73,21 +73,21 @@ def touch(fname, times=None):
         utime(fname, times)
 
 
-url_parsers = [(re.compile('(fanfiction.net/s/\d*/?).*'), "www."), #ffnet
-               (re.compile('(archiveofourown.org/works/\d*)/?.*'), ""), #ao3
-               (re.compile('(fictionpress.com/s/\d*)/?.*'), ""), #fictionpress
-			   (re.compile('(royalroad.com/fiction/\d*)/?.*'), ""), #royalroad
-               (re.compile('https?://(.*)'), "")] #other sites
-story_name = re.compile('(.*)-.*')
+url_parsers = [(re.compile(r'(fanfiction.net/s/\d*/?).*'), "www."), #ffnet
+               (re.compile(r'(archiveofourown.org/works/\d*)/?.*'), ""), #ao3
+               (re.compile(r'(fictionpress.com/s/\d*)/?.*'), ""), #fictionpress
+			   (re.compile(r'(royalroad.com/fiction/\d*)/?.*'), ""), #royalroad
+               (re.compile(r'https?://(.*)'), "")] #other sites
+story_name = re.compile(r'(.*)-.*')
 
-equal_chapters = re.compile('.* already contains \d* chapters.')
+equal_chapters = re.compile(r'.* already contains \d* chapters.')
 chapter_difference = re.compile(
-    '.* contains \d* chapters, more than source: \d*.')
+    r'.* contains \d* chapters, more than source: \d*.')
 bad_chapters = re.compile(
-    ".* doesn't contain any recognizable chapters, probably from a different source.  Not updating.")
-no_url = re.compile('No story URL found in epub to update.')
+    r".* doesn't contain any recognizable chapters, probably from a different source.  Not updating.")
+no_url = re.compile(r'No story URL found in epub to update.')
 more_chapters = re.compile(
-    ".*File\(.*\.epub\) Updated\(.*\) more recently than Story\(.*\) - Skipping")
+    r".*File\(.*\.epub\) Updated\(.*\) more recently than Story\(.*\) - Skipping")
 
 
 def parse_url(url):
@@ -127,6 +127,8 @@ def downloader(args):
     loc = mkdtemp()
     output = ""
     output += log("Working with url {}".format(url), 'HEADER', live)
+    if 'fanfiction.net' in url:
+        output += log("Skipping FFNET for now due to flaresolverr bug.", 'WARNING', live)
     storyId = None
     try:
         if path:
