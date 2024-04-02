@@ -63,4 +63,4 @@ WORKDIR /config
 
 RUN groupmod -o -g "$PGID" abc && usermod -o -u "$PUID" abc && chown -R abc:abc /app && chown -R abc:abc /config && chown -R abc:abc /root && chmod +x /app/run.sh
 
-CMD ["sh", "/app.run.sh"]
+CMD ["sh", "/app/run.sh"]
