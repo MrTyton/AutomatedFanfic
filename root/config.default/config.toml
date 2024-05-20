@@ -1,0 +1,18 @@
+[email]
+email = ""
+password = ""
+server = ""
+mailbox = ""
+sleep_time = 60
+
+[calibre]
+path=""
+username=""
+password=""
+default_ini=""
+personal_ini=""
+
+[pushbullet]
+enabled = false
+api_key = ""
+device = ""

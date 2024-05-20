@@ -1,0 +1,11 @@
+#!/command/with-contenv sh
+
+echo "
+UID/GID
+---------------------------------------
+User uid:  $(id -u abc)
+User gid:  $(id -g abc)
+---------------------------------------
+
+Image Made By: MrTyton
+"
