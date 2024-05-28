@@ -235,7 +235,7 @@ def url_worker(queue: mp.Queue, cdb: calibre_info.CalibreInfo, pushbullet_info: 
                 if cdb.personal_ini:
                     copyfile(cdb.personal_ini, join(temp_dir, "personal.ini"))
                 # Execute the command and get the output
-                output = check_output(command, shell=True, stderr=STDOUT, stdin=PIPE,).decode("utf-8")
+                output = check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
                 ff_logging.log(f"\t({site}) Output: {output}", "OKBLUE")
             except Exception as e:
                 # If the command fails, log the failure and continue to the next iteration

@@ -70,14 +70,17 @@ class TestCalibreInfo(unittest.TestCase):
             ),
         ]
     )
+    @patch("os.path.isfile")
     @patch("builtins.open", new_callable=mock_open)
     @patch("multiprocessing.Manager")
     @patch("calibre_info.ff_logging.log_failure")
     def test_calibre_info_init(
-        self, toml_path, config, expected_config, mock_log, mock_manager, mock_file
+        self, toml_path, config, expected_config, mock_log, mock_manager, mock_file, mock_isfile
     ):
         mock_file.return_value.read.return_value = str(config).encode()
         mock_manager.return_value = MagicMock()
+        # TODO: Actually test this.
+        mock_isfile.return_value = True
         if isinstance(expected_config, dict):
             calibre_info = CalibreInfo(toml_path, mock_manager())
             self.assertEqual(calibre_info.location, expected_config["calibre"]["path"])
