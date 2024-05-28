@@ -38,9 +38,8 @@ class CalibreInfo:
         self.location = calibre_config.get("path")
         self.username = calibre_config.get("username")
         self.password = calibre_config.get("password")
-        self.default_ini = self._append_filename(calibre_config.get("default_ini"), "defaults.ini")
-        self.personal_ini = self._append_filename(calibre_config.get("personal_ini"), "personal.ini")
-
+        self.default_ini = self._get_ini_file(calibre_config, "default_ini", "defaults.ini")
+        self.personal_ini = self._get_ini_file(calibre_config, "personal_ini", "personal.ini")
         # Create a lock for thread-safe operations
         self.lock = manager.Lock()
 
@@ -60,6 +59,14 @@ class CalibreInfo:
         if path and not path.endswith(filename):
             return os.path.join(path, filename)
         return path
+    
+    
+    def _get_ini_file(self, calibre_config: dict, config_key:str, default_filename: str):
+        ini_file = self._append_filename(calibre_config.get(config_key), default_filename)
+        if ini_file and not os.path.isfile(ini_file):
+            ff_logging.log_failure(f"File {ini_file} does not exist.")
+            ini_file = ""
+        return ini_file
 
     # Check if Calibre is installed
     def check_installed(self) -> bool:

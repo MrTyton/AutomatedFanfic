@@ -40,7 +40,7 @@ class PushbulletNotification:
         # If Pushbullet is enabled, send the notification
         if self.enabled:
             try:
-                ff_logging.log(f"\tSending Pushbullet notification: {title} - {body}", "OKBLUE")
+                ff_logging.log(f"\tSending Pushbullet notification: {title} - {body}", "OKGREEN")
                 self.pb.push_note(title, body)
             except PushbulletError as e:
                 message = f"\tFailed to send Pushbullet notification: {e}"
