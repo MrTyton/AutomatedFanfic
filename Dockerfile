@@ -51,14 +51,14 @@ RUN echo "*** Install FFF ***" && \
         python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
     fi
 	
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-x86_64.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-x86_64.tar.xz
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-symlinks-noarch.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-symlinks-noarch.tar.xz 
-ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-symlinks-arch.tar.xz /tmp
-RUN tar -C / -Jxpf /tmp/s6-overlay-symlinks-arch.tar.xz
+#ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz /tmp
+#RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
+#ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-x86_64.tar.xz /tmp
+#RUN tar -C / -Jxpf /tmp/s6-overlay-x86_64.tar.xz
+#ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-symlinks-noarch.tar.xz /tmp
+#RUN tar -C / -Jxpf /tmp/s6-overlay-symlinks-noarch.tar.xz 
+#ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-symlinks-arch.tar.xz /tmp
+#RUN tar -C / -Jxpf /tmp/s6-overlay-symlinks-arch.tar.xz
 
 RUN echo "**** cleanup ****" && \
  rm -rf \
@@ -68,11 +68,14 @@ RUN echo "**** cleanup ****" && \
 
 COPY root/ /
 
-RUN chmod -R +777 /etc/cont-init.d/
-RUN chmod -R +777 /etc/s6-overlay/
+#RUN chmod -R +777 /etc/cont-init.d/
+#RUN chmod -R +777 /etc/s6-overlay/
+
+# Temporary Workaround
 
 VOLUME /config
 
 WORKDIR /config
 
-ENTRYPOINT ["/init"]
+#ENTRYPOINT ["/init"]
+CMD ["python", "/app/fanficdownload.py", "--config", "/config/config.toml"]
