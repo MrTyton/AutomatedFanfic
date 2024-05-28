@@ -78,4 +78,4 @@ VOLUME /config
 WORKDIR /config
 
 #ENTRYPOINT ["/init"]
-CMD ["python", "/app/fanficdownload.py", "--config", "/config/config.toml"]
+CMD python /app/fanficdownload.py --config="/config/config.toml"
