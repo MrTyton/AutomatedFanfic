@@ -69,9 +69,7 @@ class EmailInfo:
             except Exception as e:
                 logging.disable(old_level)
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
-            finally:
-                # Restore the old logging level
-                logging.disable(old_level)
+        logging.disable(old_level)
         return urls
     
 
