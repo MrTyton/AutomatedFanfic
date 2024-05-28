@@ -30,6 +30,7 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
 1. Install the docker image with `docker pull mrtyton/automated-ffdl`
 2. Map the `/config` volume to someplace on your drive.
 3. After running the image once, it will have copied over default configs. Fill them out and everything should start working.
+   1. This default config is currently broken, so when you map the `/config` volume just copy over the default ones found in this repo.
 
 ### How to Run - Non-Docker
 
@@ -99,5 +100,5 @@ device = ""
 ```
 
 - `enabled`: Whether or not to enable the pushbullet notifications
-- `api_key`: Your [[Pushbullet API Key](https://docs.pushbullet.com/#authentication)]
+- `api_key`: Your [Pushbullet API Key](https://docs.pushbullet.com/#authentication)
 - `device`: If you want to send the notification to a specific device rather than the entirety of the pushbullet subscriptions, you can specify which device here with the device name.
