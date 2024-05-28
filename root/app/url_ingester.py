@@ -18,16 +18,6 @@ def set_timeout(time):
         yield
     finally:
         socket.setdefaulttimeout(old_timeout)
-        
-@contextmanager
-def set_logging_level():
-    """Set the logging level to CRITICAL."""
-    old_level = logging.root.manager.disable
-    logging.disable(logging.CRITICAL)
-    try:
-        yield
-    finally:
-        logging.disable(old_level)
 
 class EmailInfo:
     """
@@ -68,14 +58,20 @@ class EmailInfo:
         """
         urls = set()
                 # Save the current logging level
+        old_level = logging.root.manager.disable
 
+        # Set the logging level to CRITICAL
+        logging.disable(logging.CRITICAL)
         with set_timeout(55):
             try:
                 # Get URLs from the email account
-                with set_logging_level():
-                    urls = geturls.get_urls_from_imap(self.server, self.email, self.password, self.mailbox)
+                urls = geturls.get_urls_from_imap(self.server, self.email, self.password, self.mailbox)
             except Exception as e:
+                logging.disable(old_level)
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
+            finally:
+                # Restore the old logging level
+                logging.disable(old_level)
         return urls
     
 
