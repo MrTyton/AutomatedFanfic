@@ -36,11 +36,11 @@ class PushbulletNotification:
             self.enabled = False
 
     # Function to send a notification
-    def send_notification(self, title: str, body: str) -> None:
+    def send_notification(self, title: str, body: str, site: str) -> None:
         # If Pushbullet is enabled, send the notification
         if self.enabled:
             try:
-                ff_logging.log(f"\tSending Pushbullet notification: {title} - {body}", "OKGREEN")
+                ff_logging.log(f"\t({site}) Sending Pushbullet notification: {title} - {body}", "OKGREEN")
                 self.pb.push_note(title, body)
             except PushbulletError as e:
                 message = f"\tFailed to send Pushbullet notification: {e}"

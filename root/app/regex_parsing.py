@@ -16,7 +16,7 @@ url_parsers = {
 }
 
 # Define regular expressions for different story formats
-story_name = re.compile(r"(.*?)-.*")
+story_name = re.compile(r"(.*?) - .*")
 equal_chapters = re.compile(r".* already contains \d* chapters.")
 chapter_difference = re.compile(r".* contains \d* chapters, more than source: \d*.")
 bad_chapters = re.compile(

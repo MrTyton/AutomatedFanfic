@@ -38,7 +38,7 @@ def call_calibre_db(command: str, fanfic_info: fanfic_info.FanficInfo, calibre_i
         # Lock the calibre database to prevent concurrent modifications
         with calibre_info.lock:
             # Call the calibre command line tool with the specified command\
-            ff_logging.log(f"\tCommand: calibredb {command} {fanfic_info.calibre_id} {calibre_info}", "OKBLUE")
+            #ff_logging.log(f"\tCommand: calibredb {command} {fanfic_info.calibre_id} {calibre_info}", "OKBLUE")
             call(
                 f"calibredb {command} {fanfic_info.calibre_id} {calibre_info}",
                 shell=True,
@@ -213,7 +213,7 @@ def url_worker(queue: mp.Queue, cdb: calibre_info.CalibreInfo, pushbullet_info: 
             
             site = fanfic.site
             
-            ff_logging.log(f"\t({site}) Processing {fanfic.url}", "OKGREEN")
+            ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
 
             # Get the path of the fanfic if it exists in the Calibre library, otherwise get the URL of the fanfic
             path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
@@ -227,7 +227,7 @@ def url_worker(queue: mp.Queue, cdb: calibre_info.CalibreInfo, pushbullet_info: 
             if fanfic.behavior == "force":
                 command += " --force"
 
-            ff_logging.log(f"\t({site}) Running Command: {command}", "OKBLUE")
+            #ff_logging.log(f"\t({site}) Running Command: {command}", "OKBLUE")
             try:
                 #copy the configs to the temp directory
                 if cdb.default_ini:
@@ -236,7 +236,7 @@ def url_worker(queue: mp.Queue, cdb: calibre_info.CalibreInfo, pushbullet_info: 
                     copyfile(cdb.personal_ini, join(temp_dir, "personal.ini"))
                 # Execute the command and get the output
                 output = check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
-                ff_logging.log(f"\t({site}) Output: {output}", "OKBLUE")
+                #ff_logging.log(f"\t({site}) Output: {output}", "OKBLUE")
             except Exception as e:
                 # If the command fails, log the failure and continue to the next iteration
                 ff_logging.log_failure(f"\t({site}) Failed to update {path_or_url}: {e}, {output}")
@@ -255,7 +255,7 @@ def url_worker(queue: mp.Queue, cdb: calibre_info.CalibreInfo, pushbullet_info: 
 
             # If the fanfic exists in the Calibre library, remove it
             if fanfic.calibre_id:
-                ff_logging.log(f"\t({site}) Going to remove story.", "OKGREEN")
+                ff_logging.log(f"\t({site}) Going to remove story from Calibre.", "OKGREEN")
                 remove_story(fanfic_info=fanfic, calibre_info=cdb)
             # Add the fanfic to the Calibre library
             add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
@@ -266,4 +266,4 @@ def url_worker(queue: mp.Queue, cdb: calibre_info.CalibreInfo, pushbullet_info: 
                 continue_failure(fanfic, pushbullet_info, waiting_queue)
             else:
                 # If the fanfic was added to the Calibre library, send a notification
-                pushbullet_info.send_notification("New Fanfiction Download", fanfic.title)
+                pushbullet_info.send_notification("New Fanfiction Download", fanfic.title, site)
