@@ -92,7 +92,7 @@ def email_watcher(email_info: EmailInfo, processor_queues: dict[str, mp.Queue]):
         # For each URL, generate a FanficInfo object and add it to the appropriate processor queue
         for url in urls:
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
-            ff_logging.log(f"Adding {fanfic.url} to the {fanfic.site} processor queue", "OKBLUE")
+            ff_logging.log(f"Adding {fanfic.url} to the {fanfic.site} processor queue", "HEADER")
             processor_queues[fanfic.site].put(fanfic)
         # Sleep for the specified amount of time before checking the email account again
         time.sleep(email_info.sleep_time)

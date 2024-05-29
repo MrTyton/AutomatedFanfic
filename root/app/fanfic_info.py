@@ -52,11 +52,11 @@ class FanficInfo:
 
             # If the story is found, update the id and log a message
             self.calibre_id = story_id
-            ff_logging.log(f"\tStory is in Calibre with Story ID: {self.calibre_id}", "OKBLUE")
+            ff_logging.log(f"\t({self.site}) Story is in Calibre with Story ID: {self.calibre_id}", "OKBLUE")
             return True
         except CalledProcessError:
             # If the story is not found, log a warning
-            ff_logging.log("\tStory not in Calibre", "WARNING")
+            ff_logging.log("\t({self.site}) Story not in Calibre", "WARNING")
             return False
         
     def __eq__(self, other: object) -> bool:
