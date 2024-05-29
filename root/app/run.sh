@@ -1,3 +1,3 @@
 #!/bin/bash
 
-python /app/fanficdownload.py --config="/config/config.toml"
+python -u /app/fanficdownload.py --config="/config/config.toml"
