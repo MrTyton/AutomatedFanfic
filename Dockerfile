@@ -68,8 +68,8 @@ RUN echo "**** cleanup ****" && \
 
 COPY root/ /
 
-#RUN chmod -R +777 /etc/cont-init.d/
-#RUN chmod -R +777 /etc/s6-overlay/
+RUN chmod -R +777 /etc/cont-init.d/
+RUN chmod -R +777 /etc/s6-overlay/
 RUN chmod -R +777 /app/
 
 # Temporary Workaround
@@ -78,5 +78,5 @@ VOLUME /config
 
 WORKDIR /config
 
-#ENTRYPOINT ["/init"]
-CMD python -u /app/fanficdownload.py --config="/config/config.toml"
+ENTRYPOINT ["/init"]
+#CMD python -u /app/fanficdownload.py --config="/config/config.toml"
