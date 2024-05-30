@@ -8,6 +8,7 @@ from fanficfare import geturls
 import ff_logging
 import regex_parsing
 import tomllib
+import pushbullet_notification
 
 @contextmanager
 def set_timeout(time):
@@ -75,7 +76,7 @@ class EmailInfo:
     
 
 
-def email_watcher(email_info: EmailInfo, processor_queues: dict[str, mp.Queue]):
+def email_watcher(email_info: EmailInfo, pushbullet_info: pushbullet_notification.PushbulletNotification, processor_queues: dict[str, mp.Queue]):
     """
     Continuously watch an email account for new URLs and add them to the appropriate processor queues.
 
@@ -93,6 +94,10 @@ def email_watcher(email_info: EmailInfo, processor_queues: dict[str, mp.Queue]):
         for url in urls:
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
             ff_logging.log(f"Adding {fanfic.url} to the {fanfic.site} processor queue", "HEADER")
+            # "Temporary" workaround since ffnet doesn't work
+            if (fanfic.site == "ffnet"):
+                pushbullet_info.send_notification("New Fanfiction Download", fanfic.url, fanfic.site)
+                continue
             processor_queues[fanfic.site].put(fanfic)
         # Sleep for the specified amount of time before checking the email account again
         time.sleep(email_info.sleep_time)
