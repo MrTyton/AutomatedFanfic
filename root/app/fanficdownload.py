@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
         # Start a new process to watch the email account for new URLs
         email_watcher = mp.Process(
-            target=url_ingester.email_watcher, args=(email_info, queues)
+            target=url_ingester.email_watcher, args=(email_info, pushbullet_info, queues)
         )
         email_watcher.start()
 

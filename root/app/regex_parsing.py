@@ -26,8 +26,13 @@ no_url = re.compile(r"No story URL found in epub to update.")
 more_chapters = re.compile(
     r".*File\(.*\.epub\) Updated\(.*\) more recently than Story\(.*\) - Skipping"
 )
-failed_login = re.compile(r".*Login Failed on non-interactive process. Set username and password in personal.ini.")
+failed_login = re.compile(
+    r".*Login Failed on non-interactive process. Set username and password in personal.ini."
+)
 bad_request = re.compile(r".*400 Client Error: Bad Request for url:.*")
+forbidden_client = re.compile(r".*403 Client Error: Forbidden for url:.*")
+flaresolverr = re.compile(r".*Connection to flaresolverr proxy server failed.*")
+
 
 def extract_filename(filename: str) -> str:
     """Extract the title from the filename."""
@@ -61,7 +66,12 @@ def check_failure_regexes(output: str) -> bool:
             ),
             (no_url, "No URL in epub to update from. Fix the metadata."),
             (failed_login, "Login failed. Check your username and password."),
-            (bad_request, "Bad request. Check the URL.")            
+            (bad_request, "Bad request. Check the URL."),
+            (
+                forbidden_client,
+                "Forbidden client. Check the URL. If this is ff.net, check that you have Flaresolverr installed, or cry.",
+            ),
+            (flaresolverr, "Flaresolverr connection failed. Check your Flaresolverr installation.")
         ]
     )
 
