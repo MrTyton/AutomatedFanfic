@@ -56,7 +56,7 @@ class FanficInfo:
             return True
         except CalledProcessError:
             # If the story is not found, log a warning
-            ff_logging.log("\t({self.site}) Story not in Calibre", "WARNING")
+            ff_logging.log(f"\t({self.site}) Story not in Calibre", "WARNING")
             return False
         
     def __eq__(self, other: object) -> bool:
