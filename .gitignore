@@ -100,3 +100,6 @@ ENV/
 
 # Code Counter
 .VSCodeCounter/
+
+# Workspace
+.code-workspace
