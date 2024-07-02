@@ -8,6 +8,7 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
 [Dockerhub Link](https://hub.docker.com/r/mrtyton/automated-ffdl)
 
 - [AutomatedFanfic](#automatedfanfic)
+  - [Site Support](#site-support)
   - [Calibre Setup](#calibre-setup)
   - [Execution](#execution)
     - [How to Install - Docker](#how-to-install---docker)
@@ -17,6 +18,11 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
     - [Calibre](#calibre)
     - [Pushbullet](#pushbullet)
 
+## Site Support
+
+This program will support any website that FanFicFare will support. However, it does make use of multi-processing, spawning a different "watcher" for each website. This list is currently hard-coded, and anything not in the list is treated as part of a single queue "other".
+
+If you wish to add more watchers for different websites, then open an issue or submit a request to modify [this](https://github.com/MrTyton/AutomatedFanfic/blob/master/root/app/regex_parsing.py#L7) dictionary.
 
 ## Calibre Setup
 
