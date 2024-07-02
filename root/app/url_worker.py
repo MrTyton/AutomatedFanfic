@@ -131,7 +131,7 @@ def continue_failure(fanfic: fanfic_info.FanficInfo, pushbullet: pushbullet_noti
     # If the fanfic has reached the maximum number of repeats, log a failure and return
     if fanfic.reached_maximum_repeats():
         ff_logging.log_failure(f"Reached maximum number of repeats for {fanfic.url}. Skipping.")
-        pushbullet.send_notification("Fanfiction Download Failed", fanfic.url)
+        pushbullet.send_notification("Fanfiction Download Failed", fanfic.url, fanfic.site)
     else:
         # Increment the repeat count and put the fanfic back in the queue
         fanfic.increment_repeat()
