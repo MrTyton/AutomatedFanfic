@@ -3,6 +3,7 @@ from pushbullet import InvalidKeyError, Pushbullet, PushbulletError
 import ff_logging
 import tomllib
 
+
 class PushbulletNotification:
     # Initialization Function
     def __init__(self, toml_path: str):
@@ -21,7 +22,6 @@ class PushbulletNotification:
         try:
             # Initialize the Pushbullet client
             self.pb = Pushbullet(pushbullet_config["api_key"])
-
             # If a device is specified, get the device
             device = pushbullet_config["device"]
             if device:
@@ -40,7 +40,10 @@ class PushbulletNotification:
         # If Pushbullet is enabled, send the notification
         if self.enabled:
             try:
-                ff_logging.log(f"\t({site}) Sending Pushbullet notification: {title} - {body}", "OKGREEN")
+                ff_logging.log(
+                    f"\t({site}) Sending Pushbullet notification: {title} - {body}",
+                    "OKGREEN",
+                )
                 self.pb.push_note(title, body)
             except PushbulletError as e:
                 message = f"\tFailed to send Pushbullet notification: {e}"

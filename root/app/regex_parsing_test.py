@@ -20,7 +20,10 @@ class TestRegexParsing(unittest.TestCase):
             CheckFilenameExtractionTestCase(input="story-name-1234", expected="story"),
             # Test case: Extract 'author' from 'author-name'
             CheckFilenameExtractionTestCase(input="author-name", expected="author"),
-        ]
+            # Test case: Extract 'story' from '/path/story-name-1234.epub'
+            CheckFilenameExtractionTestCase(input="/path/story-name-1234.epub", expected="story"),
+            # Test case: Extract 'story' from '\\path\\to\\story-name-1234.epub'
+            CheckFilenameExtractionTestCase(input="\\path\\to\\story-name-1234.epub", expected="story"),        ]
     )
     def test_extract_filename(self, input, expected):
         self.assertEqual(regex_parsing.extract_filename(input), expected)

@@ -1,269 +1,247 @@
-from contextlib import contextmanager
 import multiprocessing as mp
-import os
-from os.path import isfile, join
-from shutil import rmtree, copyfile
-from subprocess import call, check_output, PIPE, STDOUT, DEVNULL
-from tempfile import mkdtemp
+from os.path import join
+from shutil import copyfile
+from subprocess import check_output, PIPE, STDOUT
 from time import sleep
 
 import calibre_info
+import calibredb_utils
 import fanfic_info
 import ff_logging
 import pushbullet_notification
 import regex_parsing
+import system_utils
 
-@contextmanager
-def temporary_directory():
-    """Create and clean up a temporary directory."""
-    temp_dir = mkdtemp()
-    try:
-        yield temp_dir
-    finally:
-        rmtree(temp_dir)
 
-def call_calibre_db(command: str, fanfic_info: fanfic_info.FanficInfo, calibre_info: calibre_info.CalibreInfo):
+def handle_failure(fanfic, pushbullet, queue):
     """
-    Call the calibre database with a specific command.
+    Manages the failure of fanfic processing by either logging and notifying the
+    failure or re-queuing the fanfic for another attempt.
 
-    Parameters:
-    command (str): The command to be executed on the calibre database.
-    fanfic_info (fanfic_info.FanficInfo): The fanfic information object.
-    calibre_info (calibre_info.CalibreInfo): The calibre information object.
+    This function checks if a fanfic has reached its maximum allowed attempts for
+    processing. If it has, the function logs the failure and sends a notification
+    about the failure. If the maximum attempts have not been reached, it increments
+    the attempt counter for the fanfic and places it back into the processing queue
+    for another attempt.
+
+    Args:
+        fanfic (fanfic_info.FanficInfo): The fanfic information object,
+            encapsulating details about the fanfic.
+        pushbullet (pushbullet_notification.PushbulletNotification): The object
+            used for sending notifications via Pushbullet.
+        queue (mp.Queue): The multiprocessing queue used for managing fanfics
+            awaiting processing.
 
     Returns:
-    None
+        None
     """
-    try:
-        # Lock the calibre database to prevent concurrent modifications
-        with calibre_info.lock:
-            # Call the calibre command line tool with the specified command\
-            #ff_logging.log(f"\tCommand: calibredb {command} {fanfic_info.calibre_id} {calibre_info}", "OKBLUE")
-            call(
-                f"calibredb {command} {fanfic_info.calibre_id} {calibre_info}",
-                shell=True,
-                stdin=PIPE,
-                stdout=DEVNULL,
-                stderr=DEVNULL,
-            )
-    except Exception as e:
-        # Log any failures
-        ff_logging.log_failure(f"\tFailed to {command} {fanfic_info.calibre_id} from Calibre: {e}")
-
-def export_story(*, fanfic_info: fanfic_info.FanficInfo, location: str, calibre_info: calibre_info.CalibreInfo) -> None:
-    """
-    Export a story from the Calibre library to a specified location.
-
-    Parameters:
-    fanfic_info (fanfic_info.FanficInfo): The fanfic information object.
-    location (str): The directory to which the story should be exported.
-    calibre_info (calibre_info.CalibreInfo): The calibre information object.
-
-    Returns:
-    None
-    """
-    # Define the command to be executed
-    command = f'export --dont-save-cover --dont-write-opf --single-dir --to-dir "{location}"'
-    # Call the calibre database with the specified command
-    call_calibre_db(command, fanfic_info, calibre_info)
-    
-def remove_story(*, fanfic_info: fanfic_info.FanficInfo, calibre_info: calibre_info.CalibreInfo) -> None:
-    """
-    Remove a story from the Calibre library.
-
-    Parameters:
-    fanfic_info (fanfic_info.FanficInfo): The fanfic information object.
-    calibre_info (calibre_info.CalibreInfo): The calibre information object.
-
-    Returns:
-    None
-    """
-    # Call the calibre database with the "remove" command
-    call_calibre_db("remove", fanfic_info, calibre_info)
-
-def add_story(*, location: str, fanfic_info: fanfic_info.FanficInfo, calibre_info: calibre_info.CalibreInfo,) -> None:
-    """
-    Add a story to the Calibre library.
-
-    Parameters:
-    location (str): The directory where the story file is located.
-    fanfic_info (fanfic_info.FanficInfo): The fanfic information object.
-    calibre_info (calibre_info.CalibreInfo): The calibre information object.
-
-    Returns:
-    None
-    """
-    # Get the first epub file in the location
-    file_to_add = get_files(location, file_extension=".epub", return_full_path=True)[0]
-    
-    # Log the file being added
-    ff_logging.log(f"\tAdding {file_to_add} to Calibre", "OKGREEN")
-    
-    try:
-        # Lock the calibre database to prevent concurrent modifications
-        with calibre_info.lock:
-            # Call the calibre command line tool to add the story
-            fanfic_info.title = regex_parsing.extract_filename(get_files(location, file_extension=".epub")[0])
-            call(
-                f'calibredb add -d {calibre_info} "{file_to_add}"',
-                shell=True,
-                stdin=PIPE,
-                stderr=STDOUT,
-            )
-        # Update the title of the fanfic_info object
-    except Exception as e:
-        # Log any failures
-        ff_logging.log_failure(f"\tFailed to add {file_to_add} to Calibre: {e}")
-    
-
-def continue_failure(fanfic: fanfic_info.FanficInfo, pushbullet: pushbullet_notification.PushbulletNotification, queue: mp.Queue) -> None:
-    """
-    Handle a failure by either logging a failure and returning, or incrementing the repeat count and putting the fanfic back in the queue.
-
-    Parameters:
-    fanfic (fanfic_info.FanficInfo): The fanfic information object.
-    pushbullet (pushbullet_notification.PushbulletNotification): The pushbullet notification object.
-    queue (mp.Queue): The multiprocessing queue object.
-
-    Returns:
-    None
-    """
-    # If the fanfic has reached the maximum number of repeats, log a failure and return
+    # Check if the fanfic has exceeded the maximum number of processing attempts
     if fanfic.reached_maximum_repeats():
-        ff_logging.log_failure(f"Reached maximum number of repeats for {fanfic.url}. Skipping.")
-        pushbullet.send_notification("Fanfiction Download Failed", fanfic.url, fanfic.site)
+        # Log the failure and send a notification about this specific fanfic
+        ff_logging.log_failure(f"Maximum attempts reached for {fanfic.url}. Skipping.")
+        pushbullet.send_notification(
+            "Fanfiction Download Failed", fanfic.url, fanfic.site
+        )
     else:
-        # Increment the repeat count and put the fanfic back in the queue
+        # If not at maximum attempts, increment the attempt counter and re-queue the fanfic
         fanfic.increment_repeat()
         queue.put(fanfic)
-        
-def get_files(directory_path, file_extension=None, return_full_path=False):
-    """
-    Get files from a directory. If a file extension is specified, filter files by extension.
 
-    Parameters:
-    directory_path (str): The path of the directory from which to get files.
-    file_extension (str, optional): The extension of the files to get. Defaults to None.
-    return_full_path (bool, optional): Whether to return the full path of the files. Defaults to False.
+
+def get_path_or_url(
+    ff_info: fanfic_info.FanficInfo,
+    cdb_info: calibre_info.CalibreInfo,
+    location: str = "",
+) -> str:
+    """
+    Retrieves the path of an exported story from the Calibre library or the story's
+    URL if not in Calibre.
+
+    This function checks if the specified fanfic exists in the Calibre library. If
+    it does, the function exports the story to a given location and returns the
+    path to the exported file. If the story is not found in the Calibre library,
+    the function returns the URL of the story instead.
+
+    Args:
+        ff_info (fanfic_info.FanficInfo): The fanfic information object containing
+            details about the fanfic.
+        cdb_info (calibre_info.CalibreInfo): The Calibre database information
+            object for accessing the library.
+        location (str, optional): The directory path where the story should be
+            exported. Defaults to an empty string, which means the current
+            directory.
 
     Returns:
-    list: A list of file names or file paths, depending on the value of return_full_path.
+        str: The path to the exported story file if it exists in Calibre, or the
+            URL of the story otherwise.
     """
-    # Get a list of files in the directory that have the specified extension (or all files if no extension is specified)
-    files = [
-        file
-        for file in os.listdir(directory_path)
-        if isfile(join(directory_path, file)) and (not file_extension or file.endswith(file_extension))
-    ]
-    
-    # If return_full_path is True, replace the list of file names with a list of file paths
-    if return_full_path:
-        files = [join(directory_path, file) for file in files]
-    
-    return files
-
-def get_path_or_url(ff_info: fanfic_info.FanficInfo, cdb_info: calibre_info.CalibreInfo, location: str = "") -> str:
-    """
-    Get the path of the exported story if it exists in the Calibre library, otherwise return the URL of the story.
-
-    Parameters:
-    ff_info (fanfic_info.FanficInfo): The fanfic information object.
-    cdb_info (calibre_info.CalibreInfo): The calibre information object.
-    location (str, optional): The directory to which the story should be exported. Defaults to "".
-
-    Returns:
-    str: The path of the exported story or the URL of the story.
-    """
-    # If the story exists in the Calibre library
+    # Check if the story exists in the Calibre library by attempting to retrieve its ID
     if ff_info.get_id_from_calibredb(cdb_info):
-        # Export the story to the specified location
-        export_story(fanfic_info=ff_info, location=location, calibre_info=cdb_info)
-        # Return the path of the exported story
-        return get_files(location, file_extension=".epub", return_full_path=True)[0]
-    # If the story does not exist in the Calibre library, return the URL of the story
+        # Export the story to the specified location and return the path to the exported file
+        calibredb_utils.export_story(
+            fanfic_info=ff_info, location=location, calibre_info=cdb_info
+        )
+        # Assuming export_story function successfully exports the story, retrieve and return the path to the exported file
+        exported_files = system_utils.get_files(
+            location, file_extension=".epub", return_full_path=True
+        )
+        # Check if the list is not empty
+        if exported_files:
+            # Return the first file path found
+            return exported_files[0]
+    # If the story does not exist in the Calibre library or no files were exported, return the URL of the story
     return ff_info.url
 
-def url_worker(queue: mp.Queue, cdb: calibre_info.CalibreInfo, pushbullet_info: pushbullet_notification.PushbulletNotification, waiting_queue: mp.Queue) -> None:
-    """
-    Worker function that updates fanfics from a queue.
 
-    Parameters:
-    queue (mp.Queue): The multiprocessing queue object.
-    cdb (calibre_info.CalibreInfo): The calibre information object.
-    pushbullet_info (pushbullet_notification.PushbulletNotification): The pushbullet notification object.
+def execute_command(command: str) -> str:
+    """
+    Executes a shell command and returns its output.
+
+    Args:
+        command (str): The command to execute.
 
     Returns:
-    None
+        str: The output of the command.
     """
-    # Continuously process fanfics from the queue
+    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
+
+
+def process_fanfic_addition(
+    fanfic: fanfic_info.FanficInfo,
+    cdb: calibre_info.CalibreInfo,
+    temp_dir: str,
+    site: str,
+    path_or_url: str,
+    waiting_queue: mp.Queue,
+    pushbullet_info: pushbullet_notification.PushbulletNotification,
+) -> None:
+    """
+    Processes the addition of a fanfic to Calibre, updates the database, and sends
+    a notification.
+
+    This function integrates a fanfic into the Calibre library. It checks if the
+    fanfic already exists in the library by its Calibre ID. If so, the existing
+    entry is removed for the updated version. The fanfic is added to Calibre from
+    a temporary directory. Upon successful addition, a notification is sent via
+    Pushbullet. If the process fails, the failure is logged, and the fanfic is
+    placed back into the waiting queue for another attempt.
+
+    Args:
+        fanfic (fanfic_info.FanficInfo): The fanfic information object, containing
+            details like the URL and site.
+        cdb (calibre_info.CalibreInfo): The Calibre database information object,
+            used for adding or removing fanfics.
+        temp_dir (str): The path to the temporary directory where the fanfic is
+            downloaded.
+        site (str): The name of the site from which the fanfic is being updated.
+        path_or_url (str): The path or URL to the fanfic that is being updated.
+        waiting_queue (mp.Queue): The multiprocessing queue where fanfics are
+            placed if they need to be reprocessed.
+        pushbullet_info (pushbullet_notification.PushbulletNotification): The
+            Pushbullet notification object, used for sending update notifications.
+
+    Returns:
+        None
+    """
+    if fanfic.calibre_id:
+        # If the fanfic already has a Calibre ID, it means it's already in the Calibre database.
+        # Log the intention to remove the existing story from Calibre before updating it.
+        ff_logging.log(f"\t({site}) Going to remove story from Calibre.", "OKGREEN")
+        # Remove the existing story from Calibre using its Calibre ID.
+        calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
+    # Add the updated story to Calibre. This involves adding the story from the temporary directory
+    # where it was downloaded and processed.
+    calibredb_utils.add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
+
+    # After attempting to add the story to Calibre, check if the story's ID can be retrieved from Calibre.
+    # This serves as a verification step to ensure the story was successfully added.
+    if not fanfic.get_id_from_calibredb(cdb):
+        # If the story's ID cannot be retrieved, log the failure and handle it accordingly.
+        # This might involve sending a notification about the failure and possibly re-queuing the story for another attempt.
+        ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
+        handle_failure(fanfic, pushbullet_info, waiting_queue)
+    else:
+        # If the story was successfully added to Calibre, send a notification about the new download.
+        # This notification includes the story's title and the site it was downloaded from.
+        pushbullet_info.send_notification("New Fanfiction Download", fanfic.title, site)
+
+
+def url_worker(
+    queue: mp.Queue,
+    cdb: calibre_info.CalibreInfo,
+    pushbullet_info: pushbullet_notification.PushbulletNotification,
+    waiting_queue: mp.Queue,
+) -> None:
+    """
+    Worker function that processes fanfics from a queue, updating them in a Calibre
+    database.
+
+    This function continuously monitors a queue for fanfic objects, processes each
+    fanfic by updating its information using the FanFicFare tool, and handles
+    failures or necessary retries. It uses a temporary directory for operations
+    that require filesystem access. Notifications of successes or failures are sent
+    via Pushbullet.
+
+    Args:
+        queue (mp.Queue): The queue from which fanfic objects are consumed.
+        cdb (calibre_info.CalibreInfo): Information about the Calibre database
+            where fanfics are stored.
+        pushbullet_info (pushbullet_notification.PushbulletNotification): Object
+            for sending notifications via Pushbullet.
+        waiting_queue (mp.Queue): A queue for fanfics that need to be retried.
+
+    Returns:
+        None
+    """
     while True:
-        # If the queue is empty, sleep for 5 seconds and then continue to the next iteration
+        # Check if the queue is empty; if so, wait before checking again
         if queue.empty():
             sleep(5)
             continue
 
-        # Get a fanfic from the queue
-        fanfic: fanfic_info.FanficInfo = queue.get()
-        # If the fanfic is None, continue to the next iteration
+        # Retrieve the next fanfic object from the queue
+        fanfic = queue.get()
+        # If the retrieved item is None, skip to the next iteration
         if fanfic is None:
             continue
 
-        # Create a temporary directory
-        with temporary_directory() as temp_dir:
-            
-            site = fanfic.site
-            
+        # Use a temporary directory for processing the fanfic
+        with system_utils.temporary_directory() as temp_dir:
+            site = fanfic.site  # Extract the site from the fanfic object
             ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
-
-            # Get the path of the fanfic if it exists in the Calibre library, otherwise get the URL of the fanfic
+            # Determine the path or URL for updating the fanfic
             path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
-
-            # Log the update
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
-            # Define the command to update the fanfic
+            # Construct the command for updating the fanfic with FanFicFare
             command = f'cd {temp_dir} && python -m fanficfare.cli -u "{path_or_url}" --update-cover --non-interactive'
-            # If the behavior of the fanfic is "force", add the "--force" option to the command
             if fanfic.behavior == "force":
                 command += " --force"
 
-            #ff_logging.log(f"\t({site}) Running Command: {command}", "OKBLUE")
             try:
-                #copy the configs to the temp directory
-                if cdb.default_ini:
-                    copyfile(cdb.default_ini, join(temp_dir, "defaults.ini"))
-                if cdb.personal_ini:
-                    copyfile(cdb.personal_ini, join(temp_dir, "personal.ini"))
-                # Execute the command and get the output
-                output = check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
-                #ff_logging.log(f"\t({site}) Output: {output}", "OKBLUE")
+                # Copy necessary configuration files to the temporary directory and execute the update command
+                system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
+                output = execute_command(command)
             except Exception as e:
-                # If the command fails, log the failure and continue to the next iteration
-                ff_logging.log_failure(f"\t({site}) Failed to update {path_or_url}: {e}, {output}")
-                continue_failure(fanfic, pushbullet_info, waiting_queue)
+                # Log failure and handle it (e.g., by sending a notification or re-queuing the fanfic)
+                ff_logging.log_failure(
+                    f"\t({site}) Failed to update {path_or_url}: {e}"
+                )
+                handle_failure(fanfic, pushbullet_info, waiting_queue)
                 continue
 
-            # If the output indicates a failure, continue to the next iteration
+            # Check the output for failure patterns; if found, handle the failure
             if not regex_parsing.check_failure_regexes(output):
-                continue_failure(fanfic, pushbullet_info, waiting_queue)
+                handle_failure(fanfic, pushbullet_info, waiting_queue)
                 continue
-            # If the output indicates a forceable error, set the behavior of the fanfic to "force" and put it back in the queue
+
+            # If the output indicates a retry might succeed, adjust the fanfic's behavior and re-queue it
             if regex_parsing.check_forceable_regexes(output):
                 fanfic.behavior = "force"
                 queue.put(fanfic)
                 continue
 
-            # If the fanfic exists in the Calibre library, remove it
-            if fanfic.calibre_id:
-                ff_logging.log(f"\t({site}) Going to remove story from Calibre.", "OKGREEN")
-                remove_story(fanfic_info=fanfic, calibre_info=cdb)
-            # Add the fanfic to the Calibre library
-            add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
-
-            # If the fanfic was not added to the Calibre library, log a failure and continue to the next iteration
-            if not fanfic.get_id_from_calibredb(cdb):
-                ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-                continue_failure(fanfic, pushbullet_info, waiting_queue)
-            else:
-                # If the fanfic was added to the Calibre library, send a notification
-                pushbullet_info.send_notification("New Fanfiction Download", fanfic.title, site)
+            # Process the successful addition of the fanfic to the Calibre database
+            process_fanfic_addition(
+                fanfic, cdb, temp_dir, site, path_or_url, waiting_queue, pushbullet_info
+            )
