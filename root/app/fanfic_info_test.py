@@ -31,7 +31,7 @@ class TestFanficInfo(unittest.TestCase):
         calibre_information.lock = MagicMock()
         self.assertTrue(self.fanfic_info.get_id_from_calibredb(calibre_information))
         self.assertEqual(self.fanfic_info.calibre_id, "1234")
-        mock_ff_logger.assert_called_once_with("\tStory is in Calibre with Story ID: 1234", "OKBLUE")
+        mock_ff_logger.assert_called_once_with("\t(ffnet) Story is in Calibre with Story ID: 1234", "OKBLUE")
 
     def test_eq(self):
         other_fanfic_info = FanficInfo(

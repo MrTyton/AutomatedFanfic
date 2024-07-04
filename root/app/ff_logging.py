@@ -1,7 +1,11 @@
-from time import localtime, strftime
+import datetime
 
 
 class bcolors:
+    """
+    Defines terminal color codes for different logging levels.
+    """
+
     HEADER = "\033[95m"
     OKBLUE = "\033[94m"
     OKGREEN = "\033[92m"
@@ -24,13 +28,28 @@ color_map = {
 }
 
 
-# Logging Function
-def log(msg, color=None) -> None:
+def log(msg: str, color: str = None) -> None:
+    """
+    Logs a message to the console with the specified color.
+
+    Args:
+        msg (str): The message to log.
+        color (str, optional): The color name to use for the message. Defaults to
+            None, which results in bold text.
+    """
+    # Use the specified color or default to bold
     using_col = color_map.get(color, bcolors.BOLD)
-    print(
-        f'{bcolors.BOLD}{strftime("%Y-%m-%d %I:%M:%S %p", localtime())}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}'
-    )
+    # Format the current timestamp
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+    # Print the formatted log message
+    print(f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}")
 
 
-def log_failure(msg):
+def log_failure(msg: str) -> None:
+    """
+    Logs a failure message in red.
+
+    Args:
+        msg (str): The failure message to log.
+    """
     log(msg, "FAIL")

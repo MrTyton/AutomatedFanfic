@@ -34,7 +34,7 @@ class TestWaitFunction(unittest.TestCase):
         processor_queues = {"site": queue}
         ff_waiter.process_fanfic(fanfic, processor_queues)
         mock_print.assert_called_once_with(
-            f"\x1b[1m2021-01-01 07:00:00\x1b[0m - \x1b[93mWaiting {repeats} minutes for url in queue site\x1b[0m"
+            f"\x1b[1m2021-01-01 12:00:00 PM\x1b[0m - \x1b[93mWaiting {repeats} minutes for url in queue site\x1b[0m"
         )
         mock_timer.assert_called_once_with(
             expected_time, ff_waiter.insert_after_time, args=(queue, fanfic)
