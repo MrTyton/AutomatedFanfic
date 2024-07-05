@@ -1,6 +1,4 @@
 import multiprocessing as mp
-from os.path import join
-from shutil import copyfile
 from subprocess import check_output, PIPE, STDOUT
 from time import sleep
 
@@ -146,7 +144,10 @@ def process_fanfic_addition(
     if fanfic.calibre_id:
         # If the fanfic already has a Calibre ID, it means it's already in the Calibre database.
         # Log the intention to remove the existing story from Calibre before updating it.
-        ff_logging.log(f"\t({site}) Going to remove story from Calibre.", "OKGREEN")
+        ff_logging.log(
+            f"\t({site}) Going to remove story {fanfic.calibre_id} from Calibre.",
+            "OKGREEN",
+        )
         # Remove the existing story from Calibre using its Calibre ID.
         calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
     # Add the updated story to Calibre. This involves adding the story from the temporary directory
