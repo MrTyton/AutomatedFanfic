@@ -80,4 +80,4 @@ VOLUME /config
 WORKDIR /config
 
 #ENTRYPOINT ["/init"]
-CMD python -u /app/fanficdownload.py --config="/config/config.toml" --verbose=${VERBOSE}
+CMD sh -c 'if [ "$VERBOSE" = "true" ]; then python -u /app/fanficdownload.py --config="/config/config.toml" --verbose; else python -u /app/fanficdownload.py --config="/config/config.toml"; fi'
