@@ -27,6 +27,19 @@ color_map = {
     "UNDERLINE": bcolors.UNDERLINE,
 }
 
+verbose = False
+
+
+def set_verbose(value: bool) -> None:
+    """
+    Sets the verbose flag to the given value.
+
+    Args:
+        value (bool): The value to set the verbose flag to.
+    """
+    global verbose
+    verbose = value
+
 
 def log(msg: str, color: str = None) -> None:
     """
@@ -37,6 +50,7 @@ def log(msg: str, color: str = None) -> None:
         color (str, optional): The color name to use for the message. Defaults to
             None, which results in bold text.
     """
+
     # Use the specified color or default to bold
     using_col = color_map.get(color, bcolors.BOLD)
     # Format the current timestamp
@@ -53,3 +67,14 @@ def log_failure(msg: str) -> None:
         msg (str): The failure message to log.
     """
     log(msg, "FAIL")
+
+
+def log_debug(msg: str) -> None:
+    """
+    Logs a debug message in blue.
+
+    Args:
+        msg (str): The debug message to log.
+    """
+    if verbose:
+        log(msg, "OKBLUE")

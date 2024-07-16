@@ -22,6 +22,9 @@ def call_calibre_db(
     Returns:
         None
     """
+    ff_logging.log_debug(
+        f'\tCalling calibredb with command: \t"{command} {fanfic_info.calibre_id if fanfic_info else ""} {calibre_info}"'
+    )
     try:
         # Lock the calibre database to prevent concurrent modifications
         with calibre_info.lock:
