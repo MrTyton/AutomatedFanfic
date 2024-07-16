@@ -18,14 +18,19 @@ def parse_arguments() -> argparse.Namespace:
 
     Returns:
         Namespace: An argparse.Namespace object containing all the arguments.
-                   Currently, it only includes '--config' for specifying the config
-                   file location.
+                   Currently, it includes '--config' for specifying the config
+                   file location and '--verbose' for enabling verbose logging.
     """
     parser = argparse.ArgumentParser(description="Process input arguments.")
     parser.add_argument(
         "--config",
         default="../config.default/config.toml",
         help="The location of the config.toml file",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging",
     )
     return parser.parse_args()
 
@@ -141,6 +146,8 @@ def main():
     Main function to orchestrate the fanfic downloading process.
     """
     args = parse_arguments()
+
+    ff_logging.set_verbose(args.verbose)
 
     # Initialize configurations for email, pushbullet notifications, and calibre database
     email_info = url_ingester.EmailInfo(args.config)

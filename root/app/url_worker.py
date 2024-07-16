@@ -101,6 +101,7 @@ def execute_command(command: str) -> str:
     Returns:
         str: The output of the command.
     """
+    ff_logging.log_debug(f"\tExecuting command: {command}")
     return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
 
 

@@ -8,7 +8,8 @@ ARG S6_OVERLAY_VERSION
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} FFF: ${FFF_RELEASE} S6_OVERLAY_VERSION: ${S6_OVERLAY_VERSION}"
 
 ENV PUID="911" \
-    PGID="911"
+    PGID="911" \
+    VERBOSE=false
 
 RUN set -ex && \
     apt-get update && \
@@ -20,22 +21,22 @@ RUN set -ex && \
     xdg-utils \
     curl \
     dbus \
-	jq \
-	python3
-	
+    jq \
+    python3
+
 RUN addgroup --gid "$PGID" abc && \
     adduser \
-        --gecos "" \
-        --disabled-password \
-        --no-create-home \
-        --uid "$PUID" \
-        --ingroup abc \
-        --shell /bin/bash \
-        abc 
-		
+    --gecos "" \
+    --disabled-password \
+    --no-create-home \
+    --uid "$PUID" \
+    --ingroup abc \
+    --shell /bin/bash \
+    abc 
+
 RUN echo "**** install calibre ****" && \
- apt-get install -y calibre && \
- dbus-uuidgen > /etc/machine-id
+    apt-get install -y calibre && \
+    dbus-uuidgen > /etc/machine-id
 
 
 RUN echo "*** Install Other Python Packages ***"
@@ -44,13 +45,13 @@ RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.txt
 
 RUN echo "*** Install FFF ***" && \
     if [ -z ${FFF_RELEASE} ]; then \
-		echo "FFF Using Default Release"; \
-        python3 -m pip --no-cache-dir install FanFicFare; \
-	else \
-		echo "FF Using ${FFF_RELEASE} Release"; \
-        python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
+    echo "FFF Using Default Release"; \
+    python3 -m pip --no-cache-dir install FanFicFare; \
+    else \
+    echo "FF Using ${FFF_RELEASE} Release"; \
+    python3 -m pip --no-cache-dir install --extra-index-url https://testpypi.python.org/pypi FanFicFare==${FFF_RELEASE}; \
     fi
-	
+
 # ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz /tmp
 # RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz
 # ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-x86_64.tar.xz /tmp
@@ -61,10 +62,10 @@ RUN echo "*** Install FFF ***" && \
 # RUN tar -C / -Jxpf /tmp/s6-overlay-symlinks-arch.tar.xz
 
 RUN echo "**** cleanup ****" && \
- rm -rf \
-	/tmp/* \
-	/var/lib/apt/lists/* \
-	/var/tmp/*
+    rm -rf \
+    /tmp/* \
+    /var/lib/apt/lists/* \
+    /var/tmp/*
 
 COPY root/ /
 
@@ -79,4 +80,4 @@ VOLUME /config
 WORKDIR /config
 
 #ENTRYPOINT ["/init"]
-CMD python -u /app/fanficdownload.py --config="/config/config.toml"
+CMD python -u /app/fanficdownload.py --config="/config/config.toml" --verbose=${VERBOSE}
