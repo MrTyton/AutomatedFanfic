@@ -1,4 +1,6 @@
+import ctypes
 import datetime
+from multiprocessing import Value
 
 
 class bcolors:
@@ -27,7 +29,8 @@ color_map = {
     "UNDERLINE": bcolors.UNDERLINE,
 }
 
-verbose = False
+# Initialize a shared variable for the verbose flag
+verbose = Value(ctypes.c_bool, False)
 
 
 def set_verbose(value: bool) -> None:
@@ -37,8 +40,7 @@ def set_verbose(value: bool) -> None:
     Args:
         value (bool): The value to set the verbose flag to.
     """
-    global verbose
-    verbose = value
+    verbose.value = value
 
 
 def log(msg: str, color: str = None) -> None:
