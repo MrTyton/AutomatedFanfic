@@ -78,5 +78,5 @@ def log_debug(msg: str) -> None:
     Args:
         msg (str): The debug message to log.
     """
-    if verbose:
+    if verbose.value:
         log(msg, "OKBLUE")
