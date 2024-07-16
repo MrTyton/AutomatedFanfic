@@ -20,6 +20,6 @@ requests-toolbelt==1.0.0
 setuptools==65.5.1
 six==1.16.0
 soupsieve==2.5
-urllib3==2.2.1
+urllib3==2.2.2
 webencodings==0.5.1
 websocket-client==1.8.0
