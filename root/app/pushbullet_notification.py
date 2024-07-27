@@ -1,4 +1,5 @@
 from pushbullet import InvalidKeyError, Pushbullet, PushbulletError
+from requests.exceptions import ConnectionError
 
 import ff_logging
 import tomllib
@@ -37,14 +38,22 @@ class PushbulletNotification:
 
     # Function to send a notification
     def send_notification(self, title: str, body: str, site: str) -> None:
-        # If Pushbullet is enabled, send the notification
-        if self.enabled:
-            try:
-                ff_logging.log(
-                    f"\t({site}) Sending Pushbullet notification: {title} - {body}",
-                    "OKGREEN",
-                )
-                self.pb.push_note(title, body)
-            except PushbulletError as e:
-                message = f"\tFailed to send Pushbullet notification: {e}"
-                ff_logging.log_failure(message)
+        # Allows retry logic
+        attempts = 3
+        for i in range(attempts):
+            # If Pushbullet is enabled, send the notification
+            if self.enabled:
+                try:
+                    ff_logging.log(
+                        f"\t({site}) Sending Pushbullet notification: {title} - {body}",
+                        "OKGREEN",
+                    )
+                    self.pb.push_note(title, body)
+                    return
+                except PushbulletError as e:
+                    message = f"\tFailed to send Pushbullet notification: {e}"
+                    ff_logging.log_failure(message)
+                except ConnectionError as e:
+                    message = f"\tPushbullet notification failed with connection error, retrying: {e}"
+                    ff_logging.log_failure(message)
+                    time.sleep(30)
