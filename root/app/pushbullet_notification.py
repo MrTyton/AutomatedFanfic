@@ -3,18 +3,14 @@ from requests.exceptions import ConnectionError
 
 import ff_logging
 import notification_base
-import tomllib
 
 
 class PushbulletNotification(notification_base.NotificationBase):
     # Initialization Function
     def __init__(self, toml_path: str):
-        super().__init__()
-        # Load the configuration from the TOML file
-        with open(toml_path, "rb") as file:
-            config = tomllib.load(file)
+        super().__init__(toml_path)
         # Extract the Pushbullet configuration
-        pushbullet_config = config.get("pushbullet", None)
+        pushbullet_config = self.config.get("pushbullet", None)
         if pushbullet_config is None:
             return
 

@@ -1,13 +1,35 @@
+"""
+Base class for implementing Notifications.
+
+This module contains the base class for implementing notifications. The class defines the
+`send_notification` function, which sends a notification with a title, body, and site. This
+function must be implemented by the derived classes.
+
+It also provides a helper function that can be applied to the `send_notification` function,
+as a decorator, to retry it up to 3 times with 10, 20, and 30-second delays between attempts.
+
+The derived classes must mark themselves as `enabled` if they are able to send notifications,
+by setting `self.enabled` to True.
+
+The derived classes are responsible for extracting their configuration information from the
+TOML file that has been loaded into `self.config`.
+"""
+
 import time
+import tomllib
 from typing import Callable, Any
 
 
 class NotificationBase:
-    def __init__(self):
+    def __init__(self, toml_path: str):
         """
         Initializes the NotificationBase class.
         """
         self.enabled = False
+
+        # Load the configuration from the TOML file
+        with open(toml_path, "rb") as file:
+            self.config = tomllib.load(file)
 
     def send_notification(self, title: str, body: str, site: str) -> bool:
         """
