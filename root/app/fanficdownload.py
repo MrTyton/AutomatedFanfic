@@ -76,7 +76,8 @@ def create_processes(
             `email_watcher` and `waiting_watcher` processes, ready to be started.
     """
     email_watcher = mp.Process(
-        target=url_ingester.email_watcher, args=(email_info, notification_info, queues)
+        target=url_ingester.email_watcher,
+        args=(email_info, notification_info, queues),
     )
     waiting_watcher = mp.Process(
         target=ff_waiter.wait_processor, args=(queues, waiting_queue)
@@ -152,16 +153,22 @@ def main():
 
     # Initialize configurations for email, pushbullet notifications, and calibre database
     email_info = url_ingester.EmailInfo(args.config)
-    
+
+    # Create the Notification Wrapper. All notifications are sent through this object,
+    # and the individual initializations of each class must be added to this object.
     notification_info = notification_wrapper.NotificationWrapper()
-    
+
     # Create the Pushbullet Notifier
-    pushbullet_info = pushbullet_notification.PushbulletNotification(args.config)
+    pushbullet_info = pushbullet_notification.PushbulletNotification(
+        args.config
+    )
     notification_info.add_notification_worker(pushbullet_info)
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing
-        queues = {site: manager.Queue() for site in regex_parsing.url_parsers.keys()}
+        queues = {
+            site: manager.Queue() for site in regex_parsing.url_parsers.keys()
+        }
         waiting_queue = manager.Queue()
         cdb_info = calibre_info.CalibreInfo(args.config, manager)
         cdb_info.check_installed()
