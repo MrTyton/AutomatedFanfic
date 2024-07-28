@@ -6,7 +6,7 @@ import calibre_info
 import calibredb_utils
 import fanfic_info
 import ff_logging
-import pushbullet_notification
+import notification_wrapper
 import regex_parsing
 import system_utils
 
@@ -36,7 +36,9 @@ def handle_failure(fanfic, pushbullet, queue):
     # Check if the fanfic has exceeded the maximum number of processing attempts
     if fanfic.reached_maximum_repeats():
         # Log the failure and send a notification about this specific fanfic
-        ff_logging.log_failure(f"Maximum attempts reached for {fanfic.url}. Skipping.")
+        ff_logging.log_failure(
+            f"Maximum attempts reached for {fanfic.url}. Skipping."
+        )
         pushbullet.send_notification(
             "Fanfiction Download Failed", fanfic.url, fanfic.site
         )
@@ -102,7 +104,9 @@ def execute_command(command: str) -> str:
         str: The output of the command.
     """
     ff_logging.log_debug(f"\tExecuting command: {command}")
-    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
+    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode(
+        "utf-8"
+    )
 
 
 def process_fanfic_addition(
@@ -112,7 +116,7 @@ def process_fanfic_addition(
     site: str,
     path_or_url: str,
     waiting_queue: mp.Queue,
-    pushbullet_info: pushbullet_notification.PushbulletNotification,
+    notification_info: notification_wrapper.NotificationWrapper,
 ) -> None:
     """
     Processes the addition of a fanfic to Calibre, updates the database, and sends
@@ -136,8 +140,7 @@ def process_fanfic_addition(
         path_or_url (str): The path or URL to the fanfic that is being updated.
         waiting_queue (mp.Queue): The multiprocessing queue where fanfics are
             placed if they need to be reprocessed.
-        pushbullet_info (pushbullet_notification.PushbulletNotification): The
-            Pushbullet notification object, used for sending update notifications.
+        notification_info (notification_wrapper.NotificationWrapper): The object for sending notifications.
 
     Returns:
         None
@@ -153,25 +156,31 @@ def process_fanfic_addition(
         calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
     # Add the updated story to Calibre. This involves adding the story from the temporary directory
     # where it was downloaded and processed.
-    calibredb_utils.add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
+    calibredb_utils.add_story(
+        location=temp_dir, fanfic_info=fanfic, calibre_info=cdb
+    )
 
     # After attempting to add the story to Calibre, check if the story's ID can be retrieved from Calibre.
     # This serves as a verification step to ensure the story was successfully added.
     if not fanfic.get_id_from_calibredb(cdb):
         # If the story's ID cannot be retrieved, log the failure and handle it accordingly.
         # This might involve sending a notification about the failure and possibly re-queuing the story for another attempt.
-        ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-        handle_failure(fanfic, pushbullet_info, waiting_queue)
+        ff_logging.log_failure(
+            f"\t({site}) Failed to add {path_or_url} to Calibre"
+        )
+        handle_failure(fanfic, notification_info, waiting_queue)
     else:
         # If the story was successfully added to Calibre, send a notification about the new download.
         # This notification includes the story's title and the site it was downloaded from.
-        pushbullet_info.send_notification("New Fanfiction Download", fanfic.title, site)
+        notification_info.send_notification(
+            "New Fanfiction Download", fanfic.title, site
+        )
 
 
 def url_worker(
     queue: mp.Queue,
     cdb: calibre_info.CalibreInfo,
-    pushbullet_info: pushbullet_notification.PushbulletNotification,
+    notification_info: notification_wrapper.NotificationWrapper,
     waiting_queue: mp.Queue,
 ) -> None:
     """
@@ -182,14 +191,13 @@ def url_worker(
     fanfic by updating its information using the FanFicFare tool, and handles
     failures or necessary retries. It uses a temporary directory for operations
     that require filesystem access. Notifications of successes or failures are sent
-    via Pushbullet.
+    via the Notification Class.
 
     Args:
         queue (mp.Queue): The queue from which fanfic objects are consumed.
         cdb (calibre_info.CalibreInfo): Information about the Calibre database
             where fanfics are stored.
-        pushbullet_info (pushbullet_notification.PushbulletNotification): Object
-            for sending notifications via Pushbullet.
+        notification_info (notification_wrapper.NotificationWrapper): The object for sending notifications.
         waiting_queue (mp.Queue): A queue for fanfics that need to be retried.
 
     Returns:
@@ -229,12 +237,12 @@ def url_worker(
                 ff_logging.log_failure(
                     f"\t({site}) Failed to update {path_or_url}: {e}"
                 )
-                handle_failure(fanfic, pushbullet_info, waiting_queue)
+                handle_failure(fanfic, notification_info, waiting_queue)
                 continue
 
             # Check the output for failure patterns; if found, handle the failure
             if not regex_parsing.check_failure_regexes(output):
-                handle_failure(fanfic, pushbullet_info, waiting_queue)
+                handle_failure(fanfic, notification_info, waiting_queue)
                 continue
 
             # If the output indicates a retry might succeed, adjust the fanfic's behavior and re-queue it
@@ -245,5 +253,11 @@ def url_worker(
 
             # Process the successful addition of the fanfic to the Calibre database
             process_fanfic_addition(
-                fanfic, cdb, temp_dir, site, path_or_url, waiting_queue, pushbullet_info
+                fanfic,
+                cdb,
+                temp_dir,
+                site,
+                path_or_url,
+                waiting_queue,
+                notification_info,
             )

@@ -6,6 +6,7 @@ import ff_logging  # Custom logging module for formatted logging
 
 import calibre_info
 import ff_waiter
+import notification_wrapper
 import pushbullet_notification
 import regex_parsing
 import url_ingester
@@ -37,7 +38,7 @@ def parse_arguments() -> argparse.Namespace:
 
 def create_processes(
     email_info: url_ingester.EmailInfo,
-    pushbullet_info: pushbullet_notification.PushbulletNotification,
+    notification_info: notification_wrapper.NotificationWrapper,
     queues: dict[str, mp.Queue],
     waiting_queue: mp.Queue,
     cdb_info: calibre_info.CalibreInfo,
@@ -75,7 +76,7 @@ def create_processes(
             `email_watcher` and `waiting_watcher` processes, ready to be started.
     """
     email_watcher = mp.Process(
-        target=url_ingester.email_watcher, args=(email_info, pushbullet_info, queues)
+        target=url_ingester.email_watcher, args=(email_info, notification_info, queues)
     )
     waiting_watcher = mp.Process(
         target=ff_waiter.wait_processor, args=(queues, waiting_queue)
@@ -151,7 +152,12 @@ def main():
 
     # Initialize configurations for email, pushbullet notifications, and calibre database
     email_info = url_ingester.EmailInfo(args.config)
+    
+    notification_info = notification_wrapper.NotificationWrapper()
+    
+    # Create the Pushbullet Notifier
     pushbullet_info = pushbullet_notification.PushbulletNotification(args.config)
+    notification_info.add_notification_worker(pushbullet_info)
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing
@@ -162,7 +168,7 @@ def main():
 
         # Create and start email watcher and waiting watcher processes
         email_watcher, waiting_watcher = create_processes(
-            email_info, pushbullet_info, queues, waiting_queue, cdb_info
+            email_info, notification_info, queues, waiting_queue, cdb_info
         )
         processes = [email_watcher, waiting_watcher]
         signal.signal(signal.SIGTERM, signal_handler(processes, None))
@@ -170,7 +176,7 @@ def main():
 
         # Create worker tasks for processing URLs from each site
         workers = [
-            (queues[site], cdb_info, pushbullet_info, waiting_queue)
+            (queues[site], cdb_info, notification_info, waiting_queue)
             for site in queues.keys()
         ]
         with mp.Pool(len(queues)) as pool:

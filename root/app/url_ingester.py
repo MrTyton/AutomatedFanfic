@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from fanficfare import geturls
 import ff_logging
 import regex_parsing
-import pushbullet_notification
+import notification_wrapper
 
 
 @contextmanager
@@ -124,7 +124,7 @@ class EmailInfo:
 
 def email_watcher(
     email_info: EmailInfo,
-    pushbullet_info: pushbullet_notification.PushbulletNotification,
+    notification_info: notification_wrapper.NotificationWrapper,
     processor_queues: dict[str, mp.Queue],
 ):
     """
@@ -132,7 +132,7 @@ def email_watcher(
 
     Parameters:
         email_info (EmailInfo): The email information object.
-        pushbullet_info (pushbullet_notification.PushbulletNotification): Pushbullet notification object for alerts.
+        notification_info (notification_wrapper.NotificationWrapper): The notification information object.
         processor_queues (dict[str, mp.Queue]): A dictionary mapping site names to processor queues.
     """
     while True:
@@ -141,11 +141,12 @@ def email_watcher(
         for url in urls:
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
             ff_logging.log(
-                f"Adding {fanfic.url} to the {fanfic.site} processor queue", "HEADER"
+                f"Adding {fanfic.url} to the {fanfic.site} processor queue",
+                "HEADER",
             )
             # Workaround for ffnet issues
             if fanfic.site == "ffnet":
-                pushbullet_info.send_notification(
+                notification_info.send_notification(
                     "New Fanfiction Download", fanfic.url, fanfic.site
                 )
                 continue

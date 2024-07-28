@@ -2,19 +2,21 @@ from pushbullet import InvalidKeyError, Pushbullet, PushbulletError
 from requests.exceptions import ConnectionError
 
 import ff_logging
+import notification_base
 import tomllib
-import time
 
 
-class PushbulletNotification:
+class PushbulletNotification(notification_base.NotificationBase):
     # Initialization Function
     def __init__(self, toml_path: str):
+        super().__init__()
         # Load the configuration from the TOML file
         with open(toml_path, "rb") as file:
             config = tomllib.load(file)
-
         # Extract the Pushbullet configuration
-        pushbullet_config = config["pushbullet"]
+        pushbullet_config = config.get("pushbullet", None)
+        if pushbullet_config is None:
+            return
 
         # Check if Pushbullet is enabled
         self.enabled = pushbullet_config["enabled"]
@@ -38,23 +40,21 @@ class PushbulletNotification:
             self.enabled = False
 
     # Function to send a notification
-    def send_notification(self, title: str, body: str, site: str) -> None:
-        # Allows retry logic
-        attempts = 3
-        for i in range(attempts):
-            # If Pushbullet is enabled, send the notification
-            if self.enabled:
-                try:
-                    ff_logging.log(
-                        f"\t({site}) Sending Pushbullet notification: {title} - {body}",
-                        "OKGREEN",
-                    )
-                    self.pb.push_note(title, body)
-                    return
-                except PushbulletError as e:
-                    message = f"\tFailed to send Pushbullet notification: {e}"
-                    ff_logging.log_failure(message)
-                except ConnectionError as e:
-                    message = f"\tPushbullet notification failed with connection error, retrying: {e}"
-                    ff_logging.log_failure(message)
-                    time.sleep(30)
+    @notification_base.retry_decorator
+    def send_notification(self, title: str, body: str, site: str) -> bool:
+        # If Pushbullet is enabled, send the notification
+        try:
+            ff_logging.log(
+                f"\t({site}) Sending Pushbullet notification: {title} - {body}",
+                "OKGREEN",
+            )
+            self.pb.push_note(title, body)
+            return True
+        except PushbulletError as e:
+            message = f"\tFailed to send Pushbullet notification: {e}"
+            ff_logging.log_failure(message)
+            return False
+        except ConnectionError as e:
+            message = f"\tPushbullet notification failed with connection error, retrying: {e}"
+            ff_logging.log_failure(message)
+            return False
