@@ -138,6 +138,7 @@ def email_watcher(
     while True:
         # Get URLs from the email account
         urls = email_info.get_urls()
+        fics_to_add = set()
         for url in urls:
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
             ff_logging.log(
@@ -150,6 +151,8 @@ def email_watcher(
                     "New Fanfiction Download", fanfic.url, fanfic.site
                 )
                 continue
-            processor_queues[fanfic.site].put(fanfic)
+            fics_to_add.add(fanfic)
+        for fic in fics_to_add:
+            processor_queues[fic.site].put(fic)
         # Wait before checking the email account again
         time.sleep(email_info.sleep_time)
