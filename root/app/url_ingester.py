@@ -141,10 +141,7 @@ def email_watcher(
         fics_to_add = set()
         for url in urls:
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
-            ff_logging.log(
-                f"Adding {fanfic.url} to the {fanfic.site} processor queue",
-                "HEADER",
-            )
+
             # Workaround for ffnet issues
             if fanfic.site == "ffnet":
                 notification_info.send_notification(
@@ -153,6 +150,10 @@ def email_watcher(
                 continue
             fics_to_add.add(fanfic)
         for fic in fics_to_add:
+            ff_logging.log(
+                f"Adding {fic.url} to the {fic.site} processor queue",
+                "HEADER",
+            )
             processor_queues[fic.site].put(fic)
         # Wait before checking the email account again
         time.sleep(email_info.sleep_time)
