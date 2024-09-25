@@ -116,3 +116,14 @@ class FanficInfo:
             and self.site == other.site
             and self.calibre_id == other.calibre_id
         )
+
+    def __hash__(self) -> int:
+        """
+        Returns a hash value for this FanficInfo instance.
+
+        The hash value is computed based on the URL, site, and Calibre ID of the story.
+
+        Returns:
+            int: The hash value of the FanficInfo instance.
+        """
+        return hash((self.url, self.site, self.calibre_id))
