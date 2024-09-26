@@ -6,6 +6,7 @@ from system_utils import (
     get_files,
     copy_configs_to_temp_dir,
 )
+import os
 from typing import NamedTuple, Optional
 
 
@@ -28,25 +29,25 @@ class TestSystemUtils(unittest.TestCase):
     @parameterized.expand(
         [
             GetFilesTestCase(
-                directory_path="/fake/dir",
+                directory_path=os.path.join("fake", "dir"),
                 file_extension=None,
                 return_full_path=False,
                 expected_files=["file1.txt", "file2.py", "file3.txt"],
             ),
             GetFilesTestCase(
-                directory_path="/fake/dir",
+                directory_path=os.path.join("fake", "dir"),
                 file_extension=".txt",
                 return_full_path=False,
                 expected_files=["file1.txt", "file3.txt"],
             ),
             GetFilesTestCase(
-                directory_path="/fake/dir",
+                directory_path=os.path.join("fake", "dir"),
                 file_extension=None,
                 return_full_path=True,
                 expected_files=[
-                    "/fake/dir\\file1.txt",
-                    "/fake/dir\\file2.py",
-                    "/fake/dir\\file3.txt",
+                    os.path.join("fake", "dir", "file1.txt"),
+                    os.path.join("fake", "dir", "file2.py"),
+                    os.path.join("fake", "dir", "file3.txt"),
                 ],
             ),
         ]
@@ -76,25 +77,37 @@ class TestSystemUtils(unittest.TestCase):
     @parameterized.expand(
         [
             CopyConfigsTestCase(
-                default_ini="/fake/path/defaults.ini",
-                personal_ini="/fake/path/personal.ini",
+                default_ini=os.path.join("fake", "path", "defaults.ini"),
+                personal_ini=os.path.join("fake", "path", "personal.ini"),
                 expected_calls=[
-                    ("/fake/path/defaults.ini", "/fake/temp/dir\\defaults.ini"),
-                    ("/fake/path/personal.ini", "/fake/temp/dir\\personal.ini"),
+                    (
+                        os.path.join("fake", "path", "defaults.ini"),
+                        os.path.join("fake", "temp", "dir", "defaults.ini"),
+                    ),
+                    (
+                        os.path.join("fake", "path", "personal.ini"),
+                        os.path.join("fake", "temp", "dir", "personal.ini"),
+                    ),
                 ],
             ),
             CopyConfigsTestCase(
                 default_ini=None,
-                personal_ini="/fake/path/personal.ini",
+                personal_ini=os.path.join("fake", "path", "personal.ini"),
                 expected_calls=[
-                    ("/fake/path/personal.ini", "/fake/temp/dir\\personal.ini"),
+                    (
+                        os.path.join("fake", "path", "personal.ini"),
+                        os.path.join("fake", "temp", "dir", "personal.ini"),
+                    ),
                 ],
             ),
             CopyConfigsTestCase(
-                default_ini="/fake/path/defaults.ini",
+                default_ini=os.path.join("fake", "path", "defaults.ini"),
                 personal_ini=None,
                 expected_calls=[
-                    ("/fake/path/defaults.ini", "/fake/temp/dir\\defaults.ini"),
+                    (
+                        os.path.join("fake", "path", "defaults.ini"),
+                        os.path.join("fake", "temp", "dir", "defaults.ini"),
+                    ),
                 ],
             ),
         ]
@@ -111,7 +124,7 @@ class TestSystemUtils(unittest.TestCase):
         cdb = MagicMock()
         cdb.default_ini = default_ini
         cdb.personal_ini = personal_ini
-        copy_configs_to_temp_dir(cdb, "/fake/temp/dir")
+        copy_configs_to_temp_dir(cdb, os.path.join("fake", "temp", "dir"))
         for call_args in expected_calls:
             mock_copyfile.assert_any_call(*call_args)
         self.assertEqual(mock_copyfile.call_count, len(expected_calls))
