@@ -2,6 +2,7 @@ from typing import NamedTuple, Union
 from unittest.mock import MagicMock, mock_open, patch
 from parameterized import parameterized
 import unittest
+import os
 
 from calibre_info import CalibreInfo
 
@@ -30,29 +31,39 @@ class TestCalibreInfo(unittest.TestCase):
                         "path": "test_path",
                         "username": "test_username",
                         "password": "test_password",
-                        "default_ini": "test_default_ini\\defaults.ini",
-                        "personal_ini": "test_personal_ini\\personal.ini",
+                        "default_ini": os.path.join(
+                            "test_default_ini", "defaults.ini"
+                        ),
+                        "personal_ini": os.path.join(
+                            "test_personal_ini", "personal.ini"
+                        ),
                     }
                 },
             ),
             # Test case: default_ini and personal_ini already end with "/defaults.ini" and "/personal.ini"
             ConfigCase(
                 toml_path="path/to/yet_another_config.toml",
-                config="""
+                config=f"""
                 [calibre]
                 path = "yet_another_test_path"
                 username = "yet_another_test_username"
                 password = "yet_another_test_password"
-                default_ini = "yet_another_test_default_ini/defaults.ini"
-                personal_ini = "yet_another_test_personal_ini/personal.ini"
-                """,
+                default_ini = "{os.path.join("yet_another_test_default_ini", "defaults.ini")}"
+                personal_ini = "{os.path.join("yet_another_test_personal_ini","personal.ini")}"
+                """.replace(
+                    "\\", "\\\\"
+                ),  # Replace backslashes with double backslashes
                 expected_config={
                     "calibre": {
                         "path": "yet_another_test_path",
                         "username": "yet_another_test_username",
                         "password": "yet_another_test_password",
-                        "default_ini": "yet_another_test_default_ini/defaults.ini",
-                        "personal_ini": "yet_another_test_personal_ini/personal.ini",
+                        "default_ini": os.path.join(
+                            "yet_another_test_default_ini", "defaults.ini"
+                        ),
+                        "personal_ini": os.path.join(
+                            "yet_another_test_personal_ini", "personal.ini"
+                        ),
                     }
                 },
             ),
@@ -75,7 +86,14 @@ class TestCalibreInfo(unittest.TestCase):
     @patch("multiprocessing.Manager")
     @patch("calibre_info.ff_logging.log_failure")
     def test_calibre_info_init(
-        self, toml_path, config, expected_config, mock_log, mock_manager, mock_file, mock_isfile
+        self,
+        toml_path,
+        config,
+        expected_config,
+        mock_log,
+        mock_manager,
+        mock_file,
+        mock_isfile,
     ):
         mock_file.return_value.read.return_value = str(config).encode()
         mock_manager.return_value = MagicMock()
@@ -83,7 +101,9 @@ class TestCalibreInfo(unittest.TestCase):
         mock_isfile.return_value = True
         if isinstance(expected_config, dict):
             calibre_info = CalibreInfo(toml_path, mock_manager())
-            self.assertEqual(calibre_info.location, expected_config["calibre"]["path"])
+            self.assertEqual(
+                calibre_info.location, expected_config["calibre"]["path"]
+            )
             self.assertEqual(
                 calibre_info.username, expected_config["calibre"]["username"]
             )
@@ -91,7 +111,8 @@ class TestCalibreInfo(unittest.TestCase):
                 calibre_info.password, expected_config["calibre"]["password"]
             )
             self.assertEqual(
-                calibre_info.default_ini, expected_config["calibre"]["default_ini"]
+                calibre_info.default_ini,
+                expected_config["calibre"]["default_ini"],
             )
             self.assertEqual(
                 calibre_info.personal_ini,
@@ -177,7 +198,13 @@ class TestCalibreInfo(unittest.TestCase):
     @patch("multiprocessing.Manager")
     @patch("builtins.open", new_callable=mock_open)
     def test_str_representation(
-        self, location, username, password, expected_result, mock_file, mock_manager
+        self,
+        location,
+        username,
+        password,
+        expected_result,
+        mock_file,
+        mock_manager,
     ):
         mock_manager.return_value = MagicMock()
 
