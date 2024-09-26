@@ -19,9 +19,12 @@ import time
 import tomllib
 from typing import Callable, Any
 
+kSleepTime = 10
+kMaxAttempts = 3
+
 
 class NotificationBase:
-    def __init__(self, toml_path: str):
+    def __init__(self, toml_path: str, sleep_time: int = 10) -> None:
         """
         Initializes the NotificationBase class.
         """
@@ -57,11 +60,10 @@ def retry_decorator(func: Callable) -> Callable:
     """
 
     def wrapper(*args: Any, **kwargs: Any) -> None:
-        attempts = 3
-        for attempt in range(attempts):
+        for attempt in range(kMaxAttempts):
             if func(*args, **kwargs):
                 return
-            else:
-                time.sleep(10 * (attempt + 1))
+            elif attempt < kMaxAttempts - 1:
+                time.sleep(kSleepTime * (attempt + 1))
 
     return wrapper

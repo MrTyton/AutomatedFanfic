@@ -1,7 +1,6 @@
 from contextlib import contextmanager
 import os
-from os.path import isfile, join
-from shutil import copyfile, rmtree
+import shutil
 from tempfile import mkdtemp
 
 import calibre_info
@@ -29,7 +28,7 @@ def temporary_directory():
         yield temp_dir
     finally:
         # Ensure the temporary directory is removed upon exiting the context
-        rmtree(temp_dir)
+        shutil.rmtree(temp_dir)
 
 
 def get_files(directory_path, file_extension=None, return_full_path=False):
@@ -61,10 +60,10 @@ def get_files(directory_path, file_extension=None, return_full_path=False):
     # Iterate over each file in the directory
     for file in os.listdir(directory_path):
         # Construct the full path of the file
-        full_path = join(directory_path, file)
+        full_path = os.path.join(directory_path, file)
 
         # Check if the current item is a file and optionally if it matches the specified extension
-        if isfile(full_path) and (
+        if os.path.isfile(full_path) and (
             file_extension is None or file.endswith(f"{file_extension}")
         ):
             # Depending on return_full_path, append either the full path or just the file name
@@ -73,7 +72,9 @@ def get_files(directory_path, file_extension=None, return_full_path=False):
     return files
 
 
-def copy_configs_to_temp_dir(cdb: calibre_info.CalibreInfo, temp_dir: str) -> None:
+def copy_configs_to_temp_dir(
+    cdb: calibre_info.CalibreInfo, temp_dir: str
+) -> None:
     """
     Copies Calibre configuration files to a temporary directory.
 
@@ -82,6 +83,8 @@ def copy_configs_to_temp_dir(cdb: calibre_info.CalibreInfo, temp_dir: str) -> No
         temp_dir (str): The path to the temporary directory.
     """
     if cdb.default_ini:
-        copyfile(cdb.default_ini, join(temp_dir, "defaults.ini"))
+        shutil.copyfile(cdb.default_ini, os.path.join(temp_dir, "defaults.ini"))
     if cdb.personal_ini:
-        copyfile(cdb.personal_ini, join(temp_dir, "personal.ini"))
+        shutil.copyfile(
+            cdb.personal_ini, os.path.join(temp_dir, "personal.ini")
+        )
