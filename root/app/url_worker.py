@@ -11,7 +11,11 @@ import regex_parsing
 import system_utils
 
 
-def handle_failure(fanfic, pushbullet, queue):
+def handle_failure(
+    fanfic: fanfic_info.FanficInfo,
+    notification_info: notification_wrapper.NotificationWrapper,
+    queue: mp.Queue,
+) -> None:
     """
     Manages the failure of fanfic processing by either logging and notifying the
     failure or re-queuing the fanfic for another attempt.
@@ -25,8 +29,8 @@ def handle_failure(fanfic, pushbullet, queue):
     Args:
         fanfic (fanfic_info.FanficInfo): The fanfic information object,
             encapsulating details about the fanfic.
-        pushbullet (pushbullet_notification.PushbulletNotification): The object
-            used for sending notifications via Pushbullet.
+        notification_info (notification_wrapper.NotificationWrapper): The object
+            used for sending notifications via various services.
         queue (mp.Queue): The multiprocessing queue used for managing fanfics
             awaiting processing.
 
@@ -39,7 +43,7 @@ def handle_failure(fanfic, pushbullet, queue):
         ff_logging.log_failure(
             f"Maximum attempts reached for {fanfic.url}. Skipping."
         )
-        pushbullet.send_notification(
+        notification_info.send_notification(
             "Fanfiction Download Failed", fanfic.url, fanfic.site
         )
     else:
