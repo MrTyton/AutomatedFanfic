@@ -17,23 +17,23 @@ class TestRegexParsing(unittest.TestCase):
 
     @parameterized.expand(
         [
-            # Test case: Extract 'story' from 'story-name-1234'
+            # Test case: Extract 'story-name' from 'story-name-1234'
             CheckFilenameExtractionTestCase(
-                input="story-name-1234", expected="story"
+                input="story-name-1234", expected="story-name"
             ),
             # Test case: Extract 'author' from 'author-name'
             CheckFilenameExtractionTestCase(
                 input="author-name", expected="author"
             ),
-            # Test case: Extract 'story' from '/path/story-name-1234.epub'
+            # Test case: Extract 'story-name' from '/path/story-name-1234.epub'
             CheckFilenameExtractionTestCase(
                 input=os.path.join("path", "story-name-1234.epub"),
-                expected="story",
+                expected="story-name",
             ),
-            # Test case: Extract 'story' from '\\path\\to\\story-name-1234.epub'
+            # Test case: Extract 'story-name' from '\\path\\to\\story-name-1234.epub'
             CheckFilenameExtractionTestCase(
                 input=os.path.join("path", "to", "story-name-1234.epub"),
-                expected="story",
+                expected="story-name",
             ),
         ]
     )

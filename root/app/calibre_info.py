@@ -1,7 +1,6 @@
 import multiprocessing as mp
 import os
 from subprocess import call
-
 import ff_logging  # Custom logging module for failure logging
 import tomllib  # Module for parsing TOML files
 
@@ -24,30 +23,69 @@ class CalibreInfo:
             manager (mp.Manager): A multiprocessing.Manager object to manage shared
                 resources like locks.
         """
-        # Load configuration from TOML file
-        with open(toml_path, "rb") as file:
-            config = tomllib.load(file)
-
-        # Extract Calibre configuration section
-        calibre_config = config.get("calibre", {})
-
-        # Ensure the Calibre library path is specified
-        if not calibre_config.get("path"):
-            message = "Calibre library location not set in the config file."
-            ff_logging.log_failure(message)  # Log failure using custom logging module
-            raise ValueError(message)  # Raise an exception if the path is not set
-
-        # Store configuration details
-        self.location = calibre_config.get("path")
-        self.username = calibre_config.get("username")
-        self.password = calibre_config.get("password")
-        self.default_ini = self._get_ini_file(
-            calibre_config, "default_ini", "defaults.ini"
+        self.config = self._load_config(toml_path)
+        self.location = self._get_config_value(
+            "path", "Calibre library location not set in the config file."
         )
-        self.personal_ini = self._get_ini_file(
-            calibre_config, "personal_ini", "personal.ini"
+        self.username = self.config.get("username")
+        self.password = self.config.get("password")
+        self.default_ini = self._get_ini_file("default_ini", "defaults.ini")
+        self.personal_ini = self._get_ini_file("personal_ini", "personal.ini")
+        self.lock = manager.Lock()
+
+    def _load_config(self, toml_path: str) -> dict:
+        """
+        Loads the configuration from a TOML file.
+
+        Args:
+            toml_path (str): Path to the TOML configuration file.
+
+        Returns:
+            dict: The loaded configuration.
+        """
+        try:
+            with open(toml_path, "rb") as file:
+                return tomllib.load(file).get("calibre", {})
+        except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
+            message = f"Failed to load configuration from {toml_path}: {e}"
+            ff_logging.log_failure(message)
+            raise ValueError(message)
+
+    def _get_config_value(self, key: str, error_message: str) -> str:
+        """
+        Retrieves a configuration value, raising an error if it is not found.
+
+        Args:
+            key (str): The configuration key to retrieve.
+            error_message (str): The error message to log and raise if the key is not found.
+
+        Returns:
+            str: The configuration value.
+        """
+        value = self.config.get(key)
+        if not value:
+            ff_logging.log_failure(error_message)
+            raise ValueError(error_message)
+        return value
+
+    def _get_ini_file(self, config_key: str, default_filename: str) -> str:
+        """
+        Retrieves the ini file path from the configuration, verifying its existence.
+
+        Args:
+            config_key (str): The key in the configuration for the ini file path.
+            default_filename (str): The default filename to use if the path is not specified.
+
+        Returns:
+            str: The path to the ini file or an empty string if the file does not exist.
+        """
+        ini_file = self._append_filename(
+            self.config.get(config_key), default_filename
         )
-        self.lock = manager.Lock()  # Create a lock for thread/process safety
+        if ini_file and not os.path.isfile(ini_file):
+            ff_logging.log_failure(f"File {ini_file} does not exist.")
+            return ""
+        return ini_file
 
     @staticmethod
     def _append_filename(path: str, filename: str) -> str:
@@ -62,35 +100,8 @@ class CalibreInfo:
             str: The combined path with the filename appended.
         """
         if path and not path.endswith(filename):
-            return os.path.join(
-                path, filename
-            )  # Use os.path.join to ensure correct path formatting
+            return os.path.join(path, filename)
         return path
-
-    def _get_ini_file(
-        self, calibre_config: dict, config_key: str, default_filename: str
-    ) -> str:
-        """
-        Retrieves the ini file path from the configuration, verifying its existence.
-
-        Args:
-            calibre_config (dict): The Calibre configuration section from the TOML file.
-            config_key (str): The key in the configuration for the ini file path.
-            default_filename (str): The default filename to use if the path is not
-                specified.
-
-        Returns:
-            str: The path to the ini file or an empty string if the file does not exist.
-        """
-        ini_file = self._append_filename(
-            calibre_config.get(config_key), default_filename
-        )
-        if ini_file and not os.path.isfile(ini_file):
-            ff_logging.log_failure(
-                f"File {ini_file} does not exist."
-            )  # Log failure if file does not exist
-            return ""
-        return ini_file
 
     @staticmethod
     def check_installed() -> bool:
@@ -101,16 +112,10 @@ class CalibreInfo:
             bool: True if Calibre is installed, False otherwise.
         """
         try:
-            # Try to call calibredb
             with open(os.devnull, "w") as nullout:
                 call(["calibredb"], stdout=nullout, stderr=nullout)
             return True
-        except OSError:
-            # Log failure if OSError is caught
-            ff_logging.log_failure("Calibredb is not installed on this system.")
-            return False
-        except Exception as e:
-            # Log any other exceptions
+        except (OSError, Exception) as e:
             ff_logging.log_failure(f"Error checking Calibre installation: {e}")
             return False
 
@@ -122,9 +127,9 @@ class CalibreInfo:
         Returns:
             str: A string for command line arguments specifying Calibre library details.
         """
-        repr = f' --with-library "{self.location}"'  # Include library location
+        parts = [f' --with-library "{self.location}"']
         if self.username:
-            repr += f' --username "{self.username}"'  # Include username if specified
+            parts.append(f'--username "{self.username}"')
         if self.password:
-            repr += f' --password "{self.password}"'  # Include password if specified
-        return repr
+            parts.append(f'--password "{self.password}"')
+        return " ".join(parts)

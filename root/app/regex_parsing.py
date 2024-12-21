@@ -9,16 +9,24 @@ url_parsers = {
     "ao3": (re.compile(r"(archiveofourown.org/works/\d*)/?.*"), ""),
     "fictionpress": (re.compile(r"(fictionpress.com/s/\d*)/?.*"), ""),
     "royalroad": (re.compile(r"(royalroad.com/fiction/\d*)/?.*"), ""),
-    "sv": (re.compile(r"(forums.sufficientvelocity.com/threads/.*\.\d*)/?.*"), ""),
+    "sv": (
+        re.compile(r"(forums.sufficientvelocity.com/threads/.*\.\d*)/?.*"),
+        "",
+    ),
     "sb": (re.compile(r"(forums.spacebattles.com/threads/.*\.\d*)/?.*"), ""),
-    "qq": (re.compile(r"(forum.questionablequesting.com/threads/.*\.\d*)/?.*"), ""),
+    "qq": (
+        re.compile(r"(forum.questionablequesting.com/threads/.*\.\d*)/?.*"),
+        "",
+    ),
     "other": (re.compile(r"https?://(.*)"), ""),
 }
 
 # Define regular expressions for different story formats and errors
-story_name = re.compile(r"(.*?)-.*")
+story_name = re.compile(r"(.*)-[^-]*$")
 equal_chapters = re.compile(r".* already contains (\d+) chapters.")
-chapter_difference = re.compile(r".* contains (\d+) chapters, more than source: (\d+).")
+chapter_difference = re.compile(
+    r".* contains (\d+) chapters, more than source: (\d+)."
+)
 bad_chapters = re.compile(
     r".* doesn't contain any recognizable chapters, probably from a different source.  Not updating."
 )
@@ -102,7 +110,8 @@ def check_failure_regexes(output: str) -> bool:
         ),
     ]
     return not any(
-        check_regexes(output, regex, message) for regex, message in failure_regexes
+        check_regexes(output, regex, message)
+        for regex, message in failure_regexes
     )
 
 
@@ -129,7 +138,8 @@ def check_forceable_regexes(output: str) -> bool:
         ),
     ]
     return any(
-        check_regexes(output, regex, message) for regex, message in forceable_regexes
+        check_regexes(output, regex, message)
+        for regex, message in forceable_regexes
     )
 
 
