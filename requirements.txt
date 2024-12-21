@@ -9,7 +9,7 @@ html2text==2024.2.26
 html5lib==1.1
 idna==3.7
 parameterized==0.9.0
-pillow==10.3.0
+pillow==11.0.0
 pushbullet.py==0.12.0
 pyparsing==3.1.2
 python-dateutil==2.9.0.post0
