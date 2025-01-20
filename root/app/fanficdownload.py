@@ -6,8 +6,7 @@ import ff_logging  # Custom logging module for formatted logging
 
 import calibre_info
 import ff_waiter
-import notification_wrapper
-import pushbullet_notification
+import notification_base
 import regex_parsing
 import url_ingester
 import url_worker
@@ -38,7 +37,7 @@ def parse_arguments() -> argparse.Namespace:
 
 def create_processes(
     email_info: url_ingester.EmailInfo,
-    notification_info: notification_wrapper.NotificationWrapper,
+    notification_info: notification_base.NotificationBase,
     queues: dict[str, mp.Queue],
     waiting_queue: mp.Queue,
     cdb_info: calibre_info.CalibreInfo,
@@ -154,15 +153,8 @@ def main():
     # Initialize configurations for email, pushbullet notifications, and calibre database
     email_info = url_ingester.EmailInfo(args.config)
 
-    # Create the Notification Wrapper. All notifications are sent through this object,
-    # and the individual initializations of each class must be added to this object.
-    notification_info = notification_wrapper.NotificationWrapper()
-
-    # Create the Pushbullet Notifier
-    pushbullet_info = pushbullet_notification.PushbulletNotification(
-        args.config
-    )
-    notification_info.add_notification_worker(pushbullet_info)
+    # All notifications are handled through the Apprise library in the base class.
+    notification_info = notification_base.NotificationBase()
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing

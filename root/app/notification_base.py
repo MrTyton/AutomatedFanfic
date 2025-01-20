@@ -15,37 +15,16 @@ The derived classes are responsible for extracting their configuration informati
 TOML file that has been loaded into `self.config`.
 """
 
+import apprise
+import ff_logging
 import time
 import tomllib
+
 from typing import Callable, Any
+
 
 kSleepTime = 10
 kMaxAttempts = 3
-
-
-class NotificationBase:
-    def __init__(self, toml_path: str, sleep_time: int = 10) -> None:
-        """
-        Initializes the NotificationBase class.
-        """
-        self.enabled = False
-
-        # Load the configuration from the TOML file
-        with open(toml_path, "rb") as file:
-            self.config = tomllib.load(file)
-
-    def send_notification(self, title: str, body: str, site: str) -> bool:
-        """
-        Sends a notification. This method must be implemented in derived classes.
-
-        Args:
-            title (str): The title of the notification.
-            body (str): The body of the notification.
-            site (str): The site to which the notification is sent.
-        """
-        raise NotImplementedError(
-            "send_notification method must be implemented in derived classes"
-        )
 
 
 def retry_decorator(func: Callable) -> Callable:
@@ -59,11 +38,66 @@ def retry_decorator(func: Callable) -> Callable:
         Callable: The wrapped function with retry logic.
     """
 
-    def wrapper(*args: Any, **kwargs: Any) -> None:
+    def wrapper(*args: Any, **kwargs: Any) -> bool:
         for attempt in range(kMaxAttempts):
             if func(*args, **kwargs):
-                return
+                return True
             elif attempt < kMaxAttempts - 1:
                 time.sleep(kSleepTime * (attempt + 1))
+        return False
 
     return wrapper
+
+
+class NotificationBase:
+    def __init__(self, toml_path: str, sleep_time: int = 10) -> None:
+        """
+        Initializes the NotificationBase class.
+        """
+        self.enabled = False
+
+        # Load the configuration from the TOML file
+        with open(toml_path, "rb") as file:
+            self.config = tomllib.load(file)
+
+        # Load the Apprise configuration from the YAML file
+        notification_config = self.config.get("notification", {})
+        if not notification_config:
+            ff_logging.log_failure(
+                "Notification configuration is missing in the TOML file."
+            )
+            return
+        apprise_config_path = notification_config.get("apprise_config_path")
+        if not apprise_config_path:
+            ff_logging.log_failure(
+                "Apprise configuration path is missing in the TOML file."
+            )
+            return
+
+        self.apprise = apprise.Apprise()
+        self.apprise.add(apprise_config_path)
+        self.enabled = True
+
+    @retry_decorator
+    def send_notification(self, body: str, title: str, site: str) -> bool:
+        """
+        Sends a notification using Apprise.
+
+        Args:
+            message (str): The formatted notification message.
+
+        Returns:
+            bool: True if the notification was sent successfully, False otherwise.
+        """
+        if not self.enabled:
+            return False
+
+        try:
+            ff_logging.log(f"\t{site}: Sending notification: {title} - {body}")
+            return self.apprise.notify(
+                title=title,
+                body=body,
+            )
+        except Exception as e:
+            print(f"\t{site}: Failed to send notification: {e}")
+            return False

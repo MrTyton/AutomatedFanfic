@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from fanficfare import geturls
 import ff_logging
 import regex_parsing
-import notification_wrapper
+import notification_base
 
 
 @contextmanager
@@ -124,7 +124,7 @@ class EmailInfo:
 
 def email_watcher(
     email_info: EmailInfo,
-    notification_info: notification_wrapper.NotificationWrapper,
+    notification_info: notification_base.NotificationBase,
     processor_queues: dict[str, mp.Queue],
 ):
     """

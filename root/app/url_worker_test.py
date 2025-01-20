@@ -1,16 +1,13 @@
 from subprocess import STDOUT, PIPE
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
 
 import url_worker
 from fanfic_info import FanficInfo
 from calibre_info import CalibreInfo
-from notification_wrapper import NotificationWrapper
-import ff_logging
-import regex_parsing
-import system_utils
+from notification_base import NotificationBase
 from typing import NamedTuple, Optional
 
 
@@ -53,7 +50,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.reached_maximum_repeats.return_value = (
             reached_maximum_repeats
         )
-        mock_notification_info = MagicMock(spec=NotificationWrapper)
+        mock_notification_info = MagicMock(spec=NotificationBase)
         mock_queue = MagicMock(spec=mp.Queue)
         mock_queue.put = MagicMock()
 
@@ -213,7 +210,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.site = "site"
         mock_fanfic.title = "title"
         mock_cdb = MagicMock(spec=CalibreInfo)
-        mock_notification_info = MagicMock(spec=NotificationWrapper)
+        mock_notification_info = MagicMock(spec=NotificationBase)
         mock_queue = MagicMock(spec=mp.Queue)
 
         # Execution

@@ -6,14 +6,14 @@ import calibre_info
 import calibredb_utils
 import fanfic_info
 import ff_logging
-import notification_wrapper
+import notification_base
 import regex_parsing
 import system_utils
 
 
 def handle_failure(
     fanfic: fanfic_info.FanficInfo,
-    notification_info: notification_wrapper.NotificationWrapper,
+    notification_info: notification_base.NotificationBase,
     queue: mp.Queue,
 ) -> None:
     """
@@ -120,7 +120,7 @@ def process_fanfic_addition(
     site: str,
     path_or_url: str,
     waiting_queue: mp.Queue,
-    notification_info: notification_wrapper.NotificationWrapper,
+    notification_info: notification_base.NotificationBase,
 ) -> None:
     """
     Processes the addition of a fanfic to Calibre, updates the database, and sends
@@ -184,7 +184,7 @@ def process_fanfic_addition(
 def url_worker(
     queue: mp.Queue,
     cdb: calibre_info.CalibreInfo,
-    notification_info: notification_wrapper.NotificationWrapper,
+    notification_info: notification_base.NotificationBase,
     waiting_queue: mp.Queue,
 ) -> None:
     """
