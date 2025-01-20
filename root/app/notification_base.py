@@ -61,7 +61,7 @@ class NotificationBase:
             self.config = tomllib.load(file)
 
         # Load the Apprise configuration from the YAML file
-        notification_config = self.config.get("notification", {})
+        notification_config = self.config.get("notifications", {})
         if not notification_config:
             ff_logging.log_failure(
                 "Notification configuration is missing in the TOML file."
@@ -75,7 +75,12 @@ class NotificationBase:
             return
 
         self.apprise = apprise.Apprise()
-        self.apprise.add(apprise_config_path)
+        added = self.apprise.add(apprise_config_path)
+        if not added:
+            ff_logging.log_failure(
+                f"Failed to load Apprise configuration from {apprise_config_path}"
+            )
+            return
         self.enabled = True
 
     @retry_decorator

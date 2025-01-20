@@ -154,7 +154,7 @@ def main():
     email_info = url_ingester.EmailInfo(args.config)
 
     # All notifications are handled through the Apprise library in the base class.
-    notification_info = notification_base.NotificationBase()
+    notification_info = notification_base.NotificationBase(args.config)
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing
