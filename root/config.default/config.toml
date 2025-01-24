@@ -13,4 +13,4 @@ default_ini = ""
 personal_ini = ""
 
 [notifications]
-apprise_config_path = "/config/apprise.yaml"
+apprise_uri = "dbus://"

@@ -13,7 +13,7 @@ class TestNotificationBase(unittest.TestCase):
         patcher_toml_load = patch(
             "tomllib.load",
             return_value={
-                "notification": {"apprise_config_path": "path/to/apprise.yaml"}
+                "notifications": {"apprise_uri": "mock://apprise_uri"}
             },
         )
         patcher_apprise = patch("notification_base.apprise.Apprise")
@@ -26,7 +26,7 @@ class TestNotificationBase(unittest.TestCase):
         self.addCleanup(patcher_toml_load.stop)
         self.addCleanup(patcher_apprise.stop)
 
-        self.notification = NotificationBase("fake_path")
+        self.notification = NotificationBase("fake_path", sleep_time=10)
 
     def test_initialization(self):
         # Test initialization and config loading
@@ -36,7 +36,7 @@ class TestNotificationBase(unittest.TestCase):
         self.assertTrue(self.notification.enabled)
         self.assertEqual(
             self.notification.config,
-            {"notification": {"apprise_config_path": "path/to/apprise.yaml"}},
+            {"notifications": {"apprise_uri": "mock://apprise_uri"}},
         )
 
     def test_send_notification(self):
