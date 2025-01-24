@@ -67,18 +67,18 @@ class NotificationBase:
                 "Notification configuration is missing in the TOML file."
             )
             return
-        apprise_config_path = notification_config.get("apprise_config_path")
-        if not apprise_config_path:
+        apprise_uri = notification_config.get("apprise_uri")
+        if not apprise_uri:
             ff_logging.log_failure(
-                "Apprise configuration path is missing in the TOML file."
+                "Apprise configuration URI is missing in the TOML file."
             )
             return
 
         self.apprise = apprise.Apprise()
-        added = self.apprise.add(apprise_config_path)
+        added = self.apprise.add(apprise_uri)
         if not added:
             ff_logging.log_failure(
-                f"Failed to load Apprise configuration from {apprise_config_path}"
+                f"Failed to load Apprise notification URI from {apprise_uri}"
             )
             return
         self.enabled = True

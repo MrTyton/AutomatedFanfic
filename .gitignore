@@ -104,3 +104,6 @@ ENV/
 
 # Workspace
 .code-workspace
+
+#scratch folder for testing
+scratch/
