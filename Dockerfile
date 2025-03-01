@@ -44,8 +44,7 @@ RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.txt
 
 RUN echo "*** Install FFF ***" && \
     echo "FF Using Test Release"; \
-    python3 -m pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare; \
-    fi
+    python3 -m pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare
 
 RUN echo "**** cleanup ****" && \
     rm -rf \
