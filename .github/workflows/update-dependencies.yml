@@ -1,0 +1,134 @@
+name: Update All Dependencies
+
+on:
+  schedule:
+    - cron: '0 23 * * *' # Every day at 11pm UTC
+  workflow_dispatch:
+
+jobs:
+  check_and_update:
+    runs-on: ubuntu-latest
+    outputs:
+      fanficfare_version_new: ${{ steps.check_fanficfare.outputs.new_version }}
+      calibre_version_new: ${{ steps.check_calibre.outputs.new_version }}
+      made_changes: ${{ steps.commit_changes.outputs.committed }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check Fanficfare Version
+        id: check_fanficfare
+        run: |
+          echo "Checking Fanficfare version..."
+          CURRENT_FFF_VERSION=$(cat release-versions/fanficfare.txt)
+          echo "Current Fanficfare version: $CURRENT_FFF_VERSION"
+
+          # Fetch version from TestPyPI simple index (more reliable than pip search)
+          FFF_INDEX_URL="https://test.pypi.org/simple/fanficfare/"
+          LATEST_FFF_VERSION=$(curl -sSfL "$FFF_INDEX_URL" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
+
+          # Check if LATEST_FFF_VERSION is empty. If so, fail the workflow.
+          if [ -z "$LATEST_FFF_VERSION" ]; then
+            echo "::error::Could not determine the latest FanFicFare version from $FFF_INDEX_URL. Please check the URL and parsing logic."
+            exit 1
+          fi
+          echo "Latest Fanficfare version found: $LATEST_FFF_VERSION"
+
+          echo "fff_changed=false" >> $GITHUB_OUTPUT
+          echo "new_version=" >> $GITHUB_OUTPUT # Default empty
+
+          # Corrected variable check: use $LATEST_FFF_VERSION
+          if [ "$LATEST_FFF_VERSION" != "$CURRENT_FFF_VERSION" ]; then
+              echo "New Fanficfare version detected: $LATEST_FFF_VERSION"
+              echo "$LATEST_FFF_VERSION" > release-versions/fanficfare.txt
+              echo "fff_changed=true" >> $GITHUB_OUTPUT
+              echo "new_version=$LATEST_FFF_VERSION" >> $GITHUB_OUTPUT # Corrected typo
+          else
+              echo "FanFicFare is up to date."
+          fi
+
+      - name: Check Calibre Version
+        id: check_calibre
+        run: |
+          echo "Checking Calibre version..."
+          CURRENT_CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+          echo "Current Calibre version: $CURRENT_CALIBRE_VERSION"
+
+          LATEST_RELEASE_URL="https://api.github.com/repos/kovidgoyal/calibre/releases/latest"
+          LATEST_RELEASE_INFO=$(curl -sSfL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" "$LATEST_RELEASE_URL")
+
+          if [ -z "$LATEST_RELEASE_INFO" ]; then
+            echo "::error::Failed to fetch latest Calibre release info from $LATEST_RELEASE_URL"
+            exit 1
+          else
+            LATEST_CALIBRE_TAG=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
+            if [ "$LATEST_CALIBRE_TAG" == "null" ] || [ -z "$LATEST_CALIBRE_TAG" ]; then
+               echo "::error::Could not parse tag_name from Calibre release info."
+               exit 1
+            else
+               LATEST_CALIBRE_VERSION=${LATEST_CALIBRE_TAG#v} # Remove leading 'v'
+               echo "Latest Calibre version found: $LATEST_CALIBRE_VERSION (tag: $LATEST_CALIBRE_TAG)"
+            fi
+          fi
+
+          echo "calibre_changed=false" >> $GITHUB_OUTPUT
+          echo "new_version=" >> $GITHUB_OUTPUT # Default empty
+
+          if [ -n "$LATEST_CALIBRE_VERSION" ] && [ "$LATEST_CALIBRE_VERSION" != "$CURRENT_CALIBRE_VERSION" ]; then
+              echo "New Calibre version detected: $LATEST_CALIBRE_VERSION"
+              echo "$LATEST_CALIBRE_VERSION" > release-versions/calibre.txt
+              echo "calibre_changed=true" >> $GITHUB_OUTPUT
+              echo "new_version=$LATEST_CALIBRE_VERSION" >> $GITHUB_OUTPUT
+          else
+              echo "Calibre is up to date."
+          fi
+
+      - name: Update latest.txt if any changes were made
+        id: update_latest_txt
+        if: steps.check_fanficfare.outputs.fff_changed == 'true' || steps.check_calibre.outputs.calibre_changed == 'true'
+        run: |
+          echo "Updating latest.txt..."
+          date --iso-8601=date > release-versions/latest.txt
+          echo "updated=true" >> $GITHUB_OUTPUT
+
+      - name: Prepare Commit Message
+        id: prepare_commit
+        if: steps.update_latest_txt.outputs.updated == 'true'
+        run: |
+          COMMIT_MSG="Automated Dependency Updates"
+          if [ "${{ steps.check_fanficfare.outputs.fff_changed }}" == "true" ]; then
+            COMMIT_MSG="${COMMIT_MSG}\n\nFanFicFare updated to ${{ steps.check_fanficfare.outputs.new_version }}"
+          fi
+          if [ "${{ steps.check_calibre.outputs.calibre_changed }}" == "true" ]; then
+            COMMIT_MSG="${COMMIT_MSG}\n\nCalibre updated to ${{ steps.check_calibre.outputs.new_version }}"
+          fi
+          # Escape newlines for the commit action
+          echo "commit_message<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Commit changes
+        id: commit_changes
+        if: steps.update_latest_txt.outputs.updated == 'true'
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: github-actions[bot]
+          author_email: github-actions[bot]@users.noreply.github.com
+          message: ${{ steps.prepare_commit.outputs.commit_message }}
+          add: 'release-versions/latest.txt, release-versions/fanficfare.txt, release-versions/calibre.txt'
+
+      - name: Notify if no changes were committed
+        if: steps.update_latest_txt.outputs.updated == 'true' && steps.commit_changes.outputs.committed != 'true'
+        run: |
+            echo "::warning::No changes were committed despite updates being detected."
+            exit 1
+
+      - name: Notify if no updates were found
+        if: steps.update_latest_txt.outputs.updated != 'true'
+        run: echo "No updates were found for FanFicFare or Calibre."
