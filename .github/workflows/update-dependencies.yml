@@ -121,7 +121,7 @@ jobs:
           author_name: github-actions[bot]
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
-          add: 'release-versions/latest.txt, release-versions/fanficfare.txt, release-versions/calibre.txt'
+          add: 'release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt'
 
       - name: Notify if no changes were committed
         if: steps.update_latest_txt.outputs.updated == 'true' && steps.commit_changes.outputs.committed != 'true'
