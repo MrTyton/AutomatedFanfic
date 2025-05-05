@@ -1,61 +1,115 @@
 name: Publish Docker Image
 
 on:
-  workflow_dispatch:
-  push:
-    branches: 
-      - 'master'
-    paths:
-      - 'release-versions/latest.txt'
+  workflow_run:
+    workflows: ["Python application CI"] # Name of the CI workflow from python-app.yml
+    types:
+      - completed # Run when the CI workflow finishes
+    branches:
+      - master # Only run for the master branch
+
 env:
   IMAGE_REPO: mrtyton
   IMAGE_NAME: automated-ffdl
-  
+
 jobs:
   Push-New-Release-Version-Image:
+    # Only run this job if the triggering workflow (Python application CI) was successful
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      # Checkout the specific commit that triggered the successful CI workflow
+      # Fetch depth 2 is needed to compare with the parent commit
+      - name: Checkout code from triggering workflow
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2 # Fetch the commit and its parent
+
+      # Check if the specific file was changed in this commit
+      - name: Check for changes in latest.txt
+        id: check_file
+        run: |
+          # Compare the checked-out commit (HEAD) with its parent (HEAD~1)
+          # --quiet suppresses output, exit code 0 means no changes, 1 means changes
+          if git diff --quiet HEAD~1 HEAD -- 'release-versions/latest.txt'; then
+            echo "No changes detected in release-versions/latest.txt for commit ${{ github.event.workflow_run.head_sha }}."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected in release-versions/latest.txt for commit ${{ github.event.workflow_run.head_sha }}."
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+        # Handle potential error if it's the very first commit (no HEAD~1)
+        continue-on-error: true # Allow workflow to continue if git diff fails (e.g., first commit)
+
+      # --- Subsequent steps only run if the file changed ---
 
       - name: Set up QEMU
+        if: steps.check_file.outputs.changed == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Setup Docker Buildx
+        if: steps.check_file.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Get environment variables
-        uses: FranzDiebold/github-env-vars-action@v2
+      - name: Set Version Info and Tags
+        if: steps.check_file.outputs.changed == 'true'
+        id: set_versions
+        run: |
+          # Read versions, exit if files are missing or empty
+          if [ ! -s "release-versions/latest.txt" ]; then echo "::error::release-versions/latest.txt is missing or empty."; exit 1; fi
+          SPECIFIC_VERSION=$(cat release-versions/latest.txt)
+          echo "Read SPECIFIC_VERSION: $SPECIFIC_VERSION"
 
-      - name: Set version
-        run: |
-          RELEASE_VERSION=$(cat release-versions/latest.txt)
-          echo "RELEASE_VERSION=latest" >> $GITHUB_ENV
+          if [ ! -s "release-versions/calibre.txt" ]; then echo "::error::release-versions/calibre.txt is missing or empty."; exit 1; fi
           CALIBRE_VERSION=$(cat release-versions/calibre.txt)
-          echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
+          echo "Read CALIBRE_VERSION: $CALIBRE_VERSION"
+
+          if [ ! -s "release-versions/s6.txt" ]; then echo "::error::release-versions/s6.txt is missing or empty."; exit 1; fi
           S6_OVERLAY_VERSION=$(cat release-versions/s6.txt)
+          echo "Read S6_OVERLAY_VERSION: $S6_OVERLAY_VERSION"
+
+          # Set environment variables for subsequent steps
+          echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
+          echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "S6_OVERLAY_VERSION=$S6_OVERLAY_VERSION" >> $GITHUB_ENV
-      - name: Print image tag
+
+          # Define the tags to be pushed
+          TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}"
+          echo "TAGS=$TAGS" >> $GITHUB_ENV
+          echo "Docker Tags: $TAGS"
+
+      - name: Print image tags and versions
+        if: steps.check_file.outputs.changed == 'true'
         run: |
-          echo "Branch: $CI_ACTION_REF_NAME"
-          echo "Release Version: ${{ env.RELEASE_VERSION }}"
+          echo "Triggering Commit SHA: ${{ github.event.workflow_run.head_sha }}"
+          echo "Specific Version Tag: ${{ env.SPECIFIC_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
           echo "S6 Overlay Version: ${{ env.S6_OVERLAY_VERSION }}"
+          echo "Full Tags: ${{ env.TAGS }}"
+
       - name: Login to DockerHub
+        if: steps.check_file.outputs.changed == 'true'
         uses: docker/login-action@v3.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-          
+
       - name: Build and push
+        if: steps.check_file.outputs.changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.RELEASE_VERSION }}
+          tags: ${{ env.TAGS }}
           build-args: |
-            VERSION=${{ env.RELEASE_VERSION }}
+            VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
             S6_OVERLAY_VERSION=${{ env.S6_OVERLAY_VERSION }}
+
+      # Optional: Add a step to indicate skipping if the file didn't change
+      - name: Skipped build
+        if: steps.check_file.outputs.changed == 'false'
+        run: echo "Docker build skipped because release-versions/latest.txt was not changed in commit ${{ github.event.workflow_run.head_sha }}."
