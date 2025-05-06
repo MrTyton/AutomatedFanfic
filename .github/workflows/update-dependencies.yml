@@ -104,7 +104,7 @@ jobs:
         if: steps.check_fanficfare.outputs.fff_changed == 'true' || steps.check_calibre.outputs.calibre_changed == 'true'
         run: |
           echo "Updating latest.txt..."
-          date --iso-8601=date > release-versions/latest.txt
+          date --date='TZ="America/New_York" now' --iso-8601=date > release-versions/latest.txt
           echo "updated=true" >> $GITHUB_OUTPUT
 
       # Read the potentially updated latest.txt for output
@@ -161,3 +161,15 @@ jobs:
       # Pass the commit SHA that was created
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Inherit secrets if python-app ever needs them
+
+  # Third job: Build Docker by calling the reusable workflow
+  build_docker:
+    needs: [check_and_update, run_ci]
+    # Only run if a commit was made AND the CI job succeeded (implied by 'needs')
+    # We don't need to check latest_updated here, as docker-image won't run if CI failed anyway
+    if: needs.check_and_update.outputs.commit_sha != '' # && needs.run_ci.result == 'success' # Implied
+    uses: ./.github/workflows/docker-image.yml # Call local workflow
+    with:
+      # Pass the commit SHA - ESSENTIAL for building the right code
+      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
+    secrets: inherit # Pass secrets needed for Docker login
