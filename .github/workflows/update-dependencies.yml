@@ -156,7 +156,7 @@ jobs:
     # Only run if a commit was made in the previous job
     if: needs.check_and_update.outputs.commit_sha != ''
     # Add .yml to the workflow file path
-    uses: ./.github/workflows/python-app.yml@master
+    uses: ./.github/workflows/python-app.yml
     with:
       # Pass the commit SHA that was created
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
