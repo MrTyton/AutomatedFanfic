@@ -5,7 +5,7 @@ import ff_logging
 
 # Define regular expressions for different URL formats
 url_parsers = {
-    "ffnet": (re.compile(r"(fanfiction.net/s/\d*/?).*"), "www."),
+    "ffnet": (re.compile(r"(fanfiction.net/s/\d*(?:/\d+/?|/?)).*"), "www."),
     "ao3": (re.compile(r"(archiveofourown.org/works/\d*)/?.*"), ""),
     "fictionpress": (re.compile(r"(fictionpress.com/s/\d*)/?.*"), ""),
     "royalroad": (re.compile(r"(royalroad.com/fiction/\d*)/?.*"), ""),
