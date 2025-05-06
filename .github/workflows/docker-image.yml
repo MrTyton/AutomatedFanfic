@@ -249,7 +249,7 @@ jobs:
             Automated release for version ${{ env.SPECIFIC_VERSION }}.
             Built from commit: ${{ steps.get_sha.outputs.commit_sha }}
             Includes Calibre version: ${{ env.CALIBRE_VERSION }}
-            Includes FanFicFare version: ${{ env.FANFICFARE_VERSION }}${{ steps.generate_changelog.outputs.changelog_body }} # Append the generated changelog here
+            Includes FanFicFare version: ${{ env.FANFICFARE_VERSION }}${{ steps.generate_changelog.outputs.changelog_body }}
 
           draft: false
           prerelease: false
