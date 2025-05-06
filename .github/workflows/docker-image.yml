@@ -129,7 +129,8 @@ jobs:
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "S6_VERSION=$S6_VERSION" >> $GITHUB_ENV
-          TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}"
+          # Put specific version tag first, then latest
+          TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
           echo "Docker Tags: $TAGS"
 

@@ -1,5 +1,5 @@
 from subprocess import CalledProcessError, check_output, PIPE, STDOUT
-from typing import Optional
+from typing import Optional, Tuple
 
 import calibre_info
 import ff_logging
@@ -43,6 +43,7 @@ class FanficInfo:
         self.max_repeats = max_repeats
         self.behavior = behavior
         self.title = title
+        self.hail_mary = False
 
     def increment_repeat(self) -> None:
         """
@@ -51,20 +52,31 @@ class FanficInfo:
         if self.repeats is not None:
             self.repeats += 1
 
-    def reached_maximum_repeats(self) -> bool:
+    def reached_maximum_repeats(self) -> Tuple[bool, bool]:
         """
         Checks if the story has reached or exceeded the maximum number of repeats
         allowed.
 
         Returns:
-            bool: True if the maximum number of repeats has been reached or exceeded,
-            False otherwise.
+            bool: If maximum repeats have been reached.
+            bool: If hail-mary protocol is enabled.
         """
-        return (
-            self.repeats is not None
-            and self.max_repeats is not None
-            and self.repeats >= self.max_repeats
-        )
+        if self.repeats is None or self.max_repeats is None:
+            return False, False
+        if self.repeats >= self.max_repeats:
+            if self.hail_mary:
+                return True, True
+            else:
+                ff_logging.log(
+                    f"\t({self.site}) Story has been repeated {self.repeats} times. "
+                    f"Max repeats is {self.max_repeats}."
+                    "Enabling Hail-Mary protocol, will give one more attempt in 12 hours.",
+                    "WARNING",
+                )
+                self.hail_mary = True
+                self.repeats = 720
+                return True, False
+        return False, False
 
     def get_id_from_calibredb(
         self, calibre_information: calibre_info.CalibreInfo

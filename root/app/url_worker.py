@@ -38,13 +38,20 @@ def handle_failure(
         None
     """
     # Check if the fanfic has exceeded the maximum number of processing attempts
-    if fanfic.reached_maximum_repeats():
+    maximum_repeats, hail_mary = fanfic.reached_maximum_repeats()
+    if maximum_repeats and not hail_mary:
         # Log the failure and send a notification about this specific fanfic
         ff_logging.log_failure(
-            f"Maximum attempts reached for {fanfic.url}. Skipping."
+            f"Maximum attempts reached for {fanfic.url}. Activating Hail-Mary Protocol."
         )
         notification_info.send_notification(
-            "Fanfiction Download Failed", fanfic.url, fanfic.site
+            "Fanfiction Download Failed, trying Hail-Mary in 12 hours.",
+            fanfic.url,
+            fanfic.site,
+        )
+    elif maximum_repeats and hail_mary:
+        ff_logging.log_failure(
+            f"Hail Mary attempted for {fanfic.url} and failed."
         )
     else:
         # If not at maximum attempts, increment the attempt counter and re-queue the fanfic
