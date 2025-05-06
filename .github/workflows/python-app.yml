@@ -1,12 +1,20 @@
 name: Python application CI
 
 on:
-  # Keep existing triggers for PRs and direct pushes
+  # Keep existing triggers for PRs and direct pushes, but add path filters
   push:
     branches: [ "master" ]
+    paths:
+      - '**.py' # Any Python file in any directory
+      - 'requirements.txt' # Main requirements file
+      - '.github/workflows/python-app.yml' # Run if the workflow itself changes
   pull_request:
     branches: [ "master" ]
-  # Add the workflow_call trigger
+    paths:
+      - '**.py'
+      - 'requirements.txt'
+      - '.github/workflows/python-app.yml'
+  # workflow_call trigger remains unchanged and runs whenever called
   workflow_call:
     inputs:
       commit_sha:
