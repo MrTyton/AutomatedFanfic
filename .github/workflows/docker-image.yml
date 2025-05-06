@@ -44,33 +44,39 @@ jobs:
         run: |
           COMMIT_TO_CHECKOUT=""
           EVENT_NAME="${{ github.event_name }}"
-          INPUT_SHA="${{ inputs.commit_sha }}" # Capture input explicitly
+          # Capture input explicitly, provide empty string default if not present
+          INPUT_SHA="${{ inputs.commit_sha || '' }}" 
 
           echo "Event Name: $EVENT_NAME" # Debugging
-          echo "Input SHA (from workflow_call): $INPUT_SHA" # Debugging
+          echo "Input SHA (from inputs context): $INPUT_SHA" # Debugging
 
-          if [ "$EVENT_NAME" == "workflow_call" ]; then
-            if [ -n "$INPUT_SHA" ]; then
-              COMMIT_TO_CHECKOUT="$INPUT_SHA"
-              echo "Using commit SHA from workflow_call input: $COMMIT_TO_CHECKOUT"
-            else
-              # This case should ideally not happen if called correctly
-              echo "::error::Workflow called, but input commit_sha is empty. Falling back to github.sha."
-              COMMIT_TO_CHECKOUT="${{ github.sha }}" # Fallback, but indicates an issue
+          # Prioritize checking for the specific input from workflow_call
+          if [ -n "$INPUT_SHA" ]; then
+            # If input SHA exists, we assume it's the workflow_call from update-dependencies
+            COMMIT_TO_CHECKOUT="$INPUT_SHA"
+            echo "Using commit SHA from input: $COMMIT_TO_CHECKOUT (Assuming workflow_call trigger)"
+            # Optional: Add a warning if event name doesn't match expectation, but still use the SHA
+            if [ "$EVENT_NAME" != "workflow_call" ]; then
+               echo "::warning:: Input SHA is present, but event name is '$EVENT_NAME'. Proceeding with input SHA."
             fi
+          # If no input SHA, check other event types
           elif [ "$EVENT_NAME" == "workflow_run" ]; then
             COMMIT_TO_CHECKOUT="${{ github.event.workflow_run.head_sha }}"
             echo "Using commit SHA from workflow_run event: $COMMIT_TO_CHECKOUT"
           elif [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-            # Handle workflow_dispatch with or without ref input
+            # Handle workflow_dispatch (only runs if INPUT_SHA was empty)
             DISPATCH_REF="${{ github.event.inputs.ref || github.ref_name }}" # Use input ref or branch name
+            echo "Attempting checkout for workflow_dispatch (ref: $DISPATCH_REF)..."
             # Need to checkout first to resolve ref locally if it's not a full SHA
+            # This checkout is temporary just to get the SHA
+            git clone $GITHUB_SERVER_URL/$GITHUB_REPOSITORY . # Clone repo first
             git checkout $DISPATCH_REF
             COMMIT_TO_CHECKOUT=$(git rev-parse HEAD)
             echo "Using commit SHA for workflow_dispatch (ref: $DISPATCH_REF): $COMMIT_TO_CHECKOUT"
-            # Re-checkout later with the specific SHA if needed, but this gets the right SHA now
+            # Clean up temporary clone? Not strictly necessary as runner cleans up.
+            # The main checkout step later will handle the actual workspace state.
           else
-             echo "::error::Unknown event type: $EVENT_NAME. Cannot determine commit SHA."
+             echo "::error::Unknown event type '$EVENT_NAME' or unable to determine SHA."
              exit 1
           fi
 
