@@ -156,7 +156,10 @@ def main():
     ff_logging.set_verbose(args.verbose)
 
     # --- Log Version and General Configuration ---
-    ff_logging.log(f"Starting Fanfic Downloader v{__version__}")
+    ff_logging.log(f"Starting AutomatedFanfic v{__version__}")
+    ff_logging.log(
+        "For issues and updates, please go to https://github.com/MrTyton/AutomatedFanfic"
+    )
     ff_logging.log(f"Using configuration file: {args.config}")
 
     try:
