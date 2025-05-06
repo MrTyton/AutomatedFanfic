@@ -43,32 +43,51 @@ jobs:
         id: get_sha
         run: |
           COMMIT_TO_CHECKOUT=""
-          if [ "${{ github.event_name }}" == "workflow_call" ] && [ -n "${{ inputs.commit_sha }}" ]; then
-            COMMIT_TO_CHECKOUT="${{ inputs.commit_sha }}"
-            echo "Using commit SHA from workflow_call input: $COMMIT_TO_CHECKOUT"
-          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
+          EVENT_NAME="${{ github.event_name }}"
+          INPUT_SHA="${{ inputs.commit_sha }}" # Capture input explicitly
+
+          echo "Event Name: $EVENT_NAME" # Debugging
+          echo "Input SHA (from workflow_call): $INPUT_SHA" # Debugging
+
+          if [ "$EVENT_NAME" == "workflow_call" ]; then
+            if [ -n "$INPUT_SHA" ]; then
+              COMMIT_TO_CHECKOUT="$INPUT_SHA"
+              echo "Using commit SHA from workflow_call input: $COMMIT_TO_CHECKOUT"
+            else
+              # This case should ideally not happen if called correctly
+              echo "::error::Workflow called, but input commit_sha is empty. Falling back to github.sha."
+              COMMIT_TO_CHECKOUT="${{ github.sha }}" # Fallback, but indicates an issue
+            fi
+          elif [ "$EVENT_NAME" == "workflow_run" ]; then
             COMMIT_TO_CHECKOUT="${{ github.event.workflow_run.head_sha }}"
             echo "Using commit SHA from workflow_run event: $COMMIT_TO_CHECKOUT"
-          elif [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.ref }}" ]; then
-            # For workflow_dispatch, resolve the provided ref to a SHA
-            COMMIT_TO_CHECKOUT=$(git ls-remote https://github.com/${{ github.repository }}.git ${{ github.event.inputs.ref }} | awk '{print $1}')
-            echo "Using commit SHA from workflow_dispatch input ref (${{ github.event.inputs.ref }}): $COMMIT_TO_CHECKOUT"
-            if [ -z "$COMMIT_TO_CHECKOUT" ]; then
-              echo "::error::Could not resolve ref '${{ github.event.inputs.ref }}' to a commit SHA."
-              exit 1
-            fi
-          else # Should only be workflow_dispatch without ref input now
-            COMMIT_TO_CHECKOUT="${{ github.sha }}" # Default to current SHA for safety
-            echo "Using default commit SHA for dispatch: $COMMIT_TO_CHECKOUT"
+          elif [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            # Handle workflow_dispatch with or without ref input
+            DISPATCH_REF="${{ github.event.inputs.ref || github.ref_name }}" # Use input ref or branch name
+            # Need to checkout first to resolve ref locally if it's not a full SHA
+            git checkout $DISPATCH_REF
+            COMMIT_TO_CHECKOUT=$(git rev-parse HEAD)
+            echo "Using commit SHA for workflow_dispatch (ref: $DISPATCH_REF): $COMMIT_TO_CHECKOUT"
+            # Re-checkout later with the specific SHA if needed, but this gets the right SHA now
+          else
+             echo "::error::Unknown event type: $EVENT_NAME. Cannot determine commit SHA."
+             exit 1
           fi
+
+          if [ -z "$COMMIT_TO_CHECKOUT" ]; then
+             echo "::error::Failed to determine a valid commit SHA."
+             exit 1
+          fi
+
+          echo "Final commit_sha=$COMMIT_TO_CHECKOUT"
           echo "commit_sha=$COMMIT_TO_CHECKOUT" >> $GITHUB_OUTPUT
 
-      # Checkout the specific commit, fetch parent for diff (needed for workflow_run check)
+      # Checkout the specific commit determined above
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.get_sha.outputs.commit_sha }}
-          fetch-depth: 2 # Fetch commit and parent for diff
+          fetch-depth: 2 # Fetch commit and parent for diff (needed for workflow_run)
 
       # Check if the specific file was changed (only relevant for workflow_run)
       - name: Check for changes in latest.txt (for workflow_run)
