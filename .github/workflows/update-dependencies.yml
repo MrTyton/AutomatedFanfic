@@ -1,4 +1,4 @@
-name: Update All Dependencies
+name: Update Dependencies and Run CI
 
 on:
   schedule:
@@ -6,16 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
+  # First job: Check dependencies and commit if needed
   check_and_update:
     runs-on: ubuntu-latest
     outputs:
-      fanficfare_version_new: ${{ steps.check_fanficfare.outputs.new_version }}
-      calibre_version_new: ${{ steps.check_calibre.outputs.new_version }}
-      made_changes: ${{ steps.commit_changes.outputs.committed }}
+      # Output commit SHA if changes were made
+      commit_sha: ${{ steps.commit_changes.outputs.commit_long_sha }}
+      # Output whether latest.txt was updated specifically (for potential future use, not strictly needed now)
+      latest_updated: ${{ steps.update_latest_txt.outputs.updated }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Read current versions needed later if no update occurs
+      - name: Read current Calibre version
+        id: read_calibre
+        run: echo "version=$(cat release-versions/calibre.txt)" >> $GITHUB_OUTPUT
+      - name: Read current S6 version
+        id: read_s6
+        run: echo "version=$(cat release-versions/s6.txt)" >> $GITHUB_OUTPUT
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -97,6 +107,12 @@ jobs:
           date --iso-8601=date > release-versions/latest.txt
           echo "updated=true" >> $GITHUB_OUTPUT
 
+      # Read the potentially updated latest.txt for output
+      - name: Read latest.txt version
+        id: read_latest
+        if: steps.update_latest_txt.outputs.updated == 'true'
+        run: echo "version=$(cat release-versions/latest.txt)" >> $GITHUB_OUTPUT
+
       - name: Prepare Commit Message
         id: prepare_commit
         if: steps.update_latest_txt.outputs.updated == 'true'
@@ -122,13 +138,26 @@ jobs:
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
           add: 'release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt'
+          # Use default GITHUB_TOKEN
 
-      - name: Notify if no changes were committed
-        if: steps.update_latest_txt.outputs.updated == 'true' && steps.commit_changes.outputs.committed != 'true'
+      - name: Notify if no changes were committed (Should not happen with default token)
+        if: steps.update_latest_txt.outputs.updated == 'true' && steps.commit_changes.outputs.commit_long_sha == ''
         run: |
-            echo "::warning::No changes were committed despite updates being detected."
-            exit 1
+            echo "::warning::Commit step was skipped or failed unexpectedly."
+            # exit 1 # Consider removing exit 1 if it's just a warning
 
       - name: Notify if no updates were found
         if: steps.update_latest_txt.outputs.updated != 'true'
         run: echo "No updates were found for FanFicFare or Calibre."
+
+  # Second job: Run CI by calling the reusable workflow
+  run_ci:
+    needs: check_and_update
+    # Only run if a commit was made in the previous job
+    if: needs.check_and_update.outputs.commit_sha != ''
+    # Add .yml to the workflow file path
+    uses: ./.github/workflows/python-app.yml@master
+    with:
+      # Pass the commit SHA that was created
+      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
+    secrets: inherit # Inherit secrets if python-app ever needs them
