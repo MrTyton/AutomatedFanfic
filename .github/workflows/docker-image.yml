@@ -202,6 +202,7 @@ jobs:
         run: |
           echo "Fetching tags..."
           # Fetch tags and full history needed for log between tags
+          # Ensure fetch-depth is sufficient in checkout or unshallow here
           git fetch --tags --unshallow --force || git fetch --tags --force
 
           # Get the latest tag that looks like a version (e.g., v1.2.3) excluding the one we might create
@@ -215,7 +216,7 @@ jobs:
             echo "Found previous tag: $PREVIOUS_TAG. Generating filtered changelog since then."
             # Get commits since the previous tag affecting relevant files, excluding bot commits
             # Format: '* Commit subject (commit_sha)'
-            COMMITS=$(git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '*.py' 'Dockerfile' 'requirements.txt')
+            COMMITS=$(git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '**/*.py' 'Dockerfile' 'requirements.txt') # Changed *.py to **/*.py
             if [ -n "$COMMITS" ]; then
               CHANGELOG_ENTRIES="\n\n**Relevant Changes since ${PREVIOUS_TAG}:**\n${COMMITS}"
             else
@@ -224,9 +225,12 @@ jobs:
           else
             echo "No previous version tag found. Listing all relevant commits for initial release."
             # List all commits up to the current one affecting relevant files, excluding bot commits
-            COMMITS=$(git log ${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '*.py' 'Dockerfile' 'requirements.txt')
+            COMMITS=$(git log ${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '**/*.py' 'Dockerfile' 'requirements.txt') # Changed *.py to **/*.py
             if [ -n "$COMMITS" ]; then
               CHANGELOG_ENTRIES="\n\n**Relevant Commits in this release:**\n${COMMITS}"
+            else
+              # Added a message for the initial release case with no relevant commits
+              CHANGELOG_ENTRIES="\n\nNo relevant non-bot code changes (Python/Dockerfile/requirements.txt) detected in this initial release scope."
             fi
           fi
 
@@ -235,7 +239,7 @@ jobs:
           echo -e "${CHANGELOG_ENTRIES}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "Generated Changelog Body:"
-          echo "${CHANGELOG_ENTRIES}" # Print for debugging
+          echo -e "${CHANGELOG_ENTRIES}" # Print for debugging using echo -e
 
       - name: Create GitHub Release
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
