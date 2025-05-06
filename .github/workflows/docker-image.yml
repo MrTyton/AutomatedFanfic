@@ -117,18 +117,9 @@ jobs:
              echo "::error::release-versions/calibre.txt is missing or empty."
              exit 1
           fi
-          # S6 Version
-          if [ -s "release-versions/s6.txt" ]; then
-             S6_VERSION=$(cat release-versions/s6.txt)
-             echo "Read s6_version from file: $S6_VERSION"
-          else
-             echo "::error::release-versions/s6.txt is missing or empty."
-             exit 1
-          fi
           # Set environment variables for build args and tags
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
-          echo "S6_VERSION=$S6_VERSION" >> $GITHUB_ENV
           # Put specific version tag first, then latest
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
@@ -140,7 +131,6 @@ jobs:
           echo "Commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
           echo "Specific Version Tag: ${{ env.SPECIFIC_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
-          echo "S6 Overlay Version: ${{ env.S6_VERSION }}"
           echo "Full Tags: ${{ env.TAGS }}"
 
       - name: Login to DockerHub
@@ -160,10 +150,12 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.TAGS }}
+          # Add cache settings
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
-            S6_OVERLAY_VERSION=${{ env.S6_VERSION }}
 
       # Optional: Add a step to indicate skipping if the file didn't change on workflow_run
       - name: Skipped build on workflow_run

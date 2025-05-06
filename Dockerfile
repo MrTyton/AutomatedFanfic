@@ -3,8 +3,7 @@ FROM python:3-slim
 # set version label
 ARG VERSION
 ARG CALIBRE_RELEASE
-ARG S6_OVERLAY_VERSION
-LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE} S6_OVERLAY_VERSION: ${S6_OVERLAY_VERSION}"
+LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 
 ENV PUID="911" \
     PGID="911" \
@@ -54,11 +53,7 @@ RUN echo "**** cleanup ****" && \
 
 COPY root/ /
 
-#RUN chmod -R +777 /etc/cont-init.d/
-#RUN chmod -R +777 /etc/s6-overlay/
 RUN chmod -R +777 /app/
-
-# Temporary Workaround
 
 VOLUME /config
 
