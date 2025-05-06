@@ -155,29 +155,81 @@ class TestRegexParsing(unittest.TestCase):
             mock_log_failure.assert_not_called()
 
     class CheckGenerateFanficInfoTestCase(NamedTuple):
-        url: str
+        input_url: str
         expected_url: str
         expected_site: str
 
     @parameterized.expand(
         [
-            # Test case: Fanfiction.net URL
+            # Fanfiction.net tests
             CheckGenerateFanficInfoTestCase(
-                url="https://www.fanfiction.net/s/1234",
-                expected_url="www.fanfiction.net/s/1234",
+                input_url="https://www.fanfiction.net/s/12345678/1/Story-Title",
+                expected_url="www.fanfiction.net/s/12345678/1/",
                 expected_site="ffnet",
             ),
-            # Test case: Archive of Our Own URL
             CheckGenerateFanficInfoTestCase(
-                url="https://archiveofourown.org/works/5678",
-                expected_url="archiveofourown.org/works/5678",
+                input_url="http://fanfiction.net/s/12345678",
+                expected_url="www.fanfiction.net/s/12345678",
+                expected_site="ffnet",
+            ),
+            # Archive of Our Own (AO3) tests
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://archiveofourown.org/works/12345678/chapters/98765432",
+                expected_url="archiveofourown.org/works/12345678",
                 expected_site="ao3",
+            ),
+            CheckGenerateFanficInfoTestCase(
+                input_url="http://archiveofourown.org/works/12345678",
+                expected_url="archiveofourown.org/works/12345678",
+                expected_site="ao3",
+            ),
+            # FictionPress tests
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://www.fictionpress.com/s/12345678/1/Story-Title",
+                expected_url="fictionpress.com/s/12345678",
+                expected_site="fictionpress",
+            ),
+            # Royal Road tests
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://www.royalroad.com/fiction/12345/story-title/chapter/987654/chapter-title",
+                expected_url="royalroad.com/fiction/12345",
+                expected_site="royalroad",
+            ),
+            # Sufficient Velocity (SV) tests
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://forums.sufficientvelocity.com/threads/story-title.12345/page-10",
+                expected_url="forums.sufficientvelocity.com/threads/story-title.12345",
+                expected_site="sv",
+            ),
+            # SpaceBattles (SB) tests
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://forums.spacebattles.com/threads/story-title.12345/reader/",
+                expected_url="forums.spacebattles.com/threads/story-title.12345",
+                expected_site="sb",
+            ),
+            # Questionable Questing (QQ) tests
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://forum.questionablequesting.com/threads/story-title.12345/page-20",
+                expected_url="forum.questionablequesting.com/threads/story-title.12345",
+                expected_site="qq",
+            ),
+            # Other/Unknown URL test
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://www.some-other-site.com/story/123",
+                expected_url="www.some-other-site.com/story/123",  # Keeps the full path after domain
+                expected_site="other",
+            ),
+            CheckGenerateFanficInfoTestCase(
+                input_url="http://another-unknown.net/fic/abc",
+                expected_url="another-unknown.net/fic/abc",
+                expected_site="other",
             ),
         ]
     )
     def test_generate_FanficInfo_from_url(
         self, input_url, expected_url, expected_site
     ):
+        """Tests the generate_FanficInfo_from_url function for various sites."""
         fanfic = regex_parsing.generate_FanficInfo_from_url(input_url)
         self.assertIsInstance(fanfic, fanfic_info.FanficInfo)
         self.assertEqual(fanfic.url, expected_url)
