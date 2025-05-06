@@ -128,7 +128,7 @@ jobs:
           # Set environment variables for build args and tags
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
-          echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV # Add FanFicFare version to env
+          echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
           # Put specific version tag first, then latest
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
@@ -167,6 +167,48 @@ jobs:
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
 
+      # Updated step to generate filtered changelog including requirements.txt
+      - name: Generate Changelog
+        id: generate_changelog
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_COMMIT_SHA: ${{ steps.get_sha.outputs.commit_sha }}
+        run: |
+          echo "Fetching tags..."
+          git fetch --tags --force # Ensure all tags are available
+
+          # Get the latest tag that looks like a version (e.g., v1.2.3) excluding the one we might create
+          PREVIOUS_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v "v${{ env.SPECIFIC_VERSION }}$" | head -n 1)
+
+          CHANGELOG_ENTRIES=""
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "Found previous tag: $PREVIOUS_TAG. Generating filtered changelog since then."
+            # Get commits since the previous tag affecting Python files, Dockerfile, or requirements.txt
+            # Format: '* Commit subject (commit_sha)'
+            # Note the '--' separating revisions from paths
+            COMMITS=$(git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' -- '*.py' 'Dockerfile' 'requirements.txt')
+            if [ -n "$COMMITS" ]; then
+              CHANGELOG_ENTRIES="\n\n**Relevant Changes since ${PREVIOUS_TAG}:**\n${COMMITS}"
+            else
+              CHANGELOG_ENTRIES="\n\nNo relevant code changes (Python/Dockerfile/requirements.txt) detected since ${PREVIOUS_TAG}."
+            fi
+          else
+            echo "No previous version tag found. Listing all relevant commits for initial release."
+            # List all commits up to the current one affecting Python files, Dockerfile, or requirements.txt
+            COMMITS=$(git log ${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' -- '*.py' 'Dockerfile' 'requirements.txt')
+            if [ -n "$COMMITS" ]; then
+              CHANGELOG_ENTRIES="\n\n**Relevant Commits in this release:**\n${COMMITS}"
+            fi
+          fi
+
+          # Set the output, escaping for multiline
+          echo "changelog_body<<EOF" >> $GITHUB_OUTPUT
+          echo -e "${CHANGELOG_ENTRIES}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "Generated Changelog Body:"
+          echo "${CHANGELOG_ENTRIES}" # Print for debugging
+
       - name: Create GitHub Release
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: actions/create-release@v1
@@ -179,7 +221,7 @@ jobs:
             Automated release for version ${{ env.SPECIFIC_VERSION }}.
             Built from commit: ${{ steps.get_sha.outputs.commit_sha }}
             Includes Calibre version: ${{ env.CALIBRE_VERSION }}
-            Includes FanFicFare version: ${{ env.FANFICFARE_VERSION }} # Add FanFicFare version here
+            Includes FanFicFare version: ${{ env.FANFICFARE_VERSION }}${{ steps.generate_changelog.outputs.changelog_body }} # Append the generated changelog here
 
           draft: false
           prerelease: false
