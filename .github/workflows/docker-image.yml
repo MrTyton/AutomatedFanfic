@@ -167,36 +167,39 @@ jobs:
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
 
-      # Updated step to generate filtered changelog including requirements.txt
+      # Updated step to generate filtered changelog including requirements.txt and excluding bot commits
       - name: Generate Changelog
         id: generate_changelog
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for fetch
           CURRENT_COMMIT_SHA: ${{ steps.get_sha.outputs.commit_sha }}
         run: |
           echo "Fetching tags..."
-          git fetch --tags --force # Ensure all tags are available
+          # Fetch tags and full history needed for log between tags
+          git fetch --tags --unshallow --force || git fetch --tags --force
 
           # Get the latest tag that looks like a version (e.g., v1.2.3) excluding the one we might create
           PREVIOUS_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v "v${{ env.SPECIFIC_VERSION }}$" | head -n 1)
 
           CHANGELOG_ENTRIES=""
+          # Define bot author name
+          BOT_AUTHOR="github-actions[bot]"
+
           if [ -n "$PREVIOUS_TAG" ]; then
             echo "Found previous tag: $PREVIOUS_TAG. Generating filtered changelog since then."
-            # Get commits since the previous tag affecting Python files, Dockerfile, or requirements.txt
+            # Get commits since the previous tag affecting relevant files, excluding bot commits
             # Format: '* Commit subject (commit_sha)'
-            # Note the '--' separating revisions from paths
-            COMMITS=$(git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' -- '*.py' 'Dockerfile' 'requirements.txt')
+            COMMITS=$(git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '*.py' 'Dockerfile' 'requirements.txt')
             if [ -n "$COMMITS" ]; then
               CHANGELOG_ENTRIES="\n\n**Relevant Changes since ${PREVIOUS_TAG}:**\n${COMMITS}"
             else
-              CHANGELOG_ENTRIES="\n\nNo relevant code changes (Python/Dockerfile/requirements.txt) detected since ${PREVIOUS_TAG}."
+              CHANGELOG_ENTRIES="\n\nNo relevant non-bot code changes (Python/Dockerfile/requirements.txt) detected since ${PREVIOUS_TAG}."
             fi
           else
             echo "No previous version tag found. Listing all relevant commits for initial release."
-            # List all commits up to the current one affecting Python files, Dockerfile, or requirements.txt
-            COMMITS=$(git log ${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' -- '*.py' 'Dockerfile' 'requirements.txt')
+            # List all commits up to the current one affecting relevant files, excluding bot commits
+            COMMITS=$(git log ${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '*.py' 'Dockerfile' 'requirements.txt')
             if [ -n "$COMMITS" ]; then
               CHANGELOG_ENTRIES="\n\n**Relevant Commits in this release:**\n${COMMITS}"
             fi

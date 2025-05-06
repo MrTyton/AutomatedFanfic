@@ -2,6 +2,7 @@ import argparse
 import multiprocessing as mp
 import signal
 import sys
+import tomllib
 import ff_logging  # Custom logging module for formatted logging
 
 import calibre_info
@@ -11,6 +12,9 @@ import pushbullet_notification
 import regex_parsing
 import url_ingester
 import url_worker
+
+# Define the application version
+__version__ = "1.2.1"  # Or read from a file/package info if preferred
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -150,6 +154,53 @@ def main():
     args = parse_arguments()
 
     ff_logging.set_verbose(args.verbose)
+
+    # --- Log Version and General Configuration ---
+    ff_logging.log_info(f"Starting Fanfic Downloader v{__version__}")
+    ff_logging.log_info(f"Using configuration file: {args.config}")
+
+    try:
+        with open(args.config, "rb") as fp:
+            config_data = tomllib.load(fp)
+    except FileNotFoundError:
+        ff_logging.log_failure(
+            f"Configuration file not found at {args.config}", "ERROR"
+        )
+        sys.exit(1)
+    except Exception as e:
+        ff_logging.log_failure(
+            f"Error loading configuration file {args.config}: {e}", "ERROR"
+        )
+        sys.exit(1)
+
+    # --- Log Specific Configuration Details ---
+    ff_logging.log_info("--- Configuration Details ---")
+    try:
+        # Log Email Address
+        email_address = config_data.get("email", {}).get(
+            "email", "Not Specified"
+        )
+        ff_logging.log_info(f"  Email Account: {email_address}")
+
+        # Log Calibre Path
+        calibre_path = config_data.get("calibre", {}).get(
+            "path", "Not Specified"
+        )
+        ff_logging.log_info(f"  Calibre Path: {calibre_path}")
+
+        # Log Pushbullet Status
+        pb_enabled = config_data.get("pushbullet", {}).get(
+            "enabled", False
+        )  # Default to False if not found
+        pb_status = "Enabled" if pb_enabled else "Disabled"
+        ff_logging.log_info(f"  Pushbullet Notifications: {pb_status}")
+
+    except Exception as e:
+        ff_logging.log_warning(
+            f"  Error accessing specific configuration details: {e}"
+        )
+    ff_logging.log_info("-----------------------------")
+    # --- End Logging ---
 
     # Initialize configurations for email, pushbullet notifications, and calibre database
     email_info = url_ingester.EmailInfo(args.config)

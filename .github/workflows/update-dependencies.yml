@@ -124,6 +124,18 @@ jobs:
           echo "updated=true" >> $GITHUB_OUTPUT
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
+      - name: Update version in fanficdownload.py
+        if: steps.update_latest_txt.outputs.updated == 'true'
+        run: |
+          NEW_VERSION="${{ steps.update_latest_txt.outputs.new_version }}"
+          PYTHON_FILE="root/app/fanficdownload.py"
+          echo "Updating __version__ in $PYTHON_FILE to $NEW_VERSION"
+          # Use sed to find the line starting with __version__ and replace the string in quotes
+          # This assumes the version is enclosed in double quotes. Adjust if using single quotes.
+          sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" "$PYTHON_FILE"
+          echo "Verification:"
+          grep "__version__" "$PYTHON_FILE"
+
       - name: Prepare Commit Message
         id: prepare_commit
         # This step now depends on the output of the modified update_latest_txt step
@@ -151,7 +163,7 @@ jobs:
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
           # Ensure latest.txt is committed along with dependency files
-          add: 'release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt'
+          add: 'release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py'
 
       - name: Notify if no changes were committed (Should not happen with default token)
         if: steps.update_latest_txt.outputs.updated == 'true' && steps.commit_changes.outputs.commit_long_sha == ''
