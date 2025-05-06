@@ -8,6 +8,18 @@ on:
       - completed
     branches:
       - master
+  # Triggered explicitly by update-dependencies after successful CI
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: 'The specific commit SHA to checkout and build (from update-dependencies)'
+        required: true # Required when called
+        type: string
+    secrets: # Define secrets that can be passed by the caller
+      DOCKERHUB_USER:
+        required: true
+      DOCKERHUB_PASSWORD:
+        required: true
   # Allow manual triggering
   workflow_dispatch:
     inputs:
@@ -22,8 +34,8 @@ env:
 
 jobs:
   Push_Docker_Image:
-    # Run only if the triggering CI workflow was successful
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Run if dispatched OR if workflow_run succeeded OR if called (implied)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       # Determine the commit SHA based on trigger type
@@ -31,7 +43,10 @@ jobs:
         id: get_sha
         run: |
           COMMIT_TO_CHECKOUT=""
-          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+          if [ "${{ github.event_name }}" == "workflow_call" ] && [ -n "${{ inputs.commit_sha }}" ]; then
+            COMMIT_TO_CHECKOUT="${{ inputs.commit_sha }}"
+            echo "Using commit SHA from workflow_call input: $COMMIT_TO_CHECKOUT"
+          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
             COMMIT_TO_CHECKOUT="${{ github.event.workflow_run.head_sha }}"
             echo "Using commit SHA from workflow_run event: $COMMIT_TO_CHECKOUT"
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.ref }}" ]; then
@@ -48,15 +63,15 @@ jobs:
           fi
           echo "commit_sha=$COMMIT_TO_CHECKOUT" >> $GITHUB_OUTPUT
 
-      # Checkout the specific commit, fetch parent for diff
+      # Checkout the specific commit, fetch parent for diff (needed for workflow_run check)
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.get_sha.outputs.commit_sha }}
           fetch-depth: 2 # Fetch commit and parent for diff
 
-      # Check if the specific file was changed in this commit (only relevant for workflow_run)
-      - name: Check for changes in latest.txt
+      # Check if the specific file was changed (only relevant for workflow_run)
+      - name: Check for changes in latest.txt (for workflow_run)
         id: check_file
         # Only run this check if triggered by workflow_run
         if: github.event_name == 'workflow_run'
@@ -71,19 +86,19 @@ jobs:
           fi
         continue-on-error: true # Handle first commit case
 
-      # --- Subsequent steps only run if dispatched OR if file changed on workflow_run ---
+      # --- Subsequent steps run if dispatched OR called OR if file changed on workflow_run ---
       - name: Set up QEMU
-        # Run if dispatched OR if workflow_run AND file changed
-        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
+        # Run if dispatched OR called OR if workflow_run AND file changed
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Setup Docker Buildx
-        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
 
       # Determine versions by reading files (always run if build proceeds)
       - name: Determine Versions and Tags from Files
-        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         id: set_versions
         run: |
           # Specific Version
@@ -94,37 +109,32 @@ jobs:
             echo "::error::release-versions/latest.txt is missing or empty."
             exit 1
           fi
-
           # Calibre Version
           if [ -s "release-versions/calibre.txt" ]; then
-            CALIBRE_VERSION=$(cat release-versions/calibre.txt)
-            echo "Read calibre_version from file: $CALIBRE_VERSION"
+             CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+             echo "Read calibre_version from file: $CALIBRE_VERSION"
           else
-            echo "::error::release-versions/calibre.txt is missing or empty."
-            exit 1
+             echo "::error::release-versions/calibre.txt is missing or empty."
+             exit 1
           fi
-
           # S6 Version
           if [ -s "release-versions/s6.txt" ]; then
-            S6_VERSION=$(cat release-versions/s6.txt)
-            echo "Read s6_version from file: $S6_VERSION"
+             S6_VERSION=$(cat release-versions/s6.txt)
+             echo "Read s6_version from file: $S6_VERSION"
           else
-            echo "::error::release-versions/s6.txt is missing or empty."
-            exit 1
+             echo "::error::release-versions/s6.txt is missing or empty."
+             exit 1
           fi
-
           # Set environment variables for build args and tags
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "S6_VERSION=$S6_VERSION" >> $GITHUB_ENV
-
-          # Define the tags
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
           echo "Docker Tags: $TAGS"
 
       - name: Print image tags and versions
-        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         run: |
           echo "Commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
           echo "Specific Version Tag: ${{ env.SPECIFIC_VERSION }}"
@@ -133,14 +143,15 @@ jobs:
           echo "Full Tags: ${{ env.TAGS }}"
 
       - name: Login to DockerHub
-        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/login-action@v3.0.0
         with:
+          # Use secrets passed from the caller (workflow_call) or repository secrets (workflow_dispatch/workflow_run)
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Build and push
-        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
