@@ -17,23 +17,46 @@ from typing import NamedTuple, Optional
 class TestUrlWorker(unittest.TestCase):
     class HandleFailureTestCase(NamedTuple):
         reached_maximum_repeats: bool
+        hail_mary: bool  # Added hail_mary flag
         expected_log_failure_call: bool
+        expected_log_message: Optional[str]  # Specific message expected
         expected_notification_call: bool
+        expected_notification_title: Optional[
+            str
+        ]  # Specific notification title
         expected_queue_put_call: bool
 
     @parameterized.expand(
         [
-            HandleFailureTestCase(
-                reached_maximum_repeats=True,
-                expected_log_failure_call=True,
-                expected_notification_call=True,
-                expected_queue_put_call=False,
-            ),
+            # Case 1: Not reached maximum repeats
             HandleFailureTestCase(
                 reached_maximum_repeats=False,
+                hail_mary=False,
                 expected_log_failure_call=False,
+                expected_log_message=None,
                 expected_notification_call=False,
+                expected_notification_title=None,
                 expected_queue_put_call=True,
+            ),
+            # Case 2: Reached maximum repeats, hail_mary not yet attempted
+            HandleFailureTestCase(
+                reached_maximum_repeats=True,
+                hail_mary=False,
+                expected_log_failure_call=True,
+                expected_log_message="Maximum attempts reached for http://example.com/story. Activating Hail-Mary Protocol.",
+                expected_notification_call=True,
+                expected_notification_title="Fanfiction Download Failed, trying Hail-Mary in 12 hours.",
+                expected_queue_put_call=False,
+            ),
+            # Case 3: Reached maximum repeats, hail_mary already attempted
+            HandleFailureTestCase(
+                reached_maximum_repeats=True,
+                hail_mary=True,
+                expected_log_failure_call=True,
+                expected_log_message="Hail Mary attempted for http://example.com/story and failed.",
+                expected_notification_call=False,
+                expected_notification_title=None,
+                expected_queue_put_call=False,
             ),
         ]
     )
@@ -41,8 +64,11 @@ class TestUrlWorker(unittest.TestCase):
     def test_handle_failure(
         self,
         reached_maximum_repeats,
+        hail_mary,
         expected_log_failure_call,
+        expected_log_message,
         expected_notification_call,
+        expected_notification_title,
         expected_queue_put_call,
         mock_log_failure,
     ):
@@ -50,12 +76,17 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "site"
+        # Mock reached_maximum_repeats to return a tuple
         mock_fanfic.reached_maximum_repeats.return_value = (
-            reached_maximum_repeats
+            reached_maximum_repeats,
+            hail_mary,
         )
         mock_notification_info = MagicMock(spec=NotificationWrapper)
         mock_queue = MagicMock(spec=mp.Queue)
         mock_queue.put = MagicMock()
+        mock_fanfic.increment_repeat = (
+            MagicMock()
+        )  # Ensure increment_repeat is mocked
 
         # Execution
         url_worker.handle_failure(
@@ -64,22 +95,22 @@ class TestUrlWorker(unittest.TestCase):
 
         # Assertions
         if expected_log_failure_call:
-            mock_log_failure.assert_called_once_with(
-                f"Maximum attempts reached for {mock_fanfic.url}. Skipping."
-            )
+            mock_log_failure.assert_called_once_with(expected_log_message)
         else:
             mock_log_failure.assert_not_called()
 
         if expected_notification_call:
             mock_notification_info.send_notification.assert_called_once_with(
-                "Fanfiction Download Failed", mock_fanfic.url, mock_fanfic.site
+                expected_notification_title, mock_fanfic.url, mock_fanfic.site
             )
         else:
             mock_notification_info.send_notification.assert_not_called()
 
         if expected_queue_put_call:
+            mock_fanfic.increment_repeat.assert_called_once()  # Check increment call
             mock_queue.put.assert_called_once_with(mock_fanfic)
         else:
+            mock_fanfic.increment_repeat.assert_not_called()  # Check increment not called
             mock_queue.put.assert_not_called()
 
     class GetPathOrUrlTestCase(NamedTuple):
@@ -172,43 +203,72 @@ class TestUrlWorker(unittest.TestCase):
 
     class ProcessFanficAdditionTestCase(NamedTuple):
         calibre_id: Optional[int]
-        get_id_from_calibredb: bool
-        expected_log_failure_call: bool
-        success_notification_call: bool
+        get_id_from_calibredb_returns: bool  # Renamed for clarity
+        expected_remove_story_call: bool
+        expected_handle_failure_call: bool  # Check if handle_failure is called
+        expected_success_notification_call: bool  # Renamed for clarity
 
     @parameterized.expand(
         [
+            # Case 1: Existing story, add fails
             ProcessFanficAdditionTestCase(
                 calibre_id=123,
-                get_id_from_calibredb=False,
-                expected_log_failure_call=True,
-                success_notification_call=False,
+                get_id_from_calibredb_returns=False,
+                expected_remove_story_call=True,
+                expected_handle_failure_call=True,
+                expected_success_notification_call=False,
             ),
+            # Case 2: New story, add succeeds
             ProcessFanficAdditionTestCase(
                 calibre_id=None,
-                get_id_from_calibredb=True,
-                expected_log_failure_call=False,
-                success_notification_call=True,
+                get_id_from_calibredb_returns=True,
+                expected_remove_story_call=False,
+                expected_handle_failure_call=False,
+                expected_success_notification_call=True,
+            ),
+            # Case 3: Existing story, add succeeds
+            ProcessFanficAdditionTestCase(
+                calibre_id=123,
+                get_id_from_calibredb_returns=True,
+                expected_remove_story_call=True,
+                expected_handle_failure_call=False,
+                expected_success_notification_call=True,
+            ),
+            # Case 4: New story, add fails
+            ProcessFanficAdditionTestCase(
+                calibre_id=None,
+                get_id_from_calibredb_returns=False,
+                expected_remove_story_call=False,
+                expected_handle_failure_call=True,
+                expected_success_notification_call=False,
             ),
         ]
     )
+    @patch("url_worker.handle_failure")  # Patch handle_failure directly
     @patch("calibredb_utils.add_story")
     @patch("calibredb_utils.remove_story")
-    @patch("ff_logging.log_failure")
+    @patch(
+        "ff_logging.log_failure"
+    )  # Keep patching log_failure for the specific log inside this function
     def test_process_fanfic_addition(
         self,
         calibre_id,
-        get_id_from_calibredb,
-        expected_log_failure_call,
-        success_notification_call,
-        mock_log_failure,
+        get_id_from_calibredb_returns,
+        expected_remove_story_call,
+        expected_handle_failure_call,
+        expected_success_notification_call,
+        mock_log_failure,  # Keep this mock
         mock_remove_story,
         mock_add_story,
+        mock_handle_failure,  # Add mock for handle_failure
     ):
         # Setup
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.calibre_id = calibre_id
-        mock_fanfic.get_id_from_calibredb.return_value = get_id_from_calibredb
+        # Configure the return value of get_id_from_calibredb
+        mock_fanfic.get_id_from_calibredb.return_value = (
+            get_id_from_calibredb_returns
+        )
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "site"
         mock_fanfic.title = "title"
@@ -228,7 +288,7 @@ class TestUrlWorker(unittest.TestCase):
         )
 
         # Assertions
-        if calibre_id:
+        if expected_remove_story_call:
             mock_remove_story.assert_called_once_with(
                 fanfic_info=mock_fanfic, calibre_info=mock_cdb
             )
@@ -241,25 +301,34 @@ class TestUrlWorker(unittest.TestCase):
             calibre_info=mock_cdb,
         )
 
-        if expected_log_failure_call:
-            self.assertEqual(mock_log_failure.call_count, 2)
-            mock_log_failure.assert_any_call(
+        # Check if get_id_from_calibredb was called after add_story
+        mock_fanfic.get_id_from_calibredb.assert_called_once_with(mock_cdb)
+
+        if expected_handle_failure_call:
+            # Check if the specific log message before handle_failure was called
+            mock_log_failure.assert_called_once_with(
                 "\t(site) Failed to add path_or_url to Calibre"
             )
-            mock_log_failure.assert_any_call(
-                "Maximum attempts reached for http://example.com/story. Skipping."
+            # Check if handle_failure was called
+            mock_handle_failure.assert_called_once_with(
+                mock_fanfic, mock_notification_info, mock_queue
             )
+            # Ensure success notification was NOT called if handle_failure was called
+            mock_notification_info.send_notification.assert_not_called()
         else:
+            # Ensure log_failure was NOT called if addition succeeded
             mock_log_failure.assert_not_called()
-
-        if success_notification_call:
-            mock_notification_info.send_notification.assert_called_once_with(
-                "New Fanfiction Download", mock_fanfic.title, "site"
-            )
-        else:
-            mock_notification_info.send_notification.assert_called_once_with(
-                "Fanfiction Download Failed", "http://example.com/story", "site"
-            )
+            # Ensure handle_failure was NOT called
+            mock_handle_failure.assert_not_called()
+            # Check if the success notification was called
+            if expected_success_notification_call:
+                mock_notification_info.send_notification.assert_called_once_with(
+                    "New Fanfiction Download", mock_fanfic.title, "site"
+                )
+            else:
+                # This case shouldn't happen with the current logic (success add but no success notification expected)
+                # but included for completeness.
+                mock_notification_info.send_notification.assert_not_called()
 
 
 if __name__ == "__main__":

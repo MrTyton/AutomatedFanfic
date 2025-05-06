@@ -9,6 +9,7 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
 
 - [AutomatedFanfic](#automatedfanfic)
   - [Site Support](#site-support)
+  - [Repeats](#repeats)
   - [Calibre Setup](#calibre-setup)
   - [Execution](#execution)
     - [How to Install - Docker](#how-to-install---docker)
@@ -23,6 +24,12 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
 This program will support any website that FanFicFare will support. However, it does make use of multi-processing, spawning a different "watcher" for each website. This list is currently hard-coded, and anything not in the list is treated as part of a single queue "other".
 
 If you wish to add more watchers for different websites, then open an issue or submit a request to modify [this](https://github.com/MrTyton/AutomatedFanfic/blob/master/root/app/regex_parsing.py#L7) dictionary.
+
+## Repeats
+
+The script will try to download every story maximum of 11 times, waiting an additional minute for each time - so on the first failure, it will wait for 1 minute, then on the second failure, it will wait for 2. The 11th time is special, as it activates a Hail-Mary protocol, which will wait for an additional 12 hours before continuing. This is to try and get around server instability, which can happen on sites like AO3.
+
+If you have notifications enabled, it will send a notification of the failure for the penultimate failure, before the Hail-Mary - but it will not send a notification if the Hail-Mary fails, only if it succeeds.
 
 ## Calibre Setup
 
