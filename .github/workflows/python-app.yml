@@ -1,13 +1,18 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
 name: Python application CI
 
 on:
+  # Keep existing triggers for PRs and direct pushes
   push:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  # Add the workflow_call trigger
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: 'The specific commit SHA to checkout and test'
+        required: true
+        type: string
 
 permissions:
   contents: read # Needed to checkout the code
@@ -19,16 +24,19 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        # Checkout the specific SHA if triggered by workflow_call, otherwise default behavior
+        ref: ${{ github.event_name == 'workflow_call' && inputs.commit_sha || github.ref }}
 
     - name: Set up Python 3.12
-      uses: actions/setup-python@v5 # Use latest major version
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.12" # Use major.minor version
+        python-version: "3.12"
 
     - name: Cache pip dependencies
       uses: actions/cache@v4
       with:
-        path: ~/.cache/pip # The path pip uses for caching downloads
+        path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
@@ -53,6 +61,7 @@ jobs:
         echo "Flake8 checks complete."
 
     - name: Test with pytest
+      id: pytest # Give step an ID to reference outcome if needed
       run: |
         # Create directory for test results if it doesn't exist
         mkdir -p junit
@@ -61,7 +70,7 @@ jobs:
     - name: Upload pytest test results
       uses: actions/upload-artifact@v4
       with:
-        name: pytest-results-${{ matrix.python-version }}
+        name: pytest-results-3.12
         path: junit/test-results.xml
       # Always run this step to upload results even if tests fail
       if: always()

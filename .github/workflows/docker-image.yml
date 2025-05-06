@@ -1,102 +1,146 @@
 name: Publish Docker Image
 
 on:
+  # Trigger automatically AFTER "Python application CI" completes successfully on master
   workflow_run:
-    workflows: ["Python application CI"] # Name of the CI workflow from python-app.yml
+    workflows: ["Python application CI"]
     types:
-      - completed # Run when the CI workflow finishes
+      - completed
     branches:
-      - master # Only run for the master branch
+      - master
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to build (default: master)'
+        required: false
+        default: 'master'
 
 env:
   IMAGE_REPO: mrtyton
   IMAGE_NAME: automated-ffdl
 
 jobs:
-  Push-New-Release-Version-Image:
-    # Only run this job if the triggering workflow (Python application CI) was successful
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  Push_Docker_Image:
+    # Run only if the triggering CI workflow was successful
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      # Checkout the specific commit that triggered the successful CI workflow
-      # Fetch depth 2 is needed to compare with the parent commit
-      - name: Checkout code from triggering workflow
+      # Determine the commit SHA based on trigger type
+      - name: Determine Commit SHA
+        id: get_sha
+        run: |
+          COMMIT_TO_CHECKOUT=""
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            COMMIT_TO_CHECKOUT="${{ github.event.workflow_run.head_sha }}"
+            echo "Using commit SHA from workflow_run event: $COMMIT_TO_CHECKOUT"
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.ref }}" ]; then
+            # For workflow_dispatch, resolve the provided ref to a SHA
+            COMMIT_TO_CHECKOUT=$(git ls-remote https://github.com/${{ github.repository }}.git ${{ github.event.inputs.ref }} | awk '{print $1}')
+            echo "Using commit SHA from workflow_dispatch input ref (${{ github.event.inputs.ref }}): $COMMIT_TO_CHECKOUT"
+            if [ -z "$COMMIT_TO_CHECKOUT" ]; then
+              echo "::error::Could not resolve ref '${{ github.event.inputs.ref }}' to a commit SHA."
+              exit 1
+            fi
+          else # Should only be workflow_dispatch without ref input now
+            COMMIT_TO_CHECKOUT="${{ github.sha }}" # Default to current SHA for safety
+            echo "Using default commit SHA for dispatch: $COMMIT_TO_CHECKOUT"
+          fi
+          echo "commit_sha=$COMMIT_TO_CHECKOUT" >> $GITHUB_OUTPUT
+
+      # Checkout the specific commit, fetch parent for diff
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2 # Fetch the commit and its parent
+          ref: ${{ steps.get_sha.outputs.commit_sha }}
+          fetch-depth: 2 # Fetch commit and parent for diff
 
-      # Check if the specific file was changed in this commit
+      # Check if the specific file was changed in this commit (only relevant for workflow_run)
       - name: Check for changes in latest.txt
         id: check_file
+        # Only run this check if triggered by workflow_run
+        if: github.event_name == 'workflow_run'
         run: |
           # Compare the checked-out commit (HEAD) with its parent (HEAD~1)
-          # --quiet suppresses output, exit code 0 means no changes, 1 means changes
           if git diff --quiet HEAD~1 HEAD -- 'release-versions/latest.txt'; then
-            echo "No changes detected in release-versions/latest.txt for commit ${{ github.event.workflow_run.head_sha }}."
+            echo "No changes detected in release-versions/latest.txt for commit ${{ steps.get_sha.outputs.commit_sha }}."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Changes detected in release-versions/latest.txt for commit ${{ github.event.workflow_run.head_sha }}."
+            echo "Changes detected in release-versions/latest.txt for commit ${{ steps.get_sha.outputs.commit_sha }}."
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
-        # Handle potential error if it's the very first commit (no HEAD~1)
-        continue-on-error: true # Allow workflow to continue if git diff fails (e.g., first commit)
+        continue-on-error: true # Handle first commit case
 
-      # --- Subsequent steps only run if the file changed ---
-
+      # --- Subsequent steps only run if dispatched OR if file changed on workflow_run ---
       - name: Set up QEMU
-        if: steps.check_file.outputs.changed == 'true'
+        # Run if dispatched OR if workflow_run AND file changed
+        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Setup Docker Buildx
-        if: steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Set Version Info and Tags
-        if: steps.check_file.outputs.changed == 'true'
+      # Determine versions by reading files (always run if build proceeds)
+      - name: Determine Versions and Tags from Files
+        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
         id: set_versions
         run: |
-          # Read versions, exit if files are missing or empty
-          if [ ! -s "release-versions/latest.txt" ]; then echo "::error::release-versions/latest.txt is missing or empty."; exit 1; fi
-          SPECIFIC_VERSION=$(cat release-versions/latest.txt)
-          echo "Read SPECIFIC_VERSION: $SPECIFIC_VERSION"
+          # Specific Version
+          if [ -s "release-versions/latest.txt" ]; then
+            SPECIFIC_VERSION=$(cat release-versions/latest.txt)
+            echo "Read specific_version from file: $SPECIFIC_VERSION"
+          else
+            echo "::error::release-versions/latest.txt is missing or empty."
+            exit 1
+          fi
 
-          if [ ! -s "release-versions/calibre.txt" ]; then echo "::error::release-versions/calibre.txt is missing or empty."; exit 1; fi
-          CALIBRE_VERSION=$(cat release-versions/calibre.txt)
-          echo "Read CALIBRE_VERSION: $CALIBRE_VERSION"
+          # Calibre Version
+          if [ -s "release-versions/calibre.txt" ]; then
+            CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+            echo "Read calibre_version from file: $CALIBRE_VERSION"
+          else
+            echo "::error::release-versions/calibre.txt is missing or empty."
+            exit 1
+          fi
 
-          if [ ! -s "release-versions/s6.txt" ]; then echo "::error::release-versions/s6.txt is missing or empty."; exit 1; fi
-          S6_OVERLAY_VERSION=$(cat release-versions/s6.txt)
-          echo "Read S6_OVERLAY_VERSION: $S6_OVERLAY_VERSION"
+          # S6 Version
+          if [ -s "release-versions/s6.txt" ]; then
+            S6_VERSION=$(cat release-versions/s6.txt)
+            echo "Read s6_version from file: $S6_VERSION"
+          else
+            echo "::error::release-versions/s6.txt is missing or empty."
+            exit 1
+          fi
 
-          # Set environment variables for subsequent steps
+          # Set environment variables for build args and tags
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
-          echo "S6_OVERLAY_VERSION=$S6_OVERLAY_VERSION" >> $GITHUB_ENV
+          echo "S6_VERSION=$S6_VERSION" >> $GITHUB_ENV
 
-          # Define the tags to be pushed
+          # Define the tags
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
           echo "Docker Tags: $TAGS"
 
       - name: Print image tags and versions
-        if: steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
         run: |
-          echo "Triggering Commit SHA: ${{ github.event.workflow_run.head_sha }}"
+          echo "Commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
           echo "Specific Version Tag: ${{ env.SPECIFIC_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
-          echo "S6 Overlay Version: ${{ env.S6_OVERLAY_VERSION }}"
+          echo "S6 Overlay Version: ${{ env.S6_VERSION }}"
           echo "Full Tags: ${{ env.TAGS }}"
 
       - name: Login to DockerHub
-        if: steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
         uses: docker/login-action@v3.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Build and push
-        if: steps.check_file.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.check_file.outputs.changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -107,9 +151,9 @@ jobs:
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
-            S6_OVERLAY_VERSION=${{ env.S6_OVERLAY_VERSION }}
+            S6_OVERLAY_VERSION=${{ env.S6_VERSION }}
 
-      # Optional: Add a step to indicate skipping if the file didn't change
-      - name: Skipped build
-        if: steps.check_file.outputs.changed == 'false'
-        run: echo "Docker build skipped because release-versions/latest.txt was not changed in commit ${{ github.event.workflow_run.head_sha }}."
+      # Optional: Add a step to indicate skipping if the file didn't change on workflow_run
+      - name: Skipped build on workflow_run
+        if: github.event_name == 'workflow_run' && steps.check_file.outputs.changed == 'false'
+        run: echo "Docker build skipped because release-versions/latest.txt was not changed in commit ${{ steps.get_sha.outputs.commit_sha }}."
