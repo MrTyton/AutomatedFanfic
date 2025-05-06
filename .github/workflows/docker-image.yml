@@ -117,9 +117,18 @@ jobs:
              echo "::error::release-versions/calibre.txt is missing or empty."
              exit 1
           fi
+          # FanFicFare Version
+          if [ -s "release-versions/fanficfare.txt" ]; then
+             FANFICFARE_VERSION=$(cat release-versions/fanficfare.txt)
+             echo "Read fanficfare_version from file: $FANFICFARE_VERSION"
+          else
+             echo "::error::release-versions/fanficfare.txt is missing or empty."
+             exit 1
+          fi
           # Set environment variables for build args and tags
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
+          echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV # Add FanFicFare version to env
           # Put specific version tag first, then latest
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
@@ -131,6 +140,7 @@ jobs:
           echo "Commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
           echo "Specific Version Tag: ${{ env.SPECIFIC_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
+          echo "FanFicFare Version: ${{ env.FANFICFARE_VERSION }}" # Print FanFicFare version
           echo "Full Tags: ${{ env.TAGS }}"
 
       - name: Login to DockerHub
@@ -156,6 +166,23 @@ jobs:
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
+
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: v${{ env.SPECIFIC_VERSION }}
+          release_name: Release v${{ env.SPECIFIC_VERSION }}
+          body: |
+            Automated release for version ${{ env.SPECIFIC_VERSION }}.
+            Built from commit: ${{ steps.get_sha.outputs.commit_sha }}
+            Includes Calibre version: ${{ env.CALIBRE_VERSION }}
+            Includes FanFicFare version: ${{ env.FANFICFARE_VERSION }} # Add FanFicFare version here
+
+          draft: false
+          prerelease: false
 
       # Optional: Add a step to indicate skipping if the file didn't change on workflow_run
       - name: Skipped build on workflow_run

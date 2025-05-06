@@ -104,25 +104,37 @@ jobs:
         if: steps.check_fanficfare.outputs.fff_changed == 'true' || steps.check_calibre.outputs.calibre_changed == 'true'
         run: |
           echo "Updating latest.txt..."
-          date --date='TZ="America/New_York" now' --iso-8601=date > release-versions/latest.txt
-          echo "updated=true" >> $GITHUB_OUTPUT
+          CURRENT_VERSION=$(cat release-versions/latest.txt 2>/dev/null || echo "1.0.0") # Default if file not found
+          echo "Current version string: $CURRENT_VERSION"
 
-      # Read the potentially updated latest.txt for output
-      - name: Read latest.txt version
-        id: read_latest
-        if: steps.update_latest_txt.outputs.updated == 'true'
-        run: echo "version=$(cat release-versions/latest.txt)" >> $GITHUB_OUTPUT
+          # Validate format and extract parts (assuming 1.X.Y)
+          if [[ "$CURRENT_VERSION" =~ ^1\.([0-9]+)\.([0-9]+)$ ]]; then
+            X_PART="${BASH_REMATCH[1]}"
+            Y_PART="${BASH_REMATCH[2]}"
+            echo "Parsed version: 1.${X_PART}.${Y_PART}"
+            NEW_Y=$((Y_PART + 1))
+            NEW_VERSION="1.${X_PART}.${NEW_Y}"
+          else
+            echo "::warning::Invalid or initial version format found ('$CURRENT_VERSION'). Terminating."
+            exit 1
+          fi
+
+          echo "New version: $NEW_VERSION"
+          echo "$NEW_VERSION" > release-versions/latest.txt
+          echo "updated=true" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Prepare Commit Message
         id: prepare_commit
+        # This step now depends on the output of the modified update_latest_txt step
         if: steps.update_latest_txt.outputs.updated == 'true'
         run: |
-          COMMIT_MSG="Automated Dependency Updates"
+          COMMIT_MSG="Automated Dependency Updates (v${{ steps.update_latest_txt.outputs.new_version }})" # Add new version here
           if [ "${{ steps.check_fanficfare.outputs.fff_changed }}" == "true" ]; then
-            COMMIT_MSG="${COMMIT_MSG}\n\nFanFicFare updated to ${{ steps.check_fanficfare.outputs.new_version }}"
+            COMMIT_MSG="${COMMIT_MSG}\n\n- FanFicFare updated to ${{ steps.check_fanficfare.outputs.new_version }}"
           fi
           if [ "${{ steps.check_calibre.outputs.calibre_changed }}" == "true" ]; then
-            COMMIT_MSG="${COMMIT_MSG}\n\nCalibre updated to ${{ steps.check_calibre.outputs.new_version }}"
+            COMMIT_MSG="${COMMIT_MSG}\n\n- Calibre updated to ${{ steps.check_calibre.outputs.new_version }}"
           fi
           # Escape newlines for the commit action
           echo "commit_message<<EOF" >> $GITHUB_OUTPUT
@@ -131,14 +143,15 @@ jobs:
 
       - name: Commit changes
         id: commit_changes
+        # This step also depends on the output of the modified update_latest_txt step
         if: steps.update_latest_txt.outputs.updated == 'true'
         uses: EndBug/add-and-commit@v9
         with:
           author_name: github-actions[bot]
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
+          # Ensure latest.txt is committed along with dependency files
           add: 'release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt'
-          # Use default GITHUB_TOKEN
 
       - name: Notify if no changes were committed (Should not happen with default token)
         if: steps.update_latest_txt.outputs.updated == 'true' && steps.commit_changes.outputs.commit_long_sha == ''
