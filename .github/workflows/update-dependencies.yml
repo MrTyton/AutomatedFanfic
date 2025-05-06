@@ -190,9 +190,8 @@ jobs:
   # Third job: Build Docker by calling the reusable workflow
   build_docker:
     needs: [check_and_update, run_ci]
-    # Only run if a commit was made AND the CI job succeeded (implied by 'needs')
-    # We don't need to check latest_updated here, as docker-image won't run if CI failed anyway
-    if: needs.check_and_update.outputs.commit_sha != '' # && needs.run_ci.result == 'success' # Implied
+    # Only run if a commit was made AND the CI job succeeded
+    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' # Added run_ci success check explicitly
     uses: ./.github/workflows/docker-image.yml # Call local workflow
     with:
       # Pass the commit SHA - ESSENTIAL for building the right code
