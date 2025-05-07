@@ -187,6 +187,19 @@ jobs:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Inherit secrets if python-app ever needs them
 
+  debug_job_status: # New debugging job
+    needs: [check_and_update, run_ci] # Depends on the same jobs as build_docker
+    if: always() # Ensure this job runs regardless of preceding job outcomes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display context values
+        run: |
+          echo "Commit SHA from 'check_and_update': ${{ needs.check_and_update.outputs.commit_sha }}"
+          echo "Is commit SHA not empty? ${{ needs.check_and_update.outputs.commit_sha != '' }}"
+          echo "Result of 'run_ci' job: ${{ needs.run_ci.result }}"
+          echo "Is run_ci result 'success'? ${{ needs.run_ci.result == 'success' }}"
+          echo "Combined condition for build_docker: ${{ needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' }}"
+
   # Third job: Build Docker by calling the reusable workflow
   build_docker:
     needs: [check_and_update, run_ci]
