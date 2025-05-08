@@ -14,7 +14,7 @@ import url_ingester
 import url_worker
 
 # Define the application version
-__version__ = "1.2.6"
+__version__ = "1.2.7"
 
 
 def parse_arguments() -> argparse.Namespace:
