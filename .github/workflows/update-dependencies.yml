@@ -205,7 +205,8 @@ jobs:
     needs: [check_and_update, run_ci]
     # Only run if a commit was made AND the CI job succeeded
     if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success'
-    runs-on: ubuntu-latest # Add a runner for the direct step
-    steps: # Add steps directly for testing
-      - name: Simple echo to test if job runs
-        run: echo "Build Docker job DID run. Commit SHA ${{ needs.check_and_update.outputs.commit_sha }}"
+    uses: ./.github/workflows/docker-image.yml # Revert to calling the reusable workflow
+    with:
+      # Pass the commit SHA - ESSENTIAL for building the right code
+      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
+    secrets: inherit # Pass secrets needed for Docker login
