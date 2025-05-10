@@ -38,6 +38,15 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Debug Event Info in Docker Image Workflow
+        run: |
+          echo "Inside docker-image.yml (Push_Docker_Image job):"
+          echo "  github.event_name: ${{ github.event_name }}"
+          echo "  github.event.workflow_run.conclusion: ${{ github.event.workflow_run.conclusion }}"
+          echo "  Condition evaluation (dispatch): ${{ github.event_name == 'workflow_dispatch' }}"
+          echo "  Condition evaluation (call): ${{ github.event_name == 'workflow_call' }}"
+          echo "  Condition evaluation (run conclusion): ${{ github.event.workflow_run.conclusion == 'success' }}"
+          echo "  Overall job 'if' condition evaluates to: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success' }}"
       # Determine the commit SHA based on trigger type
       - name: Determine Commit SHA
         id: get_sha
