@@ -200,13 +200,12 @@ jobs:
           echo "Is run_ci result 'success'? ${{ needs.run_ci.result == 'success' }}"
           echo "Combined condition for build_docker: ${{ needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' }}"
 
-  # Third job: Build Docker by calling the reusable workflow
+  # Third job: Build Docker
   build_docker:
     needs: [check_and_update, run_ci]
-    # Only run if a commit was made AND the CI job succeeded
-    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success'
-    uses: ./.github/workflows/docker-image.yml # Revert to calling the reusable workflow
+    uses: ./.github/workflows/docker-image.yml 
     with:
-      # Pass the commit SHA - ESSENTIAL for building the right code
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
-    secrets: inherit # Pass secrets needed for Docker login
+    secrets: # 'secrets' is at the job level
+      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
