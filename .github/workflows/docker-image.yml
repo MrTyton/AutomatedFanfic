@@ -28,6 +28,9 @@ on:
         required: false
         default: 'master'
 
+permissions:
+  contents: write # Required to create releases/tags
+
 env:
   IMAGE_REPO: mrtyton
   IMAGE_NAME: automated-ffdl
