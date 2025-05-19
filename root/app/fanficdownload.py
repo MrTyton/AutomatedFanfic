@@ -8,7 +8,6 @@ import ff_logging  # Custom logging module for formatted logging
 import calibre_info
 import ff_waiter
 import notification_wrapper
-import pushbullet_notification
 import regex_parsing
 import url_ingester
 import url_worker
