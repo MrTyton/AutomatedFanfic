@@ -210,13 +210,7 @@ def main():
 
     # Create the Notification Wrapper. All notifications are sent through this object,
     # and the individual initializations of each class must be added to this object.
-    notification_info = notification_wrapper.NotificationWrapper()
-
-    # Create the Pushbullet Notifier
-    pushbullet_info = pushbullet_notification.PushbulletNotification(
-        args.config
-    )
-    notification_info.add_notification_worker(pushbullet_info)
+    notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing
