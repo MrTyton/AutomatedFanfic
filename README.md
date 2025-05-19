@@ -18,6 +18,7 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
     - [Email](#email)
     - [Calibre](#calibre)
     - [Pushbullet](#pushbullet)
+    - [Apprise](#apprise)
 
 ## Site Support
 
@@ -115,3 +116,28 @@ device = ""
 - `enabled`: Whether or not to enable the pushbullet notifications
 - `api_key`: Your [Pushbullet API Key](https://docs.pushbullet.com/#authentication)
 - `device`: If you want to send the notification to a specific device rather than the entirety of the pushbullet subscriptions, you can specify which device here with the device name.
+
+### Apprise
+
+This script also supports [Apprise](https://github.com/caronc/apprise), a versatile notification library that supports a wide variety of services. If you configure Apprise, it can handle notifications for many platforms.
+
+```toml
+[apprise]
+# List of Apprise URLs to send notifications to.
+# See https://github.com/caronc/apprise#supported-notifications for a list of services.
+# For example:
+# urls = [
+#   "pbul://PUSHBULLET_API_KEY",  # For Pushbullet
+#   "discord://WEBHOOK_ID/WEBHOOK_TOKEN", # For Discord
+#   "mailto://USER:PASSWORD@HOST:PORT", # For Email
+# ]
+urls = []
+```
+
+- `urls`: A list of Apprise service URLs. You can find a comprehensive list of supported notification services and their URL formats on the [Apprise GitHub page](https://github.com/caronc/apprise#supported-notifications).
+
+#### Apprise and Pushbullet Interaction
+
+If you configure an Apprise URL that corresponds to your Pushbullet settings (e.g., by including a URL like `pbul://YOUR_PUSHBULLET_API_KEY` in the `apprise.urls` list), the system will use Apprise to send Pushbullet notifications. This is done to prevent duplicate notifications if both the `[pushbullet]` section and an Apprise Pushbullet URL are configured for the same account.
+
+You can still use the `[pushbullet]` section for configuration if you prefer. However, if an Apprise URL is also set up to handle the same Pushbullet account, Apprise will take precedence for sending those Pushbullet notifications. If Apprise is not configured to handle Pushbullet, but the `[pushbullet]` section is enabled and configured, then the dedicated Pushbullet notifier will be used.
