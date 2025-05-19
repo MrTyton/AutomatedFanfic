@@ -2,8 +2,8 @@ import notification_base
 from typing import List
 from concurrent.futures import ThreadPoolExecutor
 from .apprise_notification import AppriseNotification
-from .pushbullet_notification import PushbulletNotification
-import ff_logging # Assuming ff_logging is available for potential logging
+# Removed import of PushbulletNotification
+import ff_logging
 
 
 class NotificationWrapper:
@@ -14,42 +14,30 @@ class NotificationWrapper:
             toml_path (str): Path to the TOML configuration file.
         """
         self.notification_workers: List[notification_base.NotificationBase] = []
-        self._initialize_workers(toml_path)
+        # Store toml_path if needed by the new _initialize_workers structure, or pass directly
+        self.toml_path = toml_path 
+        self._initialize_workers() # No longer passes toml_path as it's an instance var
 
-    def _initialize_workers(self, toml_path: str) -> None:
+    def _initialize_workers(self) -> None: # toml_path removed from signature
         """
-        Initializes and configures notification workers based on the provided TOML config.
+        Initializes the AppriseNotification worker.
+        AppriseNotification is now the sole notification handler.
         """
+        self.notification_workers = [] # Ensure it's reset
         try:
-            apprise_worker = AppriseNotification(toml_path)
-            if apprise_worker.is_enabled():
+            # Pass self.toml_path, which was set in __init__
+            apprise_worker = AppriseNotification(toml_path=self.toml_path)
+            if apprise_worker.is_enabled(): # is_enabled() is preferred over direct .enabled
                 self.notification_workers.append(apprise_worker)
-                ff_logging.log_info("AppriseNotification worker added.")
+                # Using log_info as per existing style, adjust if specific color codes are managed by ff_logging
+                ff_logging.log_info("AppriseNotification worker added and enabled.")
+            else:
+                ff_logging.log_warning(
+                    "AppriseNotification worker initialized but is not enabled (no valid URLs found/configured, including any auto-added Pushbullet)."
+                )
         except Exception as e:
+            # Using log_error as per existing style for failures
             ff_logging.log_error(f"Failed to initialize AppriseNotification: {e}")
-
-        try:
-            # We need to check if apprise_worker was successfully initialized first
-            # For now, let's assume it might not be if an exception occurred.
-            # A more robust way would be to check if apprise_worker exists and is an instance of AppriseNotification
-            apprise_can_handle_pb = False
-            if 'apprise_worker' in locals() and isinstance(apprise_worker, AppriseNotification):
-                apprise_can_handle_pb = apprise_worker.can_handle_pushbullet()
-
-            pushbullet_worker = PushbulletNotification(toml_path)
-            if pushbullet_worker.is_enabled():
-                if not apprise_can_handle_pb:
-                    self.notification_workers.append(pushbullet_worker)
-                    ff_logging.log_info("PushbulletNotification worker added as Apprise cannot handle Pushbullet.")
-                else:
-                    ff_logging.log_info("PushbulletNotification not added as Apprise can handle Pushbullet.")
-            elif pushbullet_worker.config.get("pushbullet", {}).get("enabled"):
-                 # Log if pushbullet was enabled in config but worker didn't enable (e.g. missing API key)
-                 ff_logging.log_warning("Pushbullet was enabled in config but the worker could not be initialized/enabled.")
-
-        except Exception as e:
-            ff_logging.log_error(f"Failed to initialize PushbulletNotification: {e}")
-
 
     def send_notification(self, title: str, body: str, site: str) -> None:
         """
