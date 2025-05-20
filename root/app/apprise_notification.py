@@ -1,7 +1,7 @@
 import apprise
 import ff_logging
 import notification_base
-from notification_base import JobConfigLoadError
+import requests
 
 class AppriseNotification(notification_base.NotificationBase):
     def __init__(self, toml_path: str):
@@ -25,37 +25,52 @@ class AppriseNotification(notification_base.NotificationBase):
                 pb_url = f"pbul://{pb_api_key}"
                 pb_device = pushbullet_config.get("device")
                 if pb_device:
-                    pb_url += f"/{pb_device}"
+                    ff_logging.log_debug(f"Pushbullet device specified: {pb_device}. Finding device ID...")
+                    r = requests.get(
+                        'https://api.pushbullet.com/v2/devices',
+                        headers={'Access-Token': pb_api_key},
+                    )
+                    devices = r.json().get('devices', [])
+                    matched_device = next(
+                        (
+                            device for device in devices
+                            if device.get('active') and device.get('pushable') and device.get('nickname') == pb_device
+                        ),
+                        None
+                    )
+                    if matched_device:
+                        pb_device = matched_device.get('iden')
+                        ff_logging.log_debug(f"Found device ID: {pb_device}")
+                        pb_url += f"/{pb_device}"
+                    else:
+                        ff_logging.log_failure(f"Pushbullet device '{pb_device}' not found or not pushable. Using default Pushbullet URL.")
                 
                 if pb_url not in self.apprise_urls:
                     self.apprise_urls.add(pb_url)
-                    ff_logging.log_info(f"Automatically added Pushbullet URL to Apprise: {pb_url}")
+                    ff_logging.log_debug(f"Automatically added Pushbullet URL to Apprise: {pb_url}")
                 else:
-                    ff_logging.log_info(f"Pushbullet URL {pb_url} was already present in Apprise config.")
+                    ff_logging.log_debug(f"Pushbullet URL {pb_url} was already present in Apprise config.")
 
         except Exception as e:
-            ff_logging.log_error(f"Error processing Apprise/Pushbullet configuration: {e}")
-            # Depending on desired behavior, we might raise JobConfigLoadError here
-            # For now, we'll let it try to enable if any URLs were processed before error.
+            ff_logging.log_failure(f"Error processing Apprise/Pushbullet configuration: {e}")
 
         if not self.apprise_urls:
-            ff_logging.log_info("No Apprise URLs configured (including auto-added Pushbullet). Apprise disabled.")
+            ff_logging.log("No Apprise URLs configured (including auto-added Pushbullet). Apprise disabled.")
             self.enabled = False
             return
 
         # Add all unique URLs to the Apprise object
         for url in self.apprise_urls:
             if not self.apobj.add(url):
-                ff_logging.log_warning(f"Failed to add Apprise URL: {url}. It might be invalid or unsupported.")
+                ff_logging.log_failure(f"Failed to add Apprise URL: {url}. It might be invalid or unsupported.")
         
         # Check if any URLs were successfully added to the Apprise object
         if self.apobj.urls():
             self.enabled = True
-            ff_logging.log_info(f"Apprise enabled with {len(self.apobj.urls())} notification target(s).")
+            ff_logging.log(f"Apprise enabled with {len(self.apobj.urls())} notification target(s).")
         else:
-            ff_logging.log_warning("Apprise configured with URLs, but none could be successfully added to Apprise. Apprise disabled.")
+            ff_logging.log_failure("Apprise configured with URLs, but none could be successfully added to Apprise. Apprise disabled.")
             self.enabled = False
-            # Convert set back to list for consistent attribute type, though it's not strictly used later
         self.apprise_urls = list(self.apprise_urls)
 
 
@@ -67,7 +82,7 @@ class AppriseNotification(notification_base.NotificationBase):
         # URLs are already added to self.apobj in __init__
         success = False
         if self.apobj.notify(body=body, title=title):
-            ff_logging.log_success(f"Apprise notification sent successfully to {len(self.apobj.urls())} target(s).")
+            ff_logging.log(f"Apprise notification sent successfully to {len(self.apobj.urls())} target(s).")
             success = True
         else:
             ff_logging.log_failure(f"Failed to send Apprise notification to {len(self.apobj.urls())} target(s).")

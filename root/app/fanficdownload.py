@@ -13,8 +13,7 @@ import url_ingester
 import url_worker
 
 # Define the application version
-__version__ = "1.2.12"
-
+__version__ = "1.3.0"
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -137,7 +136,7 @@ def signal_handler(processes, pool):
     """
 
     def handler(sig, frame):
-        ff_logging.log_failure("Terminating processes and pool...", "WARNING")
+        ff_logging.log_failure("Terminating processes and pool...")
         terminate_processes(processes)
         if pool is not None:
             pool.terminate()
@@ -166,13 +165,12 @@ def main():
             config_data = tomllib.load(fp)
     except FileNotFoundError:
         ff_logging.log_failure(
-            f"Configuration file not found at {args.config}", "ERROR"
+            f"Configuration file not found at {args.config}"
         )
         sys.exit(1)
     except Exception as e:
         ff_logging.log_failure(
-            f"Error loading configuration file {args.config}: {e}", "ERROR"
-        )
+            f"Error loading configuration file {args.config}: {e}")
         sys.exit(1)
 
     # --- Log Specific Configuration Details ---
@@ -198,7 +196,7 @@ def main():
         ff_logging.log(f"  Pushbullet Notifications: {pb_status}")
 
     except Exception as e:
-        ff_logging.log_warning(
+        ff_logging.log_failure(
             f"  Error accessing specific configuration details: {e}"
         )
     ff_logging.log("-----------------------------")

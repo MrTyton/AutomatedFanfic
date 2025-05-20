@@ -1,0 +1,20 @@
+import unittest
+from notification_wrapper import NotificationWrapper
+
+class TestNotificationWrapper(unittest.TestCase):
+    def setUp(self):
+        self.wrapper = NotificationWrapper()
+
+    def test_notification_creation(self):
+        result = self.wrapper.create_notification("Test message")
+        self.assertTrue(result)
+
+    def test_notification_send(self):
+        result = self.wrapper.send_notification("Test message")
+        self.assertTrue(result)
+
+    def tearDown(self):
+        self.wrapper.cleanup()
+
+if __name__ == '__main__':
+    unittest.main()
