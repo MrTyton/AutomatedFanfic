@@ -18,6 +18,7 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
     - [Email](#email)
     - [Calibre](#calibre)
     - [Pushbullet](#pushbullet)
+    - [Apprise](#apprise)
 
 ## Site Support
 

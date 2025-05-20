@@ -105,7 +105,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.get_sha.outputs.commit_sha }}
-          fetch-depth: 2 # Fetch commit and parent for diff (needed for workflow_run)
+          fetch-depth: 0 # Fetch all history for all branches and tags
 
       # Check if the specific file was changed (only relevant for workflow_run)
       - name: Check for changes in latest.txt (for workflow_run)
@@ -215,10 +215,17 @@ jobs:
           echo "Fetching tags..."
           # Fetch tags and full history needed for log between tags
           # Ensure fetch-depth is sufficient in checkout or unshallow here
-          git fetch --tags --unshallow --force || git fetch --tags --force
+          # git fetch --tags --unshallow --force || git fetch --tags --force # Already done by fetch-depth: 0
 
           # Get the latest tag that looks like a version (e.g., v1.2.3) excluding the one we might create
           PREVIOUS_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v "v${{ env.SPECIFIC_VERSION }}$" | head -n 1)
+          
+          # Debugging logs
+          echo "PREVIOUS_TAG for changelog: $PREVIOUS_TAG"
+          echo "CURRENT_COMMIT_SHA for changelog: $CURRENT_COMMIT_SHA"
+          echo "Raw git log (pre-filtering) for relevant files between $PREVIOUS_TAG and $CURRENT_COMMIT_SHA:"
+          git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h) - Author: %an' -- '**/*.py' 'Dockerfile' 'requirements.txt' || echo "Git log command failed or returned no output."
+          echo "--- End of raw git log ---"
 
           CHANGELOG_ENTRIES=""
           # Define bot author name
