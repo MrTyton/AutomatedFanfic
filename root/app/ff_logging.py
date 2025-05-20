@@ -43,7 +43,7 @@ def set_verbose(value: bool) -> None:
     verbose.value = value
 
 
-def log(msg: str, color: str = None) -> None:
+def log(msg: str, color: str = "") -> None:
     """
     Logs a message to the console with the specified color.
 

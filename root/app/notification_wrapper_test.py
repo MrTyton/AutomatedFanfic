@@ -9,37 +9,6 @@ from notification_wrapper import NotificationWrapper
 
 
 class TestNotificationWrapper(unittest.TestCase):
-    class AddNotificationWorkerTestCase(NamedTuple):
-        worker_enabled: bool
-        expected_length: int
-
-    @parameterized.expand(
-        [
-            # Test case: Adding an enabled notification worker
-            AddNotificationWorkerTestCase(
-                worker_enabled=True,
-                expected_length=1,
-            ),
-            # Test case: Adding a disabled notification worker
-            AddNotificationWorkerTestCase(
-                worker_enabled=False,
-                expected_length=1,
-            ),
-        ]
-    )
-    def test_add_notification_worker(self, worker_enabled, expected_length):
-        # Setup: Create a NotificationWrapper instance and a mock notification worker
-        wrapper = NotificationWrapper()
-        mock_worker = MagicMock(spec=notification_base.NotificationBase)
-        mock_worker.enabled = worker_enabled
-
-        # Execution: Add the notification worker
-        wrapper.add_notification_worker(mock_worker)
-
-        # Assertion: Check that the worker was added
-        self.assertEqual(len(wrapper.notification_workers), expected_length)
-        self.assertEqual(wrapper.notification_workers[0], mock_worker)
-
     class SendNotificationTestCase(NamedTuple):
         workers: list
         title: str
@@ -50,40 +19,18 @@ class TestNotificationWrapper(unittest.TestCase):
     @parameterized.expand(
         [
             # Test case: No workers
-            SendNotificationTestCase(
-                workers=[],
-                title="title1",
-                body="body1",
-                site="site1",
-                expected_calls=0,
-            ),
+            ([], "title1", "body1", "site1", 0),
             # Test case: One enabled worker
-            SendNotificationTestCase(
-                workers=[True],
-                title="title2",
-                body="body2",
-                site="site2",
-                expected_calls=1,
-            ),
+            ([True], "title2", "body2", "site2", 1),
             # Test case: One disabled worker
-            SendNotificationTestCase(
-                workers=[False],
-                title="title3",
-                body="body3",
-                site="site3",
-                expected_calls=0,
-            ),
+            ([False], "title3", "body3", "site3", 0),
             # Test case: Multiple workers, mixed enabled and disabled
-            SendNotificationTestCase(
-                workers=[True, False, True],
-                title="title4",
-                body="body4",
-                site="site4",
-                expected_calls=2,
-            ),
+            ([True, False, True], "title4", "body4", "site4", 2),
         ]
     )
     @patch("notification_wrapper.ThreadPoolExecutor")
+    @patch("notification_wrapper.AppriseNotification")
+    @patch("notification_wrapper.ff_logging")
     def test_send_notification(
         self,
         workers,
@@ -91,16 +38,20 @@ class TestNotificationWrapper(unittest.TestCase):
         body,
         site,
         expected_calls,
+        mock_ff_logging,
+        mock_apprise_notification,
         mock_executor,
     ):
-        # Setup: Create a NotificationWrapper instance and mock notification workers
+        # Patch AppriseNotification to not add any real workers
+        mock_apprise_notification.return_value.is_enabled.return_value = False
         wrapper = NotificationWrapper()
+        wrapper.notification_workers = []  # Clear any workers added by __init__
         mock_workers = []
         for enabled in workers:
             mock_worker = MagicMock(spec=notification_base.NotificationBase)
             mock_worker.enabled = enabled
             mock_workers.append(mock_worker)
-            wrapper.add_notification_worker(mock_worker)
+        wrapper.notification_workers = mock_workers
 
         # Mock the executor
         mock_executor_instance = mock_executor.return_value
@@ -121,11 +72,10 @@ class TestNotificationWrapper(unittest.TestCase):
                     mock_worker.send_notification, title, body, site
                 )
             else:
-                assert (
-                    call(mock_worker.send_notification, title, body, site)
-                    not in mock_executor_instance.submit
+                self.assertNotIn(
+                    call(mock_worker.send_notification, title, body, site),
+                    mock_executor_instance.submit.call_args_list,
                 )
-
 
 if __name__ == "__main__":
     unittest.main()

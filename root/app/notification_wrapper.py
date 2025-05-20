@@ -1,8 +1,7 @@
 import notification_base
 from typing import List
 from concurrent.futures import ThreadPoolExecutor
-from .apprise_notification import AppriseNotification
-# Removed import of PushbulletNotification
+from apprise_notification import AppriseNotification
 import ff_logging
 
 
@@ -29,15 +28,14 @@ class NotificationWrapper:
             apprise_worker = AppriseNotification(toml_path=self.toml_path)
             if apprise_worker.is_enabled(): # is_enabled() is preferred over direct .enabled
                 self.notification_workers.append(apprise_worker)
-                # Using log_info as per existing style, adjust if specific color codes are managed by ff_logging
-                ff_logging.log_info("AppriseNotification worker added and enabled.")
+                # Using log as per existing style, adjust if specific color codes are managed by ff_logging
+                ff_logging.log("AppriseNotification worker added and enabled.")
             else:
-                ff_logging.log_warning(
+                ff_logging.log_failure(
                     "AppriseNotification worker initialized but is not enabled (no valid URLs found/configured, including any auto-added Pushbullet)."
                 )
         except Exception as e:
-            # Using log_error as per existing style for failures
-            ff_logging.log_error(f"Failed to initialize AppriseNotification: {e}")
+            ff_logging.log_failure(f"Failed to initialize AppriseNotification: {e}")
 
     def send_notification(self, title: str, body: str, site: str) -> None:
         """
