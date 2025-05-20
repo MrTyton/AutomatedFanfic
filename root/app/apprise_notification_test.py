@@ -10,14 +10,6 @@ import io
 
 class TestAppriseNotification(unittest.TestCase):
 
-    def _create_mock_tomllib_config(self, apprise_config=None, pushbullet_config=None):
-        config_dict = {}
-        if apprise_config is not None:
-            config_dict["apprise"] = apprise_config
-        if pushbullet_config is not None:
-            config_dict["pushbullet"] = pushbullet_config
-        return tomllib.dumps(config_dict)
-
     @patch("builtins.open", new_callable=mock_open)
     @patch("tomllib.load")
     def test_initialization_reads_urls(self, mock_tomllib_load, mock_file_open):
