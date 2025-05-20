@@ -16,3 +16,13 @@ personal_ini=""
 enabled = false
 api_key = ""
 device = ""
+
+[apprise]
+# List of Apprise URLs to send notifications to.
+# For example:
+# urls = [
+#   "pbul://PUSHBULLET_API_KEY",  # For Pushbullet
+#   "discord://WEBHOOK_ID/WEBHOOK_TOKEN", # For Discord
+#   "mailto://USER:PASSWORD@HOST:PORT", # For Email
+# ]
+urls = []
