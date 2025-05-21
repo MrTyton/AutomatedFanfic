@@ -235,7 +235,7 @@ jobs:
             echo "Found previous tag: $PREVIOUS_TAG. Generating filtered changelog since then."
             # Get commits since the previous tag affecting relevant files, excluding bot commits
             # Format: '* Commit subject (commit_sha)'
-            COMMITS=$(git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '**/*.py' 'Dockerfile' 'requirements.txt') # Changed *.py to **/*.py
+            COMMITS=$(git log ${PREVIOUS_TAG}..${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)---AUTHOR---%an' -- '**/*.py' 'Dockerfile' 'requirements.txt' 2>/dev/null | grep -v "---AUTHOR---${BOT_AUTHOR}$" | sed 's/---AUTHOR---.*//' || echo "Main git log command for COMMITS failed or returned no output.")
             if [ -n "$COMMITS" ]; then
               CHANGELOG_ENTRIES="\n\n**Relevant Changes since ${PREVIOUS_TAG}:**\n${COMMITS}"
             else
@@ -244,7 +244,7 @@ jobs:
           else
             echo "No previous version tag found. Listing all relevant commits for initial release."
             # List all commits up to the current one affecting relevant files, excluding bot commits
-            COMMITS=$(git log ${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)' --invert-grep --author="$BOT_AUTHOR" -- '**/*.py' 'Dockerfile' 'requirements.txt') # Changed *.py to **/*.py
+            COMMITS=$(git log ${CURRENT_COMMIT_SHA} --pretty=format:'* %s (%h)---AUTHOR---%an' -- '**/*.py' 'Dockerfile' 'requirements.txt' 2>/dev/null | grep -v "---AUTHOR---${BOT_AUTHOR}$" | sed 's/---AUTHOR---.*//' || echo "Main git log command for COMMITS failed or returned no output.")
             if [ -n "$COMMITS" ]; then
               CHANGELOG_ENTRIES="\n\n**Relevant Commits in this release:**\n${COMMITS}"
             else
