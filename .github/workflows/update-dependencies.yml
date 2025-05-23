@@ -203,6 +203,7 @@ jobs:
   # Third job: Build Docker
   build_docker:
     needs: [check_and_update, run_ci]
+    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success'
     uses: ./.github/workflows/docker-image.yml 
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
