@@ -214,3 +214,4 @@ jobs:
           echo "Is run_ci result 'success'? ${{ needs.run_ci.result == 'success' }}"
           echo "Combined condition for build_docker: ${{ needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' }}"
 
+
