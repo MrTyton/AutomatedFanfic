@@ -187,6 +187,17 @@ jobs:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Inherit secrets if python-app ever needs them
 
+  # Third job: Build Docker
+  build_docker:
+    needs: [check_and_update, run_ci]
+    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' # Add this line
+    uses: ./.github/workflows/docker-image.yml 
+    with:
+      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
+    secrets: # 'secrets' is at the job level
+      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      
   debug_job_status: # New debugging job
     needs: [check_and_update, run_ci] # Depends on the same jobs as build_docker
     if: always() # Ensure this job runs regardless of preceding job outcomes
@@ -194,18 +205,12 @@ jobs:
     steps:
       - name: Display context values
         run: |
+          echo "Full context for 'check_and_update': ${{ toJson(needs.check_and_update) }}"
+          echo "Full context for 'run_ci': ${{ toJson(needs.run_ci) }}"
+          echo "---"
           echo "Commit SHA from 'check_and_update': ${{ needs.check_and_update.outputs.commit_sha }}"
           echo "Is commit SHA not empty? ${{ needs.check_and_update.outputs.commit_sha != '' }}"
-          echo "Result of 'run_ci' job: ${{ needs.run_ci.result }}"
+          echo "Raw result of 'run_ci' job: ${{ needs.run_ci.result }}"
           echo "Is run_ci result 'success'? ${{ needs.run_ci.result == 'success' }}"
           echo "Combined condition for build_docker: ${{ needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' }}"
 
-  # Third job: Build Docker
-  build_docker:
-    needs: [check_and_update, run_ci]
-    uses: ./.github/workflows/docker-image.yml 
-    with:
-      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
-    secrets: # 'secrets' is at the job level
-      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
