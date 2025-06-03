@@ -4,6 +4,7 @@ password = ""
 server = ""
 mailbox = ""
 sleep_time = 60
+ffnet_disable = true
 
 [calibre]
 path=""
