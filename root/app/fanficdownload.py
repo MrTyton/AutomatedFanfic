@@ -13,7 +13,8 @@ import url_ingester
 import url_worker
 
 # Define the application version
-__version__ = "1.3.3"
+__version__ = "1.3.4"
+
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -164,28 +165,21 @@ def main():
         with open(args.config, "rb") as fp:
             config_data = tomllib.load(fp)
     except FileNotFoundError:
-        ff_logging.log_failure(
-            f"Configuration file not found at {args.config}"
-        )
+        ff_logging.log_failure(f"Configuration file not found at {args.config}")
         sys.exit(1)
     except Exception as e:
-        ff_logging.log_failure(
-            f"Error loading configuration file {args.config}: {e}")
+        ff_logging.log_failure(f"Error loading configuration file {args.config}: {e}")
         sys.exit(1)
 
     # --- Log Specific Configuration Details ---
     ff_logging.log("--- Configuration Details ---")
     try:
         # Log Email Address
-        email_address = config_data.get("email", {}).get(
-            "email", "Not Specified"
-        )
+        email_address = config_data.get("email", {}).get("email", "Not Specified")
         ff_logging.log(f"  Email Account: {email_address}")
 
         # Log Calibre Path
-        calibre_path = config_data.get("calibre", {}).get(
-            "path", "Not Specified"
-        )
+        calibre_path = config_data.get("calibre", {}).get("path", "Not Specified")
         ff_logging.log(f"  Calibre Path: {calibre_path}")
 
         # Log Pushbullet Status
@@ -196,9 +190,7 @@ def main():
         ff_logging.log(f"  Pushbullet Notifications: {pb_status}")
 
     except Exception as e:
-        ff_logging.log_failure(
-            f"  Error accessing specific configuration details: {e}"
-        )
+        ff_logging.log_failure(f"  Error accessing specific configuration details: {e}")
     ff_logging.log("-----------------------------")
     # --- End Logging ---
 
@@ -211,9 +203,7 @@ def main():
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing
-        queues = {
-            site: manager.Queue() for site in regex_parsing.url_parsers.keys()
-        }
+        queues = {site: manager.Queue() for site in regex_parsing.url_parsers.keys()}
         waiting_queue = manager.Queue()
         cdb_info = calibre_info.CalibreInfo(args.config, manager)
         cdb_info.check_installed()

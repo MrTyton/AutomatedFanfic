@@ -72,6 +72,7 @@ password = ""
 server = ""
 mailbox = ""
 sleep_time = 60
+ffnet_disable = true
 ```
 
 
@@ -80,6 +81,7 @@ sleep_time = 60
 - `server`: Address for the email server. For Gmail, this is going to be `imap.gmail.com`. For other web services, you'll have to search for them.
 - `mailbox`: Which mailbox to check, such as `INBOX`, for the unread update emails.
 - `sleep_time`: How often to check the email account for new updates, in seconds. Default is 60 seconds, but you can make this as often as you want. Recommended that you don't go too fast though, since some email providers will not be happy.
+- `ffnet_disable`: A boolean (`true`/`false`) to control behavior for FanFiction.Net (FFNet) URLs. Defaults to `true`. When `true`, FFNet URLs found in emails will only trigger a notification (if configured) and will not be downloaded or processed further. If set to `false`, FFNet URLs will be processed like any other supported site. This is due to FFNet often having issues with automated access.
 
 ### Calibre
 
