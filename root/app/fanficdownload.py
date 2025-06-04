@@ -184,17 +184,25 @@ def main():
         ff_logging.log(f"  Email Server: {email_server}")
         email_mailbox = config_data.get("email", {}).get("mailbox", "Not Specified")
         ff_logging.log(f"  Email Mailbox: {email_mailbox}")
-        email_sleep_time = config_data.get("email", {}).get("sleep_time", 60) # Default to 60 if not specified
+        email_sleep_time = config_data.get("email", {}).get(
+            "sleep_time", 60
+        )  # Default to 60 if not specified
         ff_logging.log(f"  Email Sleep Time: {email_sleep_time}")
-        email_ffnet_disable = config_data.get("email", {}).get("ffnet_disable", True) # Default to True
+        email_ffnet_disable = config_data.get("email", {}).get(
+            "ffnet_disable", True
+        )  # Default to True
         ff_logging.log(f"  FFNet Disabled: {email_ffnet_disable}")
 
         # Log Calibre Path
         calibre_path = config_data.get("calibre", {}).get("path", "Not Specified")
         ff_logging.log(f"  Calibre Path: {calibre_path}")
-        calibre_default_ini = config_data.get("calibre", {}).get("default_ini", "Not Specified")
+        calibre_default_ini = config_data.get("calibre", {}).get(
+            "default_ini", "Not Specified"
+        )
         ff_logging.log(f"  Calibre Default INI: {calibre_default_ini}")
-        calibre_personal_ini = config_data.get("calibre", {}).get("personal_ini", "Not Specified")
+        calibre_personal_ini = config_data.get("calibre", {}).get(
+            "personal_ini", "Not Specified"
+        )
         ff_logging.log(f"  Calibre Personal INI: {calibre_personal_ini}")
 
         # Log Pushbullet Status
@@ -208,7 +216,9 @@ def main():
         # Log Apprise Status
         apprise_urls = config_data.get("apprise", {}).get("urls", [])
         if apprise_urls:
-            ff_logging.log(f"  Apprise Notifications: Enabled with {len(apprise_urls)} target(s)")
+            ff_logging.log(
+                f"  Apprise Notifications: Enabled with {len(apprise_urls)} target(s)"
+            )
         else:
             ff_logging.log("  Apprise Notifications: Disabled")
 
@@ -219,8 +229,6 @@ def main():
 
     # Initialize configurations for email
     email_info = url_ingester.EmailInfo(args.config)
-
-    # Notification wrapper was initialized earlier for logging purposes
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing

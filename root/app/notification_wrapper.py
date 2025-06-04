@@ -14,22 +14,22 @@ class NotificationWrapper:
         """
         self.notification_workers: List[notification_base.NotificationBase] = []
         # Store toml_path if needed by the new _initialize_workers structure, or pass directly
-        self.toml_path = toml_path 
-        self._initialize_workers() # No longer passes toml_path as it's an instance var
+        self.toml_path = toml_path
+        self._initialize_workers()  # No longer passes toml_path as it's an instance var
 
-    def _initialize_workers(self) -> None: # toml_path removed from signature
+    def _initialize_workers(self) -> None:  # toml_path removed from signature
         """
         Initializes the AppriseNotification worker.
         AppriseNotification is now the sole notification handler.
         """
-        self.notification_workers = [] # Ensure it's reset
+        self.notification_workers = []  # Ensure it's reset
         try:
             # Pass self.toml_path, which was set in __init__
             apprise_worker = AppriseNotification(toml_path=self.toml_path)
-            if apprise_worker.is_enabled(): # is_enabled() is preferred over direct .enabled
+            if (
+                apprise_worker.is_enabled()
+            ):  # is_enabled() is preferred over direct .enabled
                 self.notification_workers.append(apprise_worker)
-                # Using log as per existing style, adjust if specific color codes are managed by ff_logging
-                ff_logging.log("AppriseNotification worker added and enabled.")
             else:
                 ff_logging.log_failure(
                     "AppriseNotification worker initialized but is not enabled (no valid URLs found/configured, including any auto-added Pushbullet)."
