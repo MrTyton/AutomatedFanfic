@@ -191,22 +191,42 @@ jobs:
     needs: [check_and_update, run_ci] # Depends on the same jobs as build_docker
     if: always() # Ensure this job runs regardless of preceding job outcomes
     runs-on: ubuntu-latest
+    outputs:
+      should_run_docker_build: ${{ steps.check_conditions.outputs.should_run_docker_build }}
+      commit_sha_to_build: ${{ steps.check_conditions.outputs.commit_sha_to_build }}
     steps:
-      - name: Display context values
-        run: |
-          echo "Commit SHA from 'check_and_update': ${{ needs.check_and_update.outputs.commit_sha }}"
-          echo "Is commit SHA not empty? ${{ needs.check_and_update.outputs.commit_sha != '' }}"
-          echo "Result of 'run_ci' job: ${{ needs.run_ci.result }}"
-          echo "Is run_ci result 'success'? ${{ needs.run_ci.result == 'success' }}"
-          echo "Combined condition for build_docker: ${{ needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' }}"
+    - name: Evaluate conditions and set outputs
+      id: check_conditions
+      run: |
+        echo "--- Debug Job Status: Evaluating Conditions ---"
+        commit_sha_val="${{ needs.check_and_update.outputs.commit_sha }}"
+        latest_updated_val="${{ needs.check_and_update.outputs.latest_updated }}" # Though not used in if, good to log
+        run_ci_result_val="${{ needs.run_ci.result }}"
+
+        echo "Raw commit_sha_val: $commit_sha_val"
+        echo "Raw latest_updated_val: $latest_updated_val"
+        echo "Raw run_ci_result_val: $run_ci_result_val"
+
+        if [[ "$commit_sha_val" != "" && "$run_ci_result_val" == "success" ]]; then
+          echo "Conditions MET for Docker build."
+          echo "should_run_docker_build=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "Conditions NOT MET for Docker build."
+          echo "should_run_docker_build=false" >> "$GITHUB_OUTPUT"
+        fi
+        # Always output the commit_sha_val for the next job to use, even if conditions are not met
+        # This simplifies the next job's 'with' block, it can always try to use this.
+        # If 'should_run_docker_build' is false, build_docker won't run anyway.
+        echo "commit_sha_to_build=$commit_sha_val" >> "$GITHUB_OUTPUT"
+        echo "--- End of Debug Job Status Evaluation ---"
 
   # Third job: Build Docker
   build_docker:
-    needs: [check_and_update, run_ci]
-    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success'
+    needs: [check_and_update, run_ci, debug_job_status]
+    if: needs.debug_job_status.outputs.should_run_docker_build == 'true'
     uses: ./.github/workflows/docker-image.yml 
     with:
-      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
+      commit_sha: ${{ needs.debug_job_status.outputs.commit_sha_to_build }}
     secrets: # 'secrets' is at the job level
       DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
       DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
