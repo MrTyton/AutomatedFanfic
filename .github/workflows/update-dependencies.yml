@@ -222,7 +222,7 @@ jobs:
 
   # Third job: Build Docker
   build_docker:
-    needs: [check_and_update, run_ci, debug_job_status]
+    needs: [debug_job_status]
     if: needs.debug_job_status.outputs.should_run_docker_build == 'true'
     uses: ./.github/workflows/docker-image.yml 
     with:
