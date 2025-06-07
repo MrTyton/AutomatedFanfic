@@ -101,6 +101,8 @@ class EmailInfo:
         self.mailbox = email_config.get("mailbox")
         # Set the default sleep time, defaulting to 60 seconds if not specified
         self.sleep_time = email_config.get("sleep_time", 60)
+        # Set ffnet_disable, defaulting to True if not specified
+        self.ffnet_disable = email_config.get("ffnet_disable", True)
 
     def get_urls(self) -> set[str]:
         """
@@ -143,7 +145,7 @@ def email_watcher(
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
 
             # Workaround for ffnet issues
-            if fanfic.site == "ffnet":
+            if email_info.ffnet_disable and fanfic.site == "ffnet":
                 notification_info.send_notification(
                     "New Fanfiction Download", fanfic.url, fanfic.site
                 )
