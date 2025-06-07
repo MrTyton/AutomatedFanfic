@@ -13,7 +13,8 @@ import url_ingester
 import url_worker
 
 # Define the application version
-__version__ = "1.3.0"
+__version__ = "1.3.7"
+
 
 def parse_arguments() -> argparse.Namespace:
     """
@@ -164,56 +165,74 @@ def main():
         with open(args.config, "rb") as fp:
             config_data = tomllib.load(fp)
     except FileNotFoundError:
-        ff_logging.log_failure(
-            f"Configuration file not found at {args.config}"
-        )
+        ff_logging.log_failure(f"Configuration file not found at {args.config}")
         sys.exit(1)
     except Exception as e:
-        ff_logging.log_failure(
-            f"Error loading configuration file {args.config}: {e}")
+        ff_logging.log_failure(f"Error loading configuration file {args.config}: {e}")
         sys.exit(1)
 
     # --- Log Specific Configuration Details ---
+    # Initialize NotificationWrapper early for logging
+    notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
+
     ff_logging.log("--- Configuration Details ---")
     try:
         # Log Email Address
-        email_address = config_data.get("email", {}).get(
-            "email", "Not Specified"
-        )
+        email_address = config_data.get("email", {}).get("email", "Not Specified")
         ff_logging.log(f"  Email Account: {email_address}")
+        email_server = config_data.get("email", {}).get("server", "Not Specified")
+        ff_logging.log(f"  Email Server: {email_server}")
+        email_mailbox = config_data.get("email", {}).get("mailbox", "Not Specified")
+        ff_logging.log(f"  Email Mailbox: {email_mailbox}")
+        email_sleep_time = config_data.get("email", {}).get(
+            "sleep_time", 60
+        )  # Default to 60 if not specified
+        ff_logging.log(f"  Email Sleep Time: {email_sleep_time}")
+        email_ffnet_disable = config_data.get("email", {}).get(
+            "ffnet_disable", True
+        )  # Default to True
+        ff_logging.log(f"  FFNet Disabled: {email_ffnet_disable}")
 
         # Log Calibre Path
-        calibre_path = config_data.get("calibre", {}).get(
-            "path", "Not Specified"
-        )
+        calibre_path = config_data.get("calibre", {}).get("path", "Not Specified")
         ff_logging.log(f"  Calibre Path: {calibre_path}")
+        calibre_default_ini = config_data.get("calibre", {}).get(
+            "default_ini", "Not Specified"
+        )
+        ff_logging.log(f"  Calibre Default INI: {calibre_default_ini}")
+        calibre_personal_ini = config_data.get("calibre", {}).get(
+            "personal_ini", "Not Specified"
+        )
+        ff_logging.log(f"  Calibre Personal INI: {calibre_personal_ini}")
 
         # Log Pushbullet Status
-        pb_enabled = config_data.get("pushbullet", {}).get(
-            "enabled", False
-        )  # Default to False if not found
+        pb_enabled = config_data.get("pushbullet", {}).get("enabled", False)
         pb_status = "Enabled" if pb_enabled else "Disabled"
         ff_logging.log(f"  Pushbullet Notifications: {pb_status}")
+        if pb_enabled:
+            pb_device = config_data.get("pushbullet", {}).get("device", "Not Specified")
+            ff_logging.log(f"  Pushbullet Device: {pb_device}")
+
+        # Log Apprise Status
+        apprise_urls = config_data.get("apprise", {}).get("urls", [])
+        if apprise_urls:
+            ff_logging.log(
+                f"  Apprise Notifications: Enabled with {len(apprise_urls)} target(s)"
+            )
+        else:
+            ff_logging.log("  Apprise Notifications: Disabled")
 
     except Exception as e:
-        ff_logging.log_failure(
-            f"  Error accessing specific configuration details: {e}"
-        )
+        ff_logging.log_failure(f"  Error accessing specific configuration details: {e}")
     ff_logging.log("-----------------------------")
     # --- End Logging ---
 
-    # Initialize configurations for email, pushbullet notifications, and calibre database
+    # Initialize configurations for email
     email_info = url_ingester.EmailInfo(args.config)
-
-    # Create the Notification Wrapper. All notifications are sent through this object,
-    # and the individual initializations of each class must be added to this object.
-    notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
 
     with mp.Manager() as manager:
         # Create queues for each site and a waiting queue for delayed processing
-        queues = {
-            site: manager.Queue() for site in regex_parsing.url_parsers.keys()
-        }
+        queues = {site: manager.Queue() for site in regex_parsing.url_parsers.keys()}
         waiting_queue = manager.Queue()
         cdb_info = calibre_info.CalibreInfo(args.config, manager)
         cdb_info.check_installed()

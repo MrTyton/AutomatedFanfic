@@ -82,10 +82,10 @@ class AppriseNotification(notification_base.NotificationBase):
         # URLs are already added to self.apobj in __init__
         success = False
         if self.apobj.notify(body=body, title=title):
-            ff_logging.log(f"Apprise notification sent successfully to {len(self.apobj.urls())} target(s).")
+            ff_logging.log(f"({site}) Apprise notification for '{title}':'{body}' sent successfully to {len(self.apobj.urls())} {'target' if len(self.apobj.urls()) == 1 else 'targets'}")
             success = True
         else:
-            ff_logging.log_failure(f"Failed to send Apprise notification to {len(self.apobj.urls())} target(s).")
+            ff_logging.log_failure(f"({site}) Failed to send Apprise notification to {len(self.apobj.urls())} target(s).")
         return success
 
     def is_enabled(self) -> bool:

@@ -187,6 +187,17 @@ jobs:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Inherit secrets if python-app ever needs them
 
+  # Third job: Build Docker
+  build_docker:
+    needs: [check_and_update, run_ci]
+    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success' # Add this line
+    uses: ./.github/workflows/docker-image.yml 
+    with:
+      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
+    secrets: # 'secrets' is at the job level
+      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      
   debug_job_status: # New debugging job
     needs: [check_and_update, run_ci] # Depends on the same jobs as build_docker
     if: always() # Ensure this job runs regardless of preceding job outcomes
@@ -220,13 +231,3 @@ jobs:
         echo "commit_sha_to_build=$commit_sha_val" >> "$GITHUB_OUTPUT"
         echo "--- End of Debug Job Status Evaluation ---"
 
-  # Third job: Build Docker
-  build_docker:
-    needs: [debug_job_status]
-    if: needs.debug_job_status.outputs.should_run_docker_build == 'true'
-    uses: ./.github/workflows/docker-image.yml 
-    with:
-      commit_sha: ${{ needs.debug_job_status.outputs.commit_sha_to_build }}
-    secrets: # 'secrets' is at the job level
-      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}

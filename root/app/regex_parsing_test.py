@@ -22,9 +22,7 @@ class TestRegexParsing(unittest.TestCase):
                 input="story-name-1234", expected="story-name"
             ),
             # Test case: Extract 'author' from 'author-name'
-            CheckFilenameExtractionTestCase(
-                input="author-name", expected="author"
-            ),
+            CheckFilenameExtractionTestCase(input="author-name", expected="author"),
             # Test case: Extract 'story-name' from '/path/story-name-1234.epub'
             CheckFilenameExtractionTestCase(
                 input=os.path.join("path", "story-name-1234.epub"),
@@ -164,7 +162,7 @@ class TestRegexParsing(unittest.TestCase):
             # Fanfiction.net tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://www.fanfiction.net/s/12345678/1/Story-Title",
-                expected_url="www.fanfiction.net/s/12345678/1/",
+                expected_url="www.fanfiction.net/s/12345678/",
                 expected_site="ffnet",
             ),
             CheckGenerateFanficInfoTestCase(
@@ -226,9 +224,7 @@ class TestRegexParsing(unittest.TestCase):
             ),
         ]
     )
-    def test_generate_FanficInfo_from_url(
-        self, input_url, expected_url, expected_site
-    ):
+    def test_generate_FanficInfo_from_url(self, input_url, expected_url, expected_site):
         """Tests the generate_FanficInfo_from_url function for various sites."""
         fanfic = regex_parsing.generate_FanficInfo_from_url(input_url)
         self.assertIsInstance(fanfic, fanfic_info.FanficInfo)
