@@ -16,8 +16,9 @@ TOML file that has been loaded into `self.config`.
 """
 
 import time
-import tomllib
 from typing import Callable, Any
+from config_models import ConfigManager, ConfigError, ConfigValidationError
+import ff_logging
 
 kSleepTime = 10
 kMaxAttempts = 3
@@ -30,9 +31,13 @@ class NotificationBase:
         """
         self.enabled = False
 
-        # Load the configuration from the TOML file
-        with open(toml_path, "rb") as file:
-            self.config = tomllib.load(file)
+        # Load the configuration using ConfigManager
+        try:
+            self.config = ConfigManager.load_config(toml_path)
+        except (ConfigError, ConfigValidationError) as e:
+            ff_logging.log_failure(f"Failed to load configuration: {e}")
+            # Set to None to indicate configuration loading failed
+            self.config = None
 
     def send_notification(self, title: str, body: str, site: str) -> bool:
         """

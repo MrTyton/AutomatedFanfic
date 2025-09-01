@@ -2,12 +2,12 @@ import multiprocessing as mp
 import socket
 import time
 import logging
-import tomllib
 from contextlib import contextmanager
 from fanficfare import geturls
 import ff_logging
 import regex_parsing
 import notification_wrapper
+from config_models import ConfigManager
 
 
 @contextmanager
@@ -85,24 +85,19 @@ class EmailInfo:
         Args:
             toml_path (str): The path to the TOML configuration file.
         """
-        # Open the TOML configuration file in binary mode
-        with open(toml_path, "rb") as file:
-            # Load the configuration from the TOML file
-            config = tomllib.load(file)
-        # Retrieve the 'email' section from the loaded configuration
-        email_config = config.get("email", {})
-        # Set the email address from the configuration
-        self.email = email_config.get("email")
-        # Set the password for the email account from the configuration
-        self.password = email_config.get("password")
-        # Set the email server from the configuration
-        self.server = email_config.get("server")
-        # Set the mailbox to be used from the configuration
-        self.mailbox = email_config.get("mailbox")
-        # Set the default sleep time, defaulting to 60 seconds if not specified
-        self.sleep_time = email_config.get("sleep_time", 60)
-        # Set ffnet_disable, defaulting to True if not specified
-        self.ffnet_disable = email_config.get("ffnet_disable", True)
+        # Load configuration using the new ConfigManager
+        config = ConfigManager.load_config(toml_path)
+
+        # Extract email configuration with proper type safety
+        email_config = config.email
+
+        # Set attributes from the validated configuration
+        self.email = email_config.email
+        self.password = email_config.password
+        self.server = email_config.server
+        self.mailbox = email_config.mailbox
+        self.sleep_time = email_config.sleep_time
+        self.ffnet_disable = email_config.ffnet_disable
 
     def get_urls(self) -> set[str]:
         """

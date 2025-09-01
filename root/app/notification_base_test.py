@@ -6,28 +6,39 @@ from notification_base import (
     kSleepTime,
     kMaxAttempts,
 )
-import tomllib
+from config_models import (
+    AppConfig,
+    EmailConfig,
+    CalibreConfig,
+    AppriseConfig,
+    PushbulletConfig,
+)
 
 
 class TestNotificationBase(unittest.TestCase):
     def setUp(self):
-        patcher_open = patch("builtins.open", new_callable=MagicMock)
-        patcher_toml_load = patch("tomllib.load", return_value={"key": "value"})
+        # Create a mock config for testing
+        self.mock_config = AppConfig(
+            email=EmailConfig(),
+            calibre=CalibreConfig(path="/tmp/calibre"),
+            apprise=AppriseConfig(),
+            pushbullet=PushbulletConfig(),
+        )
 
-        self.mock_open = patcher_open.start()
-        self.mock_toml_load = patcher_toml_load.start()
-
-        self.addCleanup(patcher_open.stop)
-        self.addCleanup(patcher_toml_load.stop)
+        # Patch ConfigManager.load_config to return our mock config
+        patcher_config = patch(
+            "config_models.ConfigManager.load_config", return_value=self.mock_config
+        )
+        self.mock_load_config = patcher_config.start()
+        self.addCleanup(patcher_config.stop)
 
         self.notification = NotificationBase("fake_path")
 
     def test_initialization(self):
         # Test initialization and config loading
-        self.mock_open.assert_called_once_with("fake_path", "rb")
-        self.mock_toml_load.assert_called_once()
+        self.mock_load_config.assert_called_once_with("fake_path")
         self.assertFalse(self.notification.enabled)
-        self.assertEqual(self.notification.config, {"key": "value"})
+        self.assertEqual(self.notification.config, self.mock_config)
 
     def test_send_notification_not_implemented(self):
         # Test that send_notification raises NotImplementedError
