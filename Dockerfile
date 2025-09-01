@@ -7,11 +7,13 @@ LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 
 ENV PUID="911" \
     PGID="911" \
-    VERBOSE=false
+    VERBOSE=false \
+    DEBIAN_FRONTEND=noninteractive
 
 RUN set -ex && \
+    echo "**** install dependencies ****" && \
     apt-get update && \
-    apt-get install -y --upgrade \
+    apt-get install -y --upgrade --no-install-recommends \
     bash \
     ca-certificates \
     gcc \
@@ -20,7 +22,61 @@ RUN set -ex && \
     curl \
     dbus \
     jq \
-    python3
+    python3 \
+    fcitx-rime \
+    fonts-wqy-microhei \
+    libnss3 \
+    libopengl0 \
+    libxkbcommon-x11-0 \
+    libxcb-cursor0 \
+    libxcb-icccm4 \
+    libxcb-image0 \
+    libxcb-keysyms1 \
+    libxcb-randr0 \
+    libxcb-render-util0 \
+    libxcb-xinerama0 \
+    poppler-utils \
+    python3-xdg \
+    ttf-wqy-zenhei \
+    xz-utils && \
+    echo "**** cleaning up ****" && \
+    apt-get clean && \
+    rm -rf \
+    /tmp/* \
+    /var/lib/apt/lists/* \
+    /var/tmp/*
+
+RUN echo "**** install calibre ****" && \
+    mkdir -p \
+    /opt/calibre && \
+    if [ -z "${CALIBRE_RELEASE}" ]; then \
+        CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
+        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
+    else \
+        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE}" | sed 's/^v//'); \
+    fi && \
+    echo "Using Calibre version: ${CALIBRE_VERSION}" && \
+    CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
+    echo "Downloading from ${CALIBRE_URL}" && \
+    curl -o \
+    /tmp/calibre-tarball.txz -L \
+    "${CALIBRE_URL}" && \
+    tar xvf /tmp/calibre-tarball.txz -C \
+    /opt/calibre && \
+    /opt/calibre/calibre_postinstall && \
+    dbus-uuidgen > /etc/machine-id && \
+    rm -rf /tmp/calibre-tarball.txz
+
+COPY requirements.txt /tmp/
+RUN echo "*** Install Other Python Packages ***" && \
+    python3 -m pip install --no-cache-dir -r /tmp/requirements.txt && \
+    echo "*** Install FFF ***" && \
+    echo "FF Using Test Release" && \
+    python3 -m pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare && \
+    echo "**** cleaning up ****" && \
+    rm -rf /tmp/*
+
+COPY root/ /
 
 RUN addgroup --gid "$PGID" abc && \
     adduser \
@@ -30,34 +86,11 @@ RUN addgroup --gid "$PGID" abc && \
     --uid "$PUID" \
     --ingroup abc \
     --shell /bin/bash \
-    abc 
-
-RUN echo "**** install calibre ****" && \
-    apt-get install -y calibre && \
-    dbus-uuidgen > /etc/machine-id
-
-
-RUN echo "*** Install Other Python Packages ***"
-COPY requirements.txt /tmp/
-RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.txt
-
-RUN echo "*** Install FFF ***" && \
-    echo "FF Using Test Release"; \
-    python3 -m pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare
-
-RUN echo "**** cleanup ****" && \
-    rm -rf \
-    /tmp/* \
-    /var/lib/apt/lists/* \
-    /var/tmp/*
-
-COPY root/ /
-
-RUN chmod -R +777 /app/
+    abc && \
+    chmod -R +777 /app/
 
 VOLUME /config
 
 WORKDIR /config
 
-#ENTRYPOINT ["/init"]
-CMD sh -c 'if [ "$VERBOSE" = "true" ]; then python -u /app/fanficdownload.py --config="/config/config.toml" --verbose; else python -u /app/fanficdownload.py --config="/config/config.toml"; fi'
+CMD ["/app/entrypoint.sh"]
