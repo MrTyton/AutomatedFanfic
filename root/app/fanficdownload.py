@@ -2,7 +2,7 @@ import argparse
 import multiprocessing as mp
 import signal
 import sys
-import tomllib
+from typing import Any
 import ff_logging  # Custom logging module for formatted logging
 
 import calibre_info
@@ -11,6 +11,7 @@ import notification_wrapper
 import regex_parsing
 import url_ingester
 import url_worker
+from config_models import ConfigManager, ConfigError, ConfigValidationError
 
 # Define the application version
 __version__ = "1.3.23"
@@ -42,8 +43,8 @@ def parse_arguments() -> argparse.Namespace:
 def create_processes(
     email_info: url_ingester.EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    queues: dict[str, mp.Queue],
-    waiting_queue: mp.Queue,
+    queues: dict[str, Any],
+    waiting_queue: Any,
     cdb_info: calibre_info.CalibreInfo,
 ) -> tuple[mp.Process, mp.Process]:
     """
@@ -161,14 +162,17 @@ def main():
     )
     ff_logging.log(f"Using configuration file: {args.config}")
 
+    # Load and validate configuration using the new system
     try:
-        with open(args.config, "rb") as fp:
-            config_data = tomllib.load(fp)
-    except FileNotFoundError:
-        ff_logging.log_failure(f"Configuration file not found at {args.config}")
+        config = ConfigManager.load_config(args.config)
+    except ConfigError as e:
+        ff_logging.log_failure(f"Configuration error: {e}")
+        sys.exit(1)
+    except ConfigValidationError as e:
+        ff_logging.log_failure(f"Configuration validation failed: {e}")
         sys.exit(1)
     except Exception as e:
-        ff_logging.log_failure(f"Error loading configuration file {args.config}: {e}")
+        ff_logging.log_failure(f"Unexpected error loading configuration: {e}")
         sys.exit(1)
 
     # --- Log Specific Configuration Details ---
@@ -177,47 +181,34 @@ def main():
 
     ff_logging.log("--- Configuration Details ---")
     try:
-        # Log Email Address
-        email_address = config_data.get("email", {}).get("email", "Not Specified")
-        ff_logging.log(f"  Email Account: {email_address}")
-        email_server = config_data.get("email", {}).get("server", "Not Specified")
-        ff_logging.log(f"  Email Server: {email_server}")
-        email_mailbox = config_data.get("email", {}).get("mailbox", "Not Specified")
-        ff_logging.log(f"  Email Mailbox: {email_mailbox}")
-        email_sleep_time = config_data.get("email", {}).get(
-            "sleep_time", 60
-        )  # Default to 60 if not specified
-        ff_logging.log(f"  Email Sleep Time: {email_sleep_time}")
-        email_ffnet_disable = config_data.get("email", {}).get(
-            "ffnet_disable", True
-        )  # Default to True
-        ff_logging.log(f"  FFNet Disabled: {email_ffnet_disable}")
+        # Log Email Configuration
+        ff_logging.log(f"  Email Account: {config.email.email or 'Not Specified'}")
+        ff_logging.log(f"  Email Server: {config.email.server or 'Not Specified'}")
+        ff_logging.log(f"  Email Mailbox: {config.email.mailbox}")
+        ff_logging.log(f"  Email Sleep Time: {config.email.sleep_time}")
+        ff_logging.log(f"  FFNet Disabled: {config.email.ffnet_disable}")
 
-        # Log Calibre Path
-        calibre_path = config_data.get("calibre", {}).get("path", "Not Specified")
-        ff_logging.log(f"  Calibre Path: {calibre_path}")
-        calibre_default_ini = config_data.get("calibre", {}).get(
-            "default_ini", "Not Specified"
+        # Log Calibre Configuration
+        ff_logging.log(f"  Calibre Path: {config.calibre.path or 'Not Specified'}")
+        ff_logging.log(
+            f"  Calibre Default INI: {config.calibre.default_ini or 'Not Specified'}"
         )
-        ff_logging.log(f"  Calibre Default INI: {calibre_default_ini}")
-        calibre_personal_ini = config_data.get("calibre", {}).get(
-            "personal_ini", "Not Specified"
+        ff_logging.log(
+            f"  Calibre Personal INI: {config.calibre.personal_ini or 'Not Specified'}"
         )
-        ff_logging.log(f"  Calibre Personal INI: {calibre_personal_ini}")
 
-        # Log Pushbullet Status
-        pb_enabled = config_data.get("pushbullet", {}).get("enabled", False)
-        pb_status = "Enabled" if pb_enabled else "Disabled"
+        # Log Pushbullet Configuration
+        pb_status = "Enabled" if config.pushbullet.enabled else "Disabled"
         ff_logging.log(f"  Pushbullet Notifications: {pb_status}")
-        if pb_enabled:
-            pb_device = config_data.get("pushbullet", {}).get("device", "Not Specified")
-            ff_logging.log(f"  Pushbullet Device: {pb_device}")
-
-        # Log Apprise Status
-        apprise_urls = config_data.get("apprise", {}).get("urls", [])
-        if apprise_urls:
+        if config.pushbullet.enabled:
             ff_logging.log(
-                f"  Apprise Notifications: Enabled with {len(apprise_urls)} target(s)"
+                f"  Pushbullet Device: {config.pushbullet.device or 'Not Specified'}"
+            )
+
+        # Log Apprise Configuration
+        if config.apprise.urls:
+            ff_logging.log(
+                f"  Apprise Notifications: Enabled with {len(config.apprise.urls)} target(s)"
             )
         else:
             ff_logging.log("  Apprise Notifications: Disabled")

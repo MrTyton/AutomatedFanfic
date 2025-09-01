@@ -1,171 +1,137 @@
 from parameterized import parameterized
 import unittest
-from unittest.mock import mock_open, patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock
 import multiprocessing as mp
 
 from url_ingester import EmailInfo, email_watcher
-from notification_wrapper import (
-    NotificationWrapper,
-)  # Assuming this is the correct import
-from fanfic_info import FanficInfo  # Assuming this is the correct import
+from notification_wrapper import NotificationWrapper
+from fanfic_info import FanficInfo
+from config_models import (
+    AppConfig,
+    EmailConfig,
+    CalibreConfig,
+    AppriseConfig,
+    PushbulletConfig,
+)
 
 
 class TestUrlIngester(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "path/to/config.toml",
-                """
-                [email]
-                email = "test_email"
-                password = "test_password"
-                server = "test_server"
-                mailbox = "test_mailbox"
-                sleep_time = 10
-                """,
-                {
-                    "email": {
-                        "email": "test_email",
-                        "password": "test_password",
-                        "server": "test_server",
-                        "mailbox": "test_mailbox",
-                        "sleep_time": 10,
-                    }
-                },
+                "basic_config",
+                "test@example.com",
+                "test_password",
+                "test_server",
+                "test_mailbox",
+                10,
             ),
             (
-                "path/to/another_config.toml",
-                """
-                [email]
-                email = "another_test_email"
-                password = "another_test_password"
-                server = "another_test_server"
-                mailbox = "another_test_mailbox"
-                sleep_time = 20
-                """,
-                {
-                    "email": {
-                        "email": "another_test_email",
-                        "password": "another_test_password",
-                        "server": "another_test_server",
-                        "mailbox": "another_test_mailbox",
-                        "sleep_time": 20,
-                    }
-                },
+                "different_config",
+                "another@test.com",
+                "another_password",
+                "another_server",
+                "another_mailbox",
+                20,
+            ),
+            (
+                "minimal_config",
+                "minimal@test.com",
+                "min_pass",
+                "min_server",
+                "INBOX",
+                5,
             ),
         ]
     )
-    @patch("builtins.open", new_callable=mock_open)
-    def test_email_info_init(self, toml_path, config, expected_config, mock_file):
-        mock_file.return_value.read.return_value = str(config).encode()
-        email_info = EmailInfo(toml_path)
-        self.assertEqual(email_info.email, expected_config["email"]["email"])
-        self.assertEqual(email_info.password, expected_config["email"]["password"])
-        self.assertEqual(email_info.server, expected_config["email"]["server"])
-        self.assertEqual(email_info.mailbox, expected_config["email"]["mailbox"])
-        self.assertEqual(email_info.sleep_time, expected_config["email"]["sleep_time"])
-
-    @parameterized.expand(
-        [
-            (
-                "Config with ffnet_disable = true",
-                """
-                [email]
-                email = "test_email"
-                password = "test_password"
-                server = "test_server"
-                mailbox = "test_mailbox"
-                ffnet_disable = true
-                """,
-                True,
-            ),
-            (
-                "Config with ffnet_disable = false",
-                """
-                [email]
-                email = "test_email"
-                password = "test_password"
-                server = "test_server"
-                mailbox = "test_mailbox"
-                ffnet_disable = false
-                """,
-                False,
-            ),
-            (
-                "Config without ffnet_disable (defaulting to True)",
-                """
-                [email]
-                email = "test_email"
-                password = "test_password"
-                server = "test_server"
-                mailbox = "test_mailbox"
-                """,
-                True,
-            ),
-        ]
-    )
-    @patch("builtins.open", new_callable=mock_open)
-    def test_email_info_init_ffnet_disable(
-        self, name, config_str, expected_ffnet_disable, mock_file
+    @patch("config_models.ConfigManager.load_config")
+    def test_email_info_init_basic(
+        self, name, email, password, server, mailbox, sleep_time, mock_load_config
     ):
-        mock_file.return_value.read.return_value = config_str.encode()
-        email_info = EmailInfo("dummy_path.toml")
-        self.assertEqual(email_info.ffnet_disable, expected_ffnet_disable)
+        # Setup mock config
+        mock_config = AppConfig(
+            email=EmailConfig(
+                email=email,
+                password=password,
+                server=server,
+                mailbox=mailbox,
+                sleep_time=sleep_time,
+            ),
+            calibre=CalibreConfig(path="/tmp/calibre"),
+            apprise=AppriseConfig(),
+            pushbullet=PushbulletConfig(),
+        )
+        mock_load_config.return_value = mock_config
+
+        email_info = EmailInfo("test_path.toml")
+
+        self.assertEqual(email_info.email, email)
+        self.assertEqual(email_info.password, password)
+        self.assertEqual(email_info.server, server)
+        self.assertEqual(email_info.mailbox, mailbox)
+        self.assertEqual(email_info.sleep_time, sleep_time)
 
     @parameterized.expand(
         [
-            (
-                """
-                [email]
-                email = "test_email"
-                password = "test_password"
-                server = "test_server"
-                mailbox = "test_mailbox"
-                sleep_time = 10
-                """,
-                {
-                    "email": "test_email",
-                    "password": "test_password",
-                    "server": "test_server",
-                    "mailbox": "test_mailbox",
-                },
-                ["url1", "url2"],
+            ("ffnet_enabled", True),
+            ("ffnet_disabled", False),
+        ]
+    )
+    @patch("config_models.ConfigManager.load_config")
+    def test_email_info_init_ffnet_disable(self, name, ffnet_disable, mock_load_config):
+        # Setup mock config with ffnet_disable setting
+        mock_config = AppConfig(
+            email=EmailConfig(
+                email="test@example.com",
+                password="test_password",
+                server="test_server",
+                ffnet_disable=ffnet_disable,
             ),
-            (
-                """
-                [email]
-                email = "another_test_email"
-                password = "another_test_password"
-                server = "another_test_server"
-                mailbox = "another_test_mailbox"
-                sleep_time = 20
-                """,
-                {
-                    "email": "another_test_email",
-                    "password": "another_test_password",
-                    "server": "another_test_server",
-                    "mailbox": "another_test_mailbox",
-                },
-                ["url3", "url4"],
-            ),
+            calibre=CalibreConfig(path="/tmp/calibre"),
+            apprise=AppriseConfig(),
+            pushbullet=PushbulletConfig(),
+        )
+        mock_load_config.return_value = mock_config
+
+        email_info = EmailInfo("test_path.toml")
+
+        self.assertEqual(email_info.ffnet_disable, ffnet_disable)
+
+    @parameterized.expand(
+        [
+            ("scenario_1", ["url1", "url2"]),
+            ("scenario_2", ["url3", "url4", "url5"]),
+            ("empty_urls", []),
         ]
     )
     @patch("url_ingester.geturls.get_urls_from_imap")
-    @patch("builtins.open", new_callable=mock_open)
+    @patch("config_models.ConfigManager.load_config")
     def test_email_info_get_urls(
-        self, config, expected_config, urls, mock_file, mock_get_urls_from_imap
+        self, name, expected_urls, mock_load_config, mock_get_urls_from_imap
     ):
-        mock_get_urls_from_imap.return_value = urls
-        mock_file.return_value.read.return_value = str(config).encode()
-        email_info = EmailInfo("path/to/config.toml")
-        result = email_info.get_urls()
-        mock_get_urls_from_imap.assert_called_once_with(
-            expected_config["server"],
-            expected_config["email"],
-            expected_config["password"],
-            expected_config["mailbox"],
+        # Setup mock config
+        mock_config = AppConfig(
+            email=EmailConfig(
+                email="test@example.com",
+                password="test_password",
+                server="test_server",
+                mailbox="test_mailbox",
+                sleep_time=10,
+            ),
+            calibre=CalibreConfig(path="/tmp/calibre"),
+            apprise=AppriseConfig(),
+            pushbullet=PushbulletConfig(),
         )
-        self.assertEqual(result, urls)
+        mock_load_config.return_value = mock_config
+
+        # Setup mock URL return
+        mock_get_urls_from_imap.return_value = expected_urls
+
+        email_info = EmailInfo("test_path.toml")
+        result = email_info.get_urls()
+
+        self.assertEqual(result, expected_urls)
+        mock_get_urls_from_imap.assert_called_once()
 
 
 if __name__ == "__main__":

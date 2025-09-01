@@ -2,7 +2,7 @@ import multiprocessing as mp
 import os
 from subprocess import call
 import ff_logging  # Custom logging module for failure logging
-import tomllib  # Module for parsing TOML files
+from config_models import ConfigManager, ConfigError, ConfigValidationError
 
 
 class CalibreInfo:
@@ -13,95 +13,73 @@ class CalibreInfo:
     command line arguments for Calibre based on the loaded configuration.
     """
 
-    def __init__(self, toml_path: str, manager: mp.Manager):
+    def __init__(self, toml_path: str, manager):
         """
         Initializes the CalibreInfo object by loading the Calibre configuration from a
         TOML file.
 
         Args:
             toml_path (str): Path to the TOML configuration file.
-            manager (mp.Manager): A multiprocessing.Manager object to manage shared
+            manager: A multiprocessing.Manager object to manage shared
                 resources like locks.
         """
-        self.config = self._load_config(toml_path)
-        self.location = self._get_config_value(
-            "path", "Calibre library location not set in the config file."
-        )
-        self.username = self.config.get("username")
-        self.password = self.config.get("password")
-        self.default_ini = self._get_ini_file("default_ini", "defaults.ini")
-        self.personal_ini = self._get_ini_file("personal_ini", "personal.ini")
-        self.lock = manager.Lock()
-
-    def _load_config(self, toml_path: str) -> dict:
-        """
-        Loads the configuration from a TOML file.
-
-        Args:
-            toml_path (str): Path to the TOML configuration file.
-
-        Returns:
-            dict: The loaded configuration.
-        """
         try:
-            with open(toml_path, "rb") as file:
-                return tomllib.load(file).get("calibre", {})
-        except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
+            config = ConfigManager.load_config(toml_path)
+        except (ConfigError, ConfigValidationError) as e:
             message = f"Failed to load configuration from {toml_path}: {e}"
             ff_logging.log_failure(message)
             raise ValueError(message)
 
-    def _get_config_value(self, key: str, error_message: str) -> str:
-        """
-        Retrieves a configuration value, raising an error if it is not found.
+        self.location = config.calibre.path
+        if not self.location:
+            message = "Calibre library location not set in the config file."
+            ff_logging.log_failure(message)
+            raise ValueError(message)
 
-        Args:
-            key (str): The configuration key to retrieve.
-            error_message (str): The error message to log and raise if the key is not found.
+        self.username = config.calibre.username
+        self.password = config.calibre.password
+        self.default_ini = self._get_ini_file_from_config(
+            config.calibre.default_ini, "defaults.ini"
+        )
+        self.personal_ini = self._get_ini_file_from_config(
+            config.calibre.personal_ini, "personal.ini"
+        )
+        self.lock = manager.Lock()
 
-        Returns:
-            str: The configuration value.
-        """
-        value = self.config.get(key)
-        if not value:
-            ff_logging.log_failure(error_message)
-            raise ValueError(error_message)
-        return value
-
-    def _get_ini_file(self, config_key: str, default_filename: str) -> str:
+    def _get_ini_file_from_config(
+        self, config_path: str | None, default_filename: str
+    ) -> str:
         """
         Retrieves the ini file path from the configuration, verifying its existence.
 
         Args:
-            config_key (str): The key in the configuration for the ini file path.
-            default_filename (str): The default filename to use if the path is not specified.
+            config_path: The path from the configuration for the ini file.
+            default_filename: The default filename to use if the path is not specified.
 
         Returns:
             str: The path to the ini file or an empty string if the file does not exist.
         """
-        ini_file = self._append_filename(
-            self.config.get(config_key), default_filename
-        )
+        ini_file = self._append_filename(config_path, default_filename)
         if ini_file and not os.path.isfile(ini_file):
             ff_logging.log_failure(f"File {ini_file} does not exist.")
             return ""
         return ini_file
 
     @staticmethod
-    def _append_filename(path: str, filename: str) -> str:
+    def _append_filename(path: str | None, filename: str) -> str:
         """
         Appends the filename to the path if it's not already there.
 
         Args:
-            path (str): The base path.
-            filename (str): The filename to append to the path.
+            path: The base path.
+            filename: The filename to append to the path.
 
         Returns:
             str: The combined path with the filename appended.
         """
         if path and not path.endswith(filename):
             return os.path.join(path, filename)
-        return path
+        return path or ""
 
     @staticmethod
     def check_installed() -> bool:

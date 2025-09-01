@@ -3,6 +3,7 @@ from typing import List
 from concurrent.futures import ThreadPoolExecutor
 from apprise_notification import AppriseNotification
 import ff_logging
+from config_models import ConfigManager, ConfigError, ConfigValidationError
 
 
 class NotificationWrapper:
@@ -13,11 +14,10 @@ class NotificationWrapper:
             toml_path (str): Path to the TOML configuration file.
         """
         self.notification_workers: List[notification_base.NotificationBase] = []
-        # Store toml_path if needed by the new _initialize_workers structure, or pass directly
         self.toml_path = toml_path
-        self._initialize_workers()  # No longer passes toml_path as it's an instance var
+        self._initialize_workers()
 
-    def _initialize_workers(self) -> None:  # toml_path removed from signature
+    def _initialize_workers(self) -> None:
         """
         Initializes the AppriseNotification worker.
         AppriseNotification is now the sole notification handler.
