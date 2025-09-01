@@ -5,6 +5,10 @@ on:
     - cron: '0 23 * * *' # Every day at 11pm UTC
   workflow_dispatch:
 
+permissions:
+  contents: write # Needed to commit changes and read repository files
+  actions: write # Needed to call other workflows
+
 jobs:
   # First job: Check dependencies and commit if needed
   check_and_update:
@@ -23,9 +27,6 @@ jobs:
       - name: Read current Calibre version
         id: read_calibre
         run: echo "version=$(cat release-versions/calibre.txt)" >> $GITHUB_OUTPUT
-      - name: Read current S6 version
-        id: read_s6
-        run: echo "version=$(cat release-versions/s6.txt)" >> $GITHUB_OUTPUT
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -36,16 +37,38 @@ jobs:
         id: check_fanficfare
         run: |
           echo "Checking Fanficfare version..."
+          
+          # Validate fanficfare.txt exists
+          if [ ! -f "release-versions/fanficfare.txt" ]; then
+            echo "::error::fanficfare.txt not found in release-versions/"
+            exit 1
+          fi
+          
           CURRENT_FFF_VERSION=$(cat release-versions/fanficfare.txt)
+          if [ -z "$CURRENT_FFF_VERSION" ]; then
+            echo "::error::fanficfare.txt is empty or could not be read"
+            exit 1
+          fi
           echo "Current Fanficfare version: $CURRENT_FFF_VERSION"
 
           # Fetch version from TestPyPI simple index (more reliable than pip search)
           FFF_INDEX_URL="https://test.pypi.org/simple/fanficfare/"
-          LATEST_FFF_VERSION=$(curl -sSfL "$FFF_INDEX_URL" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
+          echo "Fetching version information from: $FFF_INDEX_URL"
+          
+          # Download the index page with better error handling
+          FFF_PAGE=$(curl -sSfL "$FFF_INDEX_URL" 2>/dev/null)
+          if [ $? -ne 0 ] || [ -z "$FFF_PAGE" ]; then
+            echo "::error::Failed to fetch FanFicFare index from $FFF_INDEX_URL"
+            exit 1
+          fi
+          
+          LATEST_FFF_VERSION=$(echo "$FFF_PAGE" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
 
           # Check if LATEST_FFF_VERSION is empty. If so, fail the workflow.
           if [ -z "$LATEST_FFF_VERSION" ]; then
             echo "::error::Could not determine the latest FanFicFare version from $FFF_INDEX_URL. Please check the URL and parsing logic."
+            echo "::debug::Raw page content (first 500 chars):"
+            echo "$FFF_PAGE" | head -c 500
             exit 1
           fi
           echo "Latest Fanficfare version found: $LATEST_FFF_VERSION"
@@ -67,8 +90,25 @@ jobs:
         id: check_calibre
         run: |
           echo "Checking Calibre version..."
+          
+          # Validate calibre.txt exists
+          if [ ! -f "release-versions/calibre.txt" ]; then
+            echo "::error::calibre.txt not found in release-versions/"
+            exit 1
+          fi
+          
           CURRENT_CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+          if [ -z "$CURRENT_CALIBRE_VERSION" ]; then
+            echo "::error::calibre.txt is empty or could not be read"
+            exit 1
+          fi
           echo "Current Calibre version: $CURRENT_CALIBRE_VERSION"
+
+          # Ensure jq is available for JSON parsing
+          if ! command -v jq &> /dev/null; then
+            echo "::error::jq is not available. Cannot parse GitHub API response."
+            exit 1
+          fi
 
           LATEST_RELEASE_URL="https://api.github.com/repos/kovidgoyal/calibre/releases/latest"
           LATEST_RELEASE_INFO=$(curl -sSfL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" "$LATEST_RELEASE_URL")
@@ -130,9 +170,29 @@ jobs:
           NEW_VERSION="${{ steps.update_latest_txt.outputs.new_version }}"
           PYTHON_FILE="root/app/fanficdownload.py"
           echo "Updating __version__ in $PYTHON_FILE to $NEW_VERSION"
+          
+          # Verify the file exists
+          if [ ! -f "$PYTHON_FILE" ]; then
+            echo "::error::Python file $PYTHON_FILE not found"
+            exit 1
+          fi
+          
+          # Verify __version__ line exists
+          if ! grep -q "^__version__ = " "$PYTHON_FILE"; then
+            echo "::error::No __version__ line found in $PYTHON_FILE"
+            exit 1
+          fi
+          
           # Use sed to find the line starting with __version__ and replace the string in quotes
           # This assumes the version is enclosed in double quotes. Adjust if using single quotes.
           sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" "$PYTHON_FILE"
+          
+          # Verify the replacement was successful
+          if ! grep -q "^__version__ = \"$NEW_VERSION\"" "$PYTHON_FILE"; then
+            echo "::error::Failed to update version in $PYTHON_FILE"
+            exit 1
+          fi
+          
           echo "Verification:"
           grep "__version__" "$PYTHON_FILE"
 
@@ -227,6 +287,4 @@ jobs:
     uses: ./.github/workflows/docker-image.yml 
     with:
       commit_sha: ${{ needs.debug_job_status.outputs.commit_sha_to_build }}
-    secrets: # 'secrets' is at the job level
-      DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+    secrets: inherit # Pass all secrets to the called workflow
