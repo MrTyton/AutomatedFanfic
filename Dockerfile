@@ -83,14 +83,21 @@ RUN apt-get update && \
 # Copy Calibre from build stage
 COPY --from=calibre-installer /opt/calibre /opt/calibre
 
-# Make calibre scripts executable and run post-install setup
+# Set up Calibre environment and check dependencies
 RUN echo "*** Setting up Calibre ***" && \
     find /opt/calibre -name "calibre_postinstall" -exec ls -la {} \; && \
     chmod +x /opt/calibre/calibre_postinstall && \
-    echo "*** Running Calibre post-install ***" && \
-    /opt/calibre/calibre_postinstall && \
+    echo "*** Checking calibre_postinstall dependencies ***" && \
+    ldd /opt/calibre/calibre_postinstall || echo "ldd failed, trying file command" && \
+    file /opt/calibre/calibre_postinstall && \
+    echo "*** Attempting to run Calibre post-install ***" && \
+    (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it") && \
     echo "*** Generating machine ID ***" && \
     dbus-uuidgen > /etc/machine-id && \
+    echo "*** Setting up Calibre symlinks manually ***" && \
+    find /opt/calibre -name "calibre" -type f -executable -exec ln -sf {} /usr/local/bin/calibre \; && \
+    find /opt/calibre -name "ebook-convert" -type f -executable -exec ln -sf {} /usr/local/bin/ebook-convert \; && \
+    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; && \
     echo "*** Calibre setup complete ***"
 
 # Install Python dependencies
