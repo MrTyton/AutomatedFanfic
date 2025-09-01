@@ -7,7 +7,17 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
 
 [Dockerhub Link](https://hub.docker.com/r/mrtyton/automated-ffdl)
 
+## Platform Support
+
+This Docker image supports multi-platform deployment:
+
+- **linux/amd64** (x86_64): Uses official Calibre binaries for optimal performance
+- **linux/arm64** (ARM64): Uses system package manager Calibre installation
+
+The image automatically detects the target architecture during build and configures Calibre appropriately. Both platforms provide full functionality, though x86_64 may have slightly newer Calibre versions due to using official releases.
+
 - [AutomatedFanfic](#automatedfanfic)
+  - [Platform Support](#platform-support)
   - [Site Support](#site-support)
   - [Repeats](#repeats)
   - [Calibre Setup](#calibre-setup)
@@ -42,6 +52,8 @@ If you have notifications enabled, it will send a notification of the failure fo
 ### How to Install - Docker
 
 1. Install the docker image with `docker pull mrtyton/automated-ffdl`
+   - The image supports both x86_64 and ARM64 architectures
+   - Docker will automatically pull the correct version for your platform
 2. Map the `/config` volume to someplace on your drive.
 3. After running the image once, it will have copied over default configs. Fill them out and everything should start working.
    1. This default config is currently broken, so when you map the `/config` volume just copy over the default ones found in this repo.

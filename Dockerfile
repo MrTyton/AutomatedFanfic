@@ -25,9 +25,13 @@ RUN apt-get update && \
     xz-utils && \
     rm -rf /var/lib/apt/lists/*
 
-# Download and extract Calibre in build stage (x86_64 only)
+# Download and extract Calibre in build stage (multi-architecture)
 RUN echo "**** install calibre ****" && \
+    ARCH=$(uname -m) && \
+    echo "Detected architecture: ${ARCH}" && \
     mkdir -p /opt/calibre && \
+    if [ "${ARCH}" = "x86_64" ]; then \
+    echo "Installing Calibre from official binaries for x86_64" && \
     if [ -z "${CALIBRE_RELEASE}" ]; then \
     CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
     CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
@@ -39,7 +43,16 @@ RUN echo "**** install calibre ****" && \
     echo "Downloading from ${CALIBRE_URL}" && \
     curl -o /tmp/calibre-tarball.txz -L "${CALIBRE_URL}" && \
     tar xf /tmp/calibre-tarball.txz -C /opt/calibre && \
-    rm -f /tmp/calibre-tarball.txz
+    rm -f /tmp/calibre-tarball.txz; \
+    else \
+    echo "Architecture ${ARCH} not supported by official Calibre binaries, using system package" && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends calibre && \
+    ln -sf /usr/bin/calibre /opt/calibre/calibre && \
+    ln -sf /usr/bin/ebook-convert /opt/calibre/ebook-convert && \
+    ln -sf /usr/bin/calibredb /opt/calibre/calibredb && \
+    rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Final runtime stage
 FROM python-base as runtime
@@ -83,15 +96,28 @@ RUN apt-get update && \
 # Copy Calibre from build stage
 COPY --from=calibre-installer /opt/calibre /opt/calibre
 
-# Set up Calibre environment (x86_64 official binaries)
+# Set up Calibre environment (multi-architecture)
 RUN echo "*** Setting up Calibre ***" && \
-    echo "*** Running Calibre post-install ***" && \
+    ARCH=$(uname -m) && \
+    echo "Detected architecture: ${ARCH}" && \
+    if [ "${ARCH}" = "x86_64" ]; then \
+    echo "Setting up official Calibre binaries for x86_64" && \
+    if [ -f "/opt/calibre/calibre_postinstall" ]; then \
     chmod +x /opt/calibre/calibre_postinstall && \
-    (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it") && \
+    echo "*** Running Calibre post-install ***" && \
+    (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it"); \
+    fi && \
     echo "*** Setting up Calibre symlinks ***" && \
     find /opt/calibre -name "calibre" -type f -executable -exec ln -sf {} /usr/local/bin/calibre \; && \
     find /opt/calibre -name "ebook-convert" -type f -executable -exec ln -sf {} /usr/local/bin/ebook-convert \; && \
-    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; && \
+    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; ; \
+    else \
+    echo "Using system Calibre installation for ${ARCH}" && \
+    # For system installation, the symlinks should already be in place from build stage \
+    ln -sf /opt/calibre/calibre /usr/local/bin/calibre && \
+    ln -sf /opt/calibre/ebook-convert /usr/local/bin/ebook-convert && \
+    ln -sf /opt/calibre/calibredb /usr/local/bin/calibredb; \
+    fi && \
     echo "*** Generating machine ID ***" && \
     dbus-uuidgen > /etc/machine-id && \
     echo "*** Calibre setup complete ***"
