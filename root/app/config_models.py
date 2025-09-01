@@ -1,8 +1,13 @@
 """
 Configuration models using Pydantic for type safety and validation.
 
-This module defines all configuration structures used throughout the application,
-providing centralized configuration management with validation and type hints.
+This module defines all configuration structures used throughout the application    # Process health monitoring
+    health_check_interval: float = Field(
+        default=60.0,
+        ge=0.1,
+        le=600.0,
+        description="Interval in seconds between process health checks"
+    ),iding centralized configuration management with validation and type hints.
 """
 
 from pathlib import Path
@@ -143,6 +148,66 @@ class AppriseConfig(BaseModel):
         return [url.strip() for url in v if url and url.strip()]
 
 
+class ProcessConfig(BaseModel):
+    """Configuration for process management."""
+
+    # Graceful shutdown settings
+    shutdown_timeout: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        description="Timeout in seconds for graceful shutdown before force termination",
+    )
+
+    # Process health monitoring
+    health_check_interval: float = Field(
+        default=60.0,
+        ge=0.1,
+        le=600.0,
+        description="Interval in seconds between process health checks",
+    )
+
+    # Process restart settings
+    auto_restart: bool = Field(
+        default=True, description="Automatically restart failed processes"
+    )
+
+    max_restart_attempts: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum number of restart attempts before giving up",
+    )
+
+    restart_delay: float = Field(
+        default=5.0,
+        ge=0.0,
+        le=60.0,
+        description="Delay in seconds before restarting a failed process",
+    )
+
+    # Process monitoring
+    enable_monitoring: bool = Field(
+        default=True,
+        description="Enable process health monitoring and restart capabilities",
+    )
+
+    # Worker process settings
+    worker_timeout: Optional[float] = Field(
+        default=None,
+        ge=30.0,
+        description="Timeout in seconds for individual worker operations",
+    )
+
+    # Signal handling
+    signal_timeout: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=60.0,
+        description="Timeout in seconds to wait for signal handling completion",
+    )
+
+
 class AppConfig(BaseSettings):
     """Main application configuration."""
 
@@ -155,6 +220,7 @@ class AppConfig(BaseSettings):
     calibre: CalibreConfig
     pushbullet: PushbulletConfig = Field(default_factory=PushbulletConfig)
     apprise: AppriseConfig = Field(default_factory=AppriseConfig)
+    process: ProcessConfig = Field(default_factory=ProcessConfig)
 
     # Application settings
     version: str = Field(default="1.3.23", description="Application version")
