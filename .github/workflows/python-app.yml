@@ -5,13 +5,15 @@ on:
   push:
     branches: [ "master" ]
     paths:
-      - '**.py' # Any Python file in any directory
+      - '*.py' # Python files in root
+      - 'root/**/*.py' # Python files in root directory tree
       - 'requirements.txt' # Main requirements file
       - '.github/workflows/python-app.yml' # Run if the workflow itself changes
   pull_request:
     branches: [ "master" ]
     paths:
-      - '**.py'
+      - '*.py'
+      - 'root/**/*.py'
       - 'requirements.txt'
       - '.github/workflows/python-app.yml'
   # workflow_call trigger remains unchanged and runs whenever called
@@ -45,19 +47,32 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') }}-${{ hashFiles('.github/workflows/python-app.yml') }}
         restore-keys: |
+          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') }}-
           ${{ runner.os }}-pip-
 
     - name: Install dependencies
       run: |
+        echo "Upgrading pip..."
         python -m pip install --upgrade pip
-        # Install testing tools first
+        
+        echo "Installing testing tools..."
         pip install flake8 pytest
+        
         # Install application requirements if the file exists
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        # Install FanFicFare from TestPyPI
+        if [ -f requirements.txt ]; then
+          echo "Installing requirements from requirements.txt..."
+          pip install -r requirements.txt
+        else
+          echo "::warning::requirements.txt not found, skipping application dependencies"
+        fi
+        
+        echo "Installing FanFicFare from TestPyPI..."
         python -m pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare
+        
+        echo "Verifying FanFicFare installation..."
+        python -c "import fanficfare; print(f'FanFicFare version: {fanficfare.__version__}')" || echo "::warning::Could not verify FanFicFare installation"
 
     - name: Lint with flake8
       run: |
@@ -71,9 +86,29 @@ jobs:
     - name: Test with pytest
       id: pytest # Give step an ID to reference outcome if needed
       run: |
+        echo "Discovering Python test files..."
+        find . -name "*_test.py" -o -name "test_*.py" | head -10
+        
+        echo "Running pytest..."
         # Create directory for test results if it doesn't exist
         mkdir -p junit
-        pytest --junitxml=junit/test-results.xml
+        
+        # Run pytest with verbose output and capture results
+        pytest --junitxml=junit/test-results.xml --verbose --tb=short
+        
+        # Verify test results were generated
+        if [ -f junit/test-results.xml ]; then
+          echo "Test results saved to junit/test-results.xml"
+          # Show basic test summary from XML
+          if command -v xmllint &> /dev/null; then
+            TESTS=$(xmllint --xpath "string(//testsuite/@tests)" junit/test-results.xml 2>/dev/null || echo "unknown")
+            FAILURES=$(xmllint --xpath "string(//testsuite/@failures)" junit/test-results.xml 2>/dev/null || echo "unknown")
+            ERRORS=$(xmllint --xpath "string(//testsuite/@errors)" junit/test-results.xml 2>/dev/null || echo "unknown")
+            echo "Test Summary: $TESTS tests run, $FAILURES failures, $ERRORS errors"
+          fi
+        else
+          echo "::warning::Test results XML was not generated"
+        fi
 
     - name: Upload pytest test results
       uses: actions/upload-artifact@v4
