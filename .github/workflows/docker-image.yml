@@ -73,8 +73,20 @@ jobs:
             fi
           # If no input SHA, check other event types
           elif [ "$EVENT_NAME" == "workflow_run" ]; then
+            # Debug the workflow_run event data
+            echo "workflow_run.head_sha: ${{ github.event.workflow_run.head_sha }}"
+            echo "workflow_run.head_commit.id: ${{ github.event.workflow_run.head_commit.id }}"
+            echo "github.sha: ${{ github.sha }}"
+            
+            # Use head_sha from workflow_run event (this should be the commit that triggered the CI)
             COMMIT_TO_CHECKOUT="${{ github.event.workflow_run.head_sha }}"
             echo "Using commit SHA from workflow_run event: $COMMIT_TO_CHECKOUT"
+            
+            # Verify this isn't empty
+            if [ -z "$COMMIT_TO_CHECKOUT" ]; then
+              echo "::warning::workflow_run.head_sha is empty, falling back to github.sha"
+              COMMIT_TO_CHECKOUT="${{ github.sha }}"
+            fi
           elif [ "$EVENT_NAME" == "workflow_dispatch" ]; then
             # Handle workflow_dispatch (only runs if INPUT_SHA was empty)
             DISPATCH_REF="${{ github.event.inputs.ref || github.ref_name }}" # Use input ref or branch name
@@ -113,13 +125,30 @@ jobs:
         # Only run this check if triggered by workflow_run
         if: github.event_name == 'workflow_run'
         run: |
-          # Compare the checked-out commit (HEAD) with its parent (HEAD~1)
+          # Debug current git state
+          echo "Current HEAD commit: $(git rev-parse HEAD)"
+          echo "Expected commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
+          echo "Parent commit: $(git rev-parse HEAD~1)"
+          
+          # Show the last few commits for context
+          echo "Recent commit history:"
+          git log --oneline -3
+          
+          # Check what files changed in the current commit vs its parent
+          echo "Files changed in current commit:"
+          git diff --name-only HEAD~1 HEAD || echo "Could not get diff"
+          
+          # Specifically check release-versions/latest.txt
           if git diff --quiet HEAD~1 HEAD -- 'release-versions/latest.txt'; then
             echo "No changes detected in release-versions/latest.txt for commit ${{ steps.get_sha.outputs.commit_sha }}."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "Changes detected in release-versions/latest.txt for commit ${{ steps.get_sha.outputs.commit_sha }}."
             echo "changed=true" >> $GITHUB_OUTPUT
+            
+            # Show what changed
+            echo "Changes in release-versions/latest.txt:"
+            git diff HEAD~1 HEAD -- 'release-versions/latest.txt' || echo "Could not show diff"
           fi
         continue-on-error: true # Handle first commit case
 

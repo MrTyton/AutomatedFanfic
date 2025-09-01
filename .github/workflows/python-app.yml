@@ -8,6 +8,7 @@ on:
       - '*.py' # Python files in root
       - 'root/**/*.py' # Python files in root directory tree
       - 'requirements.txt' # Main requirements file
+      - 'release-versions/**' # Version files that affect builds
       - '.github/workflows/python-app.yml' # Run if the workflow itself changes
   pull_request:
     branches: [ "master" ]
@@ -15,6 +16,7 @@ on:
       - '*.py'
       - 'root/**/*.py'
       - 'requirements.txt'
+      - 'release-versions/**'
       - '.github/workflows/python-app.yml'
   # workflow_call trigger remains unchanged and runs whenever called
   workflow_call:
