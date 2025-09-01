@@ -1,6 +1,50 @@
-FROM python:3-slim
+# Use a multi-stage build for better layer caching and smaller final image
+FROM python:3.12-slim as python-base
 
-# set version label
+# Set up environment variables early
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Build stage for Calibre installation
+FROM python-base as calibre-installer
+
+# Set version labels
+ARG VERSION
+ARG CALIBRE_RELEASE
+LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install only what's needed for Calibre download and extraction
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    jq \
+    xz-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+# Download and extract Calibre in build stage
+RUN echo "**** install calibre ****" && \
+    mkdir -p /opt/calibre && \
+    if [ -z "${CALIBRE_RELEASE}" ]; then \
+        CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
+        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
+    else \
+        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE}" | sed 's/^v//'); \
+    fi && \
+    echo "Using Calibre version: ${CALIBRE_VERSION}" && \
+    CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
+    echo "Downloading from ${CALIBRE_URL}" && \
+    curl -o /tmp/calibre-tarball.txz -L "${CALIBRE_URL}" && \
+    tar xf /tmp/calibre-tarball.txz -C /opt/calibre && \
+    rm -f /tmp/calibre-tarball.txz
+
+# Final runtime stage
+FROM python-base as runtime
+
+# Set version labels
 ARG VERSION
 ARG CALIBRE_RELEASE
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
@@ -10,19 +54,12 @@ ENV PUID="911" \
     VERBOSE=false \
     DEBIAN_FRONTEND=noninteractive
 
-RUN set -ex && \
-    echo "**** install dependencies ****" && \
-    apt-get update && \
-    apt-get install -y --upgrade --no-install-recommends \
+# Install runtime dependencies in a single layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
-    gcc \
-    wget \
-    xdg-utils \
-    curl \
     dbus \
-    jq \
-    python3 \
     fcitx-rime \
     fonts-wqy-microhei \
     libnss3 \
@@ -38,59 +75,35 @@ RUN set -ex && \
     poppler-utils \
     python3-xdg \
     ttf-wqy-zenhei \
-    xz-utils && \
-    echo "**** cleaning up ****" && \
+    xdg-utils && \
     apt-get clean && \
-    rm -rf \
-    /tmp/* \
-    /var/lib/apt/lists/* \
-    /var/tmp/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-RUN echo "**** install calibre ****" && \
-    mkdir -p \
-    /opt/calibre && \
-    if [ -z "${CALIBRE_RELEASE}" ]; then \
-        CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
-        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
-    else \
-        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE}" | sed 's/^v//'); \
-    fi && \
-    echo "Using Calibre version: ${CALIBRE_VERSION}" && \
-    CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
-    echo "Downloading from ${CALIBRE_URL}" && \
-    curl -o \
-    /tmp/calibre-tarball.txz -L \
-    "${CALIBRE_URL}" && \
-    tar xvf /tmp/calibre-tarball.txz -C \
-    /opt/calibre && \
-    /opt/calibre/calibre_postinstall && \
-    dbus-uuidgen > /etc/machine-id && \
-    rm -rf /tmp/calibre-tarball.txz
+# Copy Calibre from build stage
+COPY --from=calibre-installer /opt/calibre /opt/calibre
 
-COPY requirements.txt /tmp/
-RUN echo "*** Install Other Python Packages ***" && \
-    python3 -m pip install --no-cache-dir -r /tmp/requirements.txt && \
-    echo "*** Install FFF ***" && \
-    echo "FF Using Test Release" && \
-    python3 -m pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare && \
-    echo "**** cleaning up ****" && \
-    rm -rf /tmp/*
+# Run Calibre post-install and setup machine ID
+RUN /opt/calibre/calibre_postinstall && \
+    dbus-uuidgen > /etc/machine-id
 
+# Install Python dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN echo "*** Install Python Packages ***" && \
+    pip install --no-cache-dir -r /tmp/requirements.txt && \
+    echo "*** Install FanFicFare from TestPyPI ***" && \
+    pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare && \
+    rm -f /tmp/requirements.txt
+
+# Copy application files
 COPY root/ /
 
-RUN addgroup --gid "$PGID" abc && \
-    adduser \
-    --gecos "" \
-    --disabled-password \
-    --no-create-home \
-    --uid "$PUID" \
-    --ingroup abc \
-    --shell /bin/bash \
-    abc && \
-    chmod -R +777 /app/
+# Create user and set permissions
+RUN groupadd --gid "$PGID" abc && \
+    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
+    chmod -R +x /app/ && \
+    chown -R abc:abc /app/
 
 VOLUME /config
-
 WORKDIR /config
 
 CMD ["/app/entrypoint.sh"]

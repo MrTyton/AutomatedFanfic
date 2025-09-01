@@ -1,0 +1,104 @@
+# Git and version control
+.git/
+.gitignore
+.github/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.code-workspace
+AutomatedFanfic.code-workspace
+
+# Python development files
+.venv/
+.env/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+.coverage
+.tox/
+.cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Test files and testing artifacts
+*_test.py
+test_*.py
+tests/
+htmlcov/
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+junit/
+test-results/
+pytest_results/
+
+# S6-overlay files (not used in this Docker setup)
+root/etc/
+root/app/run.sh
+
+# Documentation
+*.md
+README.*
+CHANGELOG.*
+LICENSE*
+docs/
+
+# Build artifacts and logs
+build/
+dist/
+*.egg-info/
+.eggs/
+*.log
+*.out
+
+# Docker development files
+docker-compose*.yml
+docker-compose*.yaml
+Dockerfile.*
+!Dockerfile
+
+# Release and version files (these should be included)
+# release-versions/ - commented out because these ARE needed for the build
+
+# Local configuration examples
+*.example
+*.sample
+config.example.*
+.env.example
+
+# Backup and temporary files
+*.bak
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Archives
+*.zip
+*.tar.gz
+*.tgz
+*.tar
+*.rar
+*.7z
