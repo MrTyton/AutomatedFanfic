@@ -80,7 +80,111 @@ with patch.object(ConfigManager, 'get_instance') as mock_get:
     result = function_under_test()
 ```
 
-## Multi-Processing Architecture
+## Process Management Architecture
+
+### ProcessManager Class (`process_manager.py`)
+
+**AutomatedFanfic uses a robust ProcessManager** for all multiprocessing needs:
+
+```python
+# Correct - Use ProcessManager with dependency injection
+from process_manager import ProcessManager
+from config_models import AppConfig
+
+# Initialize with configuration
+with ProcessManager(config=config) as process_manager:
+    # Register processes
+    process_manager.register_process("worker", worker_function, args=(arg1, arg2))
+    
+    # Start all processes
+    process_manager.start_all()
+    
+    # Wait for completion
+    process_manager.wait_for_all()
+    # Context manager handles graceful shutdown
+```
+
+**Key ProcessManager Features:**
+- **Dependency Injection**: No global state, clean configuration passing
+- **Process Registration**: Simple API for adding processes with arguments/kwargs
+- **Lifecycle Management**: Start, stop, restart individual or all processes
+- **Health Monitoring**: Background monitoring with configurable intervals
+- **Graceful Shutdown**: SIGTERM → SIGKILL escalation with timeouts
+- **Signal Handling**: Automatic SIGINT/SIGTERM handling for production
+- **Process Waiting**: `wait_for_all()` method for proper completion handling
+
+### Process Configuration (`config_models.py`)
+
+**ProcessConfig class** provides type-safe process management settings:
+
+```python
+class ProcessConfig(BaseModel):
+    shutdown_timeout: float = Field(default=10.0, ge=1.0, le=300.0)
+    health_check_interval: float = Field(default=30.0, ge=0.1, le=3600.0)
+    auto_restart: bool = Field(default=True)
+    max_restart_attempts: int = Field(default=3, ge=0, le=10)
+    restart_delay: float = Field(default=5.0, ge=0.1, le=60.0)
+    enable_monitoring: bool = Field(default=True)
+```
+
+### Signal Handling Pattern
+
+**ProcessManager handles signals automatically:**
+
+```python
+# In ProcessManager.__enter__()
+def setup_signal_handlers(self):
+    def signal_handler(signum, frame):
+        signal_name = signal.Signals(signum).name
+        ff_logging.log(f"Received signal {signal_name}, initiating graceful shutdown...")
+        self.stop_all()  # Gracefully terminate all child processes
+        # Return to allow main application to handle the flow
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+```
+
+**Main application waits for processes:**
+
+```python
+try:
+    process_manager.wait_for_all()  # Wait indefinitely for normal completion
+except KeyboardInterrupt:
+    # Signal handler already called stop_all()
+    # Wait with timeout for graceful shutdown completion
+    if not process_manager.wait_for_all(timeout=300.0):
+        ff_logging.log_failure("Timeout - forcing shutdown")
+```
+
+### Main Application Pattern (`fanficdownload.py`)
+
+**Use ProcessManager instead of manual multiprocessing:**
+
+```python
+# Load configuration
+config = ConfigManager.load_config(args.config)
+
+# Use ProcessManager for robust process handling
+with ProcessManager(config=config) as process_manager:
+    # Register all needed processes
+    process_manager.register_process("email_watcher", email_watcher_func, args=(...))
+    process_manager.register_process("waiting_watcher", waiting_processor_func, args=(...))
+    
+    # Register worker processes for each site
+    for site in sites:
+        process_manager.register_process(f"worker_{site}", worker_func, args=(...))
+    
+    # Start all processes
+    process_manager.start_all()
+    
+    # Wait for completion with proper signal handling
+    try:
+        process_manager.wait_for_all()
+    except KeyboardInterrupt:
+        # ProcessManager handles graceful shutdown
+        if not process_manager.wait_for_all(timeout=300.0):
+            ff_logging.log_failure("Timeout - forcing shutdown")
+```
 
 ### Worker Process Pattern (`url_worker.py`)
 
@@ -90,31 +194,17 @@ with patch.object(ConfigManager, 'get_instance') as mock_get:
 - Process-safe logging and error handling
 
 ```python
-def create_worker_processes(sites, shared_queue):
-    """Create worker processes for each supported site."""
-    processes = []
-    for site in sites:
-        process = Process(target=worker_function, args=(site, shared_queue))
-        processes.append(process)
-    return processes
-```
-
-### Main Application Entry (`fanficdownload.py`)
-
-**Orchestration patterns:**
-- Command-line argument parsing with argparse
-- Signal handling for graceful shutdown
-- Queue management for inter-process communication
-
-```python
-# Command-line integration
-parser = argparse.ArgumentParser()
-parser.add_argument('--config', help='Configuration file path')
-args = parser.parse_args()
-
-# Load and set global config
-config = load_config(Path(args.config))
-ConfigManager.set_instance(config)
+def url_worker(site_queue, calibre_info, notification_info, waiting_queue):
+    """Worker function that ProcessManager will run in separate process."""
+    while True:
+        try:
+            # Process items from queue
+            item = site_queue.get(timeout=30)
+            # ... process the item
+        except queue.Empty:
+            continue
+        except Exception as e:
+            ff_logging.log_failure(f"Worker error: {e}")
 ```
 
 ## URL Processing and Site Support
@@ -164,6 +254,76 @@ def test_function(self, name, input_value, expected):
 - Clear test case names for debugging
 - Improved coverage with minimal code duplication
 
+### ProcessManager Testing Patterns
+
+**Use dependency injection for clean tests:**
+
+```python
+class TestProcessManager(unittest.TestCase):
+    def setUp(self):
+        """Set up test configuration."""
+        self.config = AppConfig(
+            email=EmailConfig(email="test@example.com", ...),
+            calibre=CalibreConfig(path="/test/path"),
+            process=ProcessConfig(
+                shutdown_timeout=2.0,
+                health_check_interval=1.0,
+                auto_restart=True
+            )
+        )
+        
+        # Always provide config to ProcessManager
+        self.manager = ProcessManager(config=self.config)
+```
+
+**Test process lifecycle:**
+
+```python
+def test_process_lifecycle(self):
+    """Test complete process lifecycle."""
+    # Register a test process
+    self.manager.register_process("test", dummy_worker)
+    
+    # Start and verify
+    self.assertTrue(self.manager.start_process("test"))
+    self.assertEqual(self.manager.processes["test"].state, ProcessState.RUNNING)
+    
+    # Stop and verify
+    self.assertTrue(self.manager.stop_process("test"))
+    self.assertEqual(self.manager.processes["test"].state, ProcessState.STOPPED)
+```
+
+**Test signal handling:**
+
+```python
+def test_signal_handler_calls_stop_all(self):
+    """Test signal handler integration."""
+    with patch.object(self.manager, 'stop_all') as mock_stop_all:
+        self.manager.setup_signal_handlers()
+        
+        # Test that signal handlers are properly configured
+        self.assertTrue(self.manager._signal_handlers_set)
+        
+        # Verify stop_all functionality
+        self.manager.stop_all()
+        mock_stop_all.assert_called_once()
+```
+
+**Test wait_for_all functionality:**
+
+```python
+def test_wait_for_all_timeout(self):
+    """Test wait_for_all with timeout."""
+    # Mock a running process
+    mock_process_info = MagicMock()
+    mock_process_info.is_alive.return_value = True
+    self.manager.processes["test"] = mock_process_info
+    
+    # Should timeout quickly
+    result = self.manager.wait_for_all(timeout=0.1)
+    self.assertFalse(result)
+```
+
 ### Validation Error Testing
 
 **For Pydantic models, always test ValidationError:**
@@ -181,7 +341,20 @@ def test_invalid_configuration(self):
 
 ### Mock Configuration Patterns
 
-**Use ConfigManager mocking for isolated tests:**
+**Never use global state or test detection in production code:**
+
+```python
+# WRONG - Don't do this in production code
+if "test" in sys.modules or os.getenv("TESTING"):
+    config = load_test_config()
+
+# RIGHT - Use dependency injection
+class ProcessManager:
+    def __init__(self, config: AppConfig):
+        self.config = config  # Always require explicit config
+```
+
+**Use proper mocking in tests:**
 
 ```python
 @patch.object(ConfigManager, 'get_instance')
@@ -189,7 +362,7 @@ def test_with_mocked_config(self, mock_get):
     # Create test configuration
     test_config = AppConfig(
         email=EmailConfig(email="test@example.com", ...),
-        calibre=CalibreConfig(path="/test/path", ...)
+        process=ProcessConfig(shutdown_timeout=2.0, ...)
     )
     mock_get.return_value = test_config
     
@@ -218,9 +391,10 @@ def test_with_mocked_config(self, mock_get):
 - `update-dependencies.yml`: Automated dependency updates
 
 **Testing requirements:**
-- All tests must pass (145+ tests)
+- All tests must pass (181+ tests including ProcessManager)
 - Flake8 linting compliance
 - Test results uploaded as artifacts
+- ProcessManager integration tests included
 
 ## Error Handling Patterns
 
@@ -297,24 +471,27 @@ from config_models import ConfigManager
 
 ### Before Making Changes
 
-1. **Understand the configuration system** - Always use ConfigManager patterns
+1. **Understand the ProcessManager system** - Always use ProcessManager for multiprocessing
 2. **Check existing tests** - Follow parameterized testing patterns
-3. **Validate with existing test suite** - Run all 145+ tests before committing
-4. **Consider multi-processing implications** - Ensure thread/process safety
+3. **Validate with existing test suite** - Run all 181+ tests before committing
+4. **Consider signal handling implications** - Ensure graceful shutdown works
 
 ### When Adding Features
 
 1. **Add configuration options** to appropriate Pydantic models
 2. **Create parameterized tests** covering multiple scenarios
-3. **Update Docker configuration** if needed for new dependencies
-4. **Document in README.md** for user-facing changes
+3. **Test ProcessManager integration** if adding new processes
+4. **Update Docker configuration** if needed for new dependencies
+5. **Document in README.md** for user-facing changes
 
 ### When Fixing Bugs
 
 1. **Write tests that reproduce the bug** first
 2. **Use existing error handling patterns**
-3. **Ensure compatibility** with Docker deployment
-4. **Test configuration validation** for related settings
+3. **Ensure ProcessManager compatibility** for process-related changes
+4. **Test signal handling** if modifying process lifecycle
+5. **Ensure compatibility** with Docker deployment
+6. **Test configuration validation** for related settings
 
 ### Code Quality Standards
 
@@ -326,12 +503,15 @@ from config_models import ConfigManager
 
 ## Common Pitfalls to Avoid
 
-1. **Don't bypass ConfigManager** - Always use get_config() for global access
+1. **Don't bypass ProcessManager** - Always use ProcessManager for multiprocessing needs
 2. **Don't skip parameterized tests** - They provide significantly better coverage
 3. **Don't ignore ValidationError** - Test Pydantic validation explicitly
 4. **Don't hardcode paths** - Use configuration management
 5. **Don't assume single-threading** - Code must be process-safe
 6. **Don't modify core FanFicFare behavior** - Use configuration files instead
+7. **Don't use manual signal handling** - ProcessManager handles signals automatically
+8. **Don't call exit() in signal handlers** - Let ProcessManager manage shutdown flow
+9. **Don't forget timeout handling** - Always use timeouts for process operations
 
 ## Integration Points
 
@@ -351,3 +531,28 @@ from config_models import ConfigManager
 - Error notification for failed downloads
 
 This document should guide AI coding agents in understanding and maintaining the AutomatedFanfic codebase effectively while following established patterns and best practices.
+
+## Recent Architecture Improvements (September 2025)
+
+### ProcessManager Implementation
+- **Replaced scattered multiprocessing code** with centralized ProcessManager class
+- **Added robust signal handling** with SIGTERM/SIGINT support for graceful shutdown
+- **Implemented process health monitoring** with automatic restart capabilities
+- **Created comprehensive test suite** with 30+ ProcessManager-specific tests
+- **Added process waiting mechanism** with `wait_for_all()` method and timeout support
+
+### Key Architectural Benefits
+- **Centralized process management** instead of scattered code across multiple functions
+- **Production-ready signal handling** compatible with Docker, systemd, and manual termination
+- **Automatic error recovery** via health monitoring and configurable restart policies
+- **Clean shutdown guarantees** preventing zombie processes and resource leaks
+- **Type-safe configuration** with Pydantic validation for all process settings
+- **Comprehensive observability** with detailed process status and metrics
+
+### Migration from Legacy Patterns
+- **Removed manual process creation** functions (`create_processes`, `start_processes`, etc.)
+- **Replaced manual signal handlers** with ProcessManager's integrated signal handling
+- **Eliminated manual process joining** with ProcessManager's `wait_for_all()` method
+- **Upgraded from basic Pool usage** to sophisticated process lifecycle management
+
+When working with this codebase, always use ProcessManager for any new multiprocessing needs and follow the established patterns for configuration, testing, and error handling.
