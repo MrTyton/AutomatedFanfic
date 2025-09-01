@@ -29,10 +29,10 @@ RUN apt-get update && \
 RUN echo "**** install calibre ****" && \
     mkdir -p /opt/calibre && \
     if [ -z "${CALIBRE_RELEASE}" ]; then \
-        CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
-        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
+    CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
+    CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
     else \
-        CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE}" | sed 's/^v//'); \
+    CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE}" | sed 's/^v//'); \
     fi && \
     echo "Using Calibre version: ${CALIBRE_VERSION}" && \
     CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
@@ -75,16 +75,23 @@ RUN apt-get update && \
     poppler-utils \
     python3-xdg \
     ttf-wqy-zenhei \
-    xdg-utils && \
+    xdg-utils \
+    uuid-runtime && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy Calibre from build stage
 COPY --from=calibre-installer /opt/calibre /opt/calibre
 
-# Run Calibre post-install and setup machine ID
-RUN /opt/calibre/calibre_postinstall && \
-    dbus-uuidgen > /etc/machine-id
+# Make calibre scripts executable and run post-install setup
+RUN echo "*** Setting up Calibre ***" && \
+    find /opt/calibre -name "calibre_postinstall" -exec ls -la {} \; && \
+    chmod +x /opt/calibre/calibre_postinstall && \
+    echo "*** Running Calibre post-install ***" && \
+    /opt/calibre/calibre_postinstall && \
+    echo "*** Generating machine ID ***" && \
+    dbus-uuidgen > /etc/machine-id && \
+    echo "*** Calibre setup complete ***"
 
 # Install Python dependencies
 COPY requirements.txt /tmp/requirements.txt
