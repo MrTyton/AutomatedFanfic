@@ -188,6 +188,25 @@ def process_fanfic_addition(
         )
 
 
+def construct_fanficfare_command(
+    cdb: calibre_info.CalibreInfo, fanfic: fanfic_info.FanficInfo, path_or_url: str
+) -> str:
+    """Constructs the FanFicFare command based on configuration."""
+    update_method = cdb.config.calibre.update_method
+    command = "python -m fanficfare.cli"
+
+    # Determine the update flag based on the configuration
+    if fanfic.behavior == "force" or update_method == "force":
+        command += " --force"
+    elif update_method == "update_always":
+        command += " -U"
+    else:  # Default to 'update'
+        command += " -u"
+
+    command += f' "{path_or_url}" --update-cover --non-interactive'
+    return command
+
+
 def url_worker(
     queue: mp.Queue,
     cdb: calibre_info.CalibreInfo,
@@ -235,9 +254,8 @@ def url_worker(
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
             # Construct the command for updating the fanfic with FanFicFare
-            command = f'cd {temp_dir} && python -m fanficfare.cli -u "{path_or_url}" --update-cover --non-interactive'
-            if fanfic.behavior == "force":
-                command += " --force"
+            base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
+            command = f"cd {temp_dir} && {base_command}"
 
             try:
                 # Copy necessary configuration files to the temporary directory and execute the update command
