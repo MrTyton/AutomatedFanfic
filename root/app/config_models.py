@@ -77,9 +77,9 @@ class CalibreConfig(BaseModel):
     personal_ini: Optional[str] = Field(
         default=None, description="Path to personal.ini file"
     )
-    update_method: Literal["update", "update_always", "force"] = Field(
+    update_method: Literal["update", "update_always", "force", "update_no_force"] = Field(
         default="update",
-        description="Fanficfare update method: 'update', 'update_always', or 'force'",
+        description="Fanficfare update method: 'update', 'update_always', 'force', or 'update_no_force'",
     )
 
     @field_validator("path")

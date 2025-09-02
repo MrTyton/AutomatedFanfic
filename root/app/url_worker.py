@@ -189,14 +189,27 @@ def process_fanfic_addition(
 
 
 def construct_fanficfare_command(
-    cdb: calibre_info.CalibreInfo, fanfic: fanfic_info.FanficInfo, path_or_url: str
+    cdb: calibre_info.CalibreInfo,
+    fanfic: fanfic_info.FanficInfo,
+    path_or_url: str,
+    notification_info: notification_wrapper.NotificationWrapper,
 ) -> str:
     """Constructs the FanFicFare command based on configuration."""
     update_method = cdb.config.calibre.update_method
     command = "python -m fanficfare.cli"
 
+    # Check if a force is requested
+    force_requested = fanfic.behavior == "force"
+
     # Determine the update flag based on the configuration
-    if fanfic.behavior == "force" or update_method == "force":
+    if force_requested and update_method == "update_no_force":
+        notification_info.send_notification(
+            "Fanfiction Update Skipped",
+            f"Update for {fanfic.url} was skipped because a force was requested but the update method is set to 'update_no_force'.",
+            fanfic.site,
+        )
+        return ""  # Return empty command to skip update
+    elif force_requested or update_method == "force":
         command += " --force"
     elif update_method == "update_always":
         command += " -U"
@@ -254,7 +267,14 @@ def url_worker(
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
             # Construct the command for updating the fanfic with FanFicFare
-            base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
+            base_command = construct_fanficfare_command(
+                cdb, fanfic, path_or_url, notification_info
+            )
+
+            if not base_command:
+                # Command is empty, so skip the update
+                continue
+
             command = f"cd {temp_dir} && {base_command}"
 
             try:
