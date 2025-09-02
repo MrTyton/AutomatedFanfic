@@ -1,31 +1,83 @@
-# Use a multi-stage build for better layer caching and smaller final image
-FROM python:3.12-slim as python-base
+# Use a multi-stage build optimized for change frequency
+FROM python:3.12-slim AS python-base
 
 # Set up environment variables early
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PUID="911" \
+    PGID="911" \
+    VERBOSE=false \
+    DEBIAN_FRONTEND=noninteractive
 
-# Build stage for Calibre installation
-FROM python-base as calibre-installer
+# Stage 1: Install runtime system dependencies (rarely change)
+FROM python-base AS system-deps
+
+# Install runtime dependencies in a single layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    dbus \
+    fcitx-rime \
+    fonts-wqy-microhei \
+    jq \
+    libnss3 \
+    libopengl0 \
+    libxkbcommon-x11-0 \
+    libxcb-cursor0 \
+    libxcb-icccm4 \
+    libxcb-image0 \
+    libxcb-keysyms1 \
+    libxcb-randr0 \
+    libxcb-render-util0 \
+    libxcb-xinerama0 \
+    poppler-utils \
+    python3-xdg \
+    ttf-wqy-zenhei \
+    uuid-runtime \
+    xdg-utils \
+    xz-utils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    echo "*** Generating machine ID ***" && \
+    dbus-uuidgen > /etc/machine-id
+
+# Stage 2: Create user (rarely changes)
+FROM system-deps AS user-setup
+
+# Create user and basic setup
+RUN groupadd --gid "$PGID" abc && \
+    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc
+
+# Stage 3: Application code (rarely changes for you!)
+FROM user-setup AS app-code
+
+# Copy application files
+COPY root/ /
+RUN chmod -R +x /app/ && \
+    chown -R abc:abc /app/
+
+# Stage 4: Install stable Python dependencies (rarely change)
+FROM app-code AS python-stable-deps
+
+# Install stable Python packages from requirements.txt
+COPY requirements.txt /tmp/requirements.txt
+RUN echo "*** Install Stable Python Packages ***" && \
+    pip install --no-cache-dir -r /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt
+
+# Stage 5: Calibre installation (changes monthly)
+FROM python-stable-deps AS calibre-installer
 
 # Set version labels
 ARG VERSION
 ARG CALIBRE_RELEASE
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install only what's needed for Calibre download and extraction
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    curl \
-    jq \
-    xz-utils && \
-    rm -rf /var/lib/apt/lists/*
-
-# Download and extract Calibre in build stage (multi-architecture)
+# Download and extract Calibre (multi-architecture)
 RUN echo "**** install calibre ****" && \
     ARCH=$(uname -m) && \
     echo "Detected architecture: ${ARCH}" && \
@@ -52,54 +104,8 @@ RUN echo "**** install calibre ****" && \
     ln -sf /usr/bin/ebook-convert /opt/calibre/ebook-convert && \
     ln -sf /usr/bin/calibredb /opt/calibre/calibredb && \
     rm -rf /var/lib/apt/lists/*; \
-    fi
-
-# Final runtime stage
-FROM python-base as runtime
-
-# Set version labels
-ARG VERSION
-ARG CALIBRE_RELEASE
-LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
-
-ENV PUID="911" \
-    PGID="911" \
-    VERBOSE=false \
-    DEBIAN_FRONTEND=noninteractive
-
-# Install runtime dependencies in a single layer
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates \
-    dbus \
-    fcitx-rime \
-    fonts-wqy-microhei \
-    libnss3 \
-    libopengl0 \
-    libxkbcommon-x11-0 \
-    libxcb-cursor0 \
-    libxcb-icccm4 \
-    libxcb-image0 \
-    libxcb-keysyms1 \
-    libxcb-randr0 \
-    libxcb-render-util0 \
-    libxcb-xinerama0 \
-    poppler-utils \
-    python3-xdg \
-    ttf-wqy-zenhei \
-    xdg-utils \
-    uuid-runtime && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Copy Calibre from build stage
-COPY --from=calibre-installer /opt/calibre /opt/calibre
-
-# Set up Calibre environment (multi-architecture)
-RUN echo "*** Setting up Calibre ***" && \
-    ARCH=$(uname -m) && \
-    echo "Detected architecture: ${ARCH}" && \
+    fi && \
+    echo "*** Setting up Calibre ***" && \
     if [ "${ARCH}" = "x86_64" ]; then \
     echo "Setting up official Calibre binaries for x86_64" && \
     if [ -f "/opt/calibre/calibre_postinstall" ]; then \
@@ -113,31 +119,35 @@ RUN echo "*** Setting up Calibre ***" && \
     find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; ; \
     else \
     echo "Using system Calibre installation for ${ARCH}" && \
-    # For system installation, the symlinks should already be in place from build stage \
     ln -sf /opt/calibre/calibre /usr/local/bin/calibre && \
     ln -sf /opt/calibre/ebook-convert /usr/local/bin/ebook-convert && \
     ln -sf /opt/calibre/calibredb /usr/local/bin/calibredb; \
     fi && \
-    echo "*** Generating machine ID ***" && \
-    dbus-uuidgen > /etc/machine-id && \
     echo "*** Calibre setup complete ***"
 
-# Install Python dependencies
-COPY requirements.txt /tmp/requirements.txt
-RUN echo "*** Install Python Packages ***" && \
-    pip install --no-cache-dir -r /tmp/requirements.txt && \
-    echo "*** Install FanFicFare from TestPyPI ***" && \
-    pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare && \
-    rm -f /tmp/requirements.txt
+# Stage 4: FanFicFare installation (changes weekly)
+FROM calibre-installer AS fanficfare-installer
 
-# Copy application files
-COPY root/ /
+ARG FANFICFARE_VERSION
+RUN echo "*** Install FanFicFare from TestPyPI ***" && \
+    if [ -n "${FANFICFARE_VERSION}" ]; then \
+    echo "Installing FanFicFare==${FANFICFARE_VERSION}" && \
+    pip install --no-cache-dir -i https://test.pypi.org/simple/ "FanFicFare==${FANFICFARE_VERSION}"; \
+    else \
+    echo "Installing latest FanFicFare" && \
+    pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare; \
+    fi
 
-# Create user and set permissions
-RUN groupadd --gid "$PGID" abc && \
-    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
-    chmod -R +x /app/ && \
-    chown -R abc:abc /app/
+# Final runtime stage - minimal, just sets labels and runtime configuration
+FROM fanficfare-installer AS runtime
+
+# Set version labels
+ARG VERSION
+ARG CALIBRE_RELEASE
+LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
+
+# Runtime configuration
+ENV VERBOSE=false
 
 VOLUME /config
 WORKDIR /config

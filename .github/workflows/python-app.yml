@@ -30,9 +30,8 @@ permissions:
   contents: read # Needed to checkout the code
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -40,44 +39,12 @@ jobs:
         # Checkout the specific SHA if triggered by workflow_call, otherwise default behavior
         ref: ${{ github.event_name == 'workflow_call' && inputs.commit_sha || github.ref }}
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
+    - name: Setup Python Environment
+      uses: ./.github/actions/setup-python
       with:
         python-version: "3.12"
-
-    - name: Cache pip dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') }}-${{ hashFiles('.github/workflows/python-app.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') }}-
-          ${{ runner.os }}-pip-
-
-    - name: Install dependencies
-      run: |
-        echo "Upgrading pip..."
-        python -m pip install --upgrade pip
-        
-        echo "Installing testing tools..."
-        pip install flake8 pytest
-        
-        # Install application requirements if the file exists
-        if [ -f requirements.txt ]; then
-          echo "Installing requirements from requirements.txt..."
-          pip install -r requirements.txt
-        else
-          echo "::warning::requirements.txt not found, skipping application dependencies"
-        fi
-        
-        echo "Installing FanFicFare from TestPyPI..."
-        python -m pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare
-        
-        echo "Verifying FanFicFare installation..."
-        # FanFicFare stores version in cli.py, not in __version__
-        python -c "import fanficfare.cli as cli; print(f'FanFicFare version: {cli.version}')" || \
-        python -c "import importlib.metadata; print(f'FanFicFare version: {importlib.metadata.version(\"FanFicFare\")}')" || \
-        echo "::warning::Could not verify FanFicFare installation"
+        install-fanficfare: "false"  # Not needed for linting
+        install-dev-tools: "true"
 
     - name: Lint with flake8
       run: |
@@ -88,8 +55,24 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
         echo "Flake8 checks complete."
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        # Checkout the specific SHA if triggered by workflow_call, otherwise default behavior
+        ref: ${{ github.event_name == 'workflow_call' && inputs.commit_sha || github.ref }}
+
+    - name: Setup Python Environment
+      uses: ./.github/actions/setup-python
+      with:
+        python-version: "3.12"
+        install-fanficfare: "true"
+        install-dev-tools: "true"
+
     - name: Test with pytest
-      id: pytest # Give step an ID to reference outcome if needed
+      id: pytest
       run: |
         echo "Discovering Python test files..."
         find . -name "*_test.py" -o -name "test_*.py" | head -10
@@ -122,3 +105,11 @@ jobs:
         path: junit/test-results.xml
       # Always run this step to upload results even if tests fail
       if: always()
+
+  # Summary job that depends on both lint and test
+  build:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+    - name: All checks passed
+      run: echo "All CI checks completed successfully"

@@ -36,69 +36,53 @@ env:
   IMAGE_NAME: automated-ffdl
 
 jobs:
-  Push_Docker_Image:
+  # Build matrix for parallel architecture builds
+  build_matrix:
     # Run if dispatched OR if workflow_run succeeded OR if called (implied)
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: 
+          - linux/amd64
+          - linux/arm64
     steps:
       - name: Debug Event Info in Docker Image Workflow
         run: |
-          echo "Inside docker-image.yml (Push_Docker_Image job):"
+          echo "Inside docker-image.yml (build_matrix job):"
           echo "  github.event_name: ${{ github.event_name }}"
           echo "  github.event.workflow_run.conclusion: ${{ github.event.workflow_run.conclusion }}"
-          echo "  Condition evaluation (dispatch): ${{ github.event_name == 'workflow_dispatch' }}"
-          echo "  Condition evaluation (call): ${{ github.event_name == 'workflow_call' }}"
-          echo "  Condition evaluation (run conclusion): ${{ github.event.workflow_run.conclusion == 'success' }}"
-          echo "  Overall job 'if' condition evaluates to: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success' }}"
+          echo "  Platform: ${{ matrix.platform }}"
+
       # Determine the commit SHA based on trigger type
       - name: Determine Commit SHA
         id: get_sha
         run: |
           COMMIT_TO_CHECKOUT=""
           EVENT_NAME="${{ github.event_name }}"
-          # Capture input explicitly, provide empty string default if not present
           INPUT_SHA="${{ inputs.commit_sha || '' }}" 
 
-          echo "Event Name: $EVENT_NAME" # Debugging
-          echo "Input SHA (from inputs context): $INPUT_SHA" # Debugging
+          echo "Event Name: $EVENT_NAME"
+          echo "Input SHA (from inputs context): $INPUT_SHA"
 
-          # Prioritize checking for the specific input from workflow_call
           if [ -n "$INPUT_SHA" ]; then
-            # If input SHA exists, we assume it's the workflow_call from update-dependencies
             COMMIT_TO_CHECKOUT="$INPUT_SHA"
-            echo "Using commit SHA from input: $COMMIT_TO_CHECKOUT (Assuming workflow_call trigger)"
-            # Optional: Add a warning if event name doesn't match expectation, but still use the SHA
-            if [ "$EVENT_NAME" != "workflow_call" ]; then
-               echo "::warning:: Input SHA is present, but event name is '$EVENT_NAME'. Proceeding with input SHA."
-            fi
-          # If no input SHA, check other event types
+            echo "Using commit SHA from input: $COMMIT_TO_CHECKOUT"
           elif [ "$EVENT_NAME" == "workflow_run" ]; then
-            # Debug the workflow_run event data
-            echo "workflow_run.head_sha: ${{ github.event.workflow_run.head_sha }}"
-            echo "workflow_run.head_commit.id: ${{ github.event.workflow_run.head_commit.id }}"
-            echo "github.sha: ${{ github.sha }}"
-            
-            # Use head_sha from workflow_run event (this should be the commit that triggered the CI)
             COMMIT_TO_CHECKOUT="${{ github.event.workflow_run.head_sha }}"
             echo "Using commit SHA from workflow_run event: $COMMIT_TO_CHECKOUT"
             
-            # Verify this isn't empty
             if [ -z "$COMMIT_TO_CHECKOUT" ]; then
               echo "::warning::workflow_run.head_sha is empty, falling back to github.sha"
               COMMIT_TO_CHECKOUT="${{ github.sha }}"
             fi
           elif [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-            # Handle workflow_dispatch (only runs if INPUT_SHA was empty)
-            DISPATCH_REF="${{ github.event.inputs.ref || github.ref_name }}" # Use input ref or branch name
+            DISPATCH_REF="${{ github.event.inputs.ref || github.ref_name }}"
             echo "Attempting checkout for workflow_dispatch (ref: $DISPATCH_REF)..."
-            # Need to checkout first to resolve ref locally if it's not a full SHA
-            # This checkout is temporary just to get the SHA
-            git clone $GITHUB_SERVER_URL/$GITHUB_REPOSITORY . # Clone repo first
+            git clone $GITHUB_SERVER_URL/$GITHUB_REPOSITORY . 
             git checkout $DISPATCH_REF
             COMMIT_TO_CHECKOUT=$(git rev-parse HEAD)
             echo "Using commit SHA for workflow_dispatch (ref: $DISPATCH_REF): $COMMIT_TO_CHECKOUT"
-            # Clean up temporary clone? Not strictly necessary as runner cleans up.
-            # The main checkout step later will handle the actual workspace state.
           else
              echo "::error::Unknown event type '$EVENT_NAME' or unable to determine SHA."
              exit 1
@@ -117,50 +101,55 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.get_sha.outputs.commit_sha }}
-          fetch-depth: 0 # Fetch all history for all branches and tags
+          fetch-depth: 0
 
       # Check if the specific file was changed (only relevant for workflow_run)
       - name: Check for changes in latest.txt (for workflow_run)
         id: check_file
-        # Only run this check if triggered by workflow_run
         if: github.event_name == 'workflow_run'
         run: |
-          # Debug current git state
           echo "Current HEAD commit: $(git rev-parse HEAD)"
           echo "Expected commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
-          echo "Parent commit: $(git rev-parse HEAD~1)"
           
-          # Show the last few commits for context
           echo "Recent commit history:"
           git log --oneline -3
           
-          # Check what files changed in the current commit vs its parent
           echo "Files changed in current commit:"
           git diff --name-only HEAD~1 HEAD || echo "Could not get diff"
           
-          # Specifically check release-versions/latest.txt
           if git diff --quiet HEAD~1 HEAD -- 'release-versions/latest.txt'; then
-            echo "No changes detected in release-versions/latest.txt for commit ${{ steps.get_sha.outputs.commit_sha }}."
+            echo "No changes detected in release-versions/latest.txt"
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Changes detected in release-versions/latest.txt for commit ${{ steps.get_sha.outputs.commit_sha }}."
+            echo "Changes detected in release-versions/latest.txt"
             echo "changed=true" >> $GITHUB_OUTPUT
             
-            # Show what changed
             echo "Changes in release-versions/latest.txt:"
             git diff HEAD~1 HEAD -- 'release-versions/latest.txt' || echo "Could not show diff"
           fi
-        continue-on-error: true # Handle first commit case
+        continue-on-error: true
 
-      # --- Subsequent steps run if dispatched OR called OR if file changed on workflow_run ---
+      # Extract platform identifier for cache scoping
+      - name: Extract platform info
+        id: platform
+        run: |
+          PLATFORM_PAIR=${{ matrix.platform }}
+          PLATFORM_ARCH=${PLATFORM_PAIR##*/}
+          echo "arch=${PLATFORM_ARCH}" >> $GITHUB_OUTPUT
+          echo "pair=${PLATFORM_PAIR}" >> $GITHUB_OUTPUT
+
+      # --- Build steps run if dispatched OR called OR if file changed on workflow_run ---
       - name: Set up QEMU
-        # Run if dispatched OR called OR if workflow_run AND file changed
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Setup Docker Buildx
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
+        id: buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
 
       # Determine versions by reading files (always run if build proceeds)
       - name: Determine Versions and Tags from Files
@@ -195,43 +184,140 @@ jobs:
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
-          # Put specific version tag first, then latest
-          TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
-          echo "TAGS=$TAGS" >> $GITHUB_ENV
-          echo "Docker Tags: $TAGS"
+          
+          # Create platform-specific tags
+          PLATFORM_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}-${{ steps.platform.outputs.arch }}"
+          echo "PLATFORM_TAG=$PLATFORM_TAG" >> $GITHUB_ENV
+          echo "Platform-specific tag: $PLATFORM_TAG"
 
       - name: Print image tags and versions
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         run: |
           echo "Commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
-          echo "Specific Version Tag: ${{ env.SPECIFIC_VERSION }}"
+          echo "Platform: ${{ steps.platform.outputs.pair }}"
+          echo "Architecture: ${{ steps.platform.outputs.arch }}"
+          echo "Specific Version: ${{ env.SPECIFIC_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
-          echo "FanFicFare Version: ${{ env.FANFICFARE_VERSION }}" # Print FanFicFare version
-          echo "Full Tags: ${{ env.TAGS }}"
+          echo "FanFicFare Version: ${{ env.FANFICFARE_VERSION }}"
+          echo "Platform Tag: ${{ env.PLATFORM_TAG }}"
 
       - name: Login to DockerHub
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/login-action@v3.0.0
         with:
-          # Use secrets passed from the caller (workflow_call) or repository secrets (workflow_dispatch/workflow_run)
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Build and push
+      - name: Build and push platform-specific image
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ env.TAGS }}
-          # Add cache settings
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ env.PLATFORM_TAG }}
+          # Optimized cache strategy for dependency-focused updates
+          cache-from: |
+            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }}
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
+            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=gha,scope=calibre-fallback-${{ steps.platform.outputs.arch }}
+            type=gha,scope=fanficfare-fallback-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
+          cache-to: |
+            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=calibre-fallback-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=fanficfare-fallback-${{ steps.platform.outputs.arch }},mode=max
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }},mode=max
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
+            FANFICFARE_VERSION=${{ env.FANFICFARE_VERSION }}
+            BUILDKIT_INLINE_CACHE=1
+
+      # Store platform digest for manifest creation
+      - name: Export platform digest
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
+        run: |
+          mkdir -p /tmp/digests
+          DIGEST=$(docker buildx imagetools inspect ${{ env.PLATFORM_TAG }} --format '{{.Manifest.Digest}}')
+          echo "Platform digest: $DIGEST"
+          echo "$DIGEST" > /tmp/digests/${{ steps.platform.outputs.arch }}
+
+      - name: Upload platform digest
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ steps.platform.outputs.arch }}
+          path: /tmp/digests/${{ steps.platform.outputs.arch }}
+
+  # Merge job to create multi-platform manifest and release
+  merge_and_release:
+    runs-on: ubuntu-latest
+    needs: build_matrix
+    if: always() && needs.build_matrix.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download platform digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      # Determine versions for manifest creation
+      - name: Determine Versions and Tags from Files
+        id: set_versions
+        run: |
+          SPECIFIC_VERSION=$(cat release-versions/latest.txt)
+          CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+          FANFICFARE_VERSION=$(cat release-versions/fanficfare.txt)
+          
+          echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
+          echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
+          echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
+          
+          # Create final tags
+          TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
+          echo "TAGS=$TAGS" >> $GITHUB_ENV
+
+      - name: Create and push multi-platform manifest
+        run: |
+          # Create manifest list combining both platform images
+          AMD64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-amd64"
+          ARM64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-arm64"
+          
+          echo "Creating manifest for version ${{ env.SPECIFIC_VERSION }}"
+          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }} \
+            $AMD64_TAG $ARM64_TAG
+          
+          echo "Creating manifest for latest tag"
+          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest \
+            $AMD64_TAG $ARM64_TAG
 
       # Updated step to generate filtered changelog including requirements.txt and excluding bot commits
       - name: Generate Changelog
