@@ -41,6 +41,11 @@ jobs:
     # Run if dispatched OR if workflow_run succeeded OR if called (implied)
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.get_sha.outputs.commit_sha }}
+      specific_version: ${{ steps.set_versions.outputs.specific_version }}
+      calibre_version: ${{ steps.set_versions.outputs.calibre_version }}
+      fanficfare_version: ${{ steps.set_versions.outputs.fanficfare_version }}
     strategy:
       matrix:
         platform: 
@@ -185,6 +190,11 @@ jobs:
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
           
+          # Set outputs for the merge job
+          echo "specific_version=$SPECIFIC_VERSION" >> $GITHUB_OUTPUT
+          echo "calibre_version=$CALIBRE_VERSION" >> $GITHUB_OUTPUT
+          echo "fanficfare_version=$FANFICFARE_VERSION" >> $GITHUB_OUTPUT
+          
           # Create platform-specific tags
           PLATFORM_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}-${{ steps.platform.outputs.arch }}"
           echo "PLATFORM_TAG=$PLATFORM_TAG" >> $GITHUB_ENV
@@ -271,6 +281,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.build_matrix.outputs.commit_sha }}
           fetch-depth: 0
 
       - name: Download platform digests
@@ -289,15 +300,25 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      # Determine versions for manifest creation
-      - name: Determine Versions and Tags from Files
+      # Use versions from build matrix job outputs instead of reading files
+      - name: Set Versions from Build Matrix Outputs
         id: set_versions
         run: |
-          SPECIFIC_VERSION=$(cat release-versions/latest.txt)
-          CALIBRE_VERSION=$(cat release-versions/calibre.txt)
-          FANFICFARE_VERSION=$(cat release-versions/fanficfare.txt)
+          SPECIFIC_VERSION="${{ needs.build_matrix.outputs.specific_version }}"
+          CALIBRE_VERSION="${{ needs.build_matrix.outputs.calibre_version }}"
+          FANFICFARE_VERSION="${{ needs.build_matrix.outputs.fanficfare_version }}"
+          
+          echo "Using version from build job: $SPECIFIC_VERSION"
+          echo "Using Calibre version from build job: $CALIBRE_VERSION"
+          echo "Using FanFicFare version from build job: $FANFICFARE_VERSION"
           
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
+          echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
+          echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
+          
+          # Create final tags
+          TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
+          echo "TAGS=$TAGS" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
           
@@ -311,7 +332,14 @@ jobs:
           AMD64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-amd64"
           ARM64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-arm64"
           
-          echo "Creating manifest for version ${{ env.SPECIFIC_VERSION }}"
+          # Verify that both platform images exist before creating manifest
+          echo "Verifying AMD64 image exists..."
+          docker buildx imagetools inspect $AMD64_TAG || { echo "AMD64 image not found: $AMD64_TAG"; exit 1; }
+          
+          echo "Verifying ARM64 image exists..."
+          docker buildx imagetools inspect $ARM64_TAG || { echo "ARM64 image not found: $ARM64_TAG"; exit 1; }
+          
+          echo "Both platform images verified. Creating manifest for version ${{ env.SPECIFIC_VERSION }}"
           docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }} \
             $AMD64_TAG $ARM64_TAG
           
@@ -322,10 +350,9 @@ jobs:
       # Updated step to generate filtered changelog including requirements.txt and excluding bot commits
       - name: Generate Changelog
         id: generate_changelog
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for fetch
-          CURRENT_COMMIT_SHA: ${{ steps.get_sha.outputs.commit_sha }}
+          CURRENT_COMMIT_SHA: ${{ needs.build_matrix.outputs.commit_sha }}
         run: |
           echo "Fetching tags..."
           # Fetch tags and full history needed for log between tags
@@ -376,7 +403,6 @@ jobs:
           echo -e "${CHANGELOG_ENTRIES}" # Print for debugging using echo -e
 
       - name: Create GitHub Release
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
@@ -385,7 +411,7 @@ jobs:
           release_name: Release v${{ env.SPECIFIC_VERSION }}
           body: |
             Automated release for version ${{ env.SPECIFIC_VERSION }}.
-            Built from commit: ${{ steps.get_sha.outputs.commit_sha }}
+            Built from commit: ${{ needs.build_matrix.outputs.commit_sha }}
             Includes Calibre version: ${{ env.CALIBRE_VERSION }}
             Includes FanFicFare version: ${{ env.FANFICFARE_VERSION }}${{ steps.generate_changelog.outputs.changelog_body }}
 
@@ -394,5 +420,5 @@ jobs:
 
       # Optional: Add a step to indicate skipping if the file didn't change on workflow_run
       - name: Skipped build on workflow_run
-        if: github.event_name == 'workflow_run' && steps.check_file.outputs.changed == 'false'
-        run: echo "Docker build skipped because release-versions/latest.txt was not changed in commit ${{ steps.get_sha.outputs.commit_sha }}."
+        if: github.event_name == 'workflow_run'
+        run: echo "Docker build completed successfully from commit ${{ needs.build_matrix.outputs.commit_sha }}."

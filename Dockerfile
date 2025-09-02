@@ -4,6 +4,7 @@ FROM python:3.12-slim AS python-base
 # Set up environment variables early
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONOPTIMIZE=2 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PUID="911" \
@@ -11,37 +12,33 @@ ENV PYTHONUNBUFFERED=1 \
     VERBOSE=false \
     DEBIAN_FRONTEND=noninteractive
 
-# Stage 1: Install runtime system dependencies (rarely change)
+# Stage 1: Install minimal runtime system dependencies (rarely change)
 FROM python-base AS system-deps
 
-# Install runtime dependencies in a single layer
+# Install only essential dependencies (no GUI components for calibredb-only)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
     curl \
     dbus \
-    fcitx-rime \
-    fonts-wqy-microhei \
     jq \
+    # Minimal font support (calibredb might need basic text processing)
+    fonts-dejavu-core \
+    # Essential libraries only
     libnss3 \
-    libopengl0 \
-    libxkbcommon-x11-0 \
-    libxcb-cursor0 \
-    libxcb-icccm4 \
-    libxcb-image0 \
-    libxcb-keysyms1 \
-    libxcb-randr0 \
-    libxcb-render-util0 \
-    libxcb-xinerama0 \
     poppler-utils \
-    python3-xdg \
-    ttf-wqy-zenhei \
     uuid-runtime \
-    xdg-utils \
     xz-utils && \
+    # Aggressive cleanup
+    apt-get autoremove -y && \
+    apt-get autoclean && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm -rf /var/lib/apt/lists/* \
+    /tmp/* \
+    /var/tmp/* \
+    /var/cache/apt/* \
+    /var/log/* && \
     echo "*** Generating machine ID ***" && \
     dbus-uuidgen > /etc/machine-id
 
@@ -63,13 +60,17 @@ RUN chmod -R +x /app/ && \
 # Stage 4: Install stable Python dependencies (rarely change)
 FROM app-code AS python-stable-deps
 
-# Install stable Python packages from requirements.txt
+# Install stable Python packages from requirements.txt with cleanup
 COPY requirements.txt /tmp/requirements.txt
 RUN echo "*** Install Stable Python Packages ***" && \
-    pip install --no-cache-dir -r /tmp/requirements.txt && \
-    rm -f /tmp/requirements.txt
+    pip install --no-cache-dir --no-compile -r /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt && \
+    # Clean up Python cache and temporary files
+    find /usr/local/lib/python3.12/site-packages -name "*.pyc" -delete && \
+    find /usr/local/lib/python3.12/site-packages -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /root/.cache /tmp/*
 
-# Stage 5: Calibre installation (changes monthly)
+# Stage 5: Minimal Calibre installation (changes monthly) - only calibredb
 FROM python-stable-deps AS calibre-installer
 
 # Set version labels
@@ -77,13 +78,13 @@ ARG VERSION
 ARG CALIBRE_RELEASE
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 
-# Download and extract Calibre (multi-architecture)
-RUN echo "**** install calibre ****" && \
+# Download and extract only essential Calibre components
+RUN echo "**** install minimal calibre (calibredb only) ****" && \
     ARCH=$(uname -m) && \
     echo "Detected architecture: ${ARCH}" && \
     mkdir -p /opt/calibre && \
     if [ "${ARCH}" = "x86_64" ]; then \
-    echo "Installing Calibre from official binaries for x86_64" && \
+    echo "Installing minimal Calibre from official binaries for x86_64" && \
     if [ -z "${CALIBRE_RELEASE}" ]; then \
     CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
     CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
@@ -94,49 +95,58 @@ RUN echo "**** install calibre ****" && \
     CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
     echo "Downloading from ${CALIBRE_URL}" && \
     curl -o /tmp/calibre-tarball.txz -L "${CALIBRE_URL}" && \
-    tar xf /tmp/calibre-tarball.txz -C /opt/calibre && \
-    rm -f /tmp/calibre-tarball.txz; \
-    else \
-    echo "Architecture ${ARCH} not supported by official Calibre binaries, using system package" && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends calibre && \
-    ln -sf /usr/bin/calibre /opt/calibre/calibre && \
-    ln -sf /usr/bin/ebook-convert /opt/calibre/ebook-convert && \
-    ln -sf /usr/bin/calibredb /opt/calibre/calibredb && \
-    rm -rf /var/lib/apt/lists/*; \
-    fi && \
-    echo "*** Setting up Calibre ***" && \
-    if [ "${ARCH}" = "x86_64" ]; then \
-    echo "Setting up official Calibre binaries for x86_64" && \
-    if [ -f "/opt/calibre/calibre_postinstall" ]; then \
-    chmod +x /opt/calibre/calibre_postinstall && \
-    echo "*** Running Calibre post-install ***" && \
-    (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it"); \
-    fi && \
-    echo "*** Setting up Calibre symlinks ***" && \
-    find /opt/calibre -name "calibre" -type f -executable -exec ln -sf {} /usr/local/bin/calibre \; && \
-    find /opt/calibre -name "ebook-convert" -type f -executable -exec ln -sf {} /usr/local/bin/ebook-convert \; && \
+    # Extract only essential components for calibredb
+    tar xf /tmp/calibre-tarball.txz -C /opt/calibre \
+    --wildcards \
+    "*/calibredb" \
+    "*/lib/python*" \
+    "*/resources/*" \
+    --exclude="*/bin/calibre" \
+    --exclude="*/bin/ebook-*" \
+    --exclude="*/bin/fetch-ebook-metadata" \
+    --exclude="*/bin/lrf*" \
+    --exclude="*/bin/web2disk" \
+    --exclude="*/bin/markdown-calibre" && \
+    rm -f /tmp/calibre-tarball.txz && \
+    # Remove unnecessary GUI and conversion components
+    find /opt/calibre -name "*qt*" -type f -delete 2>/dev/null || true && \
+    find /opt/calibre -name "*gui*" -type f -delete 2>/dev/null || true && \
+    find /opt/calibre -name "*conversion*" -type d -exec rm -rf {} \; 2>/dev/null || true && \
+    # Create symlink for calibredb only
     find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; ; \
     else \
-    echo "Using system Calibre installation for ${ARCH}" && \
-    ln -sf /opt/calibre/calibre /usr/local/bin/calibre && \
-    ln -sf /opt/calibre/ebook-convert /usr/local/bin/ebook-convert && \
-    ln -sf /opt/calibre/calibredb /usr/local/bin/calibredb; \
+    echo "Architecture ${ARCH} not supported by official Calibre binaries, installing minimal system package" && \
+    apt-get update && \
+    # Install only calibre-bin package if available, otherwise full calibre
+    (apt-get install -y --no-install-recommends calibre-bin || \
+    apt-get install -y --no-install-recommends calibre) && \
+    # Remove unnecessary calibre binaries, keep only calibredb
+    rm -f /usr/bin/calibre /usr/bin/ebook-* /usr/bin/fetch-ebook-metadata \
+    /usr/bin/lrf* /usr/bin/web2disk /usr/bin/markdown-calibre && \
+    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb && \
+    rm -rf /var/lib/apt/lists/*; \
     fi && \
-    echo "*** Calibre setup complete ***"
+    echo "*** Testing calibredb installation ***" && \
+    calibredb --version && \
+    echo "✅ calibredb is working correctly" && \
+    echo "*** Minimal Calibre setup complete (calibredb only) ***"
 
-# Stage 4: FanFicFare installation (changes weekly)
+# Stage 6: FanFicFare installation (changes weekly)
 FROM calibre-installer AS fanficfare-installer
 
 ARG FANFICFARE_VERSION
 RUN echo "*** Install FanFicFare from TestPyPI ***" && \
     if [ -n "${FANFICFARE_VERSION}" ]; then \
     echo "Installing FanFicFare==${FANFICFARE_VERSION}" && \
-    pip install --no-cache-dir -i https://test.pypi.org/simple/ "FanFicFare==${FANFICFARE_VERSION}"; \
+    pip install --no-cache-dir --no-compile -i https://test.pypi.org/simple/ "FanFicFare==${FANFICFARE_VERSION}"; \
     else \
     echo "Installing latest FanFicFare" && \
-    pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare; \
-    fi
+    pip install --no-cache-dir --no-compile -i https://test.pypi.org/simple/ FanFicFare; \
+    fi && \
+    # Clean up Python cache and temporary files after FanFicFare installation
+    find /usr/local/lib/python3.12/site-packages -name "*.pyc" -delete && \
+    find /usr/local/lib/python3.12/site-packages -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /root/.cache /tmp/*
 
 # Final runtime stage - minimal, just sets labels and runtime configuration
 FROM fanficfare-installer AS runtime
