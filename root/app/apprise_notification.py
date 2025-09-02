@@ -22,8 +22,8 @@ class AppriseNotification(notification_base.NotificationBase):
                     self.apprise_urls.add(url)
 
             # Automatically add Pushbullet config if enabled
-            if self.config.pushbullet.enabled and self.config.pushbullet.token:
-                pb_api_key = self.config.pushbullet.token
+            if self.config.pushbullet.enabled and self.config.pushbullet.api_key:
+                pb_api_key = self.config.pushbullet.api_key
                 pb_url = f"pbul://{pb_api_key}"
                 pb_device = self.config.pushbullet.device
                 if pb_device:
