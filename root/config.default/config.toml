@@ -12,6 +12,7 @@ username=""
 password=""
 default_ini=""
 personal_ini=""
+update_method="update"
 
 [pushbullet]
 enabled = false

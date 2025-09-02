@@ -90,6 +90,7 @@ def main():
         ff_logging.log(
             f"  Calibre Personal INI: {config.calibre.personal_ini or 'Not Specified'}"
         )
+        ff_logging.log(f"  Update Method: {config.calibre.update_method}")
 
         # Log Pushbullet Configuration
         pb_status = "Enabled" if config.pushbullet.enabled else "Disabled"
