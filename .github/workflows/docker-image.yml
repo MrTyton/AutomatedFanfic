@@ -115,24 +115,18 @@ jobs:
         run: |
           echo "Current HEAD commit: $(git rev-parse HEAD)"
           echo "Expected commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
-          
           echo "Recent commit history:"
           git log --oneline -3
           
-          echo "Files changed in current commit:"
-          git diff --name-only HEAD~1 HEAD || echo "Could not get diff"
-          
-          if git diff --quiet HEAD~1 HEAD -- 'release-versions/latest.txt'; then
-            echo "No changes detected in release-versions/latest.txt"
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
+          # Check for changes to the version file.
+          # The `|| true` prevents the step from failing if the diff command fails (e.g. on the first commit of a repo).
+          if (git diff --name-only HEAD~1 HEAD || true) | grep -q "release-versions/latest.txt"; then
             echo "Changes detected in release-versions/latest.txt"
             echo "changed=true" >> $GITHUB_OUTPUT
-            
-            echo "Changes in release-versions/latest.txt:"
-            git diff HEAD~1 HEAD -- 'release-versions/latest.txt' || echo "Could not show diff"
+          else
+            echo "No changes detected in release-versions/latest.txt"
+            echo "changed=false" >> $GITHUB_OUTPUT
           fi
-        continue-on-error: true
 
       # Extract platform identifier for cache scoping
       - name: Extract platform info
