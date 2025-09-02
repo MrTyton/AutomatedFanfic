@@ -33,80 +33,77 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Check Fanficfare Version
-        id: check_fanficfare
-        run: |
-          echo "Checking Fanficfare version..."
-          
-          # Validate fanficfare.txt exists
-          if [ ! -f "release-versions/fanficfare.txt" ]; then
-            echo "::error::fanficfare.txt not found in release-versions/"
-            exit 1
-          fi
-          
-          CURRENT_FFF_VERSION=$(cat release-versions/fanficfare.txt)
-          if [ -z "$CURRENT_FFF_VERSION" ]; then
-            echo "::error::fanficfare.txt is empty or could not be read"
-            exit 1
-          fi
-          echo "Current Fanficfare version: $CURRENT_FFF_VERSION"
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-update-deps-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-update-deps-
+            ${{ runner.os }}-pip-
 
-          # Fetch version from TestPyPI simple index (more reliable than pip search)
-          FFF_INDEX_URL="https://test.pypi.org/simple/fanficfare/"
-          echo "Fetching version information from: $FFF_INDEX_URL"
+      - name: Check for dependency updates
+        id: check_updates
+        run: |
+          echo "Checking dependency versions..."
           
-          # Download the index page with better error handling
+          # Initialize change flags
+          echo "fff_changed=false" >> $GITHUB_OUTPUT
+          echo "calibre_changed=false" >> $GITHUB_OUTPUT
+          echo "any_changed=false" >> $GITHUB_OUTPUT
+          echo "fff_new_version=" >> $GITHUB_OUTPUT
+          echo "calibre_new_version=" >> $GITHUB_OUTPUT
+          
+          # Read current versions
+          CURRENT_FFF_VERSION=$(cat release-versions/fanficfare.txt)
+          CURRENT_CALIBRE_VERSION=$(cat release-versions/calibre.txt)
+          
+          # Validate files exist and have content
+          if [ ! -f "release-versions/fanficfare.txt" ] || [ -z "$CURRENT_FFF_VERSION" ]; then
+            echo "::error::fanficfare.txt not found or empty"
+            exit 1
+          fi
+          
+          if [ ! -f "release-versions/calibre.txt" ] || [ -z "$CURRENT_CALIBRE_VERSION" ]; then
+            echo "::error::calibre.txt not found or empty"
+            exit 1
+          fi
+          
+          echo "Current FanFicFare version: $CURRENT_FFF_VERSION"
+          echo "Current Calibre version: $CURRENT_CALIBRE_VERSION"
+
+          # Check FanFicFare version
+          echo "Fetching FanFicFare version information..."
+          FFF_INDEX_URL="https://test.pypi.org/simple/fanficfare/"
           FFF_PAGE=$(curl -sSfL "$FFF_INDEX_URL" 2>/dev/null)
+          
           if [ $? -ne 0 ] || [ -z "$FFF_PAGE" ]; then
             echo "::error::Failed to fetch FanFicFare index from $FFF_INDEX_URL"
             exit 1
           fi
           
           LATEST_FFF_VERSION=$(echo "$FFF_PAGE" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
-
-          # Check if LATEST_FFF_VERSION is empty. If so, fail the workflow.
+          
           if [ -z "$LATEST_FFF_VERSION" ]; then
-            echo "::error::Could not determine the latest FanFicFare version from $FFF_INDEX_URL. Please check the URL and parsing logic."
-            echo "::debug::Raw page content (first 500 chars):"
-            echo "$FFF_PAGE" | head -c 500
+            echo "::error::Could not determine the latest FanFicFare version"
             exit 1
           fi
-          echo "Latest Fanficfare version found: $LATEST_FFF_VERSION"
-
-          echo "fff_changed=false" >> $GITHUB_OUTPUT
-          echo "new_version=" >> $GITHUB_OUTPUT # Default empty
-
-          # Corrected variable check: use $LATEST_FFF_VERSION
+          
+          echo "Latest FanFicFare version: $LATEST_FFF_VERSION"
+          
           if [ "$LATEST_FFF_VERSION" != "$CURRENT_FFF_VERSION" ]; then
-              echo "New Fanficfare version detected: $LATEST_FFF_VERSION"
-              echo "$LATEST_FFF_VERSION" > release-versions/fanficfare.txt
-              echo "fff_changed=true" >> $GITHUB_OUTPUT
-              echo "new_version=$LATEST_FFF_VERSION" >> $GITHUB_OUTPUT # Corrected typo
+            echo "FanFicFare update detected: $CURRENT_FFF_VERSION -> $LATEST_FFF_VERSION"
+            echo "$LATEST_FFF_VERSION" > release-versions/fanficfare.txt
+            echo "fff_changed=true" >> $GITHUB_OUTPUT
+            echo "fff_new_version=$LATEST_FFF_VERSION" >> $GITHUB_OUTPUT
           else
-              echo "FanFicFare is up to date."
+            echo "FanFicFare is up to date"
           fi
 
-      - name: Check Calibre Version
-        id: check_calibre
-        run: |
-          echo "Checking Calibre version..."
-          
-          # Validate calibre.txt exists
-          if [ ! -f "release-versions/calibre.txt" ]; then
-            echo "::error::calibre.txt not found in release-versions/"
-            exit 1
-          fi
-          
-          CURRENT_CALIBRE_VERSION=$(cat release-versions/calibre.txt)
-          if [ -z "$CURRENT_CALIBRE_VERSION" ]; then
-            echo "::error::calibre.txt is empty or could not be read"
-            exit 1
-          fi
-          echo "Current Calibre version: $CURRENT_CALIBRE_VERSION"
-
-          # Ensure jq is available for JSON parsing
+          # Check Calibre version
+          echo "Fetching Calibre version information..."
           if ! command -v jq &> /dev/null; then
-            echo "::error::jq is not available. Cannot parse GitHub API response."
+            echo "::error::jq is not available"
             exit 1
           fi
 
@@ -114,34 +111,39 @@ jobs:
           LATEST_RELEASE_INFO=$(curl -sSfL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" "$LATEST_RELEASE_URL")
 
           if [ -z "$LATEST_RELEASE_INFO" ]; then
-            echo "::error::Failed to fetch latest Calibre release info from $LATEST_RELEASE_URL"
+            echo "::error::Failed to fetch latest Calibre release info"
             exit 1
-          else
-            LATEST_CALIBRE_TAG=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
-            if [ "$LATEST_CALIBRE_TAG" == "null" ] || [ -z "$LATEST_CALIBRE_TAG" ]; then
-               echo "::error::Could not parse tag_name from Calibre release info."
-               exit 1
-            else
-               LATEST_CALIBRE_VERSION=${LATEST_CALIBRE_TAG#v} # Remove leading 'v'
-               echo "Latest Calibre version found: $LATEST_CALIBRE_VERSION (tag: $LATEST_CALIBRE_TAG)"
-            fi
           fi
 
-          echo "calibre_changed=false" >> $GITHUB_OUTPUT
-          echo "new_version=" >> $GITHUB_OUTPUT # Default empty
+          LATEST_CALIBRE_TAG=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
+          if [ "$LATEST_CALIBRE_TAG" == "null" ] || [ -z "$LATEST_CALIBRE_TAG" ]; then
+            echo "::error::Could not parse tag_name from Calibre release info"
+            exit 1
+          fi
 
-          if [ -n "$LATEST_CALIBRE_VERSION" ] && [ "$LATEST_CALIBRE_VERSION" != "$CURRENT_CALIBRE_VERSION" ]; then
-              echo "New Calibre version detected: $LATEST_CALIBRE_VERSION"
-              echo "$LATEST_CALIBRE_VERSION" > release-versions/calibre.txt
-              echo "calibre_changed=true" >> $GITHUB_OUTPUT
-              echo "new_version=$LATEST_CALIBRE_VERSION" >> $GITHUB_OUTPUT
+          LATEST_CALIBRE_VERSION=${LATEST_CALIBRE_TAG#v} # Remove leading 'v'
+          echo "Latest Calibre version: $LATEST_CALIBRE_VERSION (tag: $LATEST_CALIBRE_TAG)"
+
+          if [ "$LATEST_CALIBRE_VERSION" != "$CURRENT_CALIBRE_VERSION" ]; then
+            echo "Calibre update detected: $CURRENT_CALIBRE_VERSION -> $LATEST_CALIBRE_VERSION"
+            echo "$LATEST_CALIBRE_VERSION" > release-versions/calibre.txt
+            echo "calibre_changed=true" >> $GITHUB_OUTPUT
+            echo "calibre_new_version=$LATEST_CALIBRE_VERSION" >> $GITHUB_OUTPUT
           else
-              echo "Calibre is up to date."
+            echo "Calibre is up to date"
+          fi
+          
+          # Set combined flag
+          if [ "$LATEST_FFF_VERSION" != "$CURRENT_FFF_VERSION" ] || [ "$LATEST_CALIBRE_VERSION" != "$CURRENT_CALIBRE_VERSION" ]; then
+            echo "any_changed=true" >> $GITHUB_OUTPUT
+            echo "Updates detected, will proceed with version bump"
+          else
+            echo "No updates detected"
           fi
 
       - name: Update latest.txt if any changes were made
         id: update_latest_txt
-        if: steps.check_fanficfare.outputs.fff_changed == 'true' || steps.check_calibre.outputs.calibre_changed == 'true'
+        if: steps.check_updates.outputs.any_changed == 'true'
         run: |
           echo "Updating latest.txt..."
           CURRENT_VERSION=$(cat release-versions/latest.txt 2>/dev/null || echo "1.0.0") # Default if file not found
@@ -202,11 +204,11 @@ jobs:
         if: steps.update_latest_txt.outputs.updated == 'true'
         run: |
           COMMIT_MSG="Automated Dependency Updates (v${{ steps.update_latest_txt.outputs.new_version }})" # Add new version here
-          if [ "${{ steps.check_fanficfare.outputs.fff_changed }}" == "true" ]; then
-            COMMIT_MSG="${COMMIT_MSG}\n\n- FanFicFare updated to ${{ steps.check_fanficfare.outputs.new_version }}"
+          if [ "${{ steps.check_updates.outputs.fff_changed }}" == "true" ]; then
+            COMMIT_MSG="${COMMIT_MSG}\n\n- FanFicFare updated to ${{ steps.check_updates.outputs.fff_new_version }}"
           fi
-          if [ "${{ steps.check_calibre.outputs.calibre_changed }}" == "true" ]; then
-            COMMIT_MSG="${COMMIT_MSG}\n\n- Calibre updated to ${{ steps.check_calibre.outputs.new_version }}"
+          if [ "${{ steps.check_updates.outputs.calibre_changed }}" == "true" ]; then
+            COMMIT_MSG="${COMMIT_MSG}\n\n- Calibre updated to ${{ steps.check_updates.outputs.calibre_new_version }}"
           fi
           # Escape newlines for the commit action
           echo "commit_message<<EOF" >> $GITHUB_OUTPUT
@@ -240,51 +242,18 @@ jobs:
     needs: check_and_update
     # Only run if a commit was made in the previous job
     if: needs.check_and_update.outputs.commit_sha != ''
-    # Add .yml to the workflow file path
     uses: ./.github/workflows/python-app.yml
     with:
       # Pass the commit SHA that was created
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Inherit secrets if python-app ever needs them
 
-  debug_job_status: # New debugging job
-    needs: [check_and_update, run_ci] # Depends on the same jobs as build_docker
-    if: always() # Ensure this job runs regardless of preceding job outcomes
-    runs-on: ubuntu-latest
-    outputs:
-      should_run_docker_build: ${{ steps.check_conditions.outputs.should_run_docker_build }}
-      commit_sha_to_build: ${{ steps.check_conditions.outputs.commit_sha_to_build }}
-    steps:
-    - name: Evaluate conditions and set outputs
-      id: check_conditions
-      run: |
-        echo "--- Debug Job Status: Evaluating Conditions ---"
-        commit_sha_val="${{ needs.check_and_update.outputs.commit_sha }}"
-        latest_updated_val="${{ needs.check_and_update.outputs.latest_updated }}" # Though not used in if, good to log
-        run_ci_result_val="${{ needs.run_ci.result }}"
-
-        echo "Raw commit_sha_val: $commit_sha_val"
-        echo "Raw latest_updated_val: $latest_updated_val"
-        echo "Raw run_ci_result_val: $run_ci_result_val"
-
-        if [[ "$commit_sha_val" != "" && "$run_ci_result_val" == "success" ]]; then
-          echo "Conditions MET for Docker build."
-          echo "should_run_docker_build=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "Conditions NOT MET for Docker build."
-          echo "should_run_docker_build=false" >> "$GITHUB_OUTPUT"
-        fi
-        # Always output the commit_sha_val for the next job to use, even if conditions are not met
-        # This simplifies the next job's 'with' block, it can always try to use this.
-        # If 'should_run_docker_build' is false, build_docker won't run anyway.
-        echo "commit_sha_to_build=$commit_sha_val" >> "$GITHUB_OUTPUT"
-        echo "--- End of Debug Job Status Evaluation ---"
-
-  # Third job: Build Docker
+  # Third job: Build Docker - directly depend on both jobs
   build_docker:
-    needs: [debug_job_status]
-    if: needs.debug_job_status.outputs.should_run_docker_build == 'true'
+    needs: [check_and_update, run_ci]
+    # Only run if both conditions are met: commit was made AND CI passed
+    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success'
     uses: ./.github/workflows/docker-image.yml 
     with:
-      commit_sha: ${{ needs.debug_job_status.outputs.commit_sha_to_build }}
+      commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Pass all secrets to the called workflow

@@ -1,0 +1,83 @@
+name: "Setup Python Environment"
+description: "Setup Python with caching and common dependencies"
+inputs:
+  python-version:
+    description: "Python version"
+    required: false
+    default: "3.12"
+  install-fanficfare:
+    description: "Whether to install FanFicFare from TestPyPI"
+    required: false
+    default: "true"
+  install-dev-tools:
+    description: "Whether to install development tools (flake8, pytest)"
+    required: false
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py', 'release-versions/fanficfare.txt') }}-${{ inputs.python-version }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') }}-${{ inputs.python-version }}
+          ${{ runner.os }}-pip-${{ inputs.python-version }}
+          ${{ runner.os }}-pip-
+
+    - name: Install base dependencies
+      shell: bash
+      run: |
+        echo "Upgrading pip..."
+        python -m pip install --upgrade pip
+
+        # Install development tools if requested
+        if [ "${{ inputs.install-dev-tools }}" == "true" ]; then
+          echo "Installing development tools..."
+          pip install flake8 pytest
+        fi
+
+        # Install application requirements if the file exists
+        if [ -f requirements.txt ]; then
+          echo "Installing requirements from requirements.txt..."
+          pip install -r requirements.txt
+        else
+          echo "::warning::requirements.txt not found, skipping application dependencies"
+        fi
+
+    - name: Install FanFicFare from TestPyPI
+      if: inputs.install-fanficfare == 'true'
+      shell: bash
+      run: |
+        echo "Reading FanFicFare version from release-versions/fanficfare.txt..."
+        if [ -f "release-versions/fanficfare.txt" ]; then
+          FANFICFARE_VERSION=$(cat release-versions/fanficfare.txt)
+          echo "Target FanFicFare version: $FANFICFARE_VERSION"
+          
+          echo "Installing FanFicFare==$FANFICFARE_VERSION from TestPyPI..."
+          python -m pip install --no-cache-dir -i https://test.pypi.org/simple/ "FanFicFare==$FANFICFARE_VERSION"
+          
+          echo "Verifying FanFicFare installation..."
+          # FanFicFare stores version in cli.py, not in __version__
+          INSTALLED_VERSION=$(python -c "import fanficfare.cli as cli; print(cli.version)" 2>/dev/null || \
+                             python -c "import importlib.metadata; print(importlib.metadata.version('FanFicFare'))" 2>/dev/null || \
+                             echo "unknown")
+          
+          echo "Installed FanFicFare version: $INSTALLED_VERSION"
+          
+          # Verify the version matches
+          if [ "$INSTALLED_VERSION" = "$FANFICFARE_VERSION" ]; then
+            echo "✅ FanFicFare version matches expected version"
+          else
+            echo "⚠️  Warning: Installed version ($INSTALLED_VERSION) differs from expected ($FANFICFARE_VERSION)"
+          fi
+        else
+          echo "::error::release-versions/fanficfare.txt not found, cannot determine FanFicFare version"
+          exit 1
+        fi
