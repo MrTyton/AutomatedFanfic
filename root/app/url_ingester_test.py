@@ -20,7 +20,7 @@ class TestUrlIngester(unittest.TestCase):
         [
             (
                 "basic_config",
-                "test@example.com",
+                "testuser",
                 "test_password",
                 "test_server",
                 "test_mailbox",
@@ -28,7 +28,7 @@ class TestUrlIngester(unittest.TestCase):
             ),
             (
                 "different_config",
-                "another@test.com",
+                "anotheruser",
                 "another_password",
                 "another_server",
                 "another_mailbox",
@@ -36,7 +36,7 @@ class TestUrlIngester(unittest.TestCase):
             ),
             (
                 "minimal_config",
-                "minimal@test.com",
+                "minimaluser",
                 "min_pass",
                 "min_server",
                 "INBOX",
@@ -82,7 +82,7 @@ class TestUrlIngester(unittest.TestCase):
         # Setup mock config with ffnet_disable setting
         mock_config = AppConfig(
             email=EmailConfig(
-                email="test@example.com",
+                email="testuser",
                 password="test_password",
                 server="test_server",
                 ffnet_disable=ffnet_disable,
@@ -112,7 +112,7 @@ class TestUrlIngester(unittest.TestCase):
         # Setup mock config
         mock_config = AppConfig(
             email=EmailConfig(
-                email="test@example.com",
+                email="testuser",
                 password="test_password",
                 server="test_server",
                 mailbox="test_mailbox",

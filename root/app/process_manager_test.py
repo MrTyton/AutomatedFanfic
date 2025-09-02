@@ -94,7 +94,7 @@ class TestProcessManager(unittest.TestCase):
         # Create test configuration
         self.config = AppConfig(
             email=EmailConfig(
-                email="test@example.com",
+                email="testuser",
                 password="test_password",
                 server="test.server.com",
             ),
@@ -424,7 +424,7 @@ class TestProcessManagerMonitoring(unittest.TestCase):
         """Set up test configuration with monitoring enabled."""
         self.config = AppConfig(
             email=EmailConfig(
-                email="test@example.com",
+                email="testuser",
                 password="test_password",
                 server="test.server.com",
             ),
@@ -482,7 +482,7 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
         """Set up test configuration."""
         self.config = AppConfig(
             email=EmailConfig(
-                email="test@example.com",
+                email="testuser",
                 password="test_password",
                 server="test.server.com",
             ),

@@ -158,7 +158,7 @@ class TestAppriseNotification(unittest.TestCase):
             email=EmailConfig(),
             calibre=CalibreConfig(path="/tmp/calibre"),
             apprise=AppriseConfig(),
-            pushbullet=PushbulletConfig(enabled=enabled, token=token, device=device),
+            pushbullet=PushbulletConfig(enabled=enabled, api_key=token, device=device),
         )
         mock_load_config.return_value = mock_config
 

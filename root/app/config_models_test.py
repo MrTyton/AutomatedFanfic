@@ -5,6 +5,7 @@ from parameterized import parameterized
 import tempfile
 import os
 from pathlib import Path
+from pydantic import ValidationError
 
 from config_models import (
     ConfigManager,
@@ -25,7 +26,7 @@ class TestConfigModels(unittest.TestCase):
         """Set up test fixtures."""
         self.valid_toml_content = """
 [email]
-email = "test@example.com"
+email = "testuser"
 password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
@@ -41,7 +42,7 @@ personal_ini = "/path/to/personal.ini"
 
 [pushbullet]
 enabled = true
-token = "test_token"
+api_key = "test_token"
 device = "test_device"
 
 [apprise]
@@ -50,7 +51,7 @@ urls = ["discord://webhook_id/webhook_token", "mailto://user:pass@gmail.com"]
 
         self.minimal_toml_content = """
 [email]
-email = "test@example.com"
+email = "testuser"
 password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
@@ -74,7 +75,7 @@ path = "/path/to/calibre"
                 "valid_complete_config",
                 """
 [email]
-email = "test@example.com"
+email = "testuser"
 password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
@@ -90,7 +91,7 @@ personal_ini = "/path/to/personal.ini"
 
 [pushbullet]
 enabled = true
-token = "test_token"
+api_key = "test_token"
 device = "test_device"
 
 [apprise]
@@ -104,7 +105,7 @@ urls = ["discord://webhook_id/webhook_token"]
                 "minimal_valid_config",
                 """
 [email]
-email = "test@example.com"
+email = "testuser"
 password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
@@ -130,7 +131,7 @@ path = "/path/to/calibre"
                 "missing_calibre_section",
                 """
 [email]
-email = "test@example.com"
+email = "testuser"
 password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
@@ -143,7 +144,7 @@ mailbox = "INBOX"
                 "invalid_email_format",
                 """
 [email]
-email = "invalid_email"
+email = "user@example.com"
 password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
@@ -159,7 +160,7 @@ path = "/path/to/calibre"
                 "negative_sleep_time",
                 """
 [email]
-email = "test@example.com"
+email = "testuser"
 password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
@@ -242,7 +243,7 @@ path = ""
     def test_email_config_defaults(self):
         """Test EmailConfig with default values."""
         email_config = EmailConfig(
-            email="test@example.com",
+            email="testuser",
             password="password",
             server="imap.gmail.com",
             mailbox="INBOX",
@@ -266,7 +267,7 @@ path = ""
         pushbullet_config = PushbulletConfig()
 
         self.assertFalse(pushbullet_config.enabled)
-        self.assertIsNone(pushbullet_config.token)
+        self.assertIsNone(pushbullet_config.api_key)
         self.assertIsNone(pushbullet_config.device)
 
     def test_apprise_config_empty_by_default(self):
@@ -274,6 +275,43 @@ path = ""
         apprise_config = AppriseConfig()
 
         self.assertEqual(apprise_config.urls, [])
+
+    @parameterized.expand(
+        [
+            ("valid_username", "testuser", True),
+            ("valid_username_with_dots", "test.user", True),
+            ("valid_username_with_numbers", "test123", True),
+            ("valid_username_with_underscores", "test_user", True),
+            ("valid_empty_username", "", True),  # Empty allowed for development
+            ("invalid_email_with_at", "user@example.com", False),
+            ("invalid_email_with_at_and_plus", "user+tag@example.com", False),
+        ]
+    )
+    def test_email_validation(self, name, email_value, should_pass):
+        """Test email validation accepts usernames and rejects full email addresses."""
+        if should_pass:
+            try:
+                email_config = EmailConfig(
+                    email=email_value,
+                    password="password",
+                    server="imap.gmail.com",
+                )
+                self.assertEqual(
+                    email_config.email,
+                    email_value.strip() if email_value else email_value,
+                )
+            except Exception as e:
+                self.fail(
+                    f"Valid email '{email_value}' should not raise exception: {e}"
+                )
+        else:
+            with self.assertRaises(ValidationError) as context:
+                EmailConfig(
+                    email=email_value,
+                    password="password",
+                    server="imap.gmail.com",
+                )
+            self.assertIn("Email should be username only", str(context.exception))
 
     def test_config_manager_caching(self):
         """Test that ConfigManager caches configurations."""
@@ -343,7 +381,7 @@ path = ""
             config = ConfigManager.load_config(temp_path)
 
             # Verify all sections are properly loaded
-            self.assertEqual(config.email.email, "test@example.com")
+            self.assertEqual(config.email.email, "testuser")
             self.assertEqual(config.email.server, "imap.gmail.com")
             self.assertEqual(config.calibre.path, "/path/to/calibre")
             self.assertTrue(config.pushbullet.enabled)

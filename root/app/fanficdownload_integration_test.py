@@ -26,7 +26,7 @@ class TestFanficdownloadSignalHandling(unittest.TestCase):
         """Set up test configuration."""
         self.config = AppConfig(
             email=EmailConfig(
-                email="test@example.com",
+                email="testuser",
                 password="test_password",
                 server="test.server.com",
             ),

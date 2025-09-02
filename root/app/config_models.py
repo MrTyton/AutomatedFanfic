@@ -33,7 +33,9 @@ class ConfigValidationError(Exception):
 class EmailConfig(BaseModel):
     """Configuration for email monitoring."""
 
-    email: str = Field(default="", description="Email address for monitoring")
+    email: str = Field(
+        default="", description="Email username (without @domain - handled by server)"
+    )
     password: str = Field(default="", description="Email password or app password")
     server: str = Field(default="", description="IMAP server address")
     mailbox: str = Field(default="INBOX", description="Mailbox to monitor")
@@ -47,10 +49,10 @@ class EmailConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, v):
-        """Basic email validation - allow empty for development."""
-        if v and ("@" not in v or "." not in v.split("@")[-1]):
-            raise ValueError("Invalid email format")
-        return v
+        """Validate email username - should not contain @ symbol since domain is handled by server."""
+        if v and "@" in v:
+            raise ValueError("Email should be username only (without @domain)")
+        return v.strip() if v else v
 
     @field_validator("server")
     @classmethod
@@ -118,14 +120,14 @@ class PushbulletConfig(BaseModel):
     """Configuration for Pushbullet notifications."""
 
     enabled: bool = Field(default=False, description="Enable Pushbullet notifications")
-    token: Optional[str] = Field(default=None, description="Pushbullet API token")
+    api_key: Optional[str] = Field(default=None, description="Pushbullet API key")
     device: Optional[str] = Field(default=None, description="Target device name")
 
     @model_validator(mode="after")
     def validate_pushbullet(self):
         """Validate Pushbullet configuration."""
-        if self.enabled and not self.token:
-            raise ValueError("Pushbullet token is required when enabled=True")
+        if self.enabled and not self.api_key:
+            raise ValueError("Pushbullet api_key is required when enabled=True")
 
         return self
 

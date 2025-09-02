@@ -7,15 +7,6 @@ This is a docker image to run the Automated FFF CLI, with pushbullet integration
 
 [Dockerhub Link](https://hub.docker.com/r/mrtyton/automated-ffdl)
 
-## Platform Support
-
-This Docker image supports multi-platform deployment:
-
-- **linux/amd64** (x86_64): Uses official Calibre binaries for optimal performance
-- **linux/arm64** (ARM64): Uses system package manager Calibre installation
-
-The image automatically detects the target architecture during build and configures Calibre appropriately. Both platforms provide full functionality, though x86_64 may have slightly newer Calibre versions due to using official releases.
-
 - [AutomatedFanfic](#automatedfanfic)
   - [Platform Support](#platform-support)
   - [Site Support](#site-support)
@@ -29,6 +20,15 @@ The image automatically detects the target architecture during build and configu
     - [Calibre](#calibre)
     - [Pushbullet](#pushbullet)
     - [Apprise](#apprise)
+
+## Platform Support
+
+This Docker image supports multi-platform deployment:
+
+- **linux/amd64** (x86_64): Uses official Calibre binaries for optimal performance
+- **linux/arm64** (ARM64): Uses system package manager Calibre installation
+
+The image automatically detects the target architecture during build and configures Calibre appropriately. Both platforms provide full functionality, though x86_64 may have slightly newer Calibre versions due to using official releases.
 
 ## Site Support
 
