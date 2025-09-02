@@ -90,7 +90,7 @@ class ProcessManager:
             # (e.g., in main application startup)
             raise ValueError("AppConfig must be provided to ProcessManager.")
 
-        ff_logging.log("ProcessManager initialized", "OKGREEN")
+        ff_logging.log_debug("ProcessManager initialized")
 
     def register_process(
         self,
@@ -116,7 +116,7 @@ class ProcessManager:
         process_info = ProcessInfo(name=name, target=target, args=args, kwargs=kwargs)
 
         self.processes[name] = process_info
-        ff_logging.log(f"Registered process: {name}", "OKBLUE")
+        ff_logging.log_debug(f"Registered process: {name}")
 
     def start_process(self, name: str) -> bool:
         """
@@ -155,7 +155,7 @@ class ProcessManager:
             process_info.last_health_check = time.time()
             process_info.state = ProcessState.RUNNING
 
-            ff_logging.log(f"Started process: {name} (PID: {process.pid})", "OKGREEN")
+            ff_logging.log_debug(f"Started process: {name} (PID: {process.pid})")
             return True
 
         except Exception as e:
@@ -193,7 +193,7 @@ class ProcessManager:
         process_info.state = ProcessState.STOPPING
 
         try:
-            ff_logging.log(f"Stopping process: {name} (timeout: {timeout}s)", "WARNING")
+            ff_logging.log_debug(f"Stopping process: {name} (timeout: {timeout}s)")
 
             # Try graceful termination first
             process_info.process.terminate()
@@ -210,7 +210,7 @@ class ProcessManager:
             process_info.pid = None
             process_info.start_time = None
 
-            ff_logging.log(f"Stopped process: {name}", "OKGREEN")
+            ff_logging.log_debug(f"Stopped process: {name}")
             return True
 
         except Exception as e:
@@ -244,9 +244,8 @@ class ProcessManager:
         process_info.state = ProcessState.RESTARTING
         process_info.restart_count += 1
 
-        ff_logging.log(
-            f"Restarting process: {name} (attempt {process_info.restart_count})",
-            "WARNING",
+        ff_logging.log_debug(
+            f"Restarting process: {name} (attempt {process_info.restart_count})"
         )
 
         # Stop the process if it's still running
@@ -338,7 +337,7 @@ class ProcessManager:
                     break
 
             if all_stopped:
-                ff_logging.log("All processes have completed")
+                ff_logging.log_debug("All processes have completed")
                 return True
 
             # Check timeout
@@ -381,11 +380,11 @@ class ProcessManager:
             target=self._monitor_processes, name="ProcessMonitor", daemon=True
         )
         self._monitor_thread.start()
-        ff_logging.log("Started process monitoring thread", "OKGREEN")
+        ff_logging.log_debug("Started process monitoring thread")
 
     def _monitor_processes(self) -> None:
         """Monitor process health and restart failed processes."""
-        ff_logging.log("Process monitoring started", "OKBLUE")
+        ff_logging.log_debug("Process monitoring started")
 
         while not self._shutdown_event.is_set():
             try:
@@ -414,7 +413,7 @@ class ProcessManager:
                 ff_logging.log_failure(f"Error in process monitoring: {e}")
                 self._shutdown_event.wait(5.0)
 
-        ff_logging.log("Process monitoring stopped", "WARNING")
+        ff_logging.log_debug("Process monitoring stopped")
 
     def _health_check_process(
         self, name: str, process_info: ProcessInfo, current_time: float
@@ -464,7 +463,7 @@ class ProcessManager:
         signal.signal(signal.SIGINT, signal_handler)
 
         self._signal_handlers_set = True
-        ff_logging.log("Signal handlers configured", "OKGREEN")
+        ff_logging.log_debug("Signal handlers configured")
 
     def create_worker_pool(self, worker_count: Optional[int] = None):
         """
@@ -484,9 +483,7 @@ class ProcessManager:
 
         try:
             self.pool = mp.Pool(worker_count)
-            ff_logging.log(
-                f"Created worker pool with {worker_count} workers", "OKGREEN"
-            )
+            ff_logging.log_debug(f"Created worker pool with {worker_count} workers")
             return self.pool
 
         except Exception as e:
