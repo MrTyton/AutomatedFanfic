@@ -53,16 +53,8 @@ FROM system-deps AS user-setup
 RUN groupadd --gid "$PGID" abc && \
     useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc
 
-# Stage 3: Application code (rarely changes for you!)
-FROM user-setup AS app-code
-
-# Copy application files
-COPY root/ /
-RUN chmod -R +x /app/ && \
-    chown -R abc:abc /app/
-
-# Stage 4: Install stable Python dependencies (rarely change)
-FROM app-code AS python-stable-deps
+# Stage 3: Install stable Python dependencies (rarely change)
+FROM user-setup AS python-stable-deps
 
 # Install stable Python packages from requirements.txt
 COPY requirements.txt /tmp/requirements.txt
@@ -70,7 +62,7 @@ RUN echo "*** Install Stable Python Packages ***" && \
     pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
-# Stage 5: Calibre installation (changes monthly)
+# Stage 4: Calibre installation (changes monthly)
 FROM python-stable-deps AS calibre-installer
 
 # Set version labels
@@ -126,7 +118,7 @@ RUN echo "**** install calibre ****" && \
     fi && \
     echo "*** Calibre setup complete ***"
 
-# Stage 4: FanFicFare installation (changes weekly)
+# Stage 5: FanFicFare installation (changes weekly)
 FROM calibre-installer AS fanficfare-installer
 
 ARG FANFICFARE_VERSION
@@ -139,8 +131,16 @@ RUN echo "*** Install FanFicFare from TestPyPI ***" && \
     pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare; \
     fi
 
+# Stage 6: Application code (changes with every code update)
+FROM fanficfare-installer AS app-code
+
+# Copy application files
+COPY root/ /
+RUN chmod -R +x /app/ && \
+    chown -R abc:abc /app/
+
 # Final runtime stage - minimal, just sets labels and runtime configuration
-FROM fanficfare-installer AS runtime
+FROM app-code AS runtime
 
 # Set version labels
 ARG VERSION
