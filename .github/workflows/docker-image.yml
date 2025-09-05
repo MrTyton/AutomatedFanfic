@@ -135,17 +135,9 @@ jobs:
           fi
         continue-on-error: true
 
-      # Extract platform identifier for cache scoping
-      - name: Extract platform info
-        id: platform
-        run: |
-          PLATFORM_PAIR=${{ matrix.platform }}
-          PLATFORM_ARCH=${PLATFORM_PAIR##*/}
-          echo "arch=${PLATFORM_ARCH}" >> $GITHUB_OUTPUT
-          echo "pair=${PLATFORM_PAIR}" >> $GITHUB_OUTPUT
-
-      # Debug step to show build decision
-      - name: Debug build decision
+      # Debug step to show build decision and exit early if not needed
+      - name: Make build decision and exit early if no build needed
+        id: should_build
         run: |
           echo "Build decision factors:"
           echo "  Event: ${{ github.event_name }}"
@@ -163,26 +155,36 @@ jobs:
             echo "  Decision: BUILD (workflow_run with version file changes)"
           else
             echo "  Decision: SKIP (no version changes detected)"
+            echo "Exiting early - no Docker build needed"
+            exit 0
           fi
           
           echo "  Final decision: $SHOULD_BUILD"
+          echo "Proceeding with Docker build..."
 
-      # --- Build steps run if dispatched OR called OR if file changed on workflow_run ---
+      # Extract platform identifier for cache scoping
+      - name: Extract platform info
+        id: platform
+        run: |
+          PLATFORM_PAIR=${{ matrix.platform }}
+          PLATFORM_ARCH=${PLATFORM_PAIR##*/}
+          echo "arch=${PLATFORM_ARCH}" >> $GITHUB_OUTPUT
+          echo "pair=${PLATFORM_PAIR}" >> $GITHUB_OUTPUT
+
+      # Set up QEMU
       - name: Set up QEMU
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/setup-qemu-action@v3
 
+      # Setup Docker Buildx
       - name: Setup Docker Buildx
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         id: buildx
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: |
             network=host
 
-      # Determine versions by reading files (always run if build proceeds)
+      # Determine versions by reading files
       - name: Determine Versions and Tags from Files
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         id: set_versions
         run: |
           # Specific Version
@@ -225,7 +227,6 @@ jobs:
           echo "Platform-specific tag: $PLATFORM_TAG"
 
       - name: Print image tags and versions
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         run: |
           echo "Commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
           echo "Platform: ${{ steps.platform.outputs.pair }}"
@@ -236,14 +237,12 @@ jobs:
           echo "Platform Tag: ${{ env.PLATFORM_TAG }}"
 
       - name: Login to DockerHub
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/login-action@v3.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Build and push platform-specific image
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -282,7 +281,6 @@ jobs:
 
       # Store platform digest for manifest creation
       - name: Export platform digest
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         run: |
           mkdir -p /tmp/digests
           DIGEST=$(docker buildx imagetools inspect ${{ env.PLATFORM_TAG }} --format '{{.Manifest.Digest}}')
@@ -290,7 +288,6 @@ jobs:
           echo "$DIGEST" > /tmp/digests/${{ steps.platform.outputs.arch }}
 
       - name: Upload platform digest
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || steps.check_file.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: digest-${{ steps.platform.outputs.arch }}
