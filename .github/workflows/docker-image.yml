@@ -38,7 +38,7 @@ env:
 jobs:
   # Build matrix for parallel architecture builds
   build_matrix:
-    # Run if dispatched OR if workflow_run succeeded OR if called (implied)
+    # Run if dispatched OR if called OR if workflow_run succeeded (but we'll check for version changes later)
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
@@ -117,20 +117,21 @@ jobs:
           echo "Expected commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
           
           echo "Recent commit history:"
-          git log --oneline -3
+          git log --oneline -5
           
           echo "Files changed in current commit:"
           git diff --name-only HEAD~1 HEAD || echo "Could not get diff"
           
-          if git diff --quiet HEAD~1 HEAD -- 'release-versions/latest.txt'; then
-            echo "No changes detected in release-versions/latest.txt"
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
+          # Check if latest.txt changed in the current commit
+          if git diff --name-only HEAD~1 HEAD | grep -q '^release-versions/latest\.txt$'; then
             echo "Changes detected in release-versions/latest.txt"
             echo "changed=true" >> $GITHUB_OUTPUT
             
             echo "Changes in release-versions/latest.txt:"
             git diff HEAD~1 HEAD -- 'release-versions/latest.txt' || echo "Could not show diff"
+          else
+            echo "No changes detected in release-versions/latest.txt"
+            echo "changed=false" >> $GITHUB_OUTPUT
           fi
         continue-on-error: true
 
@@ -142,6 +143,29 @@ jobs:
           PLATFORM_ARCH=${PLATFORM_PAIR##*/}
           echo "arch=${PLATFORM_ARCH}" >> $GITHUB_OUTPUT
           echo "pair=${PLATFORM_PAIR}" >> $GITHUB_OUTPUT
+
+      # Debug step to show build decision
+      - name: Debug build decision
+        run: |
+          echo "Build decision factors:"
+          echo "  Event: ${{ github.event_name }}"
+          echo "  File changed (workflow_run only): ${{ steps.check_file.outputs.changed }}"
+          
+          SHOULD_BUILD="false"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            SHOULD_BUILD="true"
+            echo "  Decision: BUILD (manual trigger)"
+          elif [ "${{ github.event_name }}" == "workflow_call" ]; then
+            SHOULD_BUILD="true"
+            echo "  Decision: BUILD (called from update-dependencies)"
+          elif [ "${{ github.event_name }}" == "workflow_run" ] && [ "${{ steps.check_file.outputs.changed }}" == "true" ]; then
+            SHOULD_BUILD="true"
+            echo "  Decision: BUILD (workflow_run with version file changes)"
+          else
+            echo "  Decision: SKIP (no version changes detected)"
+          fi
+          
+          echo "  Final decision: $SHOULD_BUILD"
 
       # --- Build steps run if dispatched OR called OR if file changed on workflow_run ---
       - name: Set up QEMU
