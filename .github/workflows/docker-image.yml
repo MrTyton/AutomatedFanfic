@@ -46,6 +46,7 @@ jobs:
       specific_version: ${{ steps.set_versions.outputs.specific_version }}
       calibre_version: ${{ steps.set_versions.outputs.calibre_version }}
       fanficfare_version: ${{ steps.set_versions.outputs.fanficfare_version }}
+      should_build: ${{ steps.should_build.outputs.build }}
     strategy:
       matrix:
         platform: 
@@ -135,8 +136,8 @@ jobs:
           fi
         continue-on-error: true
 
-      # Debug step to show build decision and exit early if not needed
-      - name: Make build decision and exit early if no build needed
+      # Debug step to show build decision and set output
+      - name: Make build decision
         id: should_build
         run: |
           echo "Build decision factors:"
@@ -155,15 +156,20 @@ jobs:
             echo "  Decision: BUILD (workflow_run with version file changes)"
           else
             echo "  Decision: SKIP (no version changes detected)"
-            echo "Exiting early - no Docker build needed"
-            exit 0
           fi
           
           echo "  Final decision: $SHOULD_BUILD"
-          echo "Proceeding with Docker build..."
+          echo "build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+          
+          if [ "$SHOULD_BUILD" == "true" ]; then
+            echo "Proceeding with Docker build..."
+          else
+            echo "Skipping Docker build - no version changes detected"
+          fi
 
       # Extract platform identifier for cache scoping
       - name: Extract platform info
+        if: steps.should_build.outputs.build == 'true'
         id: platform
         run: |
           PLATFORM_PAIR=${{ matrix.platform }}
@@ -173,10 +179,12 @@ jobs:
 
       # Set up QEMU
       - name: Set up QEMU
+        if: steps.should_build.outputs.build == 'true'
         uses: docker/setup-qemu-action@v3
 
       # Setup Docker Buildx
       - name: Setup Docker Buildx
+        if: steps.should_build.outputs.build == 'true'
         id: buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -185,6 +193,7 @@ jobs:
 
       # Determine versions by reading files
       - name: Determine Versions and Tags from Files
+        if: steps.should_build.outputs.build == 'true'
         id: set_versions
         run: |
           # Specific Version
@@ -227,6 +236,7 @@ jobs:
           echo "Platform-specific tag: $PLATFORM_TAG"
 
       - name: Print image tags and versions
+        if: steps.should_build.outputs.build == 'true'
         run: |
           echo "Commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
           echo "Platform: ${{ steps.platform.outputs.pair }}"
@@ -237,12 +247,14 @@ jobs:
           echo "Platform Tag: ${{ env.PLATFORM_TAG }}"
 
       - name: Login to DockerHub
+        if: steps.should_build.outputs.build == 'true'
         uses: docker/login-action@v3.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Build and push platform-specific image
+        if: steps.should_build.outputs.build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -281,6 +293,7 @@ jobs:
 
       # Store platform digest for manifest creation
       - name: Export platform digest
+        if: steps.should_build.outputs.build == 'true'
         run: |
           mkdir -p /tmp/digests
           DIGEST=$(docker buildx imagetools inspect ${{ env.PLATFORM_TAG }} --format '{{.Manifest.Digest}}')
@@ -288,6 +301,7 @@ jobs:
           echo "$DIGEST" > /tmp/digests/${{ steps.platform.outputs.arch }}
 
       - name: Upload platform digest
+        if: steps.should_build.outputs.build == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: digest-${{ steps.platform.outputs.arch }}
@@ -297,7 +311,7 @@ jobs:
   merge_and_release:
     runs-on: ubuntu-latest
     needs: build_matrix
-    if: always() && needs.build_matrix.result == 'success'
+    if: always() && needs.build_matrix.result == 'success' && needs.build_matrix.outputs.should_build == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
