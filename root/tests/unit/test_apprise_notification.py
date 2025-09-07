@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch, mock_open, MagicMock
+
 from apprise_notification import AppriseNotification
 from notification_wrapper import NotificationWrapper
 from parameterized import parameterized
