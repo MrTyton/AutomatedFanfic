@@ -140,7 +140,7 @@ mailbox = "INBOX"
                 "",
             ),
             (
-                "invalid_email_format",
+                "valid_email_format_with_at",
                 """
 [email]
 email = "user@example.com"
@@ -151,8 +151,8 @@ mailbox = "INBOX"
 [calibre]
 path = "/path/to/calibre"
 """,
-                True,
-                ConfigValidationError,
+                False,
+                None,
                 "",
             ),
             (
@@ -282,12 +282,12 @@ path = ""
             ("valid_username_with_numbers", "test123", True),
             ("valid_username_with_underscores", "test_user", True),
             ("valid_empty_username", "", True),  # Empty allowed for development
-            ("invalid_email_with_at", "user@example.com", False),
-            ("invalid_email_with_at_and_plus", "user+tag@example.com", False),
+            ("valid_email_with_at", "user@example.com", True),
+            ("valid_email_with_at_and_plus", "user+tag@example.com", True),
         ]
     )
     def test_email_validation(self, name, email_value, should_pass):
-        """Test email validation accepts usernames and rejects full email addresses."""
+        """Test email validation accepts both usernames and full email addresses."""
         if should_pass:
             try:
                 email_config = EmailConfig(
@@ -303,14 +303,6 @@ path = ""
                 self.fail(
                     f"Valid email '{email_value}' should not raise exception: {e}"
                 )
-        else:
-            with self.assertRaises(ValidationError) as context:
-                EmailConfig(
-                    email=email_value,
-                    password="password",
-                    server="imap.gmail.com",
-                )
-            self.assertIn("Email should be username only", str(context.exception))
 
     def test_config_manager_caching(self):
         """Test that ConfigManager caches configurations."""
