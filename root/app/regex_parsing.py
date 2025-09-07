@@ -148,12 +148,12 @@ def generate_FanficInfo_from_url(url: str) -> fanfic_info.FanficInfo:
                 if group is not None:
                     captured_group = group
                     break
-            
+
             if captured_group is not None:
                 url = prefix + captured_group
             else:
                 # Fallback: use the entire matched portion
                 url = match.group(0)
-            
+
             return fanfic_info.FanficInfo(url, site)
     return fanfic_info.FanficInfo(url, "other")

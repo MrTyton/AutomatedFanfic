@@ -4,12 +4,13 @@ import ff_logging
 import regex_parsing
 import system_utils
 from subprocess import call, PIPE, DEVNULL
+from typing import Optional
 
 
 def call_calibre_db(
     command: str,
     calibre_info: calibre_info.CalibreInfo,
-    fanfic_info: fanfic_info.FanficInfo = None,
+    fanfic_info: Optional[fanfic_info.FanficInfo] = None,
 ):
     """
     Calls the calibre database with a specific command.
