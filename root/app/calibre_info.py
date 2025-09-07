@@ -38,6 +38,7 @@ class CalibreInfo:
 
         self.username = config.calibre.username
         self.password = config.calibre.password
+        self.update_method = config.calibre.update_method
         self.default_ini = self._get_ini_file_from_config(
             config.calibre.default_ini, "defaults.ini"
         )

@@ -15,6 +15,7 @@ def handle_failure(
     fanfic: fanfic_info.FanficInfo,
     notification_info: notification_wrapper.NotificationWrapper,
     queue: mp.Queue,
+    cdb: calibre_info.CalibreInfo | None = None,
 ) -> None:
     """
     Manages the failure of fanfic processing by either logging and notifying the
@@ -33,6 +34,8 @@ def handle_failure(
             used for sending notifications via various services.
         queue (mp.Queue): The multiprocessing queue used for managing fanfics
             awaiting processing.
+        cdb (calibre_info.CalibreInfo, optional): Calibre database information for
+            checking update method configuration.
 
     Returns:
         None
@@ -50,9 +53,23 @@ def handle_failure(
             fanfic.site,
         )
     elif maximum_repeats and hail_mary:
-        ff_logging.log_failure(
-            f"Hail Mary attempted for {fanfic.url} and failed."
-        )
+        ff_logging.log_failure(f"Hail Mary attempted for {fanfic.url} and failed.")
+
+        # Check if this is a case where force was requested but update method is "update_no_force"
+        # Send special notification for this specific case
+        if (
+            cdb
+            and fanfic.behavior == "force"
+            and cdb.update_method == "update_no_force"
+        ):
+            notification_info.send_notification(
+                "Fanfiction Update Permanently Skipped",
+                f"Update for {fanfic.url} was permanently skipped because a force was requested but the update method is set to 'update_no_force'. The force request was ignored and a normal update was attempted instead.",
+                fanfic.site,
+            )
+        else:
+            # Standard hail mary failure - fail silently as before
+            pass
     else:
         # If not at maximum attempts, increment the attempt counter and re-queue the fanfic
         fanfic.increment_repeat()
@@ -115,9 +132,7 @@ def execute_command(command: str) -> str:
         str: The output of the command.
     """
     ff_logging.log_debug(f"\tExecuting command: {command}")
-    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode(
-        "utf-8"
-    )
+    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
 
 
 def process_fanfic_addition(
@@ -167,24 +182,20 @@ def process_fanfic_addition(
         calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
     # Add the updated story to Calibre. This involves adding the story from the temporary directory
     # where it was downloaded and processed.
-    calibredb_utils.add_story(
-        location=temp_dir, fanfic_info=fanfic, calibre_info=cdb
-    )
+    calibredb_utils.add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
 
     # After attempting to add the story to Calibre, check if the story's ID can be retrieved from Calibre.
     # This serves as a verification step to ensure the story was successfully added.
     if not fanfic.get_id_from_calibredb(cdb):
         # If the story's ID cannot be retrieved, log the failure and handle it accordingly.
         # This might involve sending a notification about the failure and possibly re-queuing the story for another attempt.
-        ff_logging.log_failure(
-            f"\t({site}) Failed to add {path_or_url} to Calibre"
-        )
-        handle_failure(fanfic, notification_info, waiting_queue)
+        ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
+        handle_failure(fanfic, notification_info, waiting_queue, cdb)
     else:
         # If the story was successfully added to Calibre, send a notification about the new download.
         # This notification includes the story's title and the site it was downloaded from.
         notification_info.send_notification(
-            "New Fanfiction Download", fanfic.title, site
+            "New Fanfiction Download", fanfic.title or "Unknown Title", site
         )
 
 
@@ -192,23 +203,18 @@ def construct_fanficfare_command(
     cdb: calibre_info.CalibreInfo,
     fanfic: fanfic_info.FanficInfo,
     path_or_url: str,
-    notification_info: notification_wrapper.NotificationWrapper,
 ) -> str:
     """Constructs the FanFicFare command based on configuration."""
-    update_method = cdb.config.calibre.update_method
+    update_method = cdb.update_method
     command = "python -m fanficfare.cli"
 
     # Check if a force is requested
     force_requested = fanfic.behavior == "force"
 
     # Determine the update flag based on the configuration
-    if force_requested and update_method == "update_no_force":
-        notification_info.send_notification(
-            "Fanfiction Update Skipped",
-            f"Update for {fanfic.url} was skipped because a force was requested but the update method is set to 'update_no_force'.",
-            fanfic.site,
-        )
-        return ""  # Return empty command to skip update
+    # If update_method is "update_no_force", ignore any force requests and treat as normal update
+    if update_method == "update_no_force":
+        command += " -u"  # Always use update for update_no_force
     elif force_requested or update_method == "force":
         command += " --force"
     elif update_method == "update_always":
@@ -267,17 +273,21 @@ def url_worker(
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
             # Construct the command for updating the fanfic with FanFicFare
-            base_command = construct_fanficfare_command(
-                cdb, fanfic, path_or_url, notification_info
-            )
-
-            if not base_command:
-                # Command is empty, so skip the update
-                continue
+            base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
 
             command = f"cd {temp_dir} && {base_command}"
 
             try:
+                # Check if this is an incompatible force request that should fail
+                if (
+                    fanfic.behavior == "force"
+                    and cdb.update_method == "update_no_force"
+                ):
+                    # Force this to fail so it goes through the failure handling logic
+                    raise Exception(
+                        "Force update requested but update method is 'update_no_force'"
+                    )
+
                 # Copy necessary configuration files to the temporary directory and execute the update command
                 system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
                 output = execute_command(command)
@@ -286,12 +296,12 @@ def url_worker(
                 ff_logging.log_failure(
                     f"\t({site}) Failed to update {path_or_url}: {e}"
                 )
-                handle_failure(fanfic, notification_info, waiting_queue)
+                handle_failure(fanfic, notification_info, waiting_queue, cdb)
                 continue
 
             # Check the output for failure patterns; if found, handle the failure
             if not regex_parsing.check_failure_regexes(output):
-                handle_failure(fanfic, notification_info, waiting_queue)
+                handle_failure(fanfic, notification_info, waiting_queue, cdb)
                 continue
 
             # If the output indicates a retry might succeed, adjust the fanfic's behavior and re-queue it
