@@ -86,7 +86,7 @@ AutomatedFanfic is a Python multiprocessing application that automates fanfictio
 ### Critical Settings
 ```toml
 [email]
-email = "username_only"  # NO @ symbol
+email = "username_or_full_email"  # Username only OR full email address (provider dependent)
 password = "app_password"  # Not account password
 server = "imap.gmail.com"
 mailbox = "INBOX"

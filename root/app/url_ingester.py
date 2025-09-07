@@ -48,7 +48,7 @@ Example:
 
 Configuration:
     Email settings are loaded from TOML configuration:
-    - email: Username (without @domain.com)
+    - email: Email authentication (username only or full email address)
     - password: App password or account password
     - server: IMAP server address
     - mailbox: Mailbox to monitor (typically "INBOX")
@@ -164,7 +164,7 @@ class EmailInfo:
     IMAP connection details and provides a clean interface for URL retrieval.
 
     Attributes:
-        email (str): Email username (without @domain.com)
+        email (str): Email authentication (username only or full email address)
         password (str): Account password or app-specific password
         server (str): IMAP server hostname (e.g., "imap.gmail.com")
         mailbox (str): Mailbox to monitor (typically "INBOX")
@@ -185,7 +185,7 @@ class EmailInfo:
         The TOML configuration should contain an [email] section:
         ```toml
         [email]
-        email = "username"  # Without @domain.com
+        email = "username"  # Username only or full email address
         password = "app_password"
         server = "imap.gmail.com"
         mailbox = "INBOX"

@@ -91,7 +91,10 @@ ffnet_disable = false
 ```
 
 
-- `email`: The email address, username only.
+- `email`: The email authentication field. Different email providers have different requirements:
+  - **Username only** (e.g., `username`): Required by some providers like Gmail
+  - **Full email address** (e.g., `username@domain.com`): Required by some providers like mailbox.org
+  - Use whichever format your email provider requires for IMAP authentication
 - `password`: The password to the email address. It is recommened that you use an app password (Google's page on [App Password](https://support.google.com/accounts/answer/185833?hl=en)), rather than your email's actual password.
 - `server`: Address for the email server. For Gmail, this is going to be `imap.gmail.com`. For other web services, you'll have to search for them.
 - `mailbox`: Which mailbox to check, such as `INBOX`, for the unread update emails.

@@ -83,7 +83,7 @@ class EmailConfig(BaseModel):
     proper email configuration and prevent common configuration errors.
 
     Attributes:
-        email (str): Username for email authentication (without @domain suffix).
+        email (str): Email authentication field (username only or full email address).
         password (str): Password or app-specific password for email authentication.
         server (str): IMAP server address (e.g., 'imap.gmail.com').
         mailbox (str): Mailbox name to monitor for new emails (default: 'INBOX').
@@ -91,12 +91,12 @@ class EmailConfig(BaseModel):
         ffnet_disable (bool): Whether to disable FanFiction.Net processing.
 
     Note:
-        The email field should contain only the username portion without the @domain
-        suffix, as the domain is determined by the server configuration.
+        Different email providers have different authentication requirements.
+        Some require just the username, while others require the full email address.
     """
 
     email: str = Field(
-        default="", description="Email username (without @domain - handled by server)"
+        default="", description="Email authentication (username or full email address)"
     )
     password: str = Field(default="", description="Email password or app password")
     server: str = Field(default="", description="IMAP server address")
@@ -111,24 +111,19 @@ class EmailConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def validate_email(cls, v):
-        """Validates email username format to prevent common configuration errors.
+        """Validates and normalizes the email field.
 
-        Ensures that the email field contains only the username portion without
-        the @domain suffix, since the domain is handled by the server field.
-        This prevents authentication issues and configuration mistakes.
+        Different email providers have different authentication requirements:
+        some require just the username portion, while others require the full
+        email address including the @domain. Users should configure this field
+        according to their specific email provider's requirements.
 
         Args:
             v (str): The email value to validate.
 
         Returns:
-            str: The validated and trimmed email username.
-
-        Raises:
-            ValueError: If the email contains an @ symbol, indicating the full
-                email address was provided instead of just the username.
+            str: The validated and trimmed email value.
         """
-        if v and "@" in v:
-            raise ValueError("Email should be username only (without @domain)")
         return v.strip() if v else v
 
     @field_validator("server")
