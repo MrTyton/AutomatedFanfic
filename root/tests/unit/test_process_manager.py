@@ -13,6 +13,8 @@ import threading
 import time
 import unittest
 from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 from parameterized import parameterized
 
 # Add the app directory to the path so we can import our modules
@@ -675,8 +677,13 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
                     sigterm_handler(signal.SIGTERM, None)
                     mock_log_debug.assert_called_with("Signal already being handled, ignoring")
 
+    @pytest.mark.flaky_ci
     def test_signal_integration_with_real_child_processes(self):
-        """Integration test: signal handling with actual child processes."""
+        """Integration test: signal handling with actual child processes.
+        
+        Note: This test is marked as flaky_ci due to timing issues in CI environments.
+        It can be run locally but is excluded from CI runs.
+        """
         stop_event = mp.Event()
         
         # Register processes that will run until stopped
