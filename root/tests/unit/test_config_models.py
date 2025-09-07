@@ -4,7 +4,6 @@ from typing import NamedTuple, Any, Dict, Optional
 from parameterized import parameterized
 import tempfile
 import os
-from pathlib import Path
 from pydantic import ValidationError
 
 from config_models import (

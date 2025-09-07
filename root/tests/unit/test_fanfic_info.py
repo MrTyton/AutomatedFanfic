@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import Mock, patch, MagicMock
+
 from fanfic_info import FanficInfo
 from subprocess import CalledProcessError
 from typing import NamedTuple, Any  # Added NamedTuple and Any

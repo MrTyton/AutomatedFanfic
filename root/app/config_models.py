@@ -11,7 +11,7 @@ This module defines all configuration structures used throughout the application
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import tomllib
@@ -76,6 +76,10 @@ class CalibreConfig(BaseModel):
     )
     personal_ini: Optional[str] = Field(
         default=None, description="Path to personal.ini file"
+    )
+    update_method: Literal["update", "update_always", "force", "update_no_force"] = Field(
+        default="update",
+        description="Fanficfare update method: 'update', 'update_always', 'force', or 'update_no_force'",
     )
 
     @field_validator("path")

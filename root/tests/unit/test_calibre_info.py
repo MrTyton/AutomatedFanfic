@@ -4,6 +4,7 @@ import unittest
 import os
 from pydantic import ValidationError
 
+
 from calibre_info import CalibreInfo
 from config_models import (
     AppConfig,
