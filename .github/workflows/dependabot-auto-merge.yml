@@ -102,7 +102,7 @@ jobs:
           
           # Check if this is a dependency update PR
           PR_TITLE="${{ github.event.pull_request.title }}"
-          if [[ "$PR_TITLE" =~ ^(deps|deps-dev|ci): ]]; then
+          if [[ "$PR_TITLE" =~ ^(deps|deps-dev|ci)(\([^)]*\))?[[:space:]]*: ]] || [[ "$PR_TITLE" =~ ^[a-zA-Z-]+\((deps|dependencies|actions)\)[[:space:]]*: ]]; then
             echo "skip=false" >> $GITHUB_OUTPUT
             echo "Auto-merge eligible: $PR_TITLE"
           else
