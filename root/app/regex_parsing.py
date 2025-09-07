@@ -3,23 +3,12 @@ import re
 import fanfic_info
 import ff_logging
 
-# Define regular expressions for different URL formats
-url_parsers = {
-    "ffnet": (re.compile(r"(fanfiction.net/s/\d+/?)(?:/\d+/?)?.*"), "www."),
-    "ao3": (re.compile(r"(archiveofourown.org/works/\d*)/?.*"), ""),
-    "fictionpress": (re.compile(r"(fictionpress.com/s/\d*)/?.*"), ""),
-    "royalroad": (re.compile(r"(royalroad.com/fiction/\d*)/?.*"), ""),
-    "sv": (
-        re.compile(r"(forums.sufficientvelocity.com/threads/.*\.\d*)/?.*"),
-        "",
-    ),
-    "sb": (re.compile(r"(forums.spacebattles.com/threads/.*\.\d*)/?.*"), ""),
-    "qq": (
-        re.compile(r"(forum.questionablequesting.com/threads/.*\.\d*)/?.*"),
-        "",
-    ),
-    "other": (re.compile(r"https?://(.*)"), ""),
-}
+# Import auto-generated URL parsers from FanFicFare adapters
+from auto_url_parsers import url_parsers
+
+# Note: url_parsers is now automatically generated from FanFicFare adapters
+# This eliminates the need to manually maintain regex patterns for each site
+# The patterns are extracted from getSiteExamples() in fanficfare.adapters
 
 # Define regular expressions for different story formats and errors
 story_name = re.compile(r"(.*)-[^-]*$")
@@ -150,8 +139,21 @@ def generate_FanficInfo_from_url(url: str) -> fanfic_info.FanficInfo:
     Returns:
         fanfic_info.FanficInfo: The generated FanficInfo object.
     """
+    # Use the algorithmic approach for all sites
     for site, (parser, prefix) in url_parsers.items():
         if match := parser.search(url):
-            url = prefix + match.group(1)
+            # Handle cases where there are multiple capture groups (e.g., for alternative patterns)
+            captured_group = None
+            for group in match.groups():
+                if group is not None:
+                    captured_group = group
+                    break
+            
+            if captured_group is not None:
+                url = prefix + captured_group
+            else:
+                # Fallback: use the entire matched portion
+                url = match.group(0)
+            
             return fanfic_info.FanficInfo(url, site)
     return fanfic_info.FanficInfo(url, "other")
