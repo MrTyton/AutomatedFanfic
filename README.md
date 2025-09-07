@@ -66,10 +66,27 @@ If the `update_method` is set to `"update_no_force"` and a force update is reque
 1. Make sure that you have calibre, and more importantly [calibredb](https://manual.calibre-ebook.com/generated/en/calibredb.html) installed on the system that you're running the script on. `calibredb` should be installed standard when you install calibre.
 2. Install [Python3](https://www.python.org/downloads/)
 3. Clone the Repo
-4. Run `python -m pip install -r requirements.txt`
-5. Install [FanficFare](https://github.com/JimmXinu/FanFicFare/wiki#command-line-interface-cli-version)
-6. Fill out the config.toml file
-7. Navigate to `root/app` and run `python fanficdownload.py`
+4. Run `python3 -m venv [ repoLocation ].venv`
+5. Run `source [ repoLocation ].venv/bin/activate`
+6. Run `python -m pip install -r requirements.txt`
+7. Install [FanficFare](https://github.com/JimmXinu/FanFicFare/wiki#command-line-interface-cli-version) Currently run `pip install FanFicFare`
+8. Fill out the config.toml file
+9. Navigate to `root/app` and run `python fanficdownload.py`
+10. To exit virtual enviorment, run `deactivate`
+
+Heres an example of a run.sh script that will run the app, taking the install location as first argument:
+´´´exec > "$1/aff.log" 2>&1
+set -x
+echo "Activating virtual environment..."
+source "$1/.venv/bin/activate"
+
+echo "Changing directory..."
+cd "$1/root/app"
+
+echo "Running Python script..."
+"$1/.venv/bin/python" -u fanficdownload.py --verbose
+´´´
+Run: `./run.sh path/to/install/location`
 
 ## Configuration
 
