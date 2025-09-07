@@ -451,15 +451,21 @@ class ProcessManager:
         try:
             ff_logging.log_debug(f"Stopping process: {name} (timeout: {timeout}s)")
 
+            # Store reference to avoid race conditions
+            process = process_info.process
+
             # Attempt graceful termination with SIGTERM
-            process_info.process.terminate()
-            process_info.process.join(timeout)
+            process.terminate()
+            process.join(timeout)
 
             # Force kill if process is still alive after timeout
-            if process_info.process.is_alive():
+            if process.is_alive():
                 ff_logging.log_failure(f"Force killing process: {name}")
-                process_info.process.kill()
-                process_info.process.join(5)  # Wait briefly for kill to take effect
+                try:
+                    process.kill()
+                    process.join(5)  # Wait briefly for kill to take effect
+                except Exception as kill_error:
+                    ff_logging.log_failure(f"Error during force kill of '{name}': {kill_error}")
 
             # Clean up process state and resources
             process_info.state = ProcessState.STOPPED
@@ -570,6 +576,54 @@ class ProcessManager:
                 success = False
 
         return success
+
+    def wait_for_termination(self, timeout: float = 5.0) -> bool:
+        """
+        Wait for all processes to fully terminate after a stop operation.
+        
+        This method is useful for testing and situations where you need to
+        ensure all processes have completely finished before proceeding.
+        Unlike wait_for_all(), this method only checks termination status.
+
+        Args:
+            timeout: Maximum seconds to wait for all processes to terminate.
+                    Defaults to 5.0 seconds.
+
+        Returns:
+            bool: True if all processes terminated within timeout,
+                 False if timeout was exceeded or some processes are still alive.
+                 
+        Example:
+            ```python
+            pm.stop_all()
+            if pm.wait_for_termination(timeout=10.0):
+                print("All processes terminated successfully")
+            else:
+                print("Some processes did not terminate within timeout")
+            ```
+            
+        Note:
+            This method should typically be called after stop_all() to
+            verify that the shutdown was successful. It uses polling
+            with small delays to avoid busy waiting.
+        """
+        import time
+        
+        start_wait = time.time()
+        
+        while (time.time() - start_wait) < timeout:
+            all_terminated = True
+            for process_info in self.processes.values():
+                if process_info.is_alive():
+                    all_terminated = False
+                    break
+                    
+            if all_terminated:
+                return True
+                
+            time.sleep(0.1)  # Small delay before checking again
+            
+        return False
 
     def wait_for_all(self, timeout: Optional[float] = None) -> bool:
         """

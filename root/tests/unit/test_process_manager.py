@@ -716,10 +716,19 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
         self.assertLess(elapsed, 3.0)
         self.assertTrue(result)
         
-        # Verify all processes are stopped
-        time.sleep(0.5)
+        # Verify all processes are stopped using the new wait method
+        termination_success = self.manager.wait_for_termination(timeout=5.0)
+        self.assertTrue(
+            termination_success,
+            "Processes did not terminate within 5 seconds after shutdown"
+        )
+        
+        # Final assertion - all processes should be stopped
         for i in range(3):
-            self.assertFalse(self.manager.processes[f"worker_{i}"].is_alive())
+            self.assertFalse(
+                self.manager.processes[f"worker_{i}"].is_alive(),
+                f"Process worker_{i} is still alive after shutdown"
+            )
         
         signal_thread.join()
         stop_event.set()
