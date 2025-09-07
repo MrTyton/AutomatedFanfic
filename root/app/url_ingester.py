@@ -1,3 +1,72 @@
+"""
+Email URL Ingestion for AutomatedFanfic
+
+This module handles the automated monitoring of email accounts for fanfiction
+URLs, extracting them using FanFicFare's geturls functionality, and routing
+them to appropriate processing queues based on the detected fanfiction site.
+
+Key Features:
+    - IMAP email monitoring with configurable polling intervals
+    - Automatic URL extraction from email content using FanFicFare
+    - Site-specific URL routing to dedicated processing queues
+    - Network timeout management for email operations
+    - Logging suppression during URL extraction for clean output
+    - Special handling for problematic sites (e.g., FFNet disable)
+
+Architecture:
+    The module implements a continuous monitoring loop that polls an email
+    account, extracts URLs from new messages, identifies the fanfiction site,
+    and routes URLs to site-specific worker queues for processing.
+
+Email Processing Flow:
+    1. Connect to IMAP server with configured credentials
+    2. Poll mailbox for new/unread messages at specified intervals
+    3. Extract fanfiction URLs using FanFicFare's geturls library
+    4. Parse URLs to identify source fanfiction sites
+    5. Route URLs to appropriate processor queues
+    6. Handle special cases (FFNet notifications vs. processing)
+    7. Sleep until next polling cycle
+
+Example:
+    ```python
+    from url_ingester import EmailInfo, email_watcher
+    import multiprocessing as mp
+    
+    # Configure email monitoring
+    email_info = EmailInfo("config.toml")
+    
+    # Set up processing queues
+    queues = {
+        "archiveofourown.org": mp.Queue(),
+        "fanfiction.net": mp.Queue(),
+        "other": mp.Queue()
+    }
+    
+    # Start monitoring (typically in a separate process)
+    email_watcher(email_info, notification_wrapper, queues)
+    ```
+
+Configuration:
+    Email settings are loaded from TOML configuration:
+    - email: Username (without @domain.com)
+    - password: App password or account password
+    - server: IMAP server address
+    - mailbox: Mailbox to monitor (typically "INBOX")
+    - sleep_time: Seconds between polling cycles
+    - ffnet_disable: Whether to disable FFNet processing
+
+Dependencies:
+    - fanficfare.geturls: For URL extraction from emails
+    - regex_parsing: For URL site identification
+    - notification_wrapper: For sending notifications
+    - config_models: For configuration management
+
+Thread Safety:
+    The email watcher is designed to run in a separate process via
+    multiprocessing. It communicates with other processes through
+    shared queues and is safe for concurrent operation.
+"""
+
 import multiprocessing as mp
 import socket
 import time
@@ -13,85 +82,155 @@ from config_models import ConfigManager
 @contextmanager
 def set_timeout(timeout_duration):
     """
-    Context manager to temporarily set a socket operation timeout.
+    Temporarily set socket timeout for network operations.
+
+    This context manager provides a safe way to modify the global socket
+    timeout for network operations while ensuring the original timeout
+    is restored regardless of how the context exits.
 
     Args:
-        timeout_duration (int): The timeout duration in seconds.
+        timeout_duration (int): Timeout duration in seconds for socket
+                               operations during the context.
+
+    Example:
+        ```python
+        with set_timeout(30):
+            # All socket operations in this block have 30-second timeout
+            response = urllib.request.urlopen(url)
+        
+        # Original timeout is restored here
+        ```
+
+    Note:
+        This affects all socket operations in the current thread during
+        the context. Use carefully in multithreaded environments.
     """
+    # Store current timeout setting for restoration
     old_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(timeout_duration)
     try:
         yield
     finally:
+        # Always restore original timeout setting
         socket.setdefaulttimeout(old_timeout)
 
 
 @contextmanager
 def suppress_logging():
     """
-    A context manager that temporarily suppresses all logging output.
+    Temporarily suppress all logging output during URL extraction.
 
-    This context manager disables all logging across the application by setting the
-    logging level to CRITICAL, which is the highest level. Only messages with a
-    level CRITICAL or higher would be processed. Since typically there are no
-    messages at a level higher than CRITICAL, this effectively suppresses all
-    logging while the context manager is active. Once the code block using this
-    context manager exits, the original logging level is restored, allowing logging
-    to proceed as before.
+    This context manager disables logging by setting the global disable level
+    to CRITICAL, effectively suppressing all log messages during URL extraction
+    operations. This prevents FanFicFare's verbose output from cluttering the
+    application logs during email processing.
 
-    Usage:
+    Example:
+        ```python
         with suppress_logging():
-            # Code block where logging is suppressed
-            pass
+            # FanFicFare operations here won't produce log output
+            urls = geturls.get_urls_from_imap(server, email, password, mailbox)
+        
+        # Normal logging resumes here
+        ```
 
-    Yields:
-        None
+    Note:
+        This affects the global logging state and should be used carefully.
+        The original logging level is always restored when the context exits,
+        even if an exception occurs.
+
+    Thread Safety:
+        This modifies global logging state and may affect other threads.
+        Consider using thread-local logging configuration if needed.
     """
-    # Save the current global logging level
+    # Save current global logging disable level
     old_level = logging.root.manager.disable
-    # Temporarily set global logging level to CRITICAL to suppress all logging
+    
+    # Disable all logging by setting to highest level
     logging.disable(logging.CRITICAL)
     try:
         yield
     finally:
+        # Restore original logging state
         logging.disable(old_level)
 
 
 class EmailInfo:
     """
-    A class for ingesting URLs from an email account based on provided credentials
-    and server information.
+    Email account configuration and URL extraction for fanfiction monitoring.
+
+    This class encapsulates all email-related configuration and provides
+    methods for extracting fanfiction URLs from email messages. It handles
+    IMAP connection details and provides a clean interface for URL retrieval.
 
     Attributes:
-        email (str): The email address.
-        password (str): The password for the email account.
-        server (str): The IMAP server for the email account.
-        mailbox (str): The mailbox from which to ingest URLs.
-        sleep_time (int): Time to wait between checks for new emails.
+        email (str): Email username (without @domain.com)
+        password (str): Account password or app-specific password
+        server (str): IMAP server hostname (e.g., "imap.gmail.com")
+        mailbox (str): Mailbox to monitor (typically "INBOX")
+        sleep_time (int): Seconds to wait between email checks
+        ffnet_disable (bool): Whether to disable FanFiction.Net processing
 
-    Methods:
-        get_urls(): Retrieves URLs from the specified mailbox.
+    Example:
+        ```python
+        email_info = EmailInfo("config.toml")
+        
+        # Extract URLs from email
+        urls = email_info.get_urls()
+        for url in urls:
+            process_fanfiction_url(url)
+        ```
+
+    Configuration Format:
+        The TOML configuration should contain an [email] section:
+        ```toml
+        [email]
+        email = "username"  # Without @domain.com
+        password = "app_password"
+        server = "imap.gmail.com"
+        mailbox = "INBOX"
+        sleep_time = 60
+        ffnet_disable = true
+        ```
+
+    Security Note:
+        Store passwords securely and consider using app-specific passwords
+        rather than main account passwords for IMAP access.
     """
 
     def __init__(self, toml_path: str):
         """
-        Initializes the EmailInfo object with configuration from a TOML file.
+        Initialize EmailInfo with configuration from TOML file.
 
-        This constructor reads the specified TOML configuration file to set up the
-        EmailInfo object. It extracts email-related configuration such as the email
-        address, password, server, and mailbox to be used for email operations.
-        Additionally, it sets a default sleep time for operations that require waiting.
+        Loads and validates email configuration from the specified TOML file
+        using the ConfigManager. All email settings are extracted and stored
+        as instance attributes for use in URL extraction operations.
 
         Args:
-            toml_path (str): The path to the TOML configuration file.
+            toml_path (str): Path to the TOML configuration file containing
+                           email settings in the [email] section.
+
+        Raises:
+            FileNotFoundError: If the TOML configuration file doesn't exist.
+            ConfigError: If required email configuration is missing or invalid.
+            ValidationError: If email configuration fails Pydantic validation.
+
+        Example:
+            ```python
+            try:
+                email_info = EmailInfo("config.toml")
+                print(f"Monitoring {email_info.email}@{email_info.server}")
+            except FileNotFoundError:
+                print("Configuration file not found")
+            ```
         """
-        # Load configuration using the new ConfigManager
+        # Load and validate configuration using ConfigManager
         config = ConfigManager.load_config(toml_path)
 
-        # Extract email configuration with proper type safety
+        # Extract email configuration with type safety validation
         email_config = config.email
 
-        # Set attributes from the validated configuration
+        # Set instance attributes from validated configuration
         self.email = email_config.email
         self.password = email_config.password
         self.server = email_config.server
@@ -101,15 +240,47 @@ class EmailInfo:
 
     def get_urls(self) -> set[str]:
         """
-        Retrieves URLs from the email account's specified mailbox.
+        Extract fanfiction URLs from the configured email mailbox.
+
+        This method connects to the IMAP server and uses FanFicFare's geturls
+        functionality to extract fanfiction URLs from email messages in the
+        specified mailbox. Network operations are performed with timeout
+        protection and logging is suppressed to reduce noise.
 
         Returns:
-            set[str]: A set of URLs found in the emails.
+            set[str]: Set of unique fanfiction URLs found in email messages.
+                     Empty set if no URLs found or if an error occurs.
+
+        Example:
+            ```python
+            email_info = EmailInfo("config.toml")
+            urls = email_info.get_urls()
+            
+            print(f"Found {len(urls)} fanfiction URLs:")
+            for url in urls:
+                print(f"  {url}")
+            ```
+
+        Error Handling:
+            All exceptions during URL extraction are caught and logged as
+            failures. The method returns an empty set on error rather than
+            propagating exceptions to maintain stable operation.
+
+        Network Timeout:
+            Uses a 55-second timeout for all network operations to prevent
+            hanging on slow or unresponsive email servers.
+
+        Note:
+            This method processes all messages in the mailbox that contain
+            recognizable fanfiction URLs. It does not mark messages as read
+            or modify the mailbox state in any way.
         """
         urls = set()
 
+        # Use timeout protection and suppress verbose logging during extraction
         with set_timeout(55), suppress_logging():
             try:
+                # Extract URLs using FanFicFare's IMAP functionality
                 urls = geturls.get_urls_from_imap(
                     self.server, self.email, self.password, self.mailbox
                 )
@@ -125,32 +296,92 @@ def email_watcher(
     processor_queues: dict[str, mp.Queue],
 ):
     """
-    Watches an email account for new URLs and adds them to the appropriate processor queues.
+    Continuously monitor email for fanfiction URLs and route to processing queues.
 
-    Parameters:
-        email_info (EmailInfo): The email information object.
-        notification_info (notification_wrapper.NotificationWrapper): The notification information object.
-        processor_queues (dict[str, mp.Queue]): A dictionary mapping site names to processor queues.
+    This function implements the main email monitoring loop for the AutomatedFanfic
+    application. It polls the configured email account at regular intervals,
+    extracts fanfiction URLs, identifies the source sites, and routes URLs to
+    appropriate processing queues.
+
+    Args:
+        email_info (EmailInfo): Configured email account information including
+                               credentials, server details, and polling settings.
+        notification_info (notification_wrapper.NotificationWrapper): Notification
+                                                                     system for sending alerts about new URLs.
+        processor_queues (dict[str, mp.Queue]): Dictionary mapping fanfiction site
+                                               names to their dedicated processing queues.
+
+    Processing Flow:
+        1. Extract URLs from email using FanFicFare's geturls functionality
+        2. Parse each URL to identify the source fanfiction site
+        3. Handle special cases (e.g., FFNet disable notifications)
+        4. Route URLs to appropriate site-specific processing queues
+        5. Sleep until next polling cycle
+
+    Special Handling:
+        - FFNet URLs: If ffnet_disable is True, sends notification only
+                     without adding to processing queue
+        - Unknown Sites: URLs that don't match known patterns are routed
+                        to the "other" queue
+
+    Example:
+        ```python
+        # Typically run in a separate process
+        email_info = EmailInfo("config.toml")
+        notification_wrapper = NotificationWrapper(config)
+        
+        queues = {
+            "archiveofourown.org": mp.Queue(),
+            "fanfiction.net": mp.Queue(),
+            "other": mp.Queue()
+        }
+        
+        # This runs indefinitely until process termination
+        email_watcher(email_info, notification_wrapper, queues)
+        ```
+
+    Infinite Loop:
+        This function runs indefinitely and should be executed in a separate
+        process. It only exits when the process is terminated externally.
+
+    Thread Safety:
+        This function is designed for multiprocessing environments. All
+        communication with other processes occurs through the provided
+        queue objects, which are thread/process-safe.
+
+    Note:
+        The sleep interval between email checks is configured via
+        email_info.sleep_time to balance responsiveness with email
+        server load considerations.
     """
     while True:
-        # Get URLs from the email account
+        # Extract URLs from the configured email account
         urls = email_info.get_urls()
         fics_to_add = set()
+        
+        # Process each URL found in email messages
         for url in urls:
+            # Parse URL to identify site and normalize format
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
 
-            # Workaround for ffnet issues
+            # Special handling for FFNet when disabled - notification only
             if email_info.ffnet_disable and fanfic.site == "ffnet":
                 notification_info.send_notification(
                     "New Fanfiction Download", fanfic.url, fanfic.site
                 )
                 continue
+                
+            # Add to processing set for queue routing
             fics_to_add.add(fanfic)
+            
+        # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:
             ff_logging.log(
                 f"Adding {fic.url} to the {fic.site} processor queue",
                 "HEADER",
             )
+            # Route to site-specific queue (creates "other" queue for unknown sites)
             processor_queues[fic.site].put(fic)
-        # Wait before checking the email account again
+            
+        # Wait before next email check cycle
         time.sleep(email_info.sleep_time)
