@@ -42,6 +42,9 @@ The script will try to download every story maximum of 11 times, waiting an addi
 
 If you have notifications enabled, it will send a notification of the failure for the penultimate failure, before the Hail-Mary - but it will not send a notification if the Hail-Mary fails, only if it succeeds.
 
+**Special Case - Force Requests with `update_no_force`:**
+If the `update_method` is set to `"update_no_force"` and a force update is requested (either through email commands or manual triggers), the force request will be ignored and the story will be processed as a normal update. If the final Hail-Mary attempt fails under these conditions, a special notification will be sent explaining that the force request was ignored due to the `update_no_force` setting.
+
 ## Calibre Setup
 
 1. Setup the Calibre Content Server. Instructions can be found on the [calibre website](https://manual.calibre-ebook.com/server.html)
@@ -84,7 +87,7 @@ password = ""
 server = ""
 mailbox = ""
 sleep_time = 60
-ffnet_disable = true
+ffnet_disable = false
 ```
 
 
@@ -93,7 +96,7 @@ ffnet_disable = true
 - `server`: Address for the email server. For Gmail, this is going to be `imap.gmail.com`. For other web services, you'll have to search for them.
 - `mailbox`: Which mailbox to check, such as `INBOX`, for the unread update emails.
 - `sleep_time`: How often to check the email account for new updates, in seconds. Default is 60 seconds, but you can make this as often as you want. Recommended that you don't go too fast though, since some email providers will not be happy.
-- `ffnet_disable`: A boolean (`true`/`false`) to control behavior for FanFiction.Net (FFNet) URLs. Defaults to `true`. When `true`, FFNet URLs found in emails will only trigger a notification (if configured) and will not be downloaded or processed further. If set to `false`, FFNet URLs will be processed like any other supported site. This is due to FFNet often having issues with automated access.
+- `ffnet_disable`: A boolean (`true`/`false`) to control behavior for FanFiction.Net (FFNet) URLs. Defaults to `true`. When `true`, FFNet URLs found in emails will only trigger a notification (if configured) and will not be downloaded or processed further. If set to `false`, FFNet URLs will be processed like any other supported site. This is due to FFNet often having issues with automated access. The current versions of Flaresolver seem to mostly resolve this, so it defaults to `false.`
 
 ### Calibre
 
@@ -106,6 +109,7 @@ username=""
 password=""
 default_ini=""
 personal_ini=""
+update_method="update"
 ```
 
 - `path`: This is the path to your Calibre database. It's the location where your Calibre library is stored on your system. This can be either a directory that contains the `calibre.db` file, or the URL/Port/Library marked down above, such as `https://192.168.1.1:9001/#Fanfiction` This is the only argument that is **required** in this section.
@@ -113,6 +117,31 @@ personal_ini=""
 - `password`: If your Calibre database is password protected, this is the password you use to access it.
 - `default_ini`: This is the path to the [default INI configuration file](https://github.com/JimmXinu/FanFicFare/blob/main/fanficfare/defaults.ini) for FanFicFare.
 - `personal_ini`: This is the path to your [personal INI configuration file](https://github.com/JimmXinu/FanFicFare/wiki/INI-File) for FanFicFare.
+- `update_method`: Controls how FanFicFare handles story updates. Valid options are described below.
+
+**Update Method Use Cases:**
+- Use `"update"` for normal operation with good performance and minimal server load
+- Use `"update_always"` if you want to ensure all stories are always refreshed regardless of apparent changes
+- Use `"force"` if you frequently encounter stories that need forced updates to work properly
+- Use `"update_no_force"` if you want to prevent any forced updates (useful for being gentler on target websites or avoiding potential issues with forced downloads)
+
+**Dynamic Force Behavior:**
+The system can automatically trigger force updates in certain circumstances, regardless of your configured `update_method`:
+
+1. **Automatic Force Detection**: When FanFicFare encounters specific error conditions that indicate a force update would resolve the issue, the system automatically sets the story's behavior to "force" and re-queues it for processing. This happens when:
+   - There's a chapter count mismatch between the source and your local copy
+   - Your local file has been updated more recently than the story (indicating a metadata bug)
+
+2. **Force Request Precedence**: The precedence order for determining whether to use force is:
+   - If `update_method` is `"update_no_force"`: Force requests are **always ignored**, even automatic ones
+   - If a force is requested (either automatically detected or manually triggered): Uses `--force` flag
+   - If `update_method` is `"force"`: Uses `--force` flag
+   - If `update_method` is `"update_always"`: Uses `-U` flag
+   - Default: Uses `-u` flag for normal updates
+
+3. **Special Cases**: 
+   - When `update_method` is `"update_no_force"` and a force is requested, the force is ignored and a normal update (`-u`) is performed instead
+   - If the final Hail-Mary attempt fails under these conditions, a special notification explains that the force request was ignored
 
 For both the default and personal INI, any changes made to them will take effect during the next update check, it does not require a restart of the script.
 
