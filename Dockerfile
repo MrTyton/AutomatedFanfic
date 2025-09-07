@@ -15,8 +15,10 @@ ENV PYTHONUNBUFFERED=1 \
 # Stage 1: Install runtime system dependencies (rarely change)
 FROM python-base AS system-deps
 
-# Install runtime dependencies in a single layer
-RUN apt-get update && \
+# Install runtime dependencies in a single layer with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
@@ -42,7 +44,7 @@ RUN apt-get update && \
     xdg-utils \
     xz-utils && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm -rf /tmp/* /var/tmp/* && \
     echo "*** Generating machine ID ***" && \
     dbus-uuidgen > /etc/machine-id
 
@@ -58,25 +60,34 @@ FROM user-setup AS python-stable-deps
 
 # Install stable Python packages from requirements.txt
 COPY requirements.txt /tmp/requirements.txt
-RUN echo "*** Install Stable Python Packages ***" && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    echo "*** Install Stable Python Packages ***" && \
     pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
 # Stage 4: Calibre installation (changes monthly)
 FROM python-stable-deps AS calibre-installer
 
+# BuildKit automatic platform detection
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+
 # Set version labels
 ARG VERSION
 ARG CALIBRE_RELEASE
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 
-# Download and extract Calibre (multi-architecture)
-RUN echo "**** install calibre ****" && \
-    ARCH=$(uname -m) && \
-    echo "Detected architecture: ${ARCH}" && \
-    mkdir -p /opt/calibre && \
-    if [ "${ARCH}" = "x86_64" ]; then \
-    echo "Installing Calibre from official binaries for x86_64" && \
+# Download and extract Calibre (optimized multi-architecture)
+RUN --mount=type=cache,target=/tmp/calibre-cache \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    echo "**** install calibre ****" && \
+    # Use BuildKit's automatic platform detection instead of uname
+    case "${TARGETPLATFORM:-linux/amd64}" in \
+    "linux/amd64") \
+    echo "Installing Calibre from official binaries for amd64" && \
     if [ -z "${CALIBRE_RELEASE}" ]; then \
     CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
     CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
@@ -85,51 +96,69 @@ RUN echo "**** install calibre ****" && \
     fi && \
     echo "Using Calibre version: ${CALIBRE_VERSION}" && \
     CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
+    CALIBRE_CACHE_FILE="/tmp/calibre-cache/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
     echo "Downloading from ${CALIBRE_URL}" && \
-    curl -o /tmp/calibre-tarball.txz -L "${CALIBRE_URL}" && \
-    tar xf /tmp/calibre-tarball.txz -C /opt/calibre && \
-    rm -f /tmp/calibre-tarball.txz; \
+    # Check if cached version exists and is valid
+    if [ ! -f "${CALIBRE_CACHE_FILE}" ] || [ ! -s "${CALIBRE_CACHE_FILE}" ]; then \
+    echo "Downloading fresh copy to cache..." && \
+    curl -o "${CALIBRE_CACHE_FILE}" -L "${CALIBRE_URL}" && \
+    echo "Download complete, extracting..." ; \
     else \
-    echo "Architecture ${ARCH} not supported by official Calibre binaries, using system package" && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends calibre && \
-    ln -sf /usr/bin/calibre /opt/calibre/calibre && \
-    ln -sf /usr/bin/ebook-convert /opt/calibre/ebook-convert && \
-    ln -sf /usr/bin/calibredb /opt/calibre/calibredb && \
-    rm -rf /var/lib/apt/lists/*; \
+    echo "Using cached Calibre binary..." ; \
     fi && \
-    echo "*** Setting up Calibre ***" && \
-    if [ "${ARCH}" = "x86_64" ]; then \
-    echo "Setting up official Calibre binaries for x86_64" && \
+    mkdir -p /opt/calibre && \
+    tar xf "${CALIBRE_CACHE_FILE}" -C /opt/calibre && \
+    # Set up official Calibre binaries
     if [ -f "/opt/calibre/calibre_postinstall" ]; then \
     chmod +x /opt/calibre/calibre_postinstall && \
     echo "*** Running Calibre post-install ***" && \
-    (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it"); \
+    (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it") ; \
     fi && \
     echo "*** Setting up Calibre symlinks ***" && \
     find /opt/calibre -name "calibre" -type f -executable -exec ln -sf {} /usr/local/bin/calibre \; && \
     find /opt/calibre -name "ebook-convert" -type f -executable -exec ln -sf {} /usr/local/bin/ebook-convert \; && \
-    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; ; \
-    else \
-    echo "Using system Calibre installation for ${ARCH}" && \
-    ln -sf /opt/calibre/calibre /usr/local/bin/calibre && \
-    ln -sf /opt/calibre/ebook-convert /usr/local/bin/ebook-convert && \
-    ln -sf /opt/calibre/calibredb /usr/local/bin/calibredb; \
-    fi && \
+    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; \
+    ;; \
+    "linux/arm64"|"linux/arm/v7"|"linux/arm/v6") \
+    echo "Installing Calibre from system packages for ARM architecture" && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends calibre && \
+    # Create consistent symlinks for ARM
+    ln -sf /usr/bin/calibre /usr/local/bin/calibre && \
+    ln -sf /usr/bin/ebook-convert /usr/local/bin/ebook-convert && \
+    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb \
+    ;; \
+    *) \
+    echo "Unsupported platform: ${TARGETPLATFORM}" && \
+    echo "Attempting system package installation as fallback..." && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends calibre && \
+    ln -sf /usr/bin/calibre /usr/local/bin/calibre && \
+    ln -sf /usr/bin/ebook-convert /usr/local/bin/ebook-convert && \
+    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb \
+    ;; \
+    esac && \
     echo "*** Calibre setup complete ***"
 
 # Stage 5: FanFicFare installation (changes weekly)
 FROM calibre-installer AS fanficfare-installer
 
 ARG FANFICFARE_VERSION
-RUN echo "*** Install FanFicFare from TestPyPI ***" && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    set -e && \
+    echo "*** Install FanFicFare from TestPyPI ***" && \
+    INDEX_URL="https://test.pypi.org/simple/" && \
+    # Determine package specification
     if [ -n "${FANFICFARE_VERSION}" ]; then \
-    echo "Installing FanFicFare==${FANFICFARE_VERSION}" && \
-    pip install --no-cache-dir -i https://test.pypi.org/simple/ "FanFicFare==${FANFICFARE_VERSION}"; \
+    PACKAGE_SPEC="FanFicFare==${FANFICFARE_VERSION}" && \
+    echo "Installing FanFicFare==${FANFICFARE_VERSION} from TestPyPI" ; \
     else \
-    echo "Installing latest FanFicFare" && \
-    pip install --no-cache-dir -i https://test.pypi.org/simple/ FanFicFare; \
-    fi
+    PACKAGE_SPEC="FanFicFare" && \
+    echo "Installing latest FanFicFare from TestPyPI" ; \
+    fi && \
+    # Install package
+    pip install --no-cache-dir -i "${INDEX_URL}" "${PACKAGE_SPEC}" && \
+    echo "*** FanFicFare installation complete ***"
 
 # Stage 6: Application code (changes with every code update)
 FROM fanficfare-installer AS app-code
