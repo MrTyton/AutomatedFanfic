@@ -98,21 +98,59 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it") ; \
     fi && \
     echo "*** Setting up Calibre symlinks (calibredb only) ***" && \
-    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; \
+    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; && \
+    echo "*** Removing unnecessary Calibre components ***" && \
+    # Remove GUI applications (keep calibredb)
+    rm -f /opt/calibre/calibre /opt/calibre/ebook-viewer /opt/calibre/ebook-edit 2>/dev/null || true && \
+    # Remove conversion tools  
+    rm -f /opt/calibre/ebook-convert /opt/calibre/ebook-meta /opt/calibre/ebook-polish 2>/dev/null || true && \
+    # Remove other command-line tools we don't use
+    rm -f /opt/calibre/calibre-server /opt/calibre/calibre-smtp /opt/calibre/web2disk 2>/dev/null || true && \
+    rm -f /opt/calibre/lrf2lrs /opt/calibre/lrfviewer /opt/calibre/markdown-calibre 2>/dev/null || true && \
+    # Remove GUI Python packages and Qt libraries (preserve core database libraries)
+    rm -rf /opt/calibre/lib/python*/site-packages/calibre/gui2 2>/dev/null || true && \
+    rm -rf /opt/calibre/lib/python*/site-packages/calibre/srv 2>/dev/null || true && \
+    rm -rf /opt/calibre/lib/python*/site-packages/calibre/ebooks/conversion 2>/dev/null || true && \
+    rm -rf /opt/calibre/lib/python*/site-packages/calibre/ebooks/oeb 2>/dev/null || true && \
+    rm -rf /opt/calibre/lib/python*/site-packages/calibre/devices 2>/dev/null || true && \
+    # Remove Qt and GUI libraries (keep core libraries)
+    find /opt/calibre -name "*Qt*" -type f -delete 2>/dev/null || true && \
+    find /opt/calibre -name "*qt*" -type f -delete 2>/dev/null || true && \
+    find /opt/calibre -name "PyQt*" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove resource directories for GUI components
+    rm -rf /opt/calibre/resources/viewer 2>/dev/null || true && \
+    rm -rf /opt/calibre/resources/editor 2>/dev/null || true && \
+    rm -rf /opt/calibre/resources/content-server 2>/dev/null || true && \
+    rm -rf /opt/calibre/resources/images/mimetypes 2>/dev/null || true && \
+    echo "*** Calibre cleanup complete - calibredb only installation ***" \
     ;; \
     "linux/arm64"|"linux/arm/v7"|"linux/arm/v6") \
     echo "Installing Calibre from system packages for ARM architecture (calibredb only)" && \
     apt-get update && \
     apt-get install -y --no-install-recommends calibre && \
     # Create consistent symlink for ARM (calibredb only)
-    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb \
+    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb && \
+    echo "*** Removing unnecessary Calibre components from system installation ***" && \
+    # Remove GUI applications and conversion tools
+    rm -f /usr/bin/calibre /usr/bin/ebook-* /usr/bin/lrf* /usr/bin/web2disk 2>/dev/null || true && \
+    rm -f /usr/bin/*viewer* /usr/bin/*editor* 2>/dev/null || true && \
+    # Remove GUI-related packages if they were installed as dependencies
+    apt-get remove --purge -y calibre-bin 2>/dev/null || true && \
+    apt-get autoremove -y 2>/dev/null || true && \
+    echo "*** ARM Calibre cleanup complete ***" \
     ;; \
     *) \
     echo "Unsupported platform: ${TARGETPLATFORM}" && \
     echo "Attempting system package installation as fallback..." && \
     apt-get update && \
     apt-get install -y --no-install-recommends calibre && \
-    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb \
+    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb && \
+    echo "*** Removing unnecessary Calibre components from fallback installation ***" && \
+    # Remove GUI applications and conversion tools
+    rm -f /usr/bin/calibre /usr/bin/ebook-* /usr/bin/lrf* /usr/bin/web2disk 2>/dev/null || true && \
+    rm -f /usr/bin/*viewer* /usr/bin/*editor* 2>/dev/null || true && \
+    apt-get autoremove -y 2>/dev/null || true && \
+    echo "*** Fallback Calibre cleanup complete ***" \
     ;; \
     esac && \
     echo "*** Calibre setup complete ***"
