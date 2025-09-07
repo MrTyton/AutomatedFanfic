@@ -423,15 +423,15 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         url = config_data["url"]
         fanfic = regex_parsing.generate_FanficInfo_from_url(url)
 
-        # Validate site detection
+        # Validate site detection using algorithmic identifiers
         if expected_behavior == "ffnet_processing":
-            self.assertEqual(fanfic.site, "ffnet")
+            self.assertEqual(fanfic.site, "fanfiction")
             self.assertIn("fanfiction.net", fanfic.url)
         elif expected_behavior == "ao3_processing":
-            self.assertEqual(fanfic.site, "ao3")
+            self.assertEqual(fanfic.site, "archiveofourown")
             self.assertIn("archiveofourown.org", fanfic.url)
         elif expected_behavior == "sb_processing":
-            self.assertEqual(fanfic.site, "sb")
+            self.assertEqual(fanfic.site, "spacebattles")
             self.assertIn("spacebattles.com", fanfic.url)
         elif expected_behavior == "other_processing":
             self.assertEqual(fanfic.site, "other")

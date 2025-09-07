@@ -162,24 +162,24 @@ class TestRegexParsing(unittest.TestCase):
             # Fanfiction.net tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://www.fanfiction.net/s/12345678/1/Story-Title",
-                expected_url="www.fanfiction.net/s/12345678/",
-                expected_site="ffnet",
+                expected_url="www.fanfiction.net/s/12345678",
+                expected_site="fanfiction",
             ),
             CheckGenerateFanficInfoTestCase(
                 input_url="http://fanfiction.net/s/12345678",
                 expected_url="www.fanfiction.net/s/12345678",
-                expected_site="ffnet",
+                expected_site="fanfiction",
             ),
             # Archive of Our Own (AO3) tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://archiveofourown.org/works/12345678/chapters/98765432",
                 expected_url="archiveofourown.org/works/12345678",
-                expected_site="ao3",
+                expected_site="archiveofourown",
             ),
             CheckGenerateFanficInfoTestCase(
                 input_url="http://archiveofourown.org/works/12345678",
                 expected_url="archiveofourown.org/works/12345678",
-                expected_site="ao3",
+                expected_site="archiveofourown",
             ),
             # FictionPress tests
             CheckGenerateFanficInfoTestCase(
@@ -197,19 +197,19 @@ class TestRegexParsing(unittest.TestCase):
             CheckGenerateFanficInfoTestCase(
                 input_url="https://forums.sufficientvelocity.com/threads/story-title.12345/page-10",
                 expected_url="forums.sufficientvelocity.com/threads/story-title.12345",
-                expected_site="sv",
+                expected_site="sufficientvelocity",
             ),
             # SpaceBattles (SB) tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://forums.spacebattles.com/threads/story-title.12345/reader/",
                 expected_url="forums.spacebattles.com/threads/story-title.12345",
-                expected_site="sb",
+                expected_site="spacebattles",
             ),
             # Questionable Questing (QQ) tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://forum.questionablequesting.com/threads/story-title.12345/page-20",
                 expected_url="forum.questionablequesting.com/threads/story-title.12345",
-                expected_site="qq",
+                expected_site="questionablequesting",
             ),
             # Other/Unknown URL test
             CheckGenerateFanficInfoTestCase(
