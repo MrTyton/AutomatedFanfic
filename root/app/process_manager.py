@@ -8,6 +8,7 @@ graceful shutdown, and automatic restart capabilities.
 import asyncio
 import multiprocessing as mp
 import signal
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -329,6 +330,11 @@ class ProcessManager:
         start_time = time.time()
 
         while True:
+            # Check if shutdown was requested (via signal handler)
+            if self._shutdown_event.is_set():
+                ff_logging.log_debug("Shutdown event set, exiting wait loop")
+                return True
+                
             # Check if all processes have stopped
             all_stopped = True
             for process_info in self.processes.values():
@@ -450,14 +456,21 @@ class ProcessManager:
             return
 
         def signal_handler(signum, frame):
+            # Prevent repeated signal handling
+            if self._shutdown_event.is_set():
+                ff_logging.log_debug("Signal already being handled, ignoring")
+                return
+                
             signal_name = signal.Signals(signum).name
             ff_logging.log(
                 f"Received signal {signal_name}, initiating graceful shutdown...",
                 "WARNING",
             )
+            # Set shutdown event to prevent repeated signal handling
+            self._shutdown_event.set()
+            
+            # Stop all child processes
             self.stop_all()
-            # Don't call exit() here - let the application handle the shutdown flow
-            # The signal will still interrupt the main loop in fanficdownload.py
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
@@ -497,4 +510,6 @@ class ProcessManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with cleanup."""
-        self.stop_all()
+        # Only stop if not already stopping/stopped
+        if not self._shutdown_event.is_set():
+            self.stop_all()

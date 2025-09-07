@@ -169,25 +169,32 @@ def main():
             # Keep the main thread alive while processes run
             try:
                 # Wait for processes to complete (they run indefinitely until stopped)
+                # The ProcessManager signal handlers will handle SIGTERM/SIGINT and 
+                # cause wait_for_all() to exit promptly via the shutdown event
                 process_manager.wait_for_all()  # Wait indefinitely for normal completion
+                ff_logging.log("All processes completed normally")
+                
             except KeyboardInterrupt:
                 # KeyboardInterrupt (Ctrl+C) generates SIGINT, which should be handled
-                # by ProcessManager's signal handlers. The signal handler will call
-                # stop_all() to initiate graceful shutdown of all child processes.
+                # by ProcessManager's signal handlers. However, if we reach this point,
+                # it means the signal handler didn't handle it properly or there's a race condition.
                 ff_logging.log(
-                    "Received interrupt signal, waiting for processes to complete...",
+                    "KeyboardInterrupt caught - signal handler may not have handled shutdown",
                     "WARNING",
                 )
-
-                # Wait for all processes to actually terminate after signal handler
-                # called stop_all(). This ensures we don't exit before children are done.
-                # Use a reasonable timeout to prevent hanging indefinitely
-                if not process_manager.wait_for_all(timeout=300.0):
+                
+                # Check if shutdown is already in progress
+                if not process_manager._shutdown_event.is_set():
+                    ff_logging.log("Initiating manual shutdown due to KeyboardInterrupt")
+                    process_manager.stop_all()
+                
+                # Brief wait for processes to complete after manual shutdown
+                if not process_manager.wait_for_all(timeout=30.0):
                     ff_logging.log_failure(
-                        "Timeout waiting for processes - forcing shutdown"
+                        "Timeout waiting for processes after manual shutdown"
                     )
                 else:
-                    ff_logging.log("All processes completed graceful shutdown")
+                    ff_logging.log("Manual shutdown completed successfully")
 
     ff_logging.log("Application shutdown complete")
 
