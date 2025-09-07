@@ -1,3 +1,35 @@
+"""AutomatedFanfic main application module.
+
+This module serves as the primary entry point for the AutomatedFanfic application,
+orchestrating a multiprocessing-based fanfiction downloading system. The application
+monitors email for fanfiction URLs, processes them through site-specific workers,
+and manages downloads/updates via Calibre integration with comprehensive notification
+capabilities.
+
+Key Components:
+    - Command-line argument parsing for configuration and logging control
+    - TOML-based configuration loading with Pydantic validation
+    - ProcessManager-coordinated multiprocessing architecture
+    - Site-specific URL processing queues for scalable fanfiction handling
+    - Email monitoring via IMAP for automated URL ingestion
+    - Calibre database integration for e-book management
+    - Notification systems (Pushbullet, Apprise) for status updates
+    - Graceful shutdown handling with signal management
+
+Architecture:
+    The application uses a multiprocessing design with a ProcessManager coordinating
+    worker processes. Each major fanfiction site gets its own processing queue and
+    worker, while email monitoring and retry handling run in separate processes.
+    All processes communicate via multiprocessing queues and are managed with
+    proper signal handling for Docker compatibility.
+
+Example:
+    python fanficdownload.py --config config.toml --verbose
+
+Author: MrTyton
+Repository: https://github.com/MrTyton/AutomatedFanfic
+"""
+
 import argparse
 import multiprocessing as mp
 import sys
@@ -19,20 +51,30 @@ __version__ = "1.7.0"
 
 
 def parse_arguments() -> argparse.Namespace:
-    """
-    Parses command-line arguments.
+    """Parses command-line arguments for the AutomatedFanfic application.
+
+    Creates an argument parser to handle configuration file location and logging
+    verbosity settings. These arguments control core application behavior including
+    configuration source and logging output detail level.
 
     Returns:
-        Namespace: An argparse.Namespace object containing all the arguments.
-                   Currently, it includes '--config' for specifying the config
-                   file location and '--verbose' for enabling verbose logging.
+        argparse.Namespace: Parsed command-line arguments containing:
+            - config (str): Path to the TOML configuration file
+            - verbose (bool): Flag to enable detailed logging output
+
+    Example:
+        >>> args = parse_arguments()
+        >>> print(args.config)  # '../config.default/config.toml'
+        >>> print(args.verbose)  # False (unless --verbose flag used)
     """
     parser = argparse.ArgumentParser(description="Process input arguments.")
+    # Define configuration file location with default fallback
     parser.add_argument(
         "--config",
         default="../config.default/config.toml",
         help="The location of the config.toml file",
     )
+    # Enable detailed logging for debugging and monitoring
     parser.add_argument(
         "--verbose",
         action="store_true",
@@ -41,12 +83,34 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
-    """
-    Main function to orchestrate the fanfic downloading process.
+def main() -> None:
+    """Main application entry point that orchestrates the fanfiction downloading process.
+
+    Initializes the complete AutomatedFanfic workflow including configuration loading,
+    process management setup, email monitoring, URL processing workers, and graceful
+    shutdown handling. Uses multiprocessing architecture with coordinated worker
+    processes for different fanfiction sites.
+
+    The function creates a robust processing pipeline:
+    1. Parses command-line arguments and loads configuration
+    2. Initializes notification and email monitoring systems
+    3. Creates site-specific processing queues for URL handling
+    4. Starts coordinated worker processes under ProcessManager supervision
+    5. Handles graceful shutdown via signal handling and cleanup
+
+    Raises:
+        ConfigError: If configuration file cannot be loaded or parsed.
+        ConfigValidationError: If configuration values fail validation.
+        SystemExit: On configuration errors or unexpected failures during startup.
+
+    Note:
+        This function runs indefinitely until interrupted by signal (SIGTERM/SIGINT)
+        or manual termination. ProcessManager handles coordinated shutdown of all
+        worker processes with proper cleanup and timeout handling.
     """
     args = parse_arguments()
 
+    # Configure logging verbosity based on command-line flag
     ff_logging.set_verbose(args.verbose)
 
     # --- Log Version and General Configuration ---
@@ -58,6 +122,7 @@ def main():
 
     # Load and validate configuration using the new system
     try:
+        # Load TOML configuration with comprehensive validation
         config = ConfigManager.load_config(args.config)
     except ConfigError as e:
         ff_logging.log_failure(f"Configuration error: {e}")
@@ -70,19 +135,19 @@ def main():
         sys.exit(1)
 
     # --- Log Specific Configuration Details ---
-    # Initialize NotificationWrapper early for logging
+    # Initialize NotificationWrapper early for comprehensive startup logging
     notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
 
     ff_logging.log("--- Configuration Details ---")
     try:
-        # Log Email Configuration
+        # Log Email Configuration - IMAP settings and processing behavior
         ff_logging.log(f"  Email Account: {config.email.email or 'Not Specified'}")
         ff_logging.log(f"  Email Server: {config.email.server or 'Not Specified'}")
         ff_logging.log(f"  Email Mailbox: {config.email.mailbox}")
         ff_logging.log(f"  Email Sleep Time: {config.email.sleep_time}")
         ff_logging.log(f"  FFNet Disabled: {config.email.ffnet_disable}")
 
-        # Log Calibre Configuration
+        # Log Calibre Configuration - Library and processing settings
         ff_logging.log(f"  Calibre Path: {config.calibre.path or 'Not Specified'}")
         ff_logging.log(
             f"  Calibre Default INI: {config.calibre.default_ini or 'Not Specified'}"
@@ -92,7 +157,7 @@ def main():
         )
         ff_logging.log(f"  Update Method: {config.calibre.update_method}")
 
-        # Log Pushbullet Configuration
+        # Log Pushbullet Configuration - Mobile notification settings
         pb_status = "Enabled" if config.pushbullet.enabled else "Disabled"
         ff_logging.log(f"  Pushbullet Notifications: {pb_status}")
         if config.pushbullet.enabled:
@@ -100,7 +165,7 @@ def main():
                 f"  Pushbullet Device: {config.pushbullet.device or 'Not Specified'}"
             )
 
-        # Log Apprise Configuration
+        # Log Apprise Configuration - Multi-platform notification settings
         if config.apprise.urls:
             ff_logging.log(
                 f"  Apprise Notifications: Enabled with {len(config.apprise.urls)} target(s)"
@@ -108,7 +173,7 @@ def main():
         else:
             ff_logging.log("  Apprise Notifications: Disabled")
 
-        # Log Process Configuration
+        # Log Process Configuration - Worker and monitoring settings
         ff_logging.log(f"  Max Workers: {config.max_workers}")
         ff_logging.log(
             f"  Process Monitoring: {'Enabled' if config.process.enable_monitoring else 'Disabled'}"
@@ -122,35 +187,37 @@ def main():
     ff_logging.log("-----------------------------")
     # --- End Logging ---
 
-    # Initialize configurations for email
+    # Initialize configurations for email monitoring and processing
     email_info = url_ingester.EmailInfo(args.config)
 
-    # Use ProcessManager for robust process handling
+    # Use ProcessManager for robust process handling with signal management
     with ProcessManager(config=config) as process_manager:
         with mp.Manager() as manager:
-            # Create queues for each site and a waiting queue for delayed processing
+            # Create site-specific queues for URL processing parallelization
             queues = {
                 site: manager.Queue() for site in regex_parsing.url_parsers.keys()
             }
+            # Separate queue for delayed retry processing (Hail-Mary protocol)
             waiting_queue = manager.Queue()
+            # Initialize Calibre database interface with multiprocessing support
             cdb_info = calibre_info.CalibreInfo(args.config, manager)
             cdb_info.check_installed()
 
-            # Register email watcher process
+            # Register email watcher process for URL ingestion
             process_manager.register_process(
                 "email_watcher",
                 url_ingester.email_watcher,
                 args=(email_info, notification_info, queues),
             )
 
-            # Register waiting watcher process
+            # Register waiting watcher process for retry handling
             process_manager.register_process(
                 "waiting_watcher",
                 ff_waiter.wait_processor,
                 args=(queues, waiting_queue),
             )
 
-            # Register URL worker processes for each site
+            # Register URL worker processes for each supported fanfiction site
             for site in queues.keys():
                 process_manager.register_process(
                     f"worker_{site}",
@@ -158,7 +225,7 @@ def main():
                     args=(queues[site], cdb_info, notification_info, waiting_queue),
                 )
 
-            # Start all processes with monitoring and graceful shutdown
+            # Start all processes with monitoring and graceful shutdown capability
             ff_logging.log("Starting all processes...")
             process_manager.start_all()
             ff_logging.log("All processes started successfully")
@@ -166,7 +233,7 @@ def main():
             # The ProcessManager context manager will handle graceful shutdown
             ff_logging.log("Processes running. Press Ctrl+C to stop gracefully.")
 
-            # Keep the main thread alive while processes run
+            # Keep the main thread alive while worker processes run continuously
             try:
                 # Wait for processes to complete (they run indefinitely until stopped)
                 # The ProcessManager signal handlers will handle SIGTERM/SIGINT and
@@ -183,7 +250,7 @@ def main():
                     "WARNING",
                 )
 
-                # Check if shutdown is already in progress
+                # Check if shutdown is already in progress to avoid duplicate cleanup
                 if not process_manager._shutdown_event.is_set():
                     ff_logging.log(
                         "Initiating manual shutdown due to KeyboardInterrupt"
@@ -191,6 +258,7 @@ def main():
                     process_manager.stop_all()
 
                 # Brief wait for processes to complete after manual shutdown
+                # Timeout prevents indefinite hanging on stuck processes
                 if not process_manager.wait_for_all(timeout=30.0):
                     ff_logging.log_failure(
                         "Timeout waiting for processes after manual shutdown"

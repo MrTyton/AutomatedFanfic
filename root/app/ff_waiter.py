@@ -1,3 +1,33 @@
+"""Delayed processing module for failed fanfiction downloads.
+
+This module implements the AutomatedFanfic waiting queue system for handling
+failed fanfiction downloads that need to be retried after exponential backoff
+delays. It provides timer-based delayed requeuing functionality as part of the
+Hail-Mary protocol for story processing failures.
+
+Key Features:
+    - Timer-based delayed fanfiction reprocessing
+    - Exponential backoff delay calculation based on retry counts
+    - Threading-based delay management without blocking main processes
+    - Integration with site-specific processing queues
+    - Graceful shutdown support via poison pill pattern
+
+Functions:
+    insert_after_time: Timer callback for delayed queue insertion
+    process_fanfic: Calculates delays and schedules fanfiction reprocessing
+    wait_processor: Main waiting queue processor with continuous monitoring
+
+Architecture:
+    The module works with the broader multiprocessing architecture by receiving
+    failed fanfiction entries in a waiting queue, calculating appropriate retry
+    delays based on failure counts, and using threading.Timer to schedule
+    requeuing back to site-specific processing queues after the delay period.
+
+Example:
+    >>> # Used by ProcessManager to start waiting queue processor
+    >>> wait_processor(site_queues, waiting_queue)
+"""
+
 import multiprocessing as mp
 import threading
 from time import sleep
@@ -7,59 +37,129 @@ import ff_logging
 
 
 def insert_after_time(queue: mp.Queue, fanfic: fanfic_info.FanficInfo) -> None:
-    """
-    Inserts a fanfic into the queue after a delay.
+    """Inserts a fanfiction entry into a processing queue after timer delay.
+
+    Timer callback function used by threading.Timer to requeue a fanfiction
+    entry back into its appropriate site-specific processing queue after a
+    calculated delay period. This function is called asynchronously when
+    the retry timer expires.
 
     Args:
-        queue (mp.Queue): The queue to insert the fanfic into.
-        fanfic (fanfic_info.FanficInfo): The fanfic to insert.
+        queue (mp.Queue): The multiprocessing queue to insert the fanfiction
+                         entry into. Should be the site-specific queue that
+                         corresponds to the fanfiction's source site.
+        fanfic (fanfic_info.FanficInfo): The fanfiction metadata object to
+                                        requeue for processing. Contains URL,
+                                        site information, and retry state.
+
+    Note:
+        This function is executed in a separate timer thread and must be
+        thread-safe. It performs atomic queue insertion operation.
+
+    Example:
+        >>> # Usually called via threading.Timer, not directly
+        >>> timer = threading.Timer(300, insert_after_time, args=(queue, fanfic))
     """
-    # Insert the fanfic into the queue
+    # Perform atomic queue insertion for multiprocessing safety
     queue.put(fanfic)
 
 
 def process_fanfic(
     fanfic: fanfic_info.FanficInfo, processor_queues: dict[str, mp.Queue]
 ) -> None:
-    """
-    Processes a single fanfic. It calculates a delay based on the number of repeats for the fanfic,
-    logs a warning message, and starts a timer to insert the fanfic into the appropriate processor queue after the delay.
+    """Processes a failed fanfiction by scheduling delayed retry via timer.
+
+    Implements exponential backoff delay calculation for failed fanfiction
+    downloads as part of the Hail-Mary protocol. Calculates retry delay based
+    on the fanfiction's repeat count, logs the delay information, and starts
+    a timer thread to requeue the fanfiction after the delay period.
+
+    The delay calculation uses a simple linear progression: delay = 60 * repeats,
+    where repeats indicates the number of previous retry attempts. This provides
+    increasing delays for repeated failures (1min, 2min, 3min, etc.).
 
     Args:
-        fanfic (fanfic_info.FanficInfo): The fanfic to process.
-        processor_queues (dict[str, mp.Queue]): A dictionary of processor queues.
+        fanfic (fanfic_info.FanficInfo): The fanfiction metadata object containing
+                                        URL, site information, and retry state
+                                        including the repeat count for delay calculation.
+        processor_queues (dict[str, mp.Queue]): Dictionary mapping site names to
+                                                their corresponding processing queues.
+                                                Used to route the fanfiction back to
+                                                the correct site-specific worker.
+
+    Note:
+        This function starts a daemon timer thread that will execute independently.
+        The timer thread will call insert_after_time() when the delay expires.
+        Multiple timers can run concurrently for different fanfictions.
+
+    Example:
+        >>> fanfic = FanficInfo(url="...", repeats=3)  # 3rd retry
+        >>> process_fanfic(fanfic, {"archiveofourown.org": queue})
+        # Will log "Waiting 3 minutes..." and schedule requeue in 180 seconds
     """
-    # Calculate the delay based on the number of repeats for the fanfic
-    delay = 60 * (fanfic.repeats or 0)  # Default to 1 minute if repeats is None
-    # Log a warning message indicating that we're waiting for a certain delay
+    # Calculate exponential backoff delay: 60 seconds per retry attempt
+    delay = 60 * (fanfic.repeats or 0)  # Default to 0 minutes if repeats is None
+    # Log the retry delay with warning level for visibility
     ff_logging.log(
         f"Waiting {fanfic.repeats} minutes for {fanfic.url} in queue {fanfic.site}",
         "WARNING",
     )
-    # Start a timer to insert the fanfic into the appropriate processor queue after the delay
+    # Create and start timer thread for delayed requeuing
     timer = threading.Timer(
         delay, insert_after_time, args=(processor_queues[fanfic.site], fanfic)
     )
     timer.start()
 
 
-def wait_processor(processor_queues: dict[str, mp.Queue], waiting_queue: mp.Queue):
-    """
-    Processes the waiting queue.
+def wait_processor(
+    processor_queues: dict[str, mp.Queue], waiting_queue: mp.Queue
+) -> None:
+    """Main waiting queue processor for handling delayed fanfiction retries.
+
+    Continuously monitors the waiting queue for failed fanfiction entries that
+    need delayed retry processing. Implements the waiting queue component of
+    the Hail-Mary protocol by receiving failed fanfictions, scheduling their
+    delayed reprocessing, and managing graceful shutdown.
+
+    This function runs in a dedicated process and processes entries from the
+    waiting queue in a continuous loop. Each failed fanfiction is processed
+    via process_fanfic() which calculates appropriate delays and schedules
+    timer-based requeuing back to site-specific processing queues.
 
     Args:
-        processor_queues (dict[str, mp.Queue]): A dictionary of processor queues.
-        waiting_queue (mp.Queue): The waiting queue.
+        processor_queues (dict[str, mp.Queue]): Dictionary mapping fanfiction
+                                               site names (e.g., "archiveofourown.org")
+                                               to their corresponding multiprocessing
+                                               queues for site-specific processing.
+        waiting_queue (mp.Queue): The shared multiprocessing queue containing
+                                 failed fanfiction entries awaiting delayed retry.
+                                 Supports poison pill (None) shutdown pattern.
+
+    Note:
+        This function runs indefinitely until a None entry (poison pill) is
+        received in the waiting queue, which signals graceful shutdown. The
+        5-second sleep prevents busy-waiting and reduces CPU usage.
+
+    Shutdown:
+        The function supports graceful shutdown via poison pill pattern. When
+        ProcessManager needs to stop this worker, it sends None to the queue,
+        causing the function to break from its processing loop and return.
+
+    Example:
+        >>> # Typically called by ProcessManager in separate process
+        >>> site_queues = {"archiveofourown.org": queue1, "fanfiction.net": queue2}
+        >>> wait_processor(site_queues, waiting_queue)
     """
     while True:
-        # Get a fanfic from the waiting queue
+        # Block waiting for next failed fanfiction entry from waiting queue
         fanfic: fanfic_info.FanficInfo = waiting_queue.get()
 
-        # If the fanfic is None, this signals that we should stop processing the waiting queue
+        # Check for poison pill shutdown signal (None entry)
         if fanfic is None:
             break
 
-        # Process the fanfic
+        # Schedule delayed retry processing for the failed fanfiction
         process_fanfic(fanfic, processor_queues)
 
-        sleep(5)  # Sleep for 5 seconds to avoid busy-waiting
+        # Brief sleep to prevent busy-waiting and reduce CPU usage
+        sleep(5)  # Sleep for 5 seconds between processing iterations
