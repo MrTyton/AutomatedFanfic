@@ -23,30 +23,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     bash \
     ca-certificates \
     curl \
-    dbus \
-    fcitx-rime \
-    fonts-wqy-microhei \
     jq \
-    libnss3 \
-    libopengl0 \
-    libxkbcommon-x11-0 \
-    libxcb-cursor0 \
-    libxcb-icccm4 \
-    libxcb-image0 \
-    libxcb-keysyms1 \
-    libxcb-randr0 \
-    libxcb-render-util0 \
-    libxcb-xinerama0 \
     poppler-utils \
     python3-xdg \
-    ttf-wqy-zenhei \
     uuid-runtime \
-    xdg-utils \
     xz-utils && \
     apt-get clean && \
-    rm -rf /tmp/* /var/tmp/* && \
-    echo "*** Generating machine ID ***" && \
-    dbus-uuidgen > /etc/machine-id
+    rm -rf /tmp/* /var/tmp/*
 
 # Stage 2: Create user (rarely changes)
 FROM system-deps AS user-setup
@@ -114,18 +97,14 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     echo "*** Running Calibre post-install ***" && \
     (/opt/calibre/calibre_postinstall || echo "Post-install failed, continuing without it") ; \
     fi && \
-    echo "*** Setting up Calibre symlinks ***" && \
-    find /opt/calibre -name "calibre" -type f -executable -exec ln -sf {} /usr/local/bin/calibre \; && \
-    find /opt/calibre -name "ebook-convert" -type f -executable -exec ln -sf {} /usr/local/bin/ebook-convert \; && \
+    echo "*** Setting up Calibre symlinks (calibredb only) ***" && \
     find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; \
     ;; \
     "linux/arm64"|"linux/arm/v7"|"linux/arm/v6") \
-    echo "Installing Calibre from system packages for ARM architecture" && \
+    echo "Installing Calibre from system packages for ARM architecture (calibredb only)" && \
     apt-get update && \
     apt-get install -y --no-install-recommends calibre && \
-    # Create consistent symlinks for ARM
-    ln -sf /usr/bin/calibre /usr/local/bin/calibre && \
-    ln -sf /usr/bin/ebook-convert /usr/local/bin/ebook-convert && \
+    # Create consistent symlink for ARM (calibredb only)
     ln -sf /usr/bin/calibredb /usr/local/bin/calibredb \
     ;; \
     *) \
@@ -133,8 +112,6 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     echo "Attempting system package installation as fallback..." && \
     apt-get update && \
     apt-get install -y --no-install-recommends calibre && \
-    ln -sf /usr/bin/calibre /usr/local/bin/calibre && \
-    ln -sf /usr/bin/ebook-convert /usr/local/bin/ebook-convert && \
     ln -sf /usr/bin/calibredb /usr/local/bin/calibredb \
     ;; \
     esac && \
