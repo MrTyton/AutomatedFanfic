@@ -5,6 +5,7 @@ from unittest.mock import call, MagicMock, patch
 from parameterized import parameterized
 
 import notification_base
+
 from notification_wrapper import NotificationWrapper
 
 

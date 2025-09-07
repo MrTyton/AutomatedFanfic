@@ -8,18 +8,14 @@ graceful shutdown, and error handling scenarios.
 import multiprocessing as mp
 import os
 import signal
-import sys
 import tempfile
 import threading
 import time
 import unittest
-from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 from parameterized import parameterized
 
 # Add the app directory to the path so we can import our modules
-sys.path.insert(0, str(Path(__file__).parent))
-
 from config_models import (
     AppConfig,
     ProcessConfig,

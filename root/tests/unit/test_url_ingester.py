@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
 
+
 from url_ingester import EmailInfo, email_watcher
 from notification_wrapper import NotificationWrapper
 from fanfic_info import FanficInfo

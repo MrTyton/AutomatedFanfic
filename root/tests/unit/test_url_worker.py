@@ -1,8 +1,8 @@
-from subprocess import STDOUT, PIPE
 import unittest
 from unittest.mock import MagicMock, patch, call
 from parameterized import parameterized
 import multiprocessing as mp
+from subprocess import STDOUT, PIPE
 
 import url_worker
 from fanfic_info import FanficInfo
