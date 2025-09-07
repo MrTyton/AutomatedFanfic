@@ -72,9 +72,7 @@ def get_files(directory_path, file_extension=None, return_full_path=False):
     return files
 
 
-def copy_configs_to_temp_dir(
-    cdb: calibre_info.CalibreInfo, temp_dir: str
-) -> None:
+def copy_configs_to_temp_dir(cdb: calibre_info.CalibreInfo, temp_dir: str) -> None:
     """
     Copies Calibre configuration files to a temporary directory.
 
@@ -85,6 +83,4 @@ def copy_configs_to_temp_dir(
     if cdb.default_ini:
         shutil.copyfile(cdb.default_ini, os.path.join(temp_dir, "defaults.ini"))
     if cdb.personal_ini:
-        shutil.copyfile(
-            cdb.personal_ini, os.path.join(temp_dir, "personal.ini")
-        )
+        shutil.copyfile(cdb.personal_ini, os.path.join(temp_dir, "personal.ini"))

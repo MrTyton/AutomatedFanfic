@@ -169,11 +169,11 @@ def main():
             # Keep the main thread alive while processes run
             try:
                 # Wait for processes to complete (they run indefinitely until stopped)
-                # The ProcessManager signal handlers will handle SIGTERM/SIGINT and 
+                # The ProcessManager signal handlers will handle SIGTERM/SIGINT and
                 # cause wait_for_all() to exit promptly via the shutdown event
                 process_manager.wait_for_all()  # Wait indefinitely for normal completion
                 ff_logging.log("All processes completed normally")
-                
+
             except KeyboardInterrupt:
                 # KeyboardInterrupt (Ctrl+C) generates SIGINT, which should be handled
                 # by ProcessManager's signal handlers. However, if we reach this point,
@@ -182,12 +182,14 @@ def main():
                     "KeyboardInterrupt caught - signal handler may not have handled shutdown",
                     "WARNING",
                 )
-                
+
                 # Check if shutdown is already in progress
                 if not process_manager._shutdown_event.is_set():
-                    ff_logging.log("Initiating manual shutdown due to KeyboardInterrupt")
+                    ff_logging.log(
+                        "Initiating manual shutdown due to KeyboardInterrupt"
+                    )
                     process_manager.stop_all()
-                
+
                 # Brief wait for processes to complete after manual shutdown
                 if not process_manager.wait_for_all(timeout=30.0):
                     ff_logging.log_failure(

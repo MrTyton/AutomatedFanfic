@@ -334,7 +334,7 @@ class ProcessManager:
             if self._shutdown_event.is_set():
                 ff_logging.log_debug("Shutdown event set, exiting wait loop")
                 return True
-                
+
             # Check if all processes have stopped
             all_stopped = True
             for process_info in self.processes.values():
@@ -460,7 +460,7 @@ class ProcessManager:
             if self._shutdown_event.is_set():
                 ff_logging.log_debug("Signal already being handled, ignoring")
                 return
-                
+
             signal_name = signal.Signals(signum).name
             ff_logging.log(
                 f"Received signal {signal_name}, initiating graceful shutdown...",
@@ -468,7 +468,7 @@ class ProcessManager:
             )
             # Set shutdown event to prevent repeated signal handling
             self._shutdown_event.set()
-            
+
             # Stop all child processes
             self.stop_all()
 

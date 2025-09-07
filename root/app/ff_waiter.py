@@ -30,7 +30,7 @@ def process_fanfic(
         processor_queues (dict[str, mp.Queue]): A dictionary of processor queues.
     """
     # Calculate the delay based on the number of repeats for the fanfic
-    delay = 60 * fanfic.repeats
+    delay = 60 * (fanfic.repeats or 1)  # Default to 1 minute if repeats is None
     # Log a warning message indicating that we're waiting for a certain delay
     ff_logging.log(
         f"Waiting {fanfic.repeats} minutes for {fanfic.url} in queue {fanfic.site}",
