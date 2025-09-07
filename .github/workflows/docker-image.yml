@@ -40,18 +40,22 @@ jobs:
   build_matrix:
     # Run if dispatched OR if called OR if workflow_run succeeded (but we'll check for version changes later)
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        exclude:
+          - platform: linux/amd64
+            runner: ubuntu-24.04-arm
+          - platform: linux/arm64
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     outputs:
       commit_sha: ${{ steps.get_sha.outputs.commit_sha }}
       specific_version: ${{ steps.set_versions.outputs.specific_version }}
       calibre_version: ${{ steps.set_versions.outputs.calibre_version }}
       fanficfare_version: ${{ steps.set_versions.outputs.fanficfare_version }}
       should_build: ${{ steps.should_build.outputs.build }}
-    strategy:
-      matrix:
-        platform: 
-          - linux/amd64
-          - linux/arm64
     steps:
       - name: Debug Event Info in Docker Image Workflow
         run: |
