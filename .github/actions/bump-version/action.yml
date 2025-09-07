@@ -1,0 +1,119 @@
+name: "Bump Version"
+description: "Bump project version in latest.txt and fanficdownload.py"
+inputs:
+  bump-type:
+    description: "Type of version bump (patch, minor, major)"
+    required: false
+    default: "patch"
+  reason:
+    description: "Reason for version bump (dependency, security, feature, etc.)"
+    required: false
+    default: "dependency"
+  current-version:
+    description: "Current version (if not provided, will read from latest.txt)"
+    required: false
+    default: ""
+
+outputs:
+  old-version:
+    description: "The version before bumping"
+    value: ${{ steps.bump.outputs.old-version }}
+  new-version:
+    description: "The new version after bumping"
+    value: ${{ steps.bump.outputs.new-version }}
+  version-changed:
+    description: "Whether the version was actually changed"
+    value: ${{ steps.bump.outputs.version-changed }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Bump version
+      id: bump
+      shell: bash
+      run: |
+        # Read current version
+        if [ -n "${{ inputs.current-version }}" ]; then
+          CURRENT_VERSION="${{ inputs.current-version }}"
+          echo "Using provided version: $CURRENT_VERSION"
+        else
+          CURRENT_VERSION=$(cat release-versions/latest.txt 2>/dev/null || echo "1.0.0")
+          echo "Read version from latest.txt: $CURRENT_VERSION"
+        fi
+
+        echo "old-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+        # Parse version components (assuming semantic versioning: MAJOR.MINOR.PATCH)
+        if [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          PATCH="${BASH_REMATCH[3]}"
+          echo "Parsed version: $MAJOR.$MINOR.$PATCH"
+        else
+          echo "::error::Invalid version format: $CURRENT_VERSION"
+          exit 1
+        fi
+
+        # Determine new version based on bump type
+        BUMP_TYPE="${{ inputs.bump-type }}"
+        case "$BUMP_TYPE" in
+          "major")
+            NEW_MAJOR=$((MAJOR + 1))
+            NEW_MINOR=0
+            NEW_PATCH=0
+            NEW_VERSION="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
+            ;;
+          "minor")
+            NEW_MINOR=$((MINOR + 1))
+            NEW_PATCH=0
+            NEW_VERSION="${MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
+            ;;
+          "patch"|*)
+            # Default to patch for dependency updates
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+            ;;
+        esac
+
+        echo "New version: $NEW_VERSION (bump type: $BUMP_TYPE, reason: ${{ inputs.reason }})"
+        echo "new-version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+        # Check if version actually changed
+        if [ "$NEW_VERSION" != "$CURRENT_VERSION" ]; then
+          echo "version-changed=true" >> $GITHUB_OUTPUT
+          
+          # Update version files
+          echo "Updating release-versions/latest.txt..."
+          echo "$NEW_VERSION" > release-versions/latest.txt
+          
+          echo "Updating __version__ in fanficdownload.py..."
+          PYTHON_FILE="root/app/fanficdownload.py"
+          
+          # Verify the file exists
+          if [ ! -f "$PYTHON_FILE" ]; then
+            echo "::error::Python file $PYTHON_FILE not found"
+            exit 1
+          fi
+          
+          # Verify __version__ line exists
+          if ! grep -q "^__version__ = " "$PYTHON_FILE"; then
+            echo "::error::No __version__ line found in $PYTHON_FILE"
+            exit 1
+          fi
+          
+          # Update the version in the Python file
+          sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" "$PYTHON_FILE"
+          
+          # Verify the replacement was successful
+          if ! grep -q "^__version__ = \"$NEW_VERSION\"" "$PYTHON_FILE"; then
+            echo "::error::Failed to update version in $PYTHON_FILE"
+            exit 1
+          fi
+          
+          echo "✅ Version updated successfully!"
+          echo "Verification:"
+          grep "__version__" "$PYTHON_FILE"
+        else
+          echo "version-changed=false" >> $GITHUB_OUTPUT
+          echo "Version unchanged: $NEW_VERSION"
+        fi
