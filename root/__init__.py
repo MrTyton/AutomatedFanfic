@@ -1,0 +1,3 @@
+"""
+AutomatedFanfic root package.
+"""

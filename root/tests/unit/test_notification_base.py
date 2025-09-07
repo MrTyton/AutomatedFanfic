@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
+
 from notification_base import (
     NotificationBase,
     retry_decorator,

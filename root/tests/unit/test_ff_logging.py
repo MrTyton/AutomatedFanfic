@@ -2,6 +2,7 @@ from typing import NamedTuple
 import unittest
 from unittest.mock import patch
 
+
 from freezegun import freeze_time
 from parameterized import parameterized
 

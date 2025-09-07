@@ -20,11 +20,6 @@ import threading
 from unittest.mock import patch, MagicMock, Mock, call
 from parameterized import parameterized
 from typing import Dict, Any
-import sys
-from pathlib import Path
-
-# Add app directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
 
 import fanficdownload
 import url_worker

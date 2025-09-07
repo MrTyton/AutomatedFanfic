@@ -1,10 +1,5 @@
 import unittest
 from unittest.mock import MagicMock, patch
-import sys
-from pathlib import Path
-
-# Add app directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
 
 from url_worker import construct_fanficfare_command
 from calibre_info import CalibreInfo
