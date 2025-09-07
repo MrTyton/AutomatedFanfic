@@ -537,6 +537,193 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
             original_process.terminate()
             original_process.join(1.0)
 
+    def test_signal_handler_deduplication(self):
+        """Test that signal handler prevents repeated signal handling."""
+        with patch.object(self.manager, "stop_all") as mock_stop_all:
+            # Set up the signal handlers
+            self.manager.setup_signal_handlers()
+
+            # Capture the handler function
+            with patch("signal.signal") as mock_signal:
+                self.manager._signal_handlers_set = False
+                self.manager.setup_signal_handlers()
+
+                # Get the handler function
+                sigterm_handler = None
+                for call_args in mock_signal.call_args_list:
+                    signal_num, handler_func = call_args[0]
+                    if signal_num == signal.SIGTERM:
+                        sigterm_handler = handler_func
+                        break
+
+                if sigterm_handler and callable(sigterm_handler):
+                    # First call should work
+                    sigterm_handler(signal.SIGTERM, None)
+                    self.assertEqual(mock_stop_all.call_count, 1)
+                    self.assertTrue(self.manager._shutdown_event.is_set())
+
+                    # Second call should be ignored due to shutdown event
+                    sigterm_handler(signal.SIGTERM, None)
+                    # stop_all should not be called again
+                    self.assertEqual(mock_stop_all.call_count, 1)
+                else:
+                    self.fail("SIGTERM handler not found or not callable")
+
+    def test_wait_for_all_respects_shutdown_event(self):
+        """Test that wait_for_all exits when shutdown event is set."""
+        # Register a long-running process
+        self.manager.register_process(
+            "long_running",
+            infinite_worker_function,
+            args=()
+        )
+        
+        # Start the process
+        self.assertTrue(self.manager.start_process("long_running"))
+        
+        # Set shutdown event in a separate thread after a short delay
+        def set_shutdown_after_delay():
+            time.sleep(0.5)
+            self.manager._shutdown_event.set()
+        
+        shutdown_thread = threading.Thread(target=set_shutdown_after_delay)
+        shutdown_thread.start()
+        
+        # wait_for_all should exit quickly due to shutdown event
+        start_time = time.time()
+        result = self.manager.wait_for_all(timeout=10)  # Long timeout, but should exit early
+        elapsed = time.time() - start_time
+        
+        # Should exit in less than 2 seconds due to shutdown event
+        self.assertTrue(result)
+        self.assertLess(elapsed, 2.0)
+        
+        # Clean up
+        shutdown_thread.join()
+        self.manager.stop_all()
+
+    def test_context_manager_avoids_duplicate_cleanup(self):
+        """Test that context manager exit doesn't duplicate cleanup if already shutting down."""
+        with patch.object(self.manager, "stop_all") as mock_stop_all:
+            # Simulate shutdown already in progress
+            self.manager._shutdown_event.set()
+            
+            # Context manager exit should not call stop_all again
+            self.manager.__exit__(None, None, None)
+            
+            mock_stop_all.assert_not_called()
+
+    def test_wait_for_all_exits_on_shutdown_event_quickly(self):
+        """Test that wait_for_all exits immediately when shutdown event is set."""
+        # Start a long-running process
+        self.manager.register_process(
+            "long_runner", 
+            infinite_worker_function
+        )
+        self.manager.start_process("long_runner")
+        
+        # Set shutdown event in a separate thread after a delay
+        def set_shutdown():
+            time.sleep(0.2)
+            self.manager._shutdown_event.set()
+        
+        shutdown_thread = threading.Thread(target=set_shutdown)
+        shutdown_thread.start()
+        
+        # wait_for_all should exit quickly due to shutdown event
+        start_time = time.time()
+        result = self.manager.wait_for_all(timeout=5.0)
+        elapsed = time.time() - start_time
+        
+        # Should exit in less than 1 second due to shutdown event
+        self.assertLess(elapsed, 1.0)
+        self.assertTrue(result)
+        
+        # Clean up
+        shutdown_thread.join()
+        self.manager.stop_all()
+
+    @patch('ff_logging.log')
+    @patch('ff_logging.log_debug')
+    def test_signal_handler_logging_messages(self, mock_log_debug, mock_log):
+        """Test that signal handler logs appropriate messages."""
+        self.manager.setup_signal_handlers()
+        
+        with patch.object(self.manager, "stop_all"):
+            # Use the handler function directly to test logging
+            with patch("signal.signal") as mock_signal:
+                self.manager._signal_handlers_set = False
+                self.manager.setup_signal_handlers()
+
+                # Get the handler function
+                sigterm_handler = None
+                for call_args in mock_signal.call_args_list:
+                    signal_num, handler_func = call_args[0]
+                    if signal_num == signal.SIGTERM:
+                        sigterm_handler = handler_func
+                        break
+
+                if sigterm_handler and callable(sigterm_handler):
+                    # First signal should log shutdown message
+                    sigterm_handler(signal.SIGTERM, None)
+                    mock_log.assert_called_with(
+                        "Received signal SIGTERM, initiating graceful shutdown...",
+                        "WARNING"
+                    )
+                    
+                    # Second signal should log ignore message
+                    sigterm_handler(signal.SIGTERM, None)
+                    mock_log_debug.assert_called_with("Signal already being handled, ignoring")
+
+    def test_signal_integration_with_real_child_processes(self):
+        """Integration test: signal handling with actual child processes."""
+        stop_event = mp.Event()
+        
+        # Register processes that will run until stopped
+        for i in range(3):
+            self.manager.register_process(
+                f"worker_{i}",
+                infinite_worker_function,
+                args=(stop_event,)
+            )
+        
+        # Start all processes
+        self.assertTrue(self.manager.start_all())
+        
+        # Verify all processes are running
+        time.sleep(0.2)
+        for i in range(3):
+            self.assertTrue(self.manager.processes[f"worker_{i}"].is_alive())
+        
+        # Setup signal handlers and simulate signal handling
+        self.manager.setup_signal_handlers()
+        
+        # Use threading to simulate signal arrival
+        def send_signal():
+            time.sleep(0.1)
+            self.manager._shutdown_event.set()
+            self.manager.stop_all()
+        
+        signal_thread = threading.Thread(target=send_signal)
+        signal_thread.start()
+        
+        # wait_for_all should exit quickly
+        start_time = time.time()
+        result = self.manager.wait_for_all(timeout=10.0)
+        elapsed = time.time() - start_time
+        
+        # Should complete shutdown in reasonable time
+        self.assertLess(elapsed, 3.0)
+        self.assertTrue(result)
+        
+        # Verify all processes are stopped
+        time.sleep(0.5)
+        for i in range(3):
+            self.assertFalse(self.manager.processes[f"worker_{i}"].is_alive())
+        
+        signal_thread.join()
+        stop_event.set()
+
 
 if __name__ == "__main__":
     unittest.main()
