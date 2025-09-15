@@ -213,8 +213,8 @@ jobs:
   # Third job: Build Docker - directly depend on both jobs
   build_docker:
     needs: [check_and_update, run_ci]
-    # Only run if both conditions are met: commit was made AND CI passed
-    if: needs.check_and_update.outputs.commit_sha != '' && needs.run_ci.result == 'success'
+    # Only run if commit was made (CI success is guaranteed by dependency)
+    if: needs.check_and_update.outputs.commit_sha != ''
     uses: ./.github/workflows/docker-image.yml 
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
