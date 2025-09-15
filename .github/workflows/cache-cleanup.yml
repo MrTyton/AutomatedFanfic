@@ -55,12 +55,12 @@ jobs:
             echo "🔍 DRY RUN MODE - No actual deletions will be performed"
           fi
           
-          # Get cache entries older than 7 days
-          SEVEN_DAYS_AGO=$(date -d '7 days ago' -u +%Y-%m-%dT%H:%M:%SZ)
-          echo "Targeting caches older than: $SEVEN_DAYS_AGO"
+          # Get cache entries older than 60 days
+          SIXTY_DAYS_AGO=$(date -d '60 days ago' -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "Targeting caches older than: $SIXTY_DAYS_AGO"
           
           # Parse and delete old caches
-          echo "$CACHES" | jq -r --arg cutoff "$SEVEN_DAYS_AGO" '
+          echo "$CACHES" | jq -r --arg cutoff "$SIXTY_DAYS_AGO" '
             .actions_caches[] | 
             select(.created_at < $cutoff) | 
             "\(.id) \(.key) \(.created_at) \(.size_in_bytes)"
@@ -290,7 +290,7 @@ jobs:
           
           echo ""
           echo "GitHub Actions Cleanup:"
-          echo "- Removes cache entries older than 7 days"
+          echo "- Removes cache entries older than 60 days"
           echo ""
           echo "Docker Hub Cleanup:"
           echo "- Removes cache/temporary tags older than 60 days"
