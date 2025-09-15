@@ -442,12 +442,12 @@ jobs:
           echo -e "${CHANGELOG_ENTRIES}" # Print for debugging using echo -e
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ env.SPECIFIC_VERSION }}
-          release_name: Release v${{ env.SPECIFIC_VERSION }}
+          name: Release v${{ env.SPECIFIC_VERSION }}
           body: |
             Automated release for version ${{ env.SPECIFIC_VERSION }}.
             Built from commit: ${{ needs.build_matrix.outputs.commit_sha }}
