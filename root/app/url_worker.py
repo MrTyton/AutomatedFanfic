@@ -3,12 +3,12 @@ Fanfiction Download Worker Processes for AutomatedFanfic
 
 This module implements the core fanfiction download and processing logic for the
 AutomatedFanfic application. It manages worker processes that consume URLs from
-queues, download fanfiction using FanFicFare, integrate with Calibre libraries,
-and handle retry logic with exponential backoff.
+queues, download fanfiction using FanFicFare's native Python API, integrate with 
+Calibre libraries, and handle retry logic with exponential backoff.
 
 Key Features:
     - Multiprocessing worker pools for concurrent fanfiction downloads
-    - FanFicFare CLI integration with dynamic command construction
+    - FanFicFare native Python API integration for improved performance
     - Calibre library integration for story management
     - Sophisticated retry logic with exponential backoff and "Hail-Mary" attempts
     - Temporary directory management for safe file operations
@@ -21,12 +21,17 @@ Architecture:
     and Calibre interactions, with sophisticated error handling and retry
     mechanisms to handle various failure scenarios.
 
+Performance Improvements:
+    The module now uses FanFicFare's native Python API instead of CLI subprocess
+    calls, providing better performance, enhanced error handling, and reduced
+    resource usage while maintaining full compatibility with existing configurations.
+
 Processing Flow:
     1. Worker retrieves FanficInfo from assigned queue
     2. Determines if story exists in Calibre (update vs. new download)
-    3. Constructs appropriate FanFicFare command based on configuration
+    3. Calls FanFicFare native Python API with appropriate configuration
     4. Downloads/updates story in temporary directory with config files
-    5. Parses FanFicFare output for success/failure/retry conditions
+    5. Processes FanFicFare result for success/failure/retry conditions
     6. Integrates successful downloads with Calibre library
     7. Sends notifications and handles retry logic for failures
 

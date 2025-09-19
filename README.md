@@ -1,7 +1,7 @@
 # AutomatedFanfic
-Automated Fanfiction Download using FanficFare CLI
+Automated Fanfiction Download using FanficFare Python API
 
-This is a docker image to run the Automated FFF CLI, with pushbullet integration.
+This is a docker image to run the Automated FFF downloader, with pushbullet integration.
 
 [FanFicFare](https://github.com/JimmXinu/FanFicFare)
 
@@ -29,6 +29,18 @@ This Docker image supports multi-platform deployment:
 - **linux/arm64** (ARM64): Uses system package manager Calibre installation
 
 The image automatically detects the target architecture during build and configures Calibre appropriately. Both platforms provide full functionality, though x86_64 may have slightly newer Calibre versions due to using official releases.
+
+## Architecture
+
+**Performance Improvements (v2024+):**
+AutomatedFanfic now uses FanFicFare's native Python API instead of CLI subprocess calls, providing:
+
+- **Better Performance**: Eliminates Python interpreter startup overhead for each download
+- **Enhanced Error Handling**: Direct access to FanFicFare's structured exception system  
+- **Improved Logging**: More detailed error messages and debugging information
+- **Resource Efficiency**: Reduced CPU and memory usage from subprocess elimination
+
+The system maintains full backward compatibility with existing configurations while delivering significant performance improvements, especially for high-volume download operations.
 
 ## Site Support
 
