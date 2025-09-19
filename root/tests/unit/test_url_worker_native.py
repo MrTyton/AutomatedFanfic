@@ -151,38 +151,6 @@ class TestUrlWorkerNativeIntegration(unittest.TestCase):
         call_args = mock_execute.call_args
         self.assertTrue(call_args.kwargs['update_always'])
 
-    def test_legacy_execute_command_still_works(self):
-        """Test that legacy execute_command function still works for backward compatibility."""
-        with patch('url_worker.check_output') as mock_check_output:
-            mock_check_output.return_value = b"test output"
-            
-            result = url_worker.execute_command("echo test")
-            
-            self.assertEqual(result, "test output")
-            mock_check_output.assert_called_once_with(
-                "echo test", shell=True, stderr=url_worker.STDOUT, stdin=url_worker.PIPE
-            )
-
-    def test_legacy_construct_fanficfare_command_still_works(self):
-        """Test that legacy construct_fanficfare_command function still works."""
-        result = url_worker.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.test_path_or_url
-        )
-        
-        expected = f'python -m fanficfare.cli -u "{self.test_path_or_url}" --update-cover --non-interactive'
-        self.assertEqual(result, expected)
-
-    def test_legacy_construct_fanficfare_command_force(self):
-        """Test legacy construct_fanficfare_command with force behavior."""
-        self.mock_fanfic.behavior = "force"
-        
-        result = url_worker.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.test_path_or_url
-        )
-        
-        expected = f'python -m fanficfare.cli --force "{self.test_path_or_url}" --update-cover --non-interactive'
-        self.assertEqual(result, expected)
-
 
 if __name__ == '__main__':
     unittest.main()

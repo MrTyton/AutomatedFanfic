@@ -28,6 +28,7 @@ import ff_waiter
 import regex_parsing
 import fanfic_info
 import calibre_info
+import fanficfare_wrapper
 import notification_wrapper
 from config_models import (
     AppConfig,
@@ -291,28 +292,29 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_fanfic.behavior = config_data["fanfic_behavior"]
         mock_fanfic.url = "http://test.site/story/123"
 
-        # Test command construction
-        command = url_worker.construct_fanficfare_command(
-            mock_cdb, mock_fanfic, "http://test.site/story/123"
+        # Test native API parameter conversion
+        force_requested = config_data["fanfic_behavior"] == "force"
+        update_mode, force, update_always = fanficfare_wrapper.get_update_mode_params(
+            config_data["update_method"], force_requested
         )
 
-        # Validate expected behaviors
+        # Validate expected behaviors based on native API parameters
         if expected_behavior == "normal_update":
-            self.assertIn(" -u ", command)
-            self.assertNotIn(" --force", command)
-            self.assertNotIn(" -U ", command)
+            self.assertEqual(update_mode, "update")
+            self.assertFalse(force)
+            self.assertFalse(update_always)
         elif expected_behavior == "force_update_always":
-            self.assertIn(" -U ", command)
-            self.assertNotIn(" --force", command)
-            self.assertNotIn(" -u ", command)
+            self.assertEqual(update_mode, "update")
+            self.assertFalse(force)
+            self.assertTrue(update_always)
         elif expected_behavior in ["force_update", "force_override"]:
-            self.assertIn(" --force", command)
-            self.assertNotIn(" -u ", command)
-            self.assertNotIn(" -U ", command)
+            self.assertEqual(update_mode, "force")
+            self.assertTrue(force)
+            self.assertFalse(update_always)
         elif expected_behavior in ["ignore_force", "ignore_force_behavior"]:
-            self.assertIn(" -u ", command)
-            self.assertNotIn(" --force", command)
-            self.assertNotIn(" -U ", command)
+            self.assertEqual(update_mode, "update")
+            self.assertFalse(force)
+            self.assertFalse(update_always)
 
     # Process Management Integration Tests
     @parameterized.expand(

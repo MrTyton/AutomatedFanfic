@@ -223,67 +223,6 @@ def get_path_or_url(
     return ff_info.url
 
 
-def construct_fanficfare_command(
-    cdb: calibre_info.CalibreInfo,
-    fanfic: fanfic_info.FanficInfo,
-    path_or_url: str,
-) -> str:
-    """
-    Legacy function for backwards compatibility with existing tests.
-    
-    This function is deprecated and should not be used in new code.
-    Use fanficfare_wrapper functions instead for better performance.
-
-    Args:
-        cdb (calibre_info.CalibreInfo): Calibre configuration
-        fanfic (fanfic_info.FanficInfo): Fanfiction object
-        path_or_url (str): File path or URL to process
-
-    Returns:
-        str: Complete FanFicFare command string ready for execution.
-    """
-    update_method = cdb.update_method
-    command = "python -m fanficfare.cli"
-
-    # Check if fanfiction specifically requests force behavior
-    force_requested = fanfic.behavior == "force"
-
-    # Determine appropriate update flag based on configuration and request
-    if update_method == "update_no_force":
-        # Special case: ignore all force requests and always use normal update
-        command += " -u"
-    elif force_requested or update_method == "force":
-        # Use force flag when explicitly requested or configured
-        command += " --force"
-    elif update_method == "update_always":
-        # Always perform full refresh of all chapters
-        command += " -U"
-    else:  # Default to 'update' behavior
-        # Normal update - only download new chapters
-        command += " -u"
-
-    # Add the target path/URL and standard options for automated operation
-    command += f' "{path_or_url}" --update-cover --non-interactive'
-    return command
-
-
-def execute_command(command: str) -> str:
-    """
-    Legacy function for backwards compatibility with existing tests.
-    
-    This function is deprecated and should not be used in new code.
-    Use execute_fanficfare_native() instead for better performance and error handling.
-
-    Args:
-        command (str): The command to execute.
-
-    Returns:
-        str: The output of the command.
-    """
-    ff_logging.log_debug(f"\tExecuting legacy command: {command}")
-    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
-
-
 def execute_fanficfare_native(
     cdb: calibre_info.CalibreInfo,
     fanfic: fanfic_info.FanficInfo,
