@@ -103,18 +103,18 @@ def process_fanfic(
         # Will log "Waiting ~18.3 minutes..." and schedule requeue in ~1098 seconds
     """
     retry_count = fanfic.repeats or 0  # Default to 0 if repeats is None
-    
+
     # Calculate gradual backoff with maximum cap of 20 minutes (1200 seconds)
     # 1 minute per retry: 1min, 2min, 3min, 4min, 5min... up to 20min
     base_delay = min(60 * retry_count, 1200)
-    
+
     # Add random jitter (±50% variation) to prevent thundering herd
     jitter_multiplier = random.uniform(0.5, 1.5)
     delay = int(base_delay * jitter_multiplier)
-    
+
     # Convert to minutes for cleaner logging
     delay_minutes = delay / 60.0
-    
+
     # Log the retry delay with warning level for visibility
     ff_logging.log(
         f"Waiting ~{delay_minutes:.1f} minutes for {fanfic.url} in queue {fanfic.site} "

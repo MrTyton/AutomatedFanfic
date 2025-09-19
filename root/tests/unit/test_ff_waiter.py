@@ -23,43 +23,43 @@ class TestWaitFunction(unittest.TestCase):
         [
             # Test case: retry_count=0, jitter=1.0 (no jitter)
             CheckTimerProcessingTestCase(
-                repeats=0, 
-                expected_base_delay=0, 
-                jitter_multiplier=1.0, 
+                repeats=0,
+                expected_base_delay=0,
+                jitter_multiplier=1.0,
                 expected_final_delay=0,
-                expected_log_message="Waiting ~0.0 minutes for url in queue site (retry #1, base: 0min, jitter: 1.00x)"
+                expected_log_message="Waiting ~0.0 minutes for url in queue site (retry #1, base: 0min, jitter: 1.00x)",
             ),
             # Test case: retry_count=1, jitter=1.0
             CheckTimerProcessingTestCase(
-                repeats=1, 
-                expected_base_delay=60, 
-                jitter_multiplier=1.0, 
+                repeats=1,
+                expected_base_delay=60,
+                jitter_multiplier=1.0,
                 expected_final_delay=60,
-                expected_log_message="Waiting ~1.0 minutes for url in queue site (retry #2, base: 1min, jitter: 1.00x)"
+                expected_log_message="Waiting ~1.0 minutes for url in queue site (retry #2, base: 1min, jitter: 1.00x)",
             ),
             # Test case: retry_count=5, jitter=0.5 (minimum jitter)
             CheckTimerProcessingTestCase(
-                repeats=5, 
-                expected_base_delay=300, 
-                jitter_multiplier=0.5, 
+                repeats=5,
+                expected_base_delay=300,
+                jitter_multiplier=0.5,
                 expected_final_delay=150,
-                expected_log_message="Waiting ~2.5 minutes for url in queue site (retry #6, base: 5min, jitter: 0.50x)"
+                expected_log_message="Waiting ~2.5 minutes for url in queue site (retry #6, base: 5min, jitter: 0.50x)",
             ),
             # Test case: retry_count=10, jitter=1.5 (maximum jitter)
             CheckTimerProcessingTestCase(
-                repeats=10, 
-                expected_base_delay=600, 
-                jitter_multiplier=1.5, 
+                repeats=10,
+                expected_base_delay=600,
+                jitter_multiplier=1.5,
                 expected_final_delay=900,
-                expected_log_message="Waiting ~15.0 minutes for url in queue site (retry #11, base: 10min, jitter: 1.50x)"
+                expected_log_message="Waiting ~15.0 minutes for url in queue site (retry #11, base: 10min, jitter: 1.50x)",
             ),
             # Test case: retry_count=25, should be capped at 20 minutes (1200 seconds)
             CheckTimerProcessingTestCase(
-                repeats=25, 
-                expected_base_delay=1200, 
-                jitter_multiplier=1.0, 
+                repeats=25,
+                expected_base_delay=1200,
+                jitter_multiplier=1.0,
                 expected_final_delay=1200,
-                expected_log_message="Waiting ~20.0 minutes for url in queue site (retry #26, base: 20min, jitter: 1.00x)"
+                expected_log_message="Waiting ~20.0 minutes for url in queue site (retry #26, base: 20min, jitter: 1.00x)",
             ),
         ]
     )
@@ -67,34 +67,42 @@ class TestWaitFunction(unittest.TestCase):
     @patch("ff_waiter.ff_logging.log")
     @patch("threading.Timer")
     @patch("random.uniform")
-    def test_wait_with_jitter(self, repeats, expected_base_delay, jitter_multiplier, 
-                             expected_final_delay, expected_log_message, mock_random, 
-                             mock_timer, mock_log):
+    def test_wait_with_jitter(
+        self,
+        repeats,
+        expected_base_delay,
+        jitter_multiplier,
+        expected_final_delay,
+        expected_log_message,
+        mock_random,
+        mock_timer,
+        mock_log,
+    ):
         # Mock the random jitter to return a predictable value
         mock_random.return_value = jitter_multiplier
-        
+
         fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=repeats)
         queue = mp.Queue()
         processor_queues = {"site": queue}
-        
+
         ff_waiter.process_fanfic(fanfic, processor_queues)
-        
+
         # Verify the logging was called with the expected message
         mock_log.assert_called_once_with(expected_log_message, "WARNING")
-        
+
         # Verify the timer was called with the correct delay
         mock_timer.assert_called_once_with(
             expected_final_delay, ff_waiter.insert_after_time, args=(queue, fanfic)
         )
         mock_timer.return_value.start.assert_called_once()
-        
+
         # Verify random.uniform was called with correct range (0.5, 1.5)
         mock_random.assert_called_once_with(0.5, 1.5)
 
 
 class TestDelayCalculation(unittest.TestCase):
     """Test the delay calculation logic separately for better coverage."""
-    
+
     class DelayCalculationTestCase(NamedTuple):
         retry_count: int
         expected_base_delay: int
@@ -107,24 +115,35 @@ class TestDelayCalculation(unittest.TestCase):
             DelayCalculationTestCase(5, 300, "Fifth retry should be 5 minutes"),
             DelayCalculationTestCase(10, 600, "Tenth retry should be 10 minutes"),
             DelayCalculationTestCase(15, 900, "Fifteenth retry should be 15 minutes"),
-            DelayCalculationTestCase(20, 1200, "Twentieth retry should be capped at 20 minutes"),
-            DelayCalculationTestCase(30, 1200, "Retry beyond 20 should still be capped at 20 minutes"),
-            DelayCalculationTestCase(100, 1200, "Very high retry count should still be capped"),
+            DelayCalculationTestCase(
+                20, 1200, "Twentieth retry should be capped at 20 minutes"
+            ),
+            DelayCalculationTestCase(
+                30, 1200, "Retry beyond 20 should still be capped at 20 minutes"
+            ),
+            DelayCalculationTestCase(
+                100, 1200, "Very high retry count should still be capped"
+            ),
         ]
     )
     @patch("random.uniform")
-    def test_base_delay_calculation(self, retry_count, expected_base_delay, description, mock_random):
+    def test_base_delay_calculation(
+        self, retry_count, expected_base_delay, description, mock_random
+    ):
         """Test that base delay calculation follows the expected linear progression with cap."""
         # Set jitter to 1.0 to isolate base delay testing
         mock_random.return_value = 1.0
-        
-        fanfic = fanfic_info.FanficInfo(site="test_site", url="test_url", repeats=retry_count)
-        
-        with patch("threading.Timer") as mock_timer, \
-             patch("ff_waiter.ff_logging.log") as mock_log:
-            
+
+        fanfic = fanfic_info.FanficInfo(
+            site="test_site", url="test_url", repeats=retry_count
+        )
+
+        with patch("threading.Timer") as mock_timer, patch(
+            "ff_waiter.ff_logging.log"
+        ) as mock_log:
+
             ff_waiter.process_fanfic(fanfic, {"test_site": mp.Queue()})
-            
+
             # Verify the timer was called with the expected base delay
             mock_timer.assert_called_once()
             actual_delay = mock_timer.call_args[0][0]  # First argument to Timer()
@@ -133,62 +152,73 @@ class TestDelayCalculation(unittest.TestCase):
 
 class TestJitterRange(unittest.TestCase):
     """Test that jitter is applied correctly within the expected range."""
-    
+
     @patch("threading.Timer")
     @patch("ff_waiter.ff_logging.log")
     @patch("random.uniform")
     def test_jitter_range(self, mock_random, mock_log, mock_timer):
         """Test that jitter produces delays within the expected range."""
-        fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=10)  # 10 minute base
+        fanfic = fanfic_info.FanficInfo(
+            site="site", url="url", repeats=10
+        )  # 10 minute base
         queue = mp.Queue()
         processor_queues = {"site": queue}
-        
+
         # Test multiple jitter values to ensure they all work
         test_jitter_values = [0.5, 0.75, 1.0, 1.25, 1.5]
-        
+
         for jitter in test_jitter_values:
             with self.subTest(jitter=jitter):
                 mock_random.return_value = jitter
                 mock_timer.reset_mock()
                 mock_log.reset_mock()
-                
+
                 ff_waiter.process_fanfic(fanfic, processor_queues)
-                
+
                 # Extract the delay that was passed to Timer
                 delay = mock_timer.call_args[0][0]
-                
+
                 # Base delay is 600 seconds (10 minutes)
                 # Expected delay = 600 * jitter
                 expected_delay = int(600 * jitter)
-                
-                self.assertEqual(delay, expected_delay, 
-                               f"Delay {delay} doesn't match expected {expected_delay} for jitter {jitter}")
-                
+
+                self.assertEqual(
+                    delay,
+                    expected_delay,
+                    f"Delay {delay} doesn't match expected {expected_delay} for jitter {jitter}",
+                )
+
                 # Verify the delay is within overall bounds
                 # With jitter 0.5-1.5, final delay should be 300-900 seconds
-                self.assertGreaterEqual(delay, 300, f"Delay {delay} is below minimum expected (300s)")
-                self.assertLessEqual(delay, 900, f"Delay {delay} is above maximum expected (900s)")
+                self.assertGreaterEqual(
+                    delay, 300, f"Delay {delay} is below minimum expected (300s)"
+                )
+                self.assertLessEqual(
+                    delay, 900, f"Delay {delay} is above maximum expected (900s)"
+                )
 
 
 class TestEdgeCases(unittest.TestCase):
     """Test edge cases and error conditions."""
-    
+
     @patch("threading.Timer")
     @patch("ff_waiter.ff_logging.log")
     @patch("random.uniform")
     def test_none_repeats(self, mock_random, mock_log, mock_timer):
         """Test that None repeats is handled correctly (defaults to 0)."""
         mock_random.return_value = 1.0
-        
+
         fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=None)
         queue = mp.Queue()
         processor_queues = {"site": queue}
-        
+
         ff_waiter.process_fanfic(fanfic, processor_queues)
-        
+
         # Should be treated as retry_count=0, so base_delay=0
-        mock_timer.assert_called_once_with(0, ff_waiter.insert_after_time, args=(queue, fanfic))
-        
+        mock_timer.assert_called_once_with(
+            0, ff_waiter.insert_after_time, args=(queue, fanfic)
+        )
+
         # Log should show retry #1 (retry_count + 1)
         expected_log = "Waiting ~0.0 minutes for url in queue site (retry #1, base: 0min, jitter: 1.00x)"
         mock_log.assert_called_once_with(expected_log, "WARNING")
