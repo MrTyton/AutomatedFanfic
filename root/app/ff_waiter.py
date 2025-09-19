@@ -29,6 +29,7 @@ Example:
 """
 
 import multiprocessing as mp
+import random
 import threading
 from time import sleep
 
@@ -69,14 +70,18 @@ def process_fanfic(
 ) -> None:
     """Processes a failed fanfiction by scheduling delayed retry via timer.
 
-    Implements exponential backoff delay calculation for failed fanfiction
-    downloads as part of the Hail-Mary protocol. Calculates retry delay based
-    on the fanfiction's repeat count, logs the delay information, and starts
-    a timer thread to requeue the fanfiction after the delay period.
+    Implements gradual backoff with random jitter for failed fanfiction
+    downloads as part of the Hail-Mary protocol. Calculates retry delay using
+    a gradual increase with jitter to prevent thundering herd effects when
+    multiple retries occur simultaneously.
 
-    The delay calculation uses a simple linear progression: delay = 60 * repeats,
-    where repeats indicates the number of previous retry attempts. This provides
-    increasing delays for repeated failures (1min, 2min, 3min, etc.).
+    The delay calculation uses gradual backoff with jitter:
+    base_delay = min(60 * retry_count, 1200)  # 1min per retry, capped at 20 minutes
+    jitter = random.uniform(0.5, 1.5)  # ±50% random jitter
+    final_delay = base_delay * jitter
+
+    This provides gradual growth (1min, 2min, 3min, 4min, 5min, etc.) up to
+    20 minutes maximum, with randomization to spread out retry attempts.
 
     Args:
         fanfic (fanfic_info.FanficInfo): The fanfiction metadata object containing
@@ -93,15 +98,27 @@ def process_fanfic(
         Multiple timers can run concurrently for different fanfictions.
 
     Example:
-        >>> fanfic = FanficInfo(url="...", repeats=3)  # 3rd retry
+        >>> fanfic = FanficInfo(url="...", repeats=10)  # 10th retry
         >>> process_fanfic(fanfic, {"archiveofourown.org": queue})
-        # Will log "Waiting 3 minutes..." and schedule requeue in 180 seconds
+        # Will log "Waiting ~18.3 minutes..." and schedule requeue in ~1098 seconds
     """
-    # Calculate exponential backoff delay: 60 seconds per retry attempt
-    delay = 60 * (fanfic.repeats or 0)  # Default to 0 minutes if repeats is None
+    retry_count = fanfic.repeats or 0  # Default to 0 if repeats is None
+    
+    # Calculate gradual backoff with maximum cap of 20 minutes (1200 seconds)
+    # 1 minute per retry: 1min, 2min, 3min, 4min, 5min... up to 20min
+    base_delay = min(60 * retry_count, 1200)
+    
+    # Add random jitter (±50% variation) to prevent thundering herd
+    jitter_multiplier = random.uniform(0.5, 1.5)
+    delay = int(base_delay * jitter_multiplier)
+    
+    # Convert to minutes for cleaner logging
+    delay_minutes = delay / 60.0
+    
     # Log the retry delay with warning level for visibility
     ff_logging.log(
-        f"Waiting {fanfic.repeats} minutes for {fanfic.url} in queue {fanfic.site}",
+        f"Waiting ~{delay_minutes:.1f} minutes for {fanfic.url} in queue {fanfic.site} "
+        f"(retry #{retry_count + 1}, base: {base_delay//60}min, jitter: {jitter_multiplier:.2f}x)",
         "WARNING",
     )
     # Create and start timer thread for delayed requeuing
