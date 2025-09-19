@@ -79,6 +79,7 @@ from time import sleep
 import calibre_info
 import calibredb_utils
 import fanfic_info
+import fanficfare_wrapper
 import ff_logging
 import notification_wrapper
 import regex_parsing
@@ -217,9 +218,56 @@ def get_path_or_url(
     return ff_info.url
 
 
+def construct_fanficfare_command(
+    cdb: calibre_info.CalibreInfo,
+    fanfic: fanfic_info.FanficInfo,
+    path_or_url: str,
+) -> str:
+    """
+    Legacy function for backwards compatibility with existing tests.
+    
+    This function is deprecated and should not be used in new code.
+    Use fanficfare_wrapper functions instead for better performance.
+
+    Args:
+        cdb (calibre_info.CalibreInfo): Calibre configuration
+        fanfic (fanfic_info.FanficInfo): Fanfiction object
+        path_or_url (str): File path or URL to process
+
+    Returns:
+        str: Complete FanFicFare command string ready for execution.
+    """
+    update_method = cdb.update_method
+    command = "python -m fanficfare.cli"
+
+    # Check if fanfiction specifically requests force behavior
+    force_requested = fanfic.behavior == "force"
+
+    # Determine appropriate update flag based on configuration and request
+    if update_method == "update_no_force":
+        # Special case: ignore all force requests and always use normal update
+        command += " -u"
+    elif force_requested or update_method == "force":
+        # Use force flag when explicitly requested or configured
+        command += " --force"
+    elif update_method == "update_always":
+        # Always perform full refresh of all chapters
+        command += " -U"
+    else:  # Default to 'update' behavior
+        # Normal update - only download new chapters
+        command += " -u"
+
+    # Add the target path/URL and standard options for automated operation
+    command += f' "{path_or_url}" --update-cover --non-interactive'
+    return command
+
+
 def execute_command(command: str) -> str:
     """
-    Executes a shell command and returns its output.
+    Legacy function for backwards compatibility with existing tests.
+    
+    This function is deprecated and should not be used in new code.
+    Use execute_fanficfare_native() instead for better performance and error handling.
 
     Args:
         command (str): The command to execute.
@@ -227,8 +275,44 @@ def execute_command(command: str) -> str:
     Returns:
         str: The output of the command.
     """
-    ff_logging.log_debug(f"\tExecuting command: {command}")
+    ff_logging.log_debug(f"\tExecuting legacy command: {command}")
     return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
+
+
+def execute_fanficfare_native(
+    cdb: calibre_info.CalibreInfo,
+    fanfic: fanfic_info.FanficInfo,
+    path_or_url: str,
+    temp_dir: str,
+) -> fanficfare_wrapper.FanFicFareResult:
+    """
+    Execute FanFicFare using native Python API instead of CLI subprocess.
+
+    Args:
+        cdb (calibre_info.CalibreInfo): Calibre configuration
+        fanfic (fanfic_info.FanficInfo): Fanfiction object with behavior settings
+        path_or_url (str): File path or URL to process
+        temp_dir (str): Working directory for temporary files
+
+    Returns:
+        FanFicFareResult: Result object with success status and output info
+    """
+    ff_logging.log_debug(f"\tExecuting FanFicFare native API for: {path_or_url}")
+    
+    # Convert configuration to native API parameters
+    update_mode, force, update_always = fanficfare_wrapper.get_update_mode_params(
+        cdb.update_method, fanfic.behavior == "force"
+    )
+    
+    return fanficfare_wrapper.execute_fanficfare(
+        url_or_path=path_or_url,
+        work_dir=temp_dir,
+        cdb=cdb,
+        update_mode=update_mode,
+        force=force,
+        update_always=update_always,
+        update_cover=True,  # Always update cover as per original CLI command
+    )
 
 
 def process_fanfic_addition(
@@ -295,87 +379,6 @@ def process_fanfic_addition(
         )
 
 
-def construct_fanficfare_command(
-    cdb: calibre_info.CalibreInfo,
-    fanfic: fanfic_info.FanficInfo,
-    path_or_url: str,
-) -> str:
-    """
-    Construct the appropriate FanFicFare CLI command based on configuration and fanfic state.
-
-    This function builds the FanFicFare command string dynamically based on the
-    Calibre configuration's update method and the fanfiction's requested behavior.
-    It handles various update strategies and configuration conflicts.
-
-    Args:
-        cdb (calibre_info.CalibreInfo): Calibre configuration containing the update_method
-                                       setting that controls how updates are performed.
-        fanfic (fanfic_info.FanficInfo): Fanfiction object that may have specific
-                                        behavior requests (e.g., "force" for forced updates).
-        path_or_url (str): The file path or URL that FanFicFare should process.
-
-    Returns:
-        str: Complete FanFicFare command string ready for execution.
-
-    Update Method Behavior:
-        - "update": Uses -u flag, respects force requests
-        - "update_always": Always uses -U flag for full refresh
-        - "force": Always uses --force flag
-        - "update_no_force": Uses -u flag, IGNORES all force requests
-
-    Command Flags:
-        - -u: Normal update, only downloads new chapters
-        - -U: Update always, re-downloads all chapters
-        - --force: Force update, bypasses most checks and restrictions
-        - --update-cover: Updates book cover art
-        - --non-interactive: Prevents interactive prompts
-
-    Example:
-        ```python
-        # Normal update
-        cmd = construct_fanficfare_command(calibre_info, fanfic, "story.epub")
-        # Returns: 'python -m fanficfare.cli -u "story.epub" --update-cover --non-interactive'
-
-        # Force update requested
-        fanfic.behavior = "force"
-        cmd = construct_fanficfare_command(calibre_info, fanfic, url)
-        # Returns: 'python -m fanficfare.cli --force "url" --update-cover --non-interactive'
-        ```
-
-    Configuration Conflicts:
-        When update_method is "update_no_force", any force requests are ignored
-        and a normal update (-u) is performed instead. This allows administrators
-        to disable force updates globally while maintaining normal update functionality.
-
-    Note:
-        The constructed command includes --non-interactive to prevent FanFicFare
-        from prompting for user input, which is essential for automated operation.
-    """
-    update_method = cdb.update_method
-    command = "python -m fanficfare.cli"
-
-    # Check if fanfiction specifically requests force behavior
-    force_requested = fanfic.behavior == "force"
-
-    # Determine appropriate update flag based on configuration and request
-    if update_method == "update_no_force":
-        # Special case: ignore all force requests and always use normal update
-        command += " -u"
-    elif force_requested or update_method == "force":
-        # Use force flag when explicitly requested or configured
-        command += " --force"
-    elif update_method == "update_always":
-        # Always perform full refresh of all chapters
-        command += " -U"
-    else:  # Default to 'update' behavior
-        # Normal update - only download new chapters
-        command += " -u"
-
-    # Add the target path/URL and standard options for automated operation
-    command += f' "{path_or_url}" --update-cover --non-interactive'
-    return command
-
-
 def url_worker(
     queue: mp.Queue,
     cdb: calibre_info.CalibreInfo,
@@ -386,9 +389,9 @@ def url_worker(
     Main worker function for processing fanfiction downloads in a dedicated process.
 
     This function implements the core download worker loop that processes FanficInfo
-    objects from a queue, downloads or updates stories using FanFicFare, integrates
-    them with Calibre libraries, and handles comprehensive error recovery with
-    retry logic.
+    objects from a queue, downloads or updates stories using FanFicFare's native
+    Python API (instead of CLI subprocess calls), integrates them with Calibre 
+    libraries, and handles comprehensive error recovery with retry logic.
 
     Args:
         queue (mp.Queue): Input queue containing FanficInfo objects to process.
@@ -404,16 +407,16 @@ def url_worker(
         1. Monitor queue for new FanficInfo objects
         2. Determine if story exists in Calibre (update vs. new download)
         3. Create temporary workspace with configuration files
-        4. Execute FanFicFare command with appropriate flags
-        5. Parse output for success/failure/retry conditions
+        4. Execute FanFicFare using native Python API with appropriate settings
+        5. Parse response for success/failure/retry conditions
         6. Integrate successful downloads with Calibre library
         7. Handle failures with sophisticated retry logic
         8. Send appropriate notifications for completion status
 
     Error Handling:
-        - Command execution failures: Logged and sent to failure handler
-        - Regex parsing: Detects permanent vs. retryable failures
-        - Force retry detection: Automatically retries with --force when appropriate
+        - Native API exceptions: Logged and sent to failure handler
+        - Result parsing: Detects permanent vs. retryable failures
+        - Force retry detection: Automatically retries with force when appropriate
         - Calibre integration: Verifies successful addition to library
 
     Temporary Directory Management:
@@ -422,36 +425,15 @@ def url_worker(
         - Calibre configuration files (defaults.ini, personal.ini)
         - Automatic cleanup regardless of success/failure
 
-    Example Usage:
-        ```python
-        # Typically run in separate process via ProcessManager
-        import multiprocessing as mp
-        
-        work_queue = mp.Queue()
-        retry_queue = mp.Queue()
-        calibre_config = CalibreInfo("/path/to/library")
-        notifier = NotificationWrapper(config)
-        
-        # This runs indefinitely until process termination
-        url_worker(work_queue, calibre_config, notifier, retry_queue)
-        ```
-
-    Infinite Loop:
-        This function runs indefinitely and should be executed in a separate
-        process. It only exits when the process is terminated externally or
-        the queue receives a None sentinel value.
+    Performance Improvements:
+        - Native Python API calls eliminate subprocess overhead
+        - Direct access to FanFicFare internals for better error reporting
+        - Reduced interpreter startup time for each download
 
     Thread Safety:
         Designed for multiprocessing environments. Each worker operates in
-        isolation with its own temporary workspace and Calibre connection.
+        isolation with its own temporary workspace and FanFicFare session.
         All inter-process communication occurs through thread-safe queues.
-
-    Configuration Awareness:
-        Respects all Calibre and FanFicFare configuration options including:
-        - update_method settings (update, update_always, force, update_no_force)
-        - Calibre library paths (local or server-based)
-        - Force request handling and conflicts
-        - Notification preferences
 
     Note:
         Workers sleep for 5 seconds when the queue is empty to reduce CPU
@@ -478,11 +460,6 @@ def url_worker(
             path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
-            # Build FanFicFare command based on configuration and fanfic state
-            base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
-            # Execute command in temporary directory context
-            command = f"cd {temp_dir} && {base_command}"
-
             try:
                 # Handle special case: force requested but update_no_force configured
                 if (
@@ -497,8 +474,15 @@ def url_worker(
                 # Set up temporary workspace with configuration files
                 system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
                 
-                # Execute FanFicFare download/update command
-                output = execute_command(command)
+                # Execute FanFicFare using native Python API
+                result = execute_fanficfare_native(cdb, fanfic, path_or_url, temp_dir)
+                
+                if not result.success:
+                    # Handle native API failure
+                    raise Exception(result.error_message or "FanFicFare operation failed")
+                
+                # Log successful operation
+                ff_logging.log_debug(f"\t({site}) Successfully processed {path_or_url}")
                 
             except Exception as e:
                 # Log execution failure and route to failure handler
@@ -509,12 +493,18 @@ def url_worker(
                 continue
 
             # Parse FanFicFare output for permanent failure conditions
-            if not regex_parsing.check_failure_regexes(output):
-                handle_failure(fanfic, notification_info, waiting_queue, cdb)
-                continue
+            # Note: With native API, we have structured result instead of text output
+            if result.error_message:
+                # Check if this is a retryable error based on error message patterns
+                if regex_parsing.check_failure_regexes(result.output_text):
+                    # This is a recoverable error, continue with force check
+                    pass
+                else:
+                    handle_failure(fanfic, notification_info, waiting_queue, cdb)
+                    continue
 
             # Check for conditions that can be resolved with force retry
-            if regex_parsing.check_forceable_regexes(output):
+            if regex_parsing.check_forceable_regexes(result.output_text):
                 # Set force behavior and re-queue for immediate retry
                 fanfic.behavior = "force"
                 queue.put(fanfic)
