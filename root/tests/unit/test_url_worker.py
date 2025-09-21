@@ -492,5 +492,256 @@ class TestUrlWorker(unittest.TestCase):
                 mock_notification_info.send_notification.assert_not_called()
 
 
+class TestUrlWorkerMainLoop(unittest.TestCase):
+    """Test the main url_worker() function loop that processes fanfics from queue."""
+
+    def setUp(self):
+        """Set up common mocks for url_worker main loop tests."""
+        self.mock_queue = MagicMock()
+        self.mock_cdb = MagicMock(spec=CalibreInfo)
+        self.mock_notification_info = MagicMock(spec=NotificationWrapper)
+        self.mock_waiting_queue = MagicMock()
+        
+        # Create test fanfic object
+        self.test_fanfic = MagicMock(spec=FanficInfo)
+        self.test_fanfic.site = "test_site"
+        self.test_fanfic.url = "http://example.com/story"
+        self.test_fanfic.behavior = "update"
+        
+        # Counter to track calls and exit after processing one item
+        self.call_count = 0
+
+    def create_queue_get_side_effect(self, fanfic_to_return):
+        """Create a side effect function that returns fanfic once then raises exception to exit."""
+        def queue_get_side_effect():
+            self.call_count += 1
+            if self.call_count == 1:
+                return fanfic_to_return
+            # After processing the fanfic, raise an exception to exit the infinite loop
+            raise KeyboardInterrupt("Test exit")
+        return queue_get_side_effect
+
+    @patch('url_worker.system_utils.temporary_directory')
+    @patch('url_worker.get_path_or_url')
+    @patch('url_worker.construct_fanficfare_command')
+    @patch('url_worker.ff_logging.log')
+    @patch('url_worker.handle_failure')
+    def test_url_worker_force_update_no_force_exception(
+        self,
+        mock_handle_failure,
+        mock_log,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+    ):
+        """Test exception handling for force request with update_no_force configuration."""
+        # Set up fanfic that requests force with update_no_force config
+        self.test_fanfic.behavior = "force"
+        self.mock_cdb.update_method = "update_no_force"
+        
+        # Set up queue behavior
+        self.mock_queue.empty.return_value = False
+        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(self.test_fanfic)
+        
+        # Set up temp directory and basic processing
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "test_file.epub"
+        mock_construct_cmd.return_value = "fanficfare command"
+        
+        # Mock logging failure to capture the specific error message
+        with patch('url_worker.ff_logging.log_failure') as mock_log_failure:
+            # Run worker - will exit with KeyboardInterrupt after processing
+            with self.assertRaises(KeyboardInterrupt):
+                url_worker.url_worker(
+                    self.mock_queue, self.mock_cdb, self.mock_notification_info, self.mock_waiting_queue
+                )
+            
+            # Verify that exception was triggered and failure handler called
+            mock_log_failure.assert_called_once_with(
+                "\t(test_site) Failed to update test_file.epub: Force update requested but update method is 'update_no_force'"
+            )
+            mock_handle_failure.assert_called_once_with(
+                self.test_fanfic, self.mock_notification_info, self.mock_waiting_queue, self.mock_cdb
+            )
+
+    @patch('url_worker.execute_command')
+    @patch('url_worker.system_utils.copy_configs_to_temp_dir')
+    @patch('url_worker.system_utils.temporary_directory')
+    @patch('url_worker.get_path_or_url')
+    @patch('url_worker.construct_fanficfare_command')
+    @patch('url_worker.ff_logging.log')
+    @patch('url_worker.handle_failure')
+    def test_url_worker_execute_command_exception(
+        self,
+        mock_handle_failure,
+        mock_log,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+        mock_copy_configs,
+        mock_execute,
+    ):
+        """Test exception handling when execute_command fails."""
+        # Set up queue behavior
+        self.mock_queue.empty.return_value = False
+        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(self.test_fanfic)
+        
+        # Set up temp directory and processing until execute_command
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "test_file.epub"
+        mock_construct_cmd.return_value = "fanficfare command"
+        mock_execute.side_effect = Exception("Command execution failed")
+        
+        # Mock logging failure to capture the specific error message
+        with patch('url_worker.ff_logging.log_failure') as mock_log_failure:
+            # Run worker - will exit with KeyboardInterrupt after processing
+            with self.assertRaises(KeyboardInterrupt):
+                url_worker.url_worker(
+                    self.mock_queue, self.mock_cdb, self.mock_notification_info, self.mock_waiting_queue
+                )
+            
+            # Verify that exception was caught and failure handler called
+            mock_log_failure.assert_called_once_with(
+                "\t(test_site) Failed to update test_file.epub: Command execution failed"
+            )
+            mock_handle_failure.assert_called_once_with(
+                self.test_fanfic, self.mock_notification_info, self.mock_waiting_queue, self.mock_cdb
+            )
+
+    @patch('url_worker.execute_command')
+    @patch('url_worker.system_utils.copy_configs_to_temp_dir')
+    @patch('url_worker.system_utils.temporary_directory')
+    @patch('url_worker.get_path_or_url')
+    @patch('url_worker.construct_fanficfare_command')
+    @patch('url_worker.regex_parsing.check_failure_regexes')
+    @patch('url_worker.ff_logging.log')
+    @patch('url_worker.handle_failure')
+    def test_url_worker_failure_regex_detection(
+        self,
+        mock_handle_failure,
+        mock_log,
+        mock_check_failure,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+        mock_copy_configs,
+        mock_execute,
+    ):
+        """Test failure detection via regex parsing."""
+        # Set up queue behavior
+        self.mock_queue.empty.return_value = False
+        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(self.test_fanfic)
+        
+        # Set up successful execution but failure regex detection
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "test_file.epub"
+        mock_construct_cmd.return_value = "fanficfare command"
+        mock_execute.return_value = "output with failure indicators"
+        mock_check_failure.return_value = False  # Failure detected
+        
+        # Run worker - will exit with KeyboardInterrupt after processing
+        with self.assertRaises(KeyboardInterrupt):
+            url_worker.url_worker(
+                self.mock_queue, self.mock_cdb, self.mock_notification_info, self.mock_waiting_queue
+            )
+        
+        # Verify failure handler was called due to regex detection
+        mock_handle_failure.assert_called_once_with(
+            self.test_fanfic, self.mock_notification_info, self.mock_waiting_queue, self.mock_cdb
+        )
+
+    @patch('url_worker.execute_command')
+    @patch('url_worker.system_utils.copy_configs_to_temp_dir')
+    @patch('url_worker.system_utils.temporary_directory')
+    @patch('url_worker.get_path_or_url')
+    @patch('url_worker.construct_fanficfare_command')
+    @patch('url_worker.regex_parsing.check_failure_regexes')
+    @patch('url_worker.regex_parsing.check_forceable_regexes')
+    @patch('url_worker.ff_logging.log')
+    def test_url_worker_force_retry_logic(
+        self,
+        mock_log,
+        mock_check_forceable,
+        mock_check_failure,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+        mock_copy_configs,
+        mock_execute,
+    ):
+        """Test force retry logic when forceable conditions are detected."""
+        # Set up queue behavior
+        self.mock_queue.empty.return_value = False
+        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(self.test_fanfic)
+        
+        # Set up successful execution with forceable condition
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "test_file.epub"
+        mock_construct_cmd.return_value = "fanficfare command"
+        mock_execute.return_value = "output with forceable condition"
+        mock_check_failure.return_value = True  # No permanent failure
+        mock_check_forceable.return_value = True  # Force retry needed
+        
+        # Run worker - will exit with KeyboardInterrupt after processing
+        with self.assertRaises(KeyboardInterrupt):
+            url_worker.url_worker(
+                self.mock_queue, self.mock_cdb, self.mock_notification_info, self.mock_waiting_queue
+            )
+        
+        # Verify fanfic was re-queued with force behavior
+        self.assertEqual(self.test_fanfic.behavior, "force")
+        self.mock_queue.put.assert_called_once_with(self.test_fanfic)
+
+    @patch('url_worker.process_fanfic_addition')
+    @patch('url_worker.execute_command')
+    @patch('url_worker.system_utils.copy_configs_to_temp_dir')
+    @patch('url_worker.system_utils.temporary_directory')
+    @patch('url_worker.get_path_or_url')
+    @patch('url_worker.construct_fanficfare_command')
+    @patch('url_worker.regex_parsing.check_failure_regexes')
+    @patch('url_worker.regex_parsing.check_forceable_regexes')
+    @patch('url_worker.ff_logging.log')
+    def test_url_worker_successful_processing(
+        self,
+        mock_log,
+        mock_check_forceable,
+        mock_check_failure,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+        mock_copy_configs,
+        mock_execute,
+        mock_process_addition,
+    ):
+        """Test successful processing path through url_worker."""
+        # Set up queue behavior
+        self.mock_queue.empty.return_value = False
+        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(self.test_fanfic)
+        
+        # Set up successful processing path
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "test_file.epub"
+        mock_construct_cmd.return_value = "fanficfare command"
+        mock_execute.return_value = "successful output"
+        mock_check_failure.return_value = True  # No failure
+        mock_check_forceable.return_value = False  # No force needed
+        
+        # Run worker - will exit with KeyboardInterrupt after processing
+        with self.assertRaises(KeyboardInterrupt):
+            url_worker.url_worker(
+                self.mock_queue, self.mock_cdb, self.mock_notification_info, self.mock_waiting_queue
+            )
+        
+        # Verify successful processing
+        mock_process_addition.assert_called_once_with(
+            self.test_fanfic,
+            self.mock_cdb,
+            "/tmp/test",
+            "test_site",
+            "test_file.epub",
+            self.mock_waiting_queue,
+            self.mock_notification_info,
+        )
+
 if __name__ == "__main__":
     unittest.main()
