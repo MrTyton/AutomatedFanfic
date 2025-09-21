@@ -117,7 +117,7 @@ def process_fanfic(
 
     # Log the retry delay with warning level for visibility
     ff_logging.log(
-        f"Waiting ~{delay_minutes:.1f} minutes for {fanfic.url} in queue {fanfic.site} "
+        f"Waiting ~{delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
         f"(retry #{retry_count + 1}, base: {base_delay//60}min, jitter: {jitter_multiplier:.2f}x)",
         "WARNING",
     )

@@ -27,7 +27,7 @@ class TestWaitFunction(unittest.TestCase):
                 expected_base_delay=0,
                 jitter_multiplier=1.0,
                 expected_final_delay=0,
-                expected_log_message="Waiting ~0.0 minutes for url in queue site (retry #1, base: 0min, jitter: 1.00x)",
+                expected_log_message="Waiting ~0.00 minutes for url in queue site (retry #1, base: 0min, jitter: 1.00x)",
             ),
             # Test case: retry_count=1, jitter=1.0
             CheckTimerProcessingTestCase(
@@ -35,7 +35,7 @@ class TestWaitFunction(unittest.TestCase):
                 expected_base_delay=60,
                 jitter_multiplier=1.0,
                 expected_final_delay=60,
-                expected_log_message="Waiting ~1.0 minutes for url in queue site (retry #2, base: 1min, jitter: 1.00x)",
+                expected_log_message="Waiting ~1.00 minutes for url in queue site (retry #2, base: 1min, jitter: 1.00x)",
             ),
             # Test case: retry_count=5, jitter=0.5 (minimum jitter)
             CheckTimerProcessingTestCase(
@@ -43,7 +43,7 @@ class TestWaitFunction(unittest.TestCase):
                 expected_base_delay=300,
                 jitter_multiplier=0.5,
                 expected_final_delay=150,
-                expected_log_message="Waiting ~2.5 minutes for url in queue site (retry #6, base: 5min, jitter: 0.50x)",
+                expected_log_message="Waiting ~2.50 minutes for url in queue site (retry #6, base: 5min, jitter: 0.50x)",
             ),
             # Test case: retry_count=10, jitter=1.5 (maximum jitter)
             CheckTimerProcessingTestCase(
@@ -51,7 +51,7 @@ class TestWaitFunction(unittest.TestCase):
                 expected_base_delay=600,
                 jitter_multiplier=1.5,
                 expected_final_delay=900,
-                expected_log_message="Waiting ~15.0 minutes for url in queue site (retry #11, base: 10min, jitter: 1.50x)",
+                expected_log_message="Waiting ~15.00 minutes for url in queue site (retry #11, base: 10min, jitter: 1.50x)",
             ),
             # Test case: retry_count=25, should be capped at 20 minutes (1200 seconds)
             CheckTimerProcessingTestCase(
@@ -59,7 +59,7 @@ class TestWaitFunction(unittest.TestCase):
                 expected_base_delay=1200,
                 jitter_multiplier=1.0,
                 expected_final_delay=1200,
-                expected_log_message="Waiting ~20.0 minutes for url in queue site (retry #26, base: 20min, jitter: 1.00x)",
+                expected_log_message="Waiting ~20.00 minutes for url in queue site (retry #26, base: 20min, jitter: 1.00x)",
             ),
         ]
     )
@@ -153,10 +153,46 @@ class TestDelayCalculation(unittest.TestCase):
 class TestJitterRange(unittest.TestCase):
     """Test that jitter is applied correctly within the expected range."""
 
+    class JitterRangeTestCase(NamedTuple):
+        jitter: float
+        expected_delay: int
+        description: str
+
+    @parameterized.expand(
+        [
+            JitterRangeTestCase(
+                jitter=0.5,
+                expected_delay=300,
+                description="Minimum jitter (0.5) should produce minimum delay",
+            ),
+            JitterRangeTestCase(
+                jitter=0.75,
+                expected_delay=450,
+                description="Mid-low jitter (0.75) should produce proportional delay",
+            ),
+            JitterRangeTestCase(
+                jitter=1.0,
+                expected_delay=600,
+                description="No jitter (1.0) should produce base delay",
+            ),
+            JitterRangeTestCase(
+                jitter=1.25,
+                expected_delay=750,
+                description="Mid-high jitter (1.25) should produce proportional delay",
+            ),
+            JitterRangeTestCase(
+                jitter=1.5,
+                expected_delay=900,
+                description="Maximum jitter (1.5) should produce maximum delay",
+            ),
+        ]
+    )
     @patch("threading.Timer")
     @patch("ff_waiter.ff_logging.log")
     @patch("random.uniform")
-    def test_jitter_range(self, mock_random, mock_log, mock_timer):
+    def test_jitter_range(
+        self, jitter, expected_delay, description, mock_random, mock_log, mock_timer
+    ):
         """Test that jitter produces delays within the expected range."""
         fanfic = fanfic_info.FanficInfo(
             site="site", url="url", repeats=10
@@ -164,38 +200,29 @@ class TestJitterRange(unittest.TestCase):
         queue = mp.Queue()
         processor_queues = {"site": queue}
 
-        # Test multiple jitter values to ensure they all work
-        test_jitter_values = [0.5, 0.75, 1.0, 1.25, 1.5]
+        mock_random.return_value = jitter
 
-        for jitter in test_jitter_values:
-            with self.subTest(jitter=jitter):
-                mock_random.return_value = jitter
-                mock_timer.reset_mock()
-                mock_log.reset_mock()
+        ff_waiter.process_fanfic(fanfic, processor_queues)
 
-                ff_waiter.process_fanfic(fanfic, processor_queues)
+        # Extract the delay that was passed to Timer
+        delay = mock_timer.call_args[0][0]
 
-                # Extract the delay that was passed to Timer
-                delay = mock_timer.call_args[0][0]
+        # Base delay is 600 seconds (10 minutes)
+        # Expected delay = 600 * jitter
+        self.assertEqual(
+            delay,
+            expected_delay,
+            f"Delay {delay} doesn't match expected {expected_delay} for jitter {jitter}: {description}",
+        )
 
-                # Base delay is 600 seconds (10 minutes)
-                # Expected delay = 600 * jitter
-                expected_delay = int(600 * jitter)
-
-                self.assertEqual(
-                    delay,
-                    expected_delay,
-                    f"Delay {delay} doesn't match expected {expected_delay} for jitter {jitter}",
-                )
-
-                # Verify the delay is within overall bounds
-                # With jitter 0.5-1.5, final delay should be 300-900 seconds
-                self.assertGreaterEqual(
-                    delay, 300, f"Delay {delay} is below minimum expected (300s)"
-                )
-                self.assertLessEqual(
-                    delay, 900, f"Delay {delay} is above maximum expected (900s)"
-                )
+        # Verify the delay is within overall bounds
+        # With jitter 0.5-1.5, final delay should be 300-900 seconds
+        self.assertGreaterEqual(
+            delay, 300, f"Delay {delay} is below minimum expected (300s): {description}"
+        )
+        self.assertLessEqual(
+            delay, 900, f"Delay {delay} is above maximum expected (900s): {description}"
+        )
 
 
 class TestEdgeCases(unittest.TestCase):
@@ -220,7 +247,7 @@ class TestEdgeCases(unittest.TestCase):
         )
 
         # Log should show retry #1 (retry_count + 1)
-        expected_log = "Waiting ~0.0 minutes for url in queue site (retry #1, base: 0min, jitter: 1.00x)"
+        expected_log = "Waiting ~0.00 minutes for url in queue site (retry #1, base: 0min, jitter: 1.00x)"
         mock_log.assert_called_once_with(expected_log, "WARNING")
 
 
