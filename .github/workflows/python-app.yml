@@ -8,6 +8,7 @@ on:
       - '*.py' # Python files in root
       - 'root/**/*.py' # Python files in root directory tree
       - 'requirements.txt' # Main requirements file
+      - 'requirements-dev.txt' # Development requirements file
       - 'release-versions/**' # Version files that affect builds
       - '.github/workflows/python-app.yml' # Run if the workflow itself changes
   pull_request:
@@ -16,6 +17,7 @@ on:
       - '*.py'
       - 'root/**/*.py'
       - 'requirements.txt'
+      - 'requirements-dev.txt'
       - 'release-versions/**'
       - '.github/workflows/python-app.yml'
   # workflow_call trigger remains unchanged and runs whenever called
@@ -45,6 +47,7 @@ jobs:
         python-version: "3.12"
         install-fanficfare: "false"  # Not needed for pre-commit
         install-dev-tools: "true"
+        requirements-file: "requirements-dev.txt"  # Need dev dependencies for pre-commit
 
     - name: Run pre-commit hooks
       run: |
@@ -68,6 +71,7 @@ jobs:
         python-version: "3.12"
         install-fanficfare: "false"  # Not needed for linting
         install-dev-tools: "true"
+        requirements-file: "requirements.txt"  # Only runtime dependencies needed for linting
 
     - name: Lint with flake8
       run: |
@@ -93,6 +97,7 @@ jobs:
         python-version: "3.12"
         install-fanficfare: "true"
         install-dev-tools: "true"
+        requirements-file: "requirements-dev.txt"  # Need dev dependencies for testing
 
     - name: Test with pytest
       id: pytest

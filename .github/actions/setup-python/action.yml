@@ -13,6 +13,10 @@ inputs:
     description: "Whether to install development tools (flake8, pytest)"
     required: false
     default: "true"
+  requirements-file:
+    description: "Requirements file to install (requirements.txt or requirements-dev.txt)"
+    required: false
+    default: "requirements-dev.txt"
 runs:
   using: "composite"
   steps:
@@ -25,9 +29,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py', 'release-versions/fanficfare.txt') }}-${{ inputs.python-version }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', '**/pyproject.toml', '**/setup.py', 'release-versions/fanficfare.txt') }}-${{ inputs.python-version }}
         restore-keys: |
-          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml', '**/setup.py') }}-${{ inputs.python-version }}
+          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', '**/pyproject.toml', '**/setup.py') }}-${{ inputs.python-version }}
           ${{ runner.os }}-pip-${{ inputs.python-version }}
           ${{ runner.os }}-pip-
 
@@ -43,12 +47,12 @@ runs:
           pip install flake8 pytest
         fi
 
-        # Install application requirements if the file exists
-        if [ -f requirements.txt ]; then
-          echo "Installing requirements from requirements.txt..."
-          pip install -r requirements.txt
+        # Install application requirements from the specified file
+        if [ -f "${{ inputs.requirements-file }}" ]; then
+          echo "Installing requirements from ${{ inputs.requirements-file }}..."
+          pip install -r "${{ inputs.requirements-file }}"
         else
-          echo "::warning::requirements.txt not found, skipping application dependencies"
+          echo "::warning::${{ inputs.requirements-file }} not found, skipping application dependencies"
         fi
 
     - name: Install FanFicFare from TestPyPI
