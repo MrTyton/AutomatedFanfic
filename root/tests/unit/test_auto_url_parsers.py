@@ -329,8 +329,7 @@ class TestAutoUrlParsers(unittest.TestCase):
                 match = pattern.match(example_url)
                 if match:
                     matched_site = site_id
-                    captured_group = match.group(1) if match.groups() else example_url
-                    prefix + captured_group
+                    match.group(1) if match.groups() else example_url
                     break
 
             self.assertIsNotNone(
