@@ -66,7 +66,8 @@ If the `update_method` is set to `"update_no_force"` and a force update is reque
 1. Make sure that you have calibre, and more importantly [calibredb](https://manual.calibre-ebook.com/generated/en/calibredb.html) installed on the system that you're running the script on. `calibredb` should be installed standard when you install calibre.
 2. Install [Python3](https://www.python.org/downloads/)
 3. Clone the Repo
-4. Run `python -m pip install -r requirements.txt`
+4. For production use: `python -m pip install -r requirements.txt`
+   For development (includes testing tools): `python -m pip install -r requirements-dev.txt`
 5. Install [FanficFare](https://github.com/JimmXinu/FanFicFare/wiki#command-line-interface-cli-version)
 6. Fill out the config.toml file
 7. Navigate to `root/app` and run `python fanficdownload.py`

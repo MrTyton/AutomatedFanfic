@@ -1,29 +1,43 @@
+# Production runtime dependencies for AutomatedFanfic
+# These are the core dependencies needed to run the application
+
+# Core notification and configuration libraries
 apprise==1.9.4
-beautifulsoup4==4.13.5
-Brotli==1.1.0
-certifi==2024.12.14
-chardet==5.2.0
-charset-normalizer==3.4.3
-cloudscraper==1.2.71
-freezegun==1.5.5
-html2text==2024.2.26
-html5lib==1.1
-idna==3.10
-parameterized==0.9.0
-pillow==11.3.0
-pre-commit==4.3.0
-pushbullet.py==0.12.0
 pydantic==2.11.9
 pydantic-settings==2.10.1
-pyparsing==3.2.5
-python-dateutil==2.9.0.post0
-python-magic==0.4.27
+
+# HTTP requests and web scraping
 requests==2.32.5
 requests-file==2.1.0
 requests-toolbelt==1.0.0
-setuptools==78.1.1
-six==1.17.0
+cloudscraper==1.2.71
+pushbullet.py==0.12.0
+
+# HTML parsing and processing
+beautifulsoup4==4.13.5
+html2text==2024.2.26
+html5lib==1.1
 soupsieve==2.8
-urllib3==2.5.0
+
+# Text encoding and character detection
+chardet==5.2.0
+charset-normalizer==3.4.3
 webencodings==0.5.1
+
+# Network and security
+certifi==2024.12.14
+idna==3.10
+urllib3==2.5.0
 websocket-client==1.8.0
+
+# Image processing (for cover images)
+pillow==11.3.0
+
+# File type detection and compression
+python-magic==0.4.27
+Brotli==1.1.0
+
+# Date/time handling and utilities
+python-dateutil==2.9.0.post0
+six==1.17.0
+pyparsing==3.2.5

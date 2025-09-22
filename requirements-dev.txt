@@ -1,0 +1,17 @@
+# Development dependencies for AutomatedFanfic
+# These dependencies are needed for testing, development, and CI
+
+# Include all runtime dependencies
+-r requirements.txt
+
+# Testing framework and utilities
+freezegun==1.5.5
+parameterized==0.9.0
+
+# Code quality and pre-commit hooks
+pre-commit==4.3.0
+black>=25.9.0
+ruff>=0.13.1
+
+# Build tools (may be needed for some development scenarios)
+setuptools==78.1.1
