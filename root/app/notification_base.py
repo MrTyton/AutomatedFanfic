@@ -78,6 +78,7 @@ class NotificationBase:
         ...         # Send email notification
         ...         return True
     """
+
     def __init__(self, toml_path: str, sleep_time: int = 10) -> None:
         """Initializes the notification base class with configuration loading.
 
@@ -186,9 +187,10 @@ def retry_decorator(func: Callable) -> Callable:
         ... def send_push_notification(title, body, site):
         ...     # Attempt to send notification
         ...     return success_status  # True/False
-        >>> 
+        >>>
         >>> send_push_notification("Title", "Body", "site")  # Auto-retries on failure
     """
+
     def wrapper(*args: Any, **kwargs: Any) -> None:
         # Attempt notification with progressive retry delays
         for attempt in range(kMaxAttempts):

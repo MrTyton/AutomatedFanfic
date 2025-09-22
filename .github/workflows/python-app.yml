@@ -30,6 +30,29 @@ permissions:
   contents: read # Needed to checkout the code
 
 jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        # Checkout the specific SHA if triggered by workflow_call, otherwise default behavior
+        ref: ${{ github.event_name == 'workflow_call' && inputs.commit_sha || github.ref }}
+
+    - name: Setup Python Environment
+      uses: ./.github/actions/setup-python
+      with:
+        python-version: "3.12"
+        install-fanficfare: "false"  # Not needed for pre-commit
+        install-dev-tools: "true"
+
+    - name: Run pre-commit hooks
+      run: |
+        echo "Installing pre-commit..."
+        pip install pre-commit
+        echo "Running pre-commit on all files..."
+        pre-commit run --all-files
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -76,14 +99,14 @@ jobs:
       run: |
         echo "Discovering Python test files..."
         find . -name "*_test.py" -o -name "test_*.py" | head -10
-        
+
         echo "Running pytest..."
         # Create directory for test results if it doesn't exist
         mkdir -p junit
-        
+
         # Run pytest with verbose output and capture results, excluding CI-flaky tests
         pytest --junitxml=junit/test-results.xml --verbose --tb=short -m "not flaky_ci"
-        
+
         # Verify test results were generated
         if [ -f junit/test-results.xml ]; then
           echo "Test results saved to junit/test-results.xml"
@@ -106,9 +129,9 @@ jobs:
       # Always run this step to upload results even if tests fail
       if: always()
 
-  # Summary job that depends on both lint and test
+  # Summary job that depends on pre-commit, lint and test
   build:
-    needs: [lint, test]
+    needs: [pre-commit, lint, test]
     runs-on: ubuntu-latest
     steps:
     - name: All checks passed

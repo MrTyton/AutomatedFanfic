@@ -15,16 +15,12 @@ import time
 import multiprocessing as mp
 import tempfile
 import os
-import signal
-import threading
-from unittest.mock import patch, MagicMock, Mock, call
+from unittest.mock import patch, MagicMock
 from parameterized import parameterized
 from typing import Dict, Any
 
 import fanficdownload
 import url_worker
-import url_ingester
-import ff_waiter
 import regex_parsing
 import fanfic_info
 import calibre_info
@@ -33,8 +29,6 @@ from config_models import (
     AppConfig,
     EmailConfig,
     CalibreConfig,
-    PushbulletConfig,
-    AppriseConfig,
     ProcessConfig,
     ConfigManager,
 )

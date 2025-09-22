@@ -21,7 +21,6 @@ multiprocessing system and Calibre library operations, ensuring proper authentic
 and configuration consistency across all worker processes.
 """
 
-import multiprocessing as mp
 import os
 from subprocess import call
 import ff_logging  # Custom logging module for failure logging

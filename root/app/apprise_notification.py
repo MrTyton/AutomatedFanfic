@@ -222,7 +222,7 @@ class AppriseNotification(notification_base.NotificationBase):
         # Get current target count for logging (URLs already added in __init__)
         urls_list = list(self.apobj.urls())
         target_count = len(urls_list)
-        
+
         # Attempt to send notification to all configured targets
         if self.apobj.notify(body=body, title=title):
             ff_logging.log(

@@ -1,4 +1,4 @@
-from typing import NamedTuple, Optional, Type
+from typing import NamedTuple
 import unittest
 from unittest.mock import call, MagicMock, patch
 
@@ -64,9 +64,7 @@ class TestNotificationWrapper(unittest.TestCase):
         wrapper.send_notification(title, body, site)
 
         # Assertion: Check that the correct number of calls were made
-        self.assertEqual(
-            mock_executor_instance.submit.call_count, expected_calls
-        )
+        self.assertEqual(mock_executor_instance.submit.call_count, expected_calls)
         for mock_worker in mock_workers:
             if mock_worker.enabled:
                 mock_executor_instance.submit.assert_any_call(
@@ -77,6 +75,7 @@ class TestNotificationWrapper(unittest.TestCase):
                     call(mock_worker.send_notification, title, body, site),
                     mock_executor_instance.submit.call_args_list,
                 )
+
 
 if __name__ == "__main__":
     unittest.main()

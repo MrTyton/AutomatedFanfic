@@ -14,7 +14,6 @@ This approach leverages all existing CLI logic while avoiding subprocess overhea
 
 import io
 import os
-import sys
 import logging
 from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import dataclass
@@ -22,7 +21,6 @@ from typing import Optional, List
 
 import fanficfare.cli as cli
 import fanficfare.exceptions as exceptions
-import fanficfare.adapters as adapters
 
 import ff_logging
 import calibre_info

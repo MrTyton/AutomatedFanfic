@@ -92,16 +92,12 @@ class TestFanficInfo(unittest.TestCase):
 
     @patch("fanfic_info.check_output")
     @patch("fanfic_info.ff_logging.log")
-    def test_get_id_from_calibredb_success(
-        self, mock_ff_logger, mock_check_output
-    ):
+    def test_get_id_from_calibredb_success(self, mock_ff_logger, mock_check_output):
         """Test successfully finding the ID in Calibre."""
         mock_check_output.return_value = b" 1234 \n"  # Simulate Calibre output
         calibre_information = Mock()
         calibre_information.lock = MagicMock()
-        calibre_information.__str__ = Mock(
-            return_value="--with-library test_library"
-        )
+        calibre_information.__str__ = Mock(return_value="--with-library test_library")
 
         result = self.fanfic_info.get_id_from_calibredb(calibre_information)
 
@@ -120,16 +116,12 @@ class TestFanficInfo(unittest.TestCase):
 
     @patch("fanfic_info.check_output")
     @patch("fanfic_info.ff_logging.log")
-    def test_get_id_from_calibredb_not_found(
-        self, mock_ff_logger, mock_check_output
-    ):
+    def test_get_id_from_calibredb_not_found(self, mock_ff_logger, mock_check_output):
         """Test when the story is not found in Calibre."""
         mock_check_output.side_effect = CalledProcessError(1, "cmd", output=b"")
         calibre_information = Mock()
         calibre_information.lock = MagicMock()
-        calibre_information.__str__ = Mock(
-            return_value="--with-library test_library"
-        )
+        calibre_information.__str__ = Mock(return_value="--with-library test_library")
         # Reset calibre_id to simulate not finding it initially
         self.fanfic_info.calibre_id = None
 
@@ -160,9 +152,7 @@ class TestFanficInfo(unittest.TestCase):
         [
             CheckEqualityTestCase(
                 name="equal_same_attributes",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
                 obj2=FanficInfo(
                     url="https://a.com/1", site="s1", calibre_id="1", title="T"
                 ),
@@ -170,59 +160,37 @@ class TestFanficInfo(unittest.TestCase):
             ),
             CheckEqualityTestCase(
                 name="equal_none_calibre_id",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id=None
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id=None
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id=None),
+                obj2=FanficInfo(url="https://a.com/1", site="s1", calibre_id=None),
                 expected_equality=True,
             ),
             CheckEqualityTestCase(
                 name="not_equal_different_url",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/2", site="s1", calibre_id="1"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/2", site="s1", calibre_id="1"),
                 expected_equality=False,
             ),
             CheckEqualityTestCase(
                 name="not_equal_different_site",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s2", calibre_id="1"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/1", site="s2", calibre_id="1"),
                 expected_equality=False,
             ),
             CheckEqualityTestCase(
                 name="not_equal_different_calibre_id",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="2"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/1", site="s1", calibre_id="2"),
                 expected_equality=False,
             ),
             CheckEqualityTestCase(
                 name="not_equal_one_none_calibre_id",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id=None
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/1", site="s1", calibre_id=None),
                 expected_equality=False,
             ),
             CheckEqualityTestCase(
                 name="not_equal_different_type",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
                 obj2="not a fanfic info",
                 expected_equality=False,
             ),
@@ -274,52 +242,32 @@ class TestFanficInfo(unittest.TestCase):
             ),
             CheckHashTestCase(
                 name="equal_hash_none_calibre_id",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id=None
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id=None
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id=None),
+                obj2=FanficInfo(url="https://a.com/1", site="s1", calibre_id=None),
                 expected_hash_equality=True,
             ),
             CheckHashTestCase(
                 name="not_equal_hash_different_url",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/2", site="s1", calibre_id="1"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/2", site="s1", calibre_id="1"),
                 expected_hash_equality=False,
             ),
             CheckHashTestCase(
                 name="not_equal_hash_different_site",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s2", calibre_id="1"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/1", site="s2", calibre_id="1"),
                 expected_hash_equality=False,
             ),
             CheckHashTestCase(
                 name="not_equal_hash_different_calibre_id",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="2"
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/1", site="s1", calibre_id="2"),
                 expected_hash_equality=False,
             ),
             CheckHashTestCase(
                 name="not_equal_hash_one_none_calibre_id",
-                obj1=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id="1"
-                ),
-                obj2=FanficInfo(
-                    url="https://a.com/1", site="s1", calibre_id=None
-                ),
+                obj1=FanficInfo(url="https://a.com/1", site="s1", calibre_id="1"),
+                obj2=FanficInfo(url="https://a.com/1", site="s1", calibre_id=None),
                 expected_hash_equality=False,
             ),
         ]

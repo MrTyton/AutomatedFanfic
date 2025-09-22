@@ -70,7 +70,7 @@ jobs:
         run: |
           COMMIT_TO_CHECKOUT=""
           EVENT_NAME="${{ github.event_name }}"
-          INPUT_SHA="${{ inputs.commit_sha || '' }}" 
+          INPUT_SHA="${{ inputs.commit_sha || '' }}"
 
           echo "Event Name: $EVENT_NAME"
           echo "Input SHA (from inputs context): $INPUT_SHA"
@@ -81,7 +81,7 @@ jobs:
           elif [ "$EVENT_NAME" == "workflow_run" ]; then
             COMMIT_TO_CHECKOUT="${{ github.event.workflow_run.head_sha }}"
             echo "Using commit SHA from workflow_run event: $COMMIT_TO_CHECKOUT"
-            
+
             if [ -z "$COMMIT_TO_CHECKOUT" ]; then
               echo "::warning::workflow_run.head_sha is empty, falling back to github.sha"
               COMMIT_TO_CHECKOUT="${{ github.sha }}"
@@ -89,7 +89,7 @@ jobs:
           elif [ "$EVENT_NAME" == "workflow_dispatch" ]; then
             DISPATCH_REF="${{ github.event.inputs.ref || github.ref_name }}"
             echo "Attempting checkout for workflow_dispatch (ref: $DISPATCH_REF)..."
-            git clone $GITHUB_SERVER_URL/$GITHUB_REPOSITORY . 
+            git clone $GITHUB_SERVER_URL/$GITHUB_REPOSITORY .
             git checkout $DISPATCH_REF
             COMMIT_TO_CHECKOUT=$(git rev-parse HEAD)
             echo "Using commit SHA for workflow_dispatch (ref: $DISPATCH_REF): $COMMIT_TO_CHECKOUT"
@@ -120,18 +120,18 @@ jobs:
         run: |
           echo "Current HEAD commit: $(git rev-parse HEAD)"
           echo "Expected commit SHA: ${{ steps.get_sha.outputs.commit_sha }}"
-          
+
           echo "Recent commit history:"
           git log --oneline -5
-          
+
           echo "Files changed in current commit:"
           git diff --name-only HEAD~1 HEAD || echo "Could not get diff"
-          
+
           # Check if latest.txt changed in the current commit
           if git diff --name-only HEAD~1 HEAD | grep -q '^release-versions/latest\.txt$'; then
             echo "Changes detected in release-versions/latest.txt"
             echo "changed=true" >> $GITHUB_OUTPUT
-            
+
             echo "Changes in release-versions/latest.txt:"
             git diff HEAD~1 HEAD -- 'release-versions/latest.txt' || echo "Could not show diff"
           else
@@ -147,7 +147,7 @@ jobs:
           echo "Build decision factors:"
           echo "  Event: ${{ github.event_name }}"
           echo "  File changed (workflow_run only): ${{ steps.check_file.outputs.changed }}"
-          
+
           SHOULD_BUILD="false"
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             SHOULD_BUILD="true"
@@ -161,10 +161,10 @@ jobs:
           else
             echo "  Decision: SKIP (no version changes detected)"
           fi
-          
+
           echo "  Final decision: $SHOULD_BUILD"
           echo "build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
-          
+
           if [ "$SHOULD_BUILD" == "true" ]; then
             echo "Proceeding with Docker build..."
           else
@@ -228,12 +228,12 @@ jobs:
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
-          
+
           # Set outputs for the merge job
           echo "specific_version=$SPECIFIC_VERSION" >> $GITHUB_OUTPUT
           echo "calibre_version=$CALIBRE_VERSION" >> $GITHUB_OUTPUT
           echo "fanficfare_version=$FANFICFARE_VERSION" >> $GITHUB_OUTPUT
-          
+
           # Create platform-specific tags
           PLATFORM_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}-${{ steps.platform.outputs.arch }}"
           echo "PLATFORM_TAG=$PLATFORM_TAG" >> $GITHUB_ENV
@@ -346,21 +346,21 @@ jobs:
           SPECIFIC_VERSION="${{ needs.build_matrix.outputs.specific_version }}"
           CALIBRE_VERSION="${{ needs.build_matrix.outputs.calibre_version }}"
           FANFICFARE_VERSION="${{ needs.build_matrix.outputs.fanficfare_version }}"
-          
+
           echo "Using version from build job: $SPECIFIC_VERSION"
           echo "Using Calibre version from build job: $CALIBRE_VERSION"
           echo "Using FanFicFare version from build job: $FANFICFARE_VERSION"
-          
+
           echo "SPECIFIC_VERSION=$SPECIFIC_VERSION" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
-          
+
           # Create final tags
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
-          
+
           # Create final tags
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
@@ -370,18 +370,18 @@ jobs:
           # Create manifest list combining both platform images
           AMD64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-amd64"
           ARM64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-arm64"
-          
+
           # Verify that both platform images exist before creating manifest
           echo "Verifying AMD64 image exists..."
           docker buildx imagetools inspect $AMD64_TAG || { echo "AMD64 image not found: $AMD64_TAG"; exit 1; }
-          
+
           echo "Verifying ARM64 image exists..."
           docker buildx imagetools inspect $ARM64_TAG || { echo "ARM64 image not found: $ARM64_TAG"; exit 1; }
-          
+
           echo "Both platform images verified. Creating manifest for version ${{ env.SPECIFIC_VERSION }}"
           docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }} \
             $AMD64_TAG $ARM64_TAG
-          
+
           echo "Creating manifest for latest tag"
           docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest \
             $AMD64_TAG $ARM64_TAG

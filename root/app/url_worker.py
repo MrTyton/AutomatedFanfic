@@ -42,13 +42,13 @@ Example:
     import multiprocessing as mp
     from url_worker import url_worker
     from calibre_info import CalibreInfo
-    
+
     # Set up worker process
     queue = mp.Queue()
     calibre_info = CalibreInfo("/path/to/library")
     notification_wrapper = NotificationWrapper(config)
     waiting_queue = mp.Queue()
-    
+
     # Start worker (typically in separate process)
     url_worker(queue, calibre_info, notification_wrapper, waiting_queue)
     ```
@@ -136,7 +136,7 @@ def handle_failure(
     """
     # Check current retry status and determine next action
     maximum_repeats, hail_mary = fanfic.reached_maximum_repeats()
-    
+
     if maximum_repeats and not hail_mary:
         # First time reaching maximum attempts - activate Hail-Mary protocol
         ff_logging.log_failure(
@@ -426,12 +426,12 @@ def url_worker(
         ```python
         # Typically run in separate process via ProcessManager
         import multiprocessing as mp
-        
+
         work_queue = mp.Queue()
         retry_queue = mp.Queue()
         calibre_config = CalibreInfo("/path/to/library")
         notifier = NotificationWrapper(config)
-        
+
         # This runs indefinitely until process termination
         url_worker(work_queue, calibre_config, notifier, retry_queue)
         ```
@@ -473,7 +473,7 @@ def url_worker(
         with system_utils.temporary_directory() as temp_dir:
             site = fanfic.site
             ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
-            
+
             # Determine if this is an update (existing file) or new download (URL)
             path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
@@ -496,10 +496,10 @@ def url_worker(
 
                 # Set up temporary workspace with configuration files
                 system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
-                
+
                 # Execute FanFicFare download/update command
                 output = execute_command(command)
-                
+
             except Exception as e:
                 # Log execution failure and route to failure handler
                 ff_logging.log_failure(

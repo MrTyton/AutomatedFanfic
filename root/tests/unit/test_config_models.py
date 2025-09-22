@@ -1,10 +1,9 @@
 import unittest
 from unittest.mock import patch, mock_open
-from typing import NamedTuple, Any, Dict, Optional
+from typing import NamedTuple, Optional
 from parameterized import parameterized
 import tempfile
 import os
-from pydantic import ValidationError
 
 from config_models import (
     ConfigManager,

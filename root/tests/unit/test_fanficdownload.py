@@ -6,9 +6,8 @@ configuration loading, process management initialization, and shutdown handling.
 """
 
 import unittest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import sys
-import argparse
 from pathlib import Path
 from typing import NamedTuple
 from parameterized import parameterized
@@ -16,8 +15,8 @@ from parameterized import parameterized
 # Add the app directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "app"))
 
-import fanficdownload
-from config_models import AppConfig, ConfigError, ConfigValidationError
+import fanficdownload  # noqa: E402
+from config_models import AppConfig, ConfigError, ConfigValidationError  # noqa: E402
 
 
 class TestFanficDownloadMain(unittest.TestCase):
@@ -172,9 +171,6 @@ class TestFanficDownloadMain(unittest.TestCase):
                     mock_cdb.check_installed.assert_called_once()
 
                     # Verify process registration calls
-                    expected_calls = (
-                        3  # email_watcher, waiting_watcher, and 2 worker processes
-                    )
                     self.assertEqual(mock_pm_instance.register_process.call_count, 4)
 
                     # Verify process manager lifecycle

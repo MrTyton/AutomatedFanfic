@@ -1,7 +1,6 @@
 from parameterized import parameterized
 from unittest.mock import MagicMock, patch
 import unittest
-import os
 from pydantic import ValidationError
 
 

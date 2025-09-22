@@ -1,7 +1,7 @@
 import multiprocessing as mp
 from typing import NamedTuple
 import unittest
-from unittest.mock import patch, Mock, call
+from unittest.mock import patch, call
 
 
 from freezegun import freeze_time
@@ -138,10 +138,7 @@ class TestDelayCalculation(unittest.TestCase):
             site="test_site", url="test_url", repeats=retry_count
         )
 
-        with patch("threading.Timer") as mock_timer, patch(
-            "ff_waiter.ff_logging.log"
-        ) as mock_log:
-
+        with patch("threading.Timer") as mock_timer, patch("ff_waiter.ff_logging.log"):
             ff_waiter.process_fanfic(fanfic, {"test_site": mp.Queue()})
 
             # Verify the timer was called with the expected base delay

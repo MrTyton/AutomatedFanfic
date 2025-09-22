@@ -2,11 +2,9 @@ from parameterized import parameterized
 import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
-import time
 
 
 from url_ingester import EmailInfo, email_watcher
-from notification_wrapper import NotificationWrapper
 from fanfic_info import FanficInfo
 from config_models import (
     AppConfig,

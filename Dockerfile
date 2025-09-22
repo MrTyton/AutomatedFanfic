@@ -102,7 +102,7 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     echo "*** Removing unnecessary Calibre components ***" && \
     # Remove GUI applications (keep calibredb)
     rm -f /opt/calibre/calibre /opt/calibre/ebook-viewer /opt/calibre/ebook-edit 2>/dev/null || true && \
-    # Remove conversion tools  
+    # Remove conversion tools
     rm -f /opt/calibre/ebook-convert /opt/calibre/ebook-meta /opt/calibre/ebook-polish 2>/dev/null || true && \
     # Remove other command-line tools we don't use
     rm -f /opt/calibre/calibre-server /opt/calibre/calibre-smtp /opt/calibre/web2disk 2>/dev/null || true && \

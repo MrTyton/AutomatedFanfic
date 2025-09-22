@@ -1,7 +1,6 @@
 import re
 import unittest
 from typing import NamedTuple
-from urllib.parse import urlparse
 
 from parameterized import parameterized
 import fanficfare.adapters as adapters
@@ -325,14 +324,13 @@ class TestAutoUrlParsers(unittest.TestCase):
 
             # Find the matching pattern
             matched_site = None
-            captured_url = None
 
             for site_id, (pattern, prefix) in self.url_parsers.items():
                 match = pattern.match(example_url)
                 if match:
                     matched_site = site_id
                     captured_group = match.group(1) if match.groups() else example_url
-                    captured_url = prefix + captured_group
+                    prefix + captured_group
                     break
 
             self.assertIsNotNone(
@@ -581,7 +579,7 @@ class TestAutoUrlParsers(unittest.TestCase):
 
                 # Test that pattern can be used for searching without crashing
                 test_url = f"https://example.{site}/test"
-                match_result = pattern.search(test_url)
+                pattern.search(test_url)
                 # Don't require a match, just that search doesn't crash
 
             except Exception as e:
@@ -698,8 +696,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
 
     def test_regex_compilation_failure(self):
         """Test handling of regex compilation failures."""
-        from unittest.mock import patch, MagicMock
-        import re
+        from unittest.mock import patch
 
         # Create a site that will cause regex compilation to fail
         mock_examples = [
@@ -712,7 +709,6 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
                 "auto_url_parsers._generate_pattern_and_prefix",
                 return_value=("*invalid_regex[", "example.com"),
             ):
-
                 # Capture print output to verify warning message
                 with patch("builtins.print") as mock_print:
                     parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
