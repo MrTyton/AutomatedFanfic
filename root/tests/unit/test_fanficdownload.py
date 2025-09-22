@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch, mock_open
 import sys
 import argparse
 from pathlib import Path
+from typing import NamedTuple
+from parameterized import parameterized
 
 # Add the app directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "app"))
@@ -57,38 +59,45 @@ class TestFanficDownloadMain(unittest.TestCase):
         # Set up top-level config
         self.mock_config.max_workers = 4
 
-    def test_parse_arguments_defaults(self):
-        """Test parse_arguments with default values."""
-        # Mock sys.argv to simulate no command line arguments
-        with patch('sys.argv', ['fanficdownload.py']):
-            args = fanficdownload.parse_arguments()
-            
-        self.assertEqual(args.config, "../config.default/config.toml")
-        self.assertFalse(args.verbose)
+    class ParseArgumentsTestCase(NamedTuple):
+        name: str
+        sys_argv: list[str]
+        expected_config: str
+        expected_verbose: bool
 
-    def test_parse_arguments_custom_config(self):
-        """Test parse_arguments with custom config path."""
-        with patch('sys.argv', ['fanficdownload.py', '--config', '/custom/config.toml']):
+    @parameterized.expand([
+        (
+            "defaults",
+            ['fanficdownload.py'],
+            "../config.default/config.toml",
+            False
+        ),
+        (
+            "custom_config",
+            ['fanficdownload.py', '--config', '/custom/config.toml'],
+            "/custom/config.toml",
+            False
+        ),
+        (
+            "verbose_flag",
+            ['fanficdownload.py', '--verbose'],
+            "../config.default/config.toml",
+            True
+        ),
+        (
+            "both_flags",
+            ['fanficdownload.py', '--config', '/test/config.toml', '--verbose'],
+            "/test/config.toml",
+            True
+        ),
+    ])
+    def test_parse_arguments(self, name, sys_argv, expected_config, expected_verbose):
+        """Test parse_arguments with various argument combinations."""
+        with patch('sys.argv', sys_argv):
             args = fanficdownload.parse_arguments()
             
-        self.assertEqual(args.config, "/custom/config.toml")
-        self.assertFalse(args.verbose)
-
-    def test_parse_arguments_verbose_flag(self):
-        """Test parse_arguments with verbose flag."""
-        with patch('sys.argv', ['fanficdownload.py', '--verbose']):
-            args = fanficdownload.parse_arguments()
-            
-        self.assertEqual(args.config, "../config.default/config.toml")
-        self.assertTrue(args.verbose)
-
-    def test_parse_arguments_both_flags(self):
-        """Test parse_arguments with both custom config and verbose flag."""
-        with patch('sys.argv', ['fanficdownload.py', '--config', '/test/config.toml', '--verbose']):
-            args = fanficdownload.parse_arguments()
-            
-        self.assertEqual(args.config, "/test/config.toml")
-        self.assertTrue(args.verbose)
+        self.assertEqual(args.config, expected_config)
+        self.assertEqual(args.verbose, expected_verbose)
 
     @patch('fanficdownload.ProcessManager')
     @patch('fanficdownload.notification_wrapper.NotificationWrapper')

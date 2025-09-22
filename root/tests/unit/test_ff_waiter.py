@@ -275,11 +275,11 @@ class TestInsertAfterTime(unittest.TestCase):
         fanfic = fanfic_info.FanficInfo(site="another_site", url="another_url")
 
         ff_waiter.insert_after_time(queue, fanfic)
-        
+
         # Get the item
         retrieved_fanfic = queue.get(timeout=1)
         self.assertEqual(retrieved_fanfic, fanfic)
-        
+
         # Queue should now be empty
         self.assertTrue(queue.empty())
 
@@ -293,7 +293,7 @@ class TestWaitProcessor(unittest.TestCase):
         """Test that wait_processor processes fanfics from the waiting queue."""
         waiting_queue = mp.Queue()
         processor_queues = {"test_site": mp.Queue()}
-        
+
         # Add a fanfic and then poison pill to stop the loop
         fanfic = fanfic_info.FanficInfo(site="test_site", url="test_url")
         waiting_queue.put(fanfic)
@@ -304,7 +304,7 @@ class TestWaitProcessor(unittest.TestCase):
 
         # Verify process_fanfic was called with the correct arguments
         mock_process_fanfic.assert_called_once_with(fanfic, processor_queues)
-        
+
         # Verify sleep was called
         mock_sleep.assert_called_with(5)
 
@@ -314,7 +314,7 @@ class TestWaitProcessor(unittest.TestCase):
         """Test that wait_processor stops when receiving None (poison pill)."""
         waiting_queue = mp.Queue()
         processor_queues = {"test_site": mp.Queue()}
-        
+
         # Add only poison pill - should stop immediately
         waiting_queue.put(None)
 
@@ -323,7 +323,7 @@ class TestWaitProcessor(unittest.TestCase):
 
         # Verify process_fanfic was never called
         mock_process_fanfic.assert_not_called()
-        
+
         # Verify sleep was never called (no processing iteration)
         mock_sleep.assert_not_called()
 
@@ -333,12 +333,12 @@ class TestWaitProcessor(unittest.TestCase):
         """Test that wait_processor handles multiple fanfics before shutdown."""
         waiting_queue = mp.Queue()
         processor_queues = {"site1": mp.Queue(), "site2": mp.Queue()}
-        
+
         # Add multiple fanfics and then poison pill
         fanfic1 = fanfic_info.FanficInfo(site="site1", url="url1")
         fanfic2 = fanfic_info.FanficInfo(site="site2", url="url2")
         fanfic3 = fanfic_info.FanficInfo(site="site1", url="url3")
-        
+
         waiting_queue.put(fanfic1)
         waiting_queue.put(fanfic2)
         waiting_queue.put(fanfic3)
@@ -351,11 +351,11 @@ class TestWaitProcessor(unittest.TestCase):
         expected_calls = [
             call(fanfic1, processor_queues),
             call(fanfic2, processor_queues),
-            call(fanfic3, processor_queues)
+            call(fanfic3, processor_queues),
         ]
         mock_process_fanfic.assert_has_calls(expected_calls)
         self.assertEqual(mock_process_fanfic.call_count, 3)
-        
+
         # Verify sleep was called 3 times (once per fanfic)
         self.assertEqual(mock_sleep.call_count, 3)
         mock_sleep.assert_called_with(5)
