@@ -106,13 +106,10 @@ class TestProcessManager(unittest.TestCase):
             max_workers=2,
         )
 
-        # Mock ConfigManager and get_config to return the test config
+        # Mock ConfigManager to return the test config
         with patch.object(ConfigManager, "load_config", return_value=self.config):
-            with patch("process_manager.get_config", return_value=self.config):
-                # Provide the config directly to the ProcessManager
-                self.manager = ProcessManager(config=self.config)
-                self.manager.config = self.config  # Ensure config is set
-                self.manager.process_config = self.config.process
+            # Provide the config directly to the ProcessManager
+            self.manager = ProcessManager(config=self.config)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -435,8 +432,7 @@ class TestProcessManagerMonitoring(unittest.TestCase):
         )
 
         with patch.object(ConfigManager, "load_config", return_value=self.config):
-            with patch("process_manager.get_config", return_value=self.config):
-                self.manager = ProcessManager(config=self.config)
+            self.manager = ProcessManager(config=self.config)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -487,8 +483,7 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
         )
 
         with patch.object(ConfigManager, "load_config", return_value=self.config):
-            with patch("process_manager.get_config", return_value=self.config):
-                self.manager = ProcessManager(config=self.config)
+            self.manager = ProcessManager(config=self.config)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -497,9 +492,8 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
 
     def test_process_manager_no_config(self):
         """Test ProcessManager initialization without configuration."""
-        with patch("process_manager.get_config", return_value=None):
-            with self.assertRaises(ValueError):
-                ProcessManager()
+        with self.assertRaises(ValueError):
+            ProcessManager()
 
     def test_start_process_exception(self):
         """Test handling of exception during process start."""
