@@ -99,6 +99,15 @@ ENV/
 # mypy
 .mypy_cache/
 
+# Ruff
+.ruff_cache/
+
+# pytest
+.pytest_cache/
+
+# Black
+.black/
+
 # Code Counter
 .VSCodeCounter/
 
