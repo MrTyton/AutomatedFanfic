@@ -142,7 +142,7 @@ The system can automatically trigger force updates in certain circumstances, reg
    - If `update_method` is `"update_always"`: Uses `-U` flag
    - Default: Uses `-u` flag for normal updates
 
-3. **Special Cases**: 
+3. **Special Cases**:
    - When `update_method` is `"update_no_force"` and a force is requested, the force is ignored and a normal update (`-u`) is performed instead
    - If the final Hail-Mary attempt fails under these conditions, a special notification explains that the force request was ignored
 

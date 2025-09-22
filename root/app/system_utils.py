@@ -20,13 +20,13 @@ Design Philosophy:
 Example:
     ```python
     from system_utils import temporary_directory, get_files
-    
+
     # Safe temporary directory usage
     with temporary_directory() as temp_dir:
         # Directory automatically deleted when context exits
         epub_files = get_files(temp_dir, "epub", return_full_path=True)
         process_files(epub_files)
-    
+
     # Directory is guaranteed to be cleaned up
     ```
 
@@ -70,9 +70,9 @@ def temporary_directory():
             temp_file = os.path.join(temp_dir, "work.txt")
             with open(temp_file, "w") as f:
                 f.write("temporary work")
-            
+
             # Process files...
-            
+
         # temp_dir is automatically deleted here
         ```
 
@@ -146,7 +146,7 @@ def get_files(directory_path, file_extension=None, return_full_path=False):
     """
     # Initialize list to collect matching files
     files = []
-    
+
     # Scan all items in the specified directory
     for file in os.listdir(directory_path):
         # Build complete path for proper file type checking
@@ -180,9 +180,9 @@ def copy_configs_to_temp_dir(cdb: calibre_info.CalibreInfo, temp_dir: str) -> No
     Example:
         ```python
         from calibre_info import CalibreInfo
-        
+
         calibre_info = CalibreInfo(library_path="/path/to/library")
-        
+
         with temporary_directory() as temp_dir:
             copy_configs_to_temp_dir(calibre_info, temp_dir)
             # temp_dir now contains defaults.ini and personal.ini if they exist
@@ -205,7 +205,7 @@ def copy_configs_to_temp_dir(cdb: calibre_info.CalibreInfo, temp_dir: str) -> No
     # Copy default configuration if it exists
     if cdb.default_ini:
         shutil.copyfile(cdb.default_ini, os.path.join(temp_dir, "defaults.ini"))
-    
+
     # Copy personal configuration if it exists
     if cdb.personal_ini:
         shutil.copyfile(cdb.personal_ini, os.path.join(temp_dir, "personal.ini"))

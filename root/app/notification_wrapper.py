@@ -33,7 +33,6 @@ from typing import List
 from concurrent.futures import ThreadPoolExecutor
 from apprise_notification import AppriseNotification
 import ff_logging
-from config_models import ConfigManager, ConfigError, ConfigValidationError
 
 
 class NotificationWrapper:
@@ -59,6 +58,7 @@ class NotificationWrapper:
         >>> wrapper = NotificationWrapper("config.toml")
         >>> wrapper.send_notification("Title", "Message", "site")
     """
+
     def __init__(self, toml_path: str = "/config/config.toml") -> None:
         """Initializes the notification wrapper and its notification workers.
 

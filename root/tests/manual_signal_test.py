@@ -19,16 +19,13 @@ and observe the output.
 import sys
 import os
 import time
-import signal
-import multiprocessing as mp
 
 # Add the app directory to the path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 app_dir = os.path.join(os.path.dirname(current_dir), "app")
 sys.path.insert(0, app_dir)
 
-import ff_logging
-from config_models import (
+from config_models import (  # noqa: E402
     AppConfig,
     ProcessConfig,
     EmailConfig,
@@ -36,7 +33,7 @@ from config_models import (
     PushbulletConfig,
     AppriseConfig,
 )
-from process_manager import ProcessManager
+from process_manager import ProcessManager  # noqa: E402
 
 
 def simple_worker(worker_id, duration=60):

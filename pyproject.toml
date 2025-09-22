@@ -15,3 +15,17 @@ markers = [
     "integration: Integration tests",
     "slow: Slow running tests"
 ]
+
+[tool.ruff]
+line-length = 88
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+]
+ignore = [
+    "E501",  # Line too long (handled by black when possible)
+]
+
+[tool.black]
+line-length = 88

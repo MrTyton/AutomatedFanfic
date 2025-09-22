@@ -46,29 +46,29 @@ jobs:
         id: check_updates
         run: |
           echo "Checking dependency versions..."
-          
+
           # Initialize change flags
           echo "fff_changed=false" >> $GITHUB_OUTPUT
           echo "calibre_changed=false" >> $GITHUB_OUTPUT
           echo "any_changed=false" >> $GITHUB_OUTPUT
           echo "fff_new_version=" >> $GITHUB_OUTPUT
           echo "calibre_new_version=" >> $GITHUB_OUTPUT
-          
+
           # Read current versions
           CURRENT_FFF_VERSION=$(cat release-versions/fanficfare.txt)
           CURRENT_CALIBRE_VERSION=$(cat release-versions/calibre.txt)
-          
+
           # Validate files exist and have content
           if [ ! -f "release-versions/fanficfare.txt" ] || [ -z "$CURRENT_FFF_VERSION" ]; then
             echo "::error::fanficfare.txt not found or empty"
             exit 1
           fi
-          
+
           if [ ! -f "release-versions/calibre.txt" ] || [ -z "$CURRENT_CALIBRE_VERSION" ]; then
             echo "::error::calibre.txt not found or empty"
             exit 1
           fi
-          
+
           echo "Current FanFicFare version: $CURRENT_FFF_VERSION"
           echo "Current Calibre version: $CURRENT_CALIBRE_VERSION"
 
@@ -76,21 +76,21 @@ jobs:
           echo "Fetching FanFicFare version information..."
           FFF_INDEX_URL="https://test.pypi.org/simple/fanficfare/"
           FFF_PAGE=$(curl -sSfL "$FFF_INDEX_URL" 2>/dev/null)
-          
+
           if [ $? -ne 0 ] || [ -z "$FFF_PAGE" ]; then
             echo "::error::Failed to fetch FanFicFare index from $FFF_INDEX_URL"
             exit 1
           fi
-          
+
           LATEST_FFF_VERSION=$(echo "$FFF_PAGE" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
-          
+
           if [ -z "$LATEST_FFF_VERSION" ]; then
             echo "::error::Could not determine the latest FanFicFare version"
             exit 1
           fi
-          
+
           echo "Latest FanFicFare version: $LATEST_FFF_VERSION"
-          
+
           if [ "$LATEST_FFF_VERSION" != "$CURRENT_FFF_VERSION" ]; then
             echo "FanFicFare update detected: $CURRENT_FFF_VERSION -> $LATEST_FFF_VERSION"
             echo "$LATEST_FFF_VERSION" > release-versions/fanficfare.txt
@@ -132,7 +132,7 @@ jobs:
           else
             echo "Calibre is up to date"
           fi
-          
+
           # Set combined flag
           if [ "$LATEST_FFF_VERSION" != "$CURRENT_FFF_VERSION" ] || [ "$LATEST_CALIBRE_VERSION" != "$CURRENT_CALIBRE_VERSION" ]; then
             echo "any_changed=true" >> $GITHUB_OUTPUT
@@ -155,7 +155,7 @@ jobs:
           echo "✅ Version updated by bump-version action"
           echo "Old version: ${{ steps.update_latest_txt.outputs.old-version }}"
           echo "New version: ${{ steps.update_latest_txt.outputs.new-version }}"
-          
+
           # Verification that the action worked correctly
           echo "Verification:"
           grep "__version__" root/app/fanficdownload.py
@@ -215,7 +215,7 @@ jobs:
     needs: [check_and_update, run_ci]
     # Only run if commit was made (CI success is guaranteed by dependency)
     if: needs.check_and_update.outputs.commit_sha != ''
-    uses: ./.github/workflows/docker-image.yml 
+    uses: ./.github/workflows/docker-image.yml
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Pass all secrets to the called workflow

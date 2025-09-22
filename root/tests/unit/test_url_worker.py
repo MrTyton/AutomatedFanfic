@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
 from subprocess import STDOUT, PIPE
@@ -8,9 +8,6 @@ import url_worker
 from fanfic_info import FanficInfo
 from calibre_info import CalibreInfo
 from notification_wrapper import NotificationWrapper
-import ff_logging
-import regex_parsing
-import system_utils
 from typing import NamedTuple, Optional
 
 

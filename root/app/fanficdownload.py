@@ -33,8 +33,6 @@ Repository: https://github.com/MrTyton/AutomatedFanfic
 import argparse
 import multiprocessing as mp
 import sys
-import time
-from typing import Any
 import ff_logging  # Custom logging module for formatted logging
 
 import calibre_info

@@ -1,12 +1,8 @@
 import unittest
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, MagicMock
 
 from apprise_notification import AppriseNotification
-from notification_wrapper import NotificationWrapper
 from parameterized import parameterized
-import notification_base
-import apprise_notification
-import io
 from config_models import (
     AppConfig,
     AppriseConfig,
@@ -17,7 +13,6 @@ from config_models import (
 
 
 class TestAppriseNotification(unittest.TestCase):
-
     @parameterized.expand(
         [
             ("single_url", ["url1"], ["url1"]),

@@ -59,18 +59,18 @@ runs:
         if [ -f "release-versions/fanficfare.txt" ]; then
           FANFICFARE_VERSION=$(cat release-versions/fanficfare.txt)
           echo "Target FanFicFare version: $FANFICFARE_VERSION"
-          
+
           echo "Installing FanFicFare==$FANFICFARE_VERSION from TestPyPI..."
           python -m pip install --no-cache-dir -i https://test.pypi.org/simple/ "FanFicFare==$FANFICFARE_VERSION"
-          
+
           echo "Verifying FanFicFare installation..."
           # FanFicFare stores version in cli.py, not in __version__
           INSTALLED_VERSION=$(python -c "import fanficfare.cli as cli; print(cli.version)" 2>/dev/null || \
                              python -c "import importlib.metadata; print(importlib.metadata.version('FanFicFare'))" 2>/dev/null || \
                              echo "unknown")
-          
+
           echo "Installed FanFicFare version: $INSTALLED_VERSION"
-          
+
           # Verify the version matches
           if [ "$INSTALLED_VERSION" = "$FANFICFARE_VERSION" ]; then
             echo "✅ FanFicFare version matches expected version"

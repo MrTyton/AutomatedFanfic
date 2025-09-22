@@ -46,28 +46,28 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           echo "🧹 Starting GitHub Actions cache cleanup..."
-          
+
           # Get all cache entries
           echo "Fetching cache entries..."
           CACHES=$(gh api repos/${{ github.repository }}/actions/caches --paginate)
-          
+
           if [ "$DRY_RUN" = "true" ]; then
             echo "🔍 DRY RUN MODE - No actual deletions will be performed"
           fi
-          
+
           # Get cache entries older than 60 days
           SIXTY_DAYS_AGO=$(date -d '60 days ago' -u +%Y-%m-%dT%H:%M:%SZ)
           echo "Targeting caches older than: $SIXTY_DAYS_AGO"
-          
+
           # Parse and delete old caches
           echo "$CACHES" | jq -r --arg cutoff "$SIXTY_DAYS_AGO" '
-            .actions_caches[] | 
-            select(.created_at < $cutoff) | 
+            .actions_caches[] |
+            select(.created_at < $cutoff) |
             "\(.id) \(.key) \(.created_at) \(.size_in_bytes)"
           ' | while read -r cache_id cache_key created_at size_bytes; do
             size_mb=$((size_bytes / 1024 / 1024))
             echo "📦 Cache: $cache_key (ID: $cache_id, Created: $created_at, Size: ${size_mb}MB)"
-            
+
             if [ "$DRY_RUN" = "true" ]; then
               echo "   [DRY RUN] Would delete cache ID: $cache_id"
             else
@@ -77,7 +77,7 @@ jobs:
               }
             fi
           done
-          
+
           # Show summary
           if [ "$DRY_RUN" = "true" ]; then
             echo "✅ Dry run completed - no actual changes made"
@@ -97,10 +97,10 @@ jobs:
         run: |
           KEEP_VERSIONS=${{ github.event.inputs.keep_versions || '5' }}
           CURRENT_VERSION=$(cat release-versions/latest.txt)
-          
+
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "keep_versions=$KEEP_VERSIONS" >> $GITHUB_OUTPUT
-          
+
           echo "Current version: $CURRENT_VERSION"
           echo "Will keep the latest $KEEP_VERSIONS versions"
 
@@ -111,24 +111,24 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           echo "🐳 Starting Docker Hub cleanup..."
-          
+
           if [ "$DRY_RUN" = "true" ]; then
             echo "🔍 DRY RUN MODE - No actual deletions will be performed"
           fi
-          
+
           # Get Docker Hub token
           echo "Authenticating with Docker Hub..."
           TOKEN_RESPONSE=$(curl -s -X POST \
             -H "Content-Type: application/json" \
             -d "{\"username\":\"$DOCKERHUB_USER\",\"password\":\"$DOCKERHUB_PASSWORD\"}" \
             https://hub.docker.com/v2/users/login/)
-          
+
           TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token')
           if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
             echo "❌ Failed to authenticate with Docker Hub"
             exit 1
           fi
-          
+
           echo "✅ Successfully authenticated with Docker Hub"
           echo "DOCKER_TOKEN=$TOKEN" >> $GITHUB_ENV
 
@@ -140,68 +140,68 @@ jobs:
           KEEP_VERSIONS: ${{ steps.versions.outputs.keep_versions }}
         run: |
           echo "📋 Fetching Docker Hub tags..."
-          
+
           # Get all tags from Docker Hub with pagination
           ALL_TAGS=""
           PAGE=1
           while true; do
             TAGS_RESPONSE=$(curl -s -H "Authorization: JWT $DOCKER_TOKEN" \
               "https://hub.docker.com/v2/repositories/${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}/tags/?page_size=100&page=$PAGE")
-            
+
             if [ $? -ne 0 ]; then
               echo "❌ Failed to fetch tags from Docker Hub"
               exit 1
             fi
-            
+
             # Check if we have results
             RESULTS_COUNT=$(echo "$TAGS_RESPONSE" | jq -r '.results | length')
             if [ "$RESULTS_COUNT" -eq 0 ]; then
               break
             fi
-            
+
             # Append results to our collection
             if [ -z "$ALL_TAGS" ]; then
               ALL_TAGS="$TAGS_RESPONSE"
             else
               ALL_TAGS=$(echo "$ALL_TAGS" | jq --argjson new_results "$(echo "$TAGS_RESPONSE" | jq '.results')" '.results += $new_results')
             fi
-            
+
             # Check if there's a next page
             NEXT_PAGE=$(echo "$TAGS_RESPONSE" | jq -r '.next // empty')
             if [ -z "$NEXT_PAGE" ] || [ "$NEXT_PAGE" = "null" ]; then
               break
             fi
-            
+
             PAGE=$((PAGE + 1))
           done
-          
+
           echo "Found $(echo "$ALL_TAGS" | jq -r '.results | length') total tags"
-          
+
           # Parse tags and identify what to keep vs delete
           echo "$ALL_TAGS" | jq -r '.results[] | "\(.name) \(.last_updated)"' | while read -r tag_name last_updated; do
-            
+
             # Always preserve the latest tag
             if [ "$tag_name" = "latest" ]; then
               echo "🔒 Keeping: $tag_name (latest tag - never delete)"
               continue
             fi
-            
+
             # Always preserve semantic version tags (e.g., 1.2.35, 2.5.2)
             if echo "$tag_name" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
               echo "🔒 Keeping: $tag_name (semantic version - never delete)"
               continue
             fi
-            
+
             # Always preserve architecture-specific version tags (e.g., 1.2.35-amd64, 2.5.2-arm64)
             if echo "$tag_name" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-(amd64|arm64)$'; then
               echo "🔒 Keeping: $tag_name (architecture version tag - never delete)"
               continue
             fi
-            
+
             # Now handle cache and temporary tags - only delete if older than 60 days
             IS_CACHE_TAG=false
             TAG_DESCRIPTION=""
-            
+
             if echo "$tag_name" | grep -qE '^cache-'; then
               IS_CACHE_TAG=true
               TAG_DESCRIPTION="cache tag"
@@ -218,19 +218,19 @@ jobs:
               IS_CACHE_TAG=true
               TAG_DESCRIPTION="pre-release tag"
             fi
-            
+
             if [ "$IS_CACHE_TAG" = "false" ]; then
               echo "🤔 Unknown tag pattern: $tag_name - keeping to be safe"
               continue
             fi
-            
+
             # Check if cache/temporary tag is older than 60 days
             if command -v date >/dev/null 2>&1; then
               # Convert last_updated to epoch time for comparison
               if date -d "$last_updated" >/dev/null 2>&1; then
                 TAG_DATE=$(date -d "$last_updated" +%s)
                 CUTOFF_DATE=$(date -d '60 days ago' +%s)
-                
+
                 if [ "$TAG_DATE" -gt "$CUTOFF_DATE" ]; then
                   echo "🕐 Keeping: $tag_name ($TAG_DESCRIPTION updated within 60 days: $last_updated)"
                   continue
@@ -243,10 +243,10 @@ jobs:
               echo "🤔 Date command not available - keeping $tag_name to be safe"
               continue
             fi
-            
+
             # This cache/temporary tag should be deleted
             echo "🗑️  Target for deletion: $tag_name ($TAG_DESCRIPTION, last updated: $last_updated)"
-            
+
             if [ "$DRY_RUN" = "true" ]; then
               echo "   [DRY RUN] Would delete $TAG_DESCRIPTION: $tag_name"
             else
@@ -254,7 +254,7 @@ jobs:
               DELETE_RESPONSE=$(curl -s -X DELETE \
                 -H "Authorization: JWT $DOCKER_TOKEN" \
                 "https://hub.docker.com/v2/repositories/${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}/tags/$tag_name/")
-              
+
               if [ $? -eq 0 ]; then
                 echo "   ✅ Successfully deleted: $tag_name"
               else
@@ -262,7 +262,7 @@ jobs:
               fi
             fi
           done
-          
+
           # Show summary
           if [ "$DRY_RUN" = "true" ]; then
             echo "✅ Docker Hub dry run completed - no actual changes made"
@@ -281,13 +281,13 @@ jobs:
         run: |
           echo "🧹 Cache Cleanup Summary"
           echo "======================="
-          
+
           if [ "$DRY_RUN" = "true" ]; then
             echo "Mode: 🔍 DRY RUN (no actual deletions performed)"
           else
             echo "Mode: 🗑️  LIVE CLEANUP (deletions performed)"
           fi
-          
+
           echo ""
           echo "GitHub Actions Cleanup:"
           echo "- Removes cache entries older than 60 days"
@@ -306,18 +306,18 @@ jobs:
           echo "- 🗑️  PR tags (pr-123, etc.)"
           echo "- 🗑️  commit hash tags"
           echo "- 🗑️  pre-release tags (alpha, beta, rc, test, staging)"
-          
+
           if [ "${{ needs.cleanup_github_actions_cache.result }}" = "success" ]; then
             echo "✅ GitHub Actions cache cleanup: Completed"
           else
             echo "❌ GitHub Actions cache cleanup: Failed or skipped"
           fi
-          
+
           if [ "${{ needs.cleanup_docker_hub_tags.result }}" = "success" ]; then
             echo "✅ Docker Hub tags cleanup: Completed"
           else
             echo "❌ Docker Hub tags cleanup: Failed or skipped"
           fi
-          
+
           echo ""
           echo "Next scheduled cleanup: $(date -d 'next sunday 3:00' '+%Y-%m-%d %H:%M UTC')"

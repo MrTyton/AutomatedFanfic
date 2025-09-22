@@ -6,10 +6,9 @@ CLI subprocess calls with direct FanFicFare API usage.
 """
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch
 import tempfile
 import os
-from typing import Dict, Any
 
 import fanficfare_wrapper
 import calibre_info
