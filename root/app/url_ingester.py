@@ -31,17 +31,17 @@ Example:
     ```python
     from url_ingester import EmailInfo, email_watcher
     import multiprocessing as mp
-    
+
     # Configure email monitoring
     email_info = EmailInfo("config.toml")
-    
+
     # Set up processing queues
     queues = {
         "archiveofourown.org": mp.Queue(),
         "fanfiction.net": mp.Queue(),
         "other": mp.Queue()
     }
-    
+
     # Start monitoring (typically in a separate process)
     email_watcher(email_info, notification_wrapper, queues)
     ```
@@ -97,7 +97,7 @@ def set_timeout(timeout_duration):
         with set_timeout(30):
             # All socket operations in this block have 30-second timeout
             response = urllib.request.urlopen(url)
-        
+
         # Original timeout is restored here
         ```
 
@@ -130,7 +130,7 @@ def suppress_logging():
         with suppress_logging():
             # FanFicFare operations here won't produce log output
             urls = geturls.get_urls_from_imap(server, email, password, mailbox)
-        
+
         # Normal logging resumes here
         ```
 
@@ -145,7 +145,7 @@ def suppress_logging():
     """
     # Save current global logging disable level
     old_level = logging.root.manager.disable
-    
+
     # Disable all logging by setting to highest level
     logging.disable(logging.CRITICAL)
     try:
@@ -174,7 +174,7 @@ class EmailInfo:
     Example:
         ```python
         email_info = EmailInfo("config.toml")
-        
+
         # Extract URLs from email
         urls = email_info.get_urls()
         for url in urls:
@@ -255,7 +255,7 @@ class EmailInfo:
             ```python
             email_info = EmailInfo("config.toml")
             urls = email_info.get_urls()
-            
+
             print(f"Found {len(urls)} fanfiction URLs:")
             for url in urls:
                 print(f"  {url}")
@@ -329,13 +329,13 @@ def email_watcher(
         # Typically run in a separate process
         email_info = EmailInfo("config.toml")
         notification_wrapper = NotificationWrapper(config)
-        
+
         queues = {
             "archiveofourown.org": mp.Queue(),
             "fanfiction.net": mp.Queue(),
             "other": mp.Queue()
         }
-        
+
         # This runs indefinitely until process termination
         email_watcher(email_info, notification_wrapper, queues)
         ```
@@ -358,22 +358,22 @@ def email_watcher(
         # Extract URLs from the configured email account
         urls = email_info.get_urls()
         fics_to_add = set()
-        
+
         # Process each URL found in email messages
         for url in urls:
             # Parse URL to identify site and normalize format
             fanfic = regex_parsing.generate_FanficInfo_from_url(url)
 
             # Special handling for FFNet when disabled - notification only
-            if email_info.ffnet_disable and fanfic.site == "ffnet":
+            if email_info.ffnet_disable and fanfic.site == "fanfiction":
                 notification_info.send_notification(
                     "New Fanfiction Download", fanfic.url, fanfic.site
                 )
                 continue
-                
+
             # Add to processing set for queue routing
             fics_to_add.add(fanfic)
-            
+
         # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:
             ff_logging.log(
@@ -382,6 +382,6 @@ def email_watcher(
             )
             # Route to site-specific queue (creates "other" queue for unknown sites)
             processor_queues[fic.site].put(fic)
-            
+
         # Wait before next email check cycle
         time.sleep(email_info.sleep_time)

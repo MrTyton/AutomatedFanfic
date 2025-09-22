@@ -183,8 +183,8 @@ class TestEmailWatcher(unittest.TestCase):
         self.mock_notification_info = MagicMock()
 
         self.processor_queues = {
-            "fanfiction.net": mp.Queue(),
-            "archiveofourown.org": mp.Queue(),
+            "fanfiction": mp.Queue(),
+            "archiveofourown": mp.Queue(),
             "other": mp.Queue(),
         }
 
@@ -203,7 +203,7 @@ class TestEmailWatcher(unittest.TestCase):
 
         # Setup fanfic generation
         mock_fanfic = FanficInfo(
-            site="fanfiction.net", url="https://www.fanfiction.net/s/12345/1/Test-Story"
+            site="fanfiction", url="https://www.fanfiction.net/s/12345/1/Test-Story"
         )
         mock_generate_fanfic.return_value = mock_fanfic
 
@@ -225,8 +225,8 @@ class TestEmailWatcher(unittest.TestCase):
         )
 
         # Verify fanfic was added to correct queue
-        self.assertFalse(self.processor_queues["fanfiction.net"].empty())
-        retrieved_fanfic = self.processor_queues["fanfiction.net"].get_nowait()
+        self.assertFalse(self.processor_queues["fanfiction"].empty())
+        retrieved_fanfic = self.processor_queues["fanfiction"].get_nowait()
         self.assertEqual(retrieved_fanfic, mock_fanfic)
 
     @patch("url_ingester.time.sleep")
@@ -244,7 +244,7 @@ class TestEmailWatcher(unittest.TestCase):
 
         # Setup fanfic generation for FFNet
         mock_fanfic = FanficInfo(
-            site="ffnet", url="https://www.fanfiction.net/s/12345/1/Test-Story"
+            site="fanfiction", url="https://www.fanfiction.net/s/12345/1/Test-Story"
         )
         mock_generate_fanfic.return_value = mock_fanfic
 
@@ -283,11 +283,11 @@ class TestEmailWatcher(unittest.TestCase):
         # Setup fanfic generation for different sites
         fanfics = [
             FanficInfo(
-                site="fanfiction.net",
+                site="fanfiction",
                 url="https://www.fanfiction.net/s/12345/1/FFNet-Story",
             ),
             FanficInfo(
-                site="archiveofourown.org",
+                site="archiveofourown",
                 url="https://archiveofourown.org/works/67890",
             ),
             FanficInfo(site="other", url="https://unknown-site.com/story/999"),
@@ -301,11 +301,11 @@ class TestEmailWatcher(unittest.TestCase):
             )
 
         # Verify each fanfic was added to the correct queue
-        ffnet_fanfic = self.processor_queues["fanfiction.net"].get_nowait()
-        self.assertEqual(ffnet_fanfic.site, "fanfiction.net")
+        ffnet_fanfic = self.processor_queues["fanfiction"].get_nowait()
+        self.assertEqual(ffnet_fanfic.site, "fanfiction")
 
-        ao3_fanfic = self.processor_queues["archiveofourown.org"].get_nowait()
-        self.assertEqual(ao3_fanfic.site, "archiveofourown.org")
+        ao3_fanfic = self.processor_queues["archiveofourown"].get_nowait()
+        self.assertEqual(ao3_fanfic.site, "archiveofourown")
 
         other_fanfic = self.processor_queues["other"].get_nowait()
         self.assertEqual(other_fanfic.site, "other")
