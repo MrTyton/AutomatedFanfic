@@ -107,75 +107,82 @@ class TestUrlWorker(unittest.TestCase):
             mock_fanfic.increment_repeat.assert_not_called()  # Check increment not called
             mock_queue.put.assert_not_called()
 
+    class HandleFailureUpdateNoForceTestCase(NamedTuple):
+        name: str
+        behavior: str
+        update_method: str
+        reached_maximum_repeats: tuple[bool, bool]
+        should_send_notification: bool
+        expected_notification_title: str
+        expected_notification_body: str
+        expected_log_message: str
+
+    @parameterized.expand([
+        HandleFailureUpdateNoForceTestCase(
+            name="hail_mary_force_update_no_force",
+            behavior="force",
+            update_method="update_no_force",
+            reached_maximum_repeats=(True, True),
+            should_send_notification=True,
+            expected_notification_title="Fanfiction Update Permanently Skipped",
+            expected_notification_body="Update for http://example.com/story was permanently skipped because a force was requested but the update method is set to 'update_no_force'. The force request was ignored and a normal update was attempted instead.",
+            expected_log_message="Hail Mary attempted for http://example.com/story and failed."
+        ),
+        HandleFailureUpdateNoForceTestCase(
+            name="hail_mary_non_force_update_no_force",
+            behavior="update",
+            update_method="update_no_force",
+            reached_maximum_repeats=(True, True),
+            should_send_notification=False,
+            expected_notification_title="",
+            expected_notification_body="",
+            expected_log_message="Hail Mary attempted for http://example.com/story and failed."
+        ),
+        HandleFailureUpdateNoForceTestCase(
+            name="hail_mary_force_different_update_method",
+            behavior="force",
+            update_method="update_always",
+            reached_maximum_repeats=(True, True),
+            should_send_notification=False,
+            expected_notification_title="",
+            expected_notification_body="",
+            expected_log_message="Hail Mary attempted for http://example.com/story and failed."
+        ),
+    ])
     @patch("ff_logging.log_failure")
-    def test_handle_failure_update_no_force(self, mock_log_failure):
+    def test_handle_failure_update_no_force(self, name, behavior, update_method, 
+                                          reached_maximum_repeats, should_send_notification, 
+                                          expected_notification_title, expected_notification_body, 
+                                          expected_log_message, mock_log_failure):
         """Test handle_failure with update_no_force scenarios."""
         # Setup common mocks
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "test_site"
-        mock_fanfic.behavior = "force"
+        mock_fanfic.behavior = behavior
+        mock_fanfic.reached_maximum_repeats.return_value = reached_maximum_repeats
         mock_notification_info = MagicMock(spec=NotificationWrapper)
         mock_queue = MagicMock(spec=mp.Queue)
-        mock_queue.put = MagicMock()  # Explicitly add the put method
-
-        # Test Case 1: Hail Mary with force + update_no_force -> should send notification
-        mock_fanfic.reached_maximum_repeats.return_value = (True, True)
+        mock_queue.put = MagicMock()
         mock_cdb = MagicMock(spec=CalibreInfo)
-        mock_cdb.update_method = "update_no_force"
+        mock_cdb.update_method = update_method
 
         url_worker.handle_failure(
             mock_fanfic, mock_notification_info, mock_queue, mock_cdb
         )
 
-        # Assertions for Case 1
-        mock_log_failure.assert_called_once_with(
-            "Hail Mary attempted for http://example.com/story and failed."
-        )
-        mock_notification_info.send_notification.assert_called_once_with(
-            "Fanfiction Update Permanently Skipped",
-            "Update for http://example.com/story was permanently skipped because a force was requested but the update method is set to 'update_no_force'. The force request was ignored and a normal update was attempted instead.",
-            "test_site",
-        )
-        mock_queue.put.assert_not_called()
-
-        # Reset mocks for next test
-        mock_log_failure.reset_mock()
-        mock_notification_info.reset_mock()
-        mock_queue.reset_mock()
-
-        # Test Case 2: Hail Mary with non-force behavior + update_no_force -> should not send notification
-        mock_fanfic.behavior = "update"  # Not force
-
-        url_worker.handle_failure(
-            mock_fanfic, mock_notification_info, mock_queue, mock_cdb
-        )
-
-        # Assertions for Case 2
-        mock_log_failure.assert_called_once_with(
-            "Hail Mary attempted for http://example.com/story and failed."
-        )
-        mock_notification_info.send_notification.assert_not_called()  # Should not send notification
-        mock_queue.put.assert_not_called()
-
-        # Reset mocks for next test
-        mock_log_failure.reset_mock()
-        mock_notification_info.reset_mock()
-        mock_queue.reset_mock()
-
-        # Test Case 3: Hail Mary with force + different update_method -> should not send notification
-        mock_fanfic.behavior = "force"
-        mock_cdb.update_method = "update_always"  # Not update_no_force
-
-        url_worker.handle_failure(
-            mock_fanfic, mock_notification_info, mock_queue, mock_cdb
-        )
-
-        # Assertions for Case 3
-        mock_log_failure.assert_called_once_with(
-            "Hail Mary attempted for http://example.com/story and failed."
-        )
-        mock_notification_info.send_notification.assert_not_called()  # Should not send notification
+        # Assertions
+        mock_log_failure.assert_called_once_with(expected_log_message)
+        
+        if should_send_notification:
+            mock_notification_info.send_notification.assert_called_once_with(
+                expected_notification_title,
+                expected_notification_body,
+                "test_site",
+            )
+        else:
+            mock_notification_info.send_notification.assert_not_called()
+        
         mock_queue.put.assert_not_called()
 
     @patch("ff_logging.log_failure")
@@ -202,46 +209,46 @@ class TestUrlWorker(unittest.TestCase):
         mock_notification_info.send_notification.assert_not_called()
         mock_queue.put.assert_not_called()
 
+    class HandleFailureEdgeCaseTestCase(NamedTuple):
+        name: str
+        behavior: str | None
+        reached_maximum_repeats: tuple[bool, bool]
+        expected_log_message: str
+
+    @parameterized.expand([
+        HandleFailureEdgeCaseTestCase(
+            name="none_behavior",
+            behavior=None,
+            reached_maximum_repeats=(True, True),
+            expected_log_message="Hail Mary attempted for http://example.com/story and failed."
+        ),
+        HandleFailureEdgeCaseTestCase(
+            name="empty_behavior",
+            behavior="",
+            reached_maximum_repeats=(True, True),
+            expected_log_message="Hail Mary attempted for http://example.com/story and failed."
+        ),
+    ])
     @patch("ff_logging.log_failure")
-    def test_handle_failure_edge_cases(self, mock_log_failure):
+    def test_handle_failure_edge_cases(self, name, behavior, reached_maximum_repeats, expected_log_message, mock_log_failure):
         """Test handle_failure edge cases with different behavior values."""
         # Setup common mocks
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "test_site"
+        mock_fanfic.behavior = behavior
+        mock_fanfic.reached_maximum_repeats.return_value = reached_maximum_repeats
         mock_notification_info = MagicMock(spec=NotificationWrapper)
         mock_queue = MagicMock(spec=mp.Queue)
         mock_queue.put = MagicMock()
         mock_cdb = MagicMock(spec=CalibreInfo)
         mock_cdb.update_method = "update_no_force"
 
-        # Test Case 1: None behavior (should not trigger special notification)
-        mock_fanfic.behavior = None
-        mock_fanfic.reached_maximum_repeats.return_value = (True, True)
-
         url_worker.handle_failure(
             mock_fanfic, mock_notification_info, mock_queue, mock_cdb
         )
 
-        mock_log_failure.assert_called_once_with(
-            "Hail Mary attempted for http://example.com/story and failed."
-        )
-        mock_notification_info.send_notification.assert_not_called()
-
-        # Reset mocks for next test
-        mock_log_failure.reset_mock()
-        mock_notification_info.reset_mock()
-
-        # Test Case 2: Empty string behavior (should not trigger special notification)
-        mock_fanfic.behavior = ""
-
-        url_worker.handle_failure(
-            mock_fanfic, mock_notification_info, mock_queue, mock_cdb
-        )
-
-        mock_log_failure.assert_called_once_with(
-            "Hail Mary attempted for http://example.com/story and failed."
-        )
+        mock_log_failure.assert_called_once_with(expected_log_message)
         mock_notification_info.send_notification.assert_not_called()
 
     class GetPathOrUrlTestCase(NamedTuple):
