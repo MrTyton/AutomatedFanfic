@@ -2,6 +2,8 @@ from parameterized import parameterized
 import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
+import time
+import sys
 
 
 from url_ingester import EmailInfo, email_watcher
@@ -186,6 +188,64 @@ class TestEmailWatcher(unittest.TestCase):
             "other": mp.Queue(),
         }
 
+    def assert_queue_has_item(self, queue_name, expected_fanfic=None, timeout=1.0):
+        """Assert that a queue has an item, with retry logic for race conditions.
+
+        Args:
+            queue_name (str): Name of the queue to check
+            expected_fanfic (FanficInfo, optional): Expected fanfic object to compare
+            timeout (float): Maximum time to wait for queue to have items
+
+        Returns:
+            FanficInfo: The retrieved fanfic object
+        """
+        queue = self.processor_queues[queue_name]
+        start_time = time.time()
+
+        # Add debug information for CI debugging
+        print(f"\n[DEBUG] Checking {queue_name} queue:")
+        print(f"[DEBUG] Python version: {sys.version}")
+        print(f"[DEBUG] Multiprocessing start method: {mp.get_start_method()}")
+        print(f"[DEBUG] Platform: {sys.platform}")
+
+        while time.time() - start_time < timeout:
+            queue_empty = queue.empty()
+            print(
+                f"[DEBUG] Queue empty check #{int((time.time() - start_time) * 1000)}ms: {queue_empty}"
+            )
+
+            if not queue_empty:
+                try:
+                    retrieved_fanfic = queue.get_nowait()
+                    print(
+                        f"[DEBUG] Successfully retrieved fanfic: {retrieved_fanfic.site}"
+                    )
+
+                    if expected_fanfic is not None:
+                        self.assertEqual(
+                            retrieved_fanfic,
+                            expected_fanfic,
+                            "Retrieved fanfic should equal expected fanfic",
+                        )
+
+                    return retrieved_fanfic
+                except Exception as e:
+                    print(f"[DEBUG] Error during get_nowait: {e}")
+
+            # Small delay before retry
+            time.sleep(0.001)
+
+        # Final failure with comprehensive debug info
+        print(f"[DEBUG] FINAL FAILURE: Queue '{queue_name}' is empty after {timeout}s")
+        print("[DEBUG] All queue states:")
+        for name, q in self.processor_queues.items():
+            print(f"[DEBUG]   {name}: empty={q.empty()}")
+
+        self.fail(
+            f"Queue '{queue_name}' was empty after {timeout}s timeout. "
+            f"This indicates a race condition or timing issue."
+        )
+
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
     @patch("url_ingester.ff_logging.log")
@@ -222,10 +282,8 @@ class TestEmailWatcher(unittest.TestCase):
             "HEADER",
         )
 
-        # Verify fanfic was added to correct queue
-        self.assertFalse(self.processor_queues["fanfiction"].empty())
-        retrieved_fanfic = self.processor_queues["fanfiction"].get_nowait()
-        self.assertEqual(retrieved_fanfic, mock_fanfic)
+        # Verify fanfic was added to correct queue (with race condition handling)
+        self.assert_queue_has_item("fanfiction", mock_fanfic)
 
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -298,14 +356,14 @@ class TestEmailWatcher(unittest.TestCase):
                 self.mock_email_info, self.mock_notification_info, self.processor_queues
             )
 
-        # Verify each fanfic was added to the correct queue
-        ffnet_fanfic = self.processor_queues["fanfiction"].get_nowait()
+        # Verify each fanfic was added to the correct queue (with race condition handling)
+        ffnet_fanfic = self.assert_queue_has_item("fanfiction")
         self.assertEqual(ffnet_fanfic.site, "fanfiction")
 
-        ao3_fanfic = self.processor_queues["archiveofourown"].get_nowait()
+        ao3_fanfic = self.assert_queue_has_item("archiveofourown")
         self.assertEqual(ao3_fanfic.site, "archiveofourown")
 
-        other_fanfic = self.processor_queues["other"].get_nowait()
+        other_fanfic = self.assert_queue_has_item("other")
         self.assertEqual(other_fanfic.site, "other")
 
         # Verify logging happened for each fanfic
