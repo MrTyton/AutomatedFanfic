@@ -14,10 +14,12 @@ jobs:
   check_and_update:
     runs-on: ubuntu-latest
     outputs:
-      # Output commit SHA if changes were made
-      commit_sha: ${{ steps.commit_changes.outputs.commit_long_sha }}
+      # Output commit SHA if changes were made - use verified SHA as fallback
+      commit_sha: ${{ steps.verify_commit.outputs.verified_sha || steps.commit_changes.outputs.commit_long_sha }}
       # Output whether latest.txt was updated specifically (for potential future use, not strictly needed now)
       latest_updated: ${{ steps.update_latest_txt.outputs.version-changed }}
+      # Additional output to ensure we trigger builds when updates are found
+      changes_detected: ${{ steps.check_updates.outputs.any_changed }}
 
     steps:
       - name: Checkout repository
@@ -189,6 +191,29 @@ jobs:
           # Ensure latest.txt is committed along with dependency files
           add: 'release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py'
 
+      - name: Verify commit and set output
+        id: verify_commit
+        if: steps.update_latest_txt.outputs.version-changed == 'true'
+        run: |
+          echo "Commit step outputs:"
+          echo "  committed: ${{ steps.commit_changes.outputs.committed }}"
+          echo "  commit_long_sha: ${{ steps.commit_changes.outputs.commit_long_sha }}"
+          echo "  commit_sha: ${{ steps.commit_changes.outputs.commit_sha }}"
+
+          # Verify the commit exists
+          COMMIT_SHA="${{ steps.commit_changes.outputs.commit_long_sha }}"
+          if [ -n "$COMMIT_SHA" ]; then
+            echo "Commit created successfully: $COMMIT_SHA"
+            echo "commit_verified=true" >> $GITHUB_OUTPUT
+            echo "verified_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Commit step did not produce a SHA, using current HEAD"
+            CURRENT_SHA=$(git rev-parse HEAD)
+            echo "Current HEAD: $CURRENT_SHA"
+            echo "commit_verified=false" >> $GITHUB_OUTPUT
+            echo "verified_sha=$CURRENT_SHA" >> $GITHUB_OUTPUT
+          fi
+
       - name: Notify if no changes were committed (Should not happen with default token)
         if: steps.update_latest_txt.outputs.version-changed == 'true' && steps.commit_changes.outputs.commit_long_sha == ''
         run: |
@@ -202,8 +227,8 @@ jobs:
   # Second job: Run CI by calling the reusable workflow
   run_ci:
     needs: check_and_update
-    # Only run if a commit was made in the previous job
-    if: needs.check_and_update.outputs.commit_sha != ''
+    # Only run if changes were detected (commit_sha will always be set if changes detected)
+    if: needs.check_and_update.outputs.changes_detected == 'true'
     uses: ./.github/workflows/python-app.yml
     with:
       # Pass the commit SHA that was created
@@ -213,8 +238,8 @@ jobs:
   # Third job: Build Docker - directly depend on both jobs
   build_docker:
     needs: [check_and_update, run_ci]
-    # Only run if commit was made (CI success is guaranteed by dependency)
-    if: needs.check_and_update.outputs.commit_sha != ''
+    # Only run if changes detected (CI success is guaranteed by dependency)
+    if: needs.check_and_update.outputs.changes_detected == 'true'
     uses: ./.github/workflows/docker-image.yml
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
