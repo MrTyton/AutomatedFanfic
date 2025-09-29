@@ -29,18 +29,87 @@ jobs:
           # GitHub CLI is pre-installed on GitHub runners
           gh --version
 
+      - name: Determine required CI checks
+        id: determine-checks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "Determining which CI checks are required based on changed files..."
+
+          # Get list of changed files in the PR
+          changed_files=$(gh pr view $PR_NUMBER --json files --jq '.files[].path')
+          echo "Changed files:"
+          echo "$changed_files"
+
+          # Initialize required checks array
+          required_checks=()
+
+          # Check if Python-related files were changed (triggers python-app.yml workflow)
+          python_changed=false
+          while IFS= read -r file; do
+            if [[ "$file" =~ \.py$ ]] || \
+               [[ "$file" =~ ^root/.*\.py$ ]] || \
+               [[ "$file" == "requirements.txt" ]] || \
+               [[ "$file" == "requirements-dev.txt" ]] || \
+               [[ "$file" =~ ^release-versions/ ]] || \
+               [[ "$file" == ".github/workflows/python-app.yml" ]]; then
+              python_changed=true
+              break
+            fi
+          done <<< "$changed_files"
+
+          # Add Python CI checks if Python-related files changed
+          if [ "$python_changed" = true ]; then
+            required_checks+=("pre-commit" "lint" "test" "build")
+            echo "✅ Python files changed - will wait for Python CI checks"
+          else
+            echo "ℹ️  No Python files changed - skipping Python CI checks"
+          fi
+
+          # Check if Docker-related files were changed (triggers docker-image.yml workflow)
+          docker_changed=false
+          while IFS= read -r file; do
+            if [[ "$file" == "Dockerfile" ]] || \
+               [[ "$file" == ".github/workflows/docker-image.yml" ]] || \
+               [[ "$file" =~ ^release-versions/ ]]; then
+              docker_changed=true
+              break
+            fi
+          done <<< "$changed_files"
+
+          # Add Docker CI checks if Docker-related files changed
+          if [ "$docker_changed" = true ]; then
+            # Note: docker-image.yml jobs are conditional and may not always run
+            echo "ℹ️  Docker-related files changed - Docker workflow may run conditionally"
+          fi
+
+          # Convert array to comma-separated string for output
+          if [ ${#required_checks[@]} -eq 0 ]; then
+            echo "checks=" >> $GITHUB_OUTPUT
+            echo "ℹ️  No CI checks required for this change"
+          else
+            IFS=',' eval 'checks_string="${required_checks[*]}"'
+            echo "checks=$checks_string" >> $GITHUB_OUTPUT
+            echo "✅ Required checks: ${required_checks[*]}"
+          fi
+
       - name: Wait for CI checks to complete
+        if: steps.determine-checks.outputs.checks != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
+          REQUIRED_CHECKS: ${{ steps.determine-checks.outputs.checks }}
         run: |
           echo "Waiting for CI checks to complete on SHA: $PR_SHA"
 
-          # Required checks that must pass (excluding auto-merge itself)
-          REQUIRED_CHECKS=("lint" "test" "build")
+          # Convert comma-separated string back to array
+          IFS=',' read -ra checks_array <<< "$REQUIRED_CHECKS"
+
+          echo "Required checks: ${checks_array[*]}"
 
           # Wait for all required checks to complete successfully
-          for check in "${REQUIRED_CHECKS[@]}"; do
+          for check in "${checks_array[@]}"; do
             echo "Waiting for check: $check"
 
             # Wait up to 30 minutes for this check
@@ -79,6 +148,11 @@ jobs:
 
           echo "✅ All required CI checks passed!"
 
+      - name: Skip CI checks notification
+        if: steps.determine-checks.outputs.checks == ''
+        run: |
+          echo "ℹ️  No CI checks required for this change - proceeding with auto-merge"
+
       - name: Check if PR is ready for auto-merge
         id: check-pr
         run: |
@@ -115,10 +189,10 @@ jobs:
         id: bump-type
         run: |
           PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BODY="${{ github.event.pull_request.body }}"
 
+          # Use environment variable to safely handle PR body with special characters
           # Check for security updates for special labeling
-          if echo "$PR_TITLE $PR_BODY" | grep -qi "security\|vulnerability\|CVE"; then
+          if echo "$PR_TITLE $PR_BODY_CONTENT" | grep -qi "security\|vulnerability\|CVE"; then
             echo "bump_type=patch" >> $GITHUB_OUTPUT
             echo "bump_reason=security" >> $GITHUB_OUTPUT
             echo "🔒 Security update detected - patch version bump"
@@ -128,6 +202,8 @@ jobs:
             echo "bump_reason=dependency" >> $GITHUB_OUTPUT
             echo "📦 Dependency update detected - patch version bump"
           fi
+        env:
+          PR_BODY_CONTENT: ${{ github.event.pull_request.body }}
 
       - name: Bump version for dependency updates
         if: steps.check-pr.outputs.skip != 'true'
@@ -180,6 +256,7 @@ jobs:
           OLD_VERSION="${{ steps.version-bump.outputs.old-version }}"
           NEW_VERSION="${{ steps.version-bump.outputs.new-version }}"
           VERSION_CHANGED="${{ steps.version-bump.outputs.version-changed }}"
+          REQUIRED_CHECKS="${{ steps.determine-checks.outputs.checks }}"
 
           case "$BUMP_REASON" in
             "security")
@@ -199,6 +276,40 @@ jobs:
             VERSION_INFO="- $BUMP_ICON **$BUMP_DESC**: Version remains \`$OLD_VERSION\` (no change needed)"
           fi
 
+          # Build checks info based on what checks are actually required
+          CHECKS_INFO=""
+          if [ -n "$REQUIRED_CHECKS" ]; then
+            IFS=',' read -ra checks_array <<< "$REQUIRED_CHECKS"
+            CHECKS_INFO="**Checks required:**"
+            for check in "${checks_array[@]}"; do
+              case "$check" in
+                "pre-commit")
+                  CHECKS_INFO="$CHECKS_INFO
+          - ✅ Pre-commit hooks"
+                  ;;
+                "lint")
+                  CHECKS_INFO="$CHECKS_INFO
+          - ✅ Linting (flake8)"
+                  ;;
+                "test")
+                  CHECKS_INFO="$CHECKS_INFO
+          - ✅ Tests (pytest)"
+                  ;;
+                "build")
+                  CHECKS_INFO="$CHECKS_INFO
+          - ✅ Build completion"
+                  ;;
+                *)
+                  CHECKS_INFO="$CHECKS_INFO
+          - ✅ $check"
+                  ;;
+              esac
+            done
+          else
+            CHECKS_INFO="**Checks required:**
+          - ℹ️  No CI checks required for this change (YAML-only update)"
+          fi
+
           gh pr comment "${{ github.event.pull_request.number }}" --body "🤖 **Auto-merge enabled**
 
           This Dependabot PR will be automatically merged once all required checks pass.
@@ -206,10 +317,7 @@ jobs:
           **Version Update:**
           $VERSION_INFO
 
-          **Checks required:**
-          - ✅ Linting (flake8)
-          - ✅ Tests (pytest)
-          - ✅ Build completion
+          $CHECKS_INFO
 
           If you need to make changes or prevent auto-merge, disable auto-merge on this PR."
         env:
