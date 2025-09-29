@@ -4,7 +4,7 @@
 # Core notification and configuration libraries
 apprise==1.9.4
 pydantic==2.11.9
-pydantic-settings==2.10.1
+pydantic-settings==2.11.0
 
 # HTTP requests and web scraping
 requests==2.32.5
@@ -14,7 +14,7 @@ cloudscraper==1.2.71
 pushbullet.py==0.12.0
 
 # HTML parsing and processing
-beautifulsoup4==4.13.5
+beautifulsoup4==4.14.2
 html2text==2024.2.26
 html5lib==1.1
 soupsieve==2.8
