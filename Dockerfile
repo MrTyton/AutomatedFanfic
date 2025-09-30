@@ -27,7 +27,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     poppler-utils \
     python3-xdg \
     uuid-runtime \
-    xz-utils && \
+    xz-utils \
+    libssl3 \
+    openssl \
+    libssl-dev \
+    python3-openssl \
+    python3-certifi && \
     apt-get clean && \
     rm -rf /tmp/* /var/tmp/*
 
@@ -133,6 +138,9 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     rm -rf /opt/calibre/resources/viewer 2>/dev/null || true && \
     rm -rf /opt/calibre/resources/editor 2>/dev/null || true && \
     rm -rf /opt/calibre/resources/content-server 2>/dev/null || true && \
+    # CRITICAL: Remove conflicting OpenSSL libraries from Calibre that break Python's SSL
+    echo "*** Removing conflicting Calibre OpenSSL libraries ***" && \
+    rm -f /opt/calibre/lib/libcrypto.so* /opt/calibre/lib/libssl.so* 2>/dev/null || true && \
     rm -rf /opt/calibre/resources/images/mimetypes 2>/dev/null || true && \
     # Final verification that calibredb still works after cleanup
     echo "*** Final verification of calibredb ***" && \
