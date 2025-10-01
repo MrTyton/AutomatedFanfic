@@ -102,28 +102,38 @@ def process_fanfic(
         >>> process_fanfic(fanfic, {"archiveofourown.org": queue})
         # Will log "Waiting ~18.3 minutes..." and schedule requeue in ~1098 seconds
     """
-    retry_count = fanfic.repeats or 0  # Default to 0 if repeats is None
+    # Get retry count, defaulting to 0 if None
+    retry_count = fanfic.repeats or 0
 
-    # Calculate gradual backoff with maximum cap of 20 minutes (1200 seconds)
-    # 1 minute per retry: 1min, 2min, 3min, 4min, 5min... up to 20min
-    base_delay = min(60 * retry_count, 1200)
+    # Calculate delay based on retry count
+    if retry_count == 720:
+        # Special case: Hail-Mary protocol final attempt (12 hours)
+        delay_seconds = 720 * 60
+        delay_minutes = 720
+        ff_logging.log(
+            f"Hail-Mary attempt: Waiting {delay_minutes} minutes for {fanfic.url} "
+            f"in queue {fanfic.site}",
+            "WARNING",
+        )
+    else:
+        # Gradual backoff: 1 minute per retry, capped at 20 minutes
+        base_delay_seconds = min(60 * retry_count, 1200)
 
-    # Add random jitter (±50% variation) to prevent thundering herd
-    jitter_multiplier = random.uniform(0.5, 1.5)
-    delay = int(base_delay * jitter_multiplier)
+        # Add jitter (±50%) to prevent thundering herd effects
+        jitter_multiplier = random.uniform(0.5, 1.5)
+        delay_seconds = int(base_delay_seconds * jitter_multiplier)
+        delay_minutes = delay_seconds / 60.0
 
-    # Convert to minutes for cleaner logging
-    delay_minutes = delay / 60.0
+        ff_logging.log(
+            f"Waiting ~{delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
+            f"(retry #{retry_count + 1}, base: {base_delay_seconds//60}min, jitter: {jitter_multiplier:.2f}x)",
+            "WARNING",
+        )
 
-    # Log the retry delay with warning level for visibility
-    ff_logging.log(
-        f"Waiting ~{delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
-        f"(retry #{retry_count + 1}, base: {base_delay//60}min, jitter: {jitter_multiplier:.2f}x)",
-        "WARNING",
-    )
-    # Create and start timer thread for delayed requeuing
+    # Schedule delayed requeue using timer thread
+    target_queue = processor_queues[fanfic.site]
     timer = threading.Timer(
-        delay, insert_after_time, args=(processor_queues[fanfic.site], fanfic)
+        delay_seconds, insert_after_time, args=(target_queue, fanfic)
     )
     timer.start()
 

@@ -479,9 +479,13 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             config_data.get("hail_mary", False),
         )
         mock_fanfic.behavior = config_data.get("behavior", None)
+        mock_fanfic.increment_repeat = (
+            MagicMock()
+        )  # Ensure increment_repeat is available
 
         mock_notification = MagicMock(spec=notification_wrapper.NotificationWrapper)
         mock_queue = MagicMock(spec=mp.Queue)
+        mock_queue.put = MagicMock()  # Ensure put method is available
 
         # Create calibre info if needed
         mock_cdb = None

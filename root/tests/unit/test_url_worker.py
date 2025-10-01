@@ -20,6 +20,7 @@ class TestUrlWorker(unittest.TestCase):
         expected_notification_call: bool
         expected_notification_title: Optional[str]  # Specific notification title
         expected_queue_put_call: bool
+        expected_increment_repeat_call: bool
 
     @parameterized.expand(
         [
@@ -32,6 +33,7 @@ class TestUrlWorker(unittest.TestCase):
                 expected_notification_call=False,
                 expected_notification_title=None,
                 expected_queue_put_call=True,
+                expected_increment_repeat_call=True,
             ),
             # Case 2: Reached maximum repeats, hail_mary not yet attempted
             HandleFailureTestCase(
@@ -41,7 +43,8 @@ class TestUrlWorker(unittest.TestCase):
                 expected_log_message="Maximum attempts reached for http://example.com/story. Activating Hail-Mary Protocol.",
                 expected_notification_call=True,
                 expected_notification_title="Fanfiction Download Failed, trying Hail-Mary in 12 hours.",
-                expected_queue_put_call=False,
+                expected_queue_put_call=True,
+                expected_increment_repeat_call=False,
             ),
             # Case 3: Reached maximum repeats, hail_mary already attempted
             HandleFailureTestCase(
@@ -52,6 +55,7 @@ class TestUrlWorker(unittest.TestCase):
                 expected_notification_call=False,
                 expected_notification_title=None,
                 expected_queue_put_call=False,
+                expected_increment_repeat_call=False,
             ),
         ]
     )
@@ -65,6 +69,7 @@ class TestUrlWorker(unittest.TestCase):
         expected_notification_call,
         expected_notification_title,
         expected_queue_put_call,
+        expected_increment_repeat_call,
         mock_log_failure,
     ):
         # Setup
@@ -98,11 +103,14 @@ class TestUrlWorker(unittest.TestCase):
             mock_notification_info.send_notification.assert_not_called()
 
         if expected_queue_put_call:
-            mock_fanfic.increment_repeat.assert_called_once()  # Check increment call
             mock_queue.put.assert_called_once_with(mock_fanfic)
         else:
-            mock_fanfic.increment_repeat.assert_not_called()  # Check increment not called
             mock_queue.put.assert_not_called()
+
+        if expected_increment_repeat_call:
+            mock_fanfic.increment_repeat.assert_called_once()
+        else:
+            mock_fanfic.increment_repeat.assert_not_called()
 
     class HandleFailureUpdateNoForceTestCase(NamedTuple):
         name: str

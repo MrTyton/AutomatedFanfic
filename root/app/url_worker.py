@@ -147,6 +147,8 @@ def handle_failure(
             fanfic.url,
             fanfic.site,
         )
+        # We enqueue one final time for the Hail Mary attempt. The fanfic object has already set the proper increment.
+        queue.put(fanfic)
     elif maximum_repeats and hail_mary:
         # Hail-Mary attempt also failed - this is permanent failure
         ff_logging.log_failure(f"Hail Mary attempted for {fanfic.url} and failed.")
