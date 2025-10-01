@@ -1,7 +1,7 @@
 # AutomatedFanfic
 Automated Fanfiction Download using FanficFare CLI
 
-This is a docker image to run the Automated FFF CLI, with pushbullet integration.
+This is a docker image to run the Automated FFF CLI, with Apprise integration.
 
 [FanFicFare](https://github.com/JimmXinu/FanFicFare)
 
@@ -32,9 +32,7 @@ The image automatically detects the target architecture during build and configu
 
 ## Site Support
 
-This program will support any website that FanFicFare will support. However, it does make use of multi-processing, spawning a different "watcher" for each website. This list is currently hard-coded, and anything not in the list is treated as part of a single queue "other".
-
-If you wish to add more watchers for different websites, then open an issue or submit a request to modify [this](https://github.com/MrTyton/AutomatedFanfic/blob/master/root/app/regex_parsing.py#L7) dictionary.
+This program will support any website that FanFicFare will support. However, it does make use of multi-processing, spawning a different "watcher" for each website. This list is automatically generated, based on the adaptors that FanFicFare has.
 
 ## Repeats
 
