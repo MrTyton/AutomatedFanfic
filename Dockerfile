@@ -24,15 +24,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ca-certificates \
     curl \
     jq \
-    poppler-utils \
-    python3-xdg \
-    uuid-runtime \
-    xz-utils \
-    libssl3 \
-    openssl \
-    libssl-dev \
-    python3-openssl \
-    python3-certifi && \
+    xz-utils && \
     apt-get clean && \
     rm -rf /tmp/* /var/tmp/*
 
@@ -117,31 +109,42 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     # Verify calibredb is working before cleanup
     echo "*** Testing calibredb before cleanup ***" && \
     /usr/local/bin/calibredb --version && \
-    echo "*** Removing unnecessary Calibre components (conservative cleanup) ***" && \
-    # Remove GUI applications (keep calibredb and core dependencies)
-    rm -f /opt/calibre/calibre /opt/calibre/ebook-viewer /opt/calibre/ebook-edit 2>/dev/null || true && \
-    # Remove conversion tools (but keep shared libraries they might depend on)
-    rm -f /opt/calibre/ebook-convert /opt/calibre/ebook-meta /opt/calibre/ebook-polish 2>/dev/null || true && \
-    # Remove other command-line tools we don't use
-    rm -f /opt/calibre/calibre-server /opt/calibre/calibre-smtp /opt/calibre/web2disk 2>/dev/null || true && \
-    rm -f /opt/calibre/lrf2lrs /opt/calibre/lrfviewer /opt/calibre/markdown-calibre 2>/dev/null || true && \
-    # Remove GUI Python packages (but preserve core libraries and shared objects)
-    rm -rf /opt/calibre/lib/python*/site-packages/calibre/gui2 2>/dev/null || true && \
-    rm -rf /opt/calibre/lib/python*/site-packages/calibre/srv 2>/dev/null || true && \
-    # Remove Qt GUI components but keep core Qt libraries that calibredb might need
+    echo "*** Removing unnecessary Calibre components (aggressive cleanup) ***" && \
+    # Remove ALL GUI applications and conversion tools we don't need
+    rm -f /opt/calibre/calibre /opt/calibre/ebook-viewer /opt/calibre/ebook-edit \
+    /opt/calibre/ebook-convert /opt/calibre/ebook-meta /opt/calibre/ebook-polish \
+    /opt/calibre/calibre-server /opt/calibre/calibre-smtp /opt/calibre/web2disk \
+    /opt/calibre/lrf2lrs /opt/calibre/lrfviewer /opt/calibre/markdown-calibre \
+    /opt/calibre/calibre-debug /opt/calibre/fetch-ebook-metadata 2>/dev/null || true && \
+    # Remove GUI Python packages completely
+    rm -rf /opt/calibre/lib/python*/site-packages/calibre/gui2 \
+    /opt/calibre/lib/python*/site-packages/calibre/srv \
+    /opt/calibre/lib/python*/site-packages/calibre/ebooks/oeb/display 2>/dev/null || true && \
+    # Aggressively remove Qt GUI components
     find /opt/calibre -name "*Gui*" -type f -delete 2>/dev/null || true && \
     find /opt/calibre -name "*Widget*" -type f -delete 2>/dev/null || true && \
-    # Keep PyQt core modules, only remove GUI-specific ones
-    find /opt/calibre -path "*/PyQt*/QtWidgets*" -delete 2>/dev/null || true && \
-    find /opt/calibre -path "*/PyQt*/QtGui*" -delete 2>/dev/null || true && \
-    # Remove resource directories for GUI components (but keep core resources)
-    rm -rf /opt/calibre/resources/viewer 2>/dev/null || true && \
-    rm -rf /opt/calibre/resources/editor 2>/dev/null || true && \
-    rm -rf /opt/calibre/resources/content-server 2>/dev/null || true && \
+    find /opt/calibre -name "*Designer*" -type f -delete 2>/dev/null || true && \
+    # Remove Qt GUI modules entirely
+    find /opt/calibre -path "*/PyQt*/Qt*Widgets*" -delete 2>/dev/null || true && \
+    find /opt/calibre -path "*/PyQt*/Qt*Gui*" -delete 2>/dev/null || true && \
+    find /opt/calibre -path "*/PyQt*/Qt*Designer*" -delete 2>/dev/null || true && \
+    find /opt/calibre -path "*/PyQt*/Qt*PrintSupport*" -delete 2>/dev/null || true && \
+    # Remove all GUI resource directories
+    rm -rf /opt/calibre/resources/viewer \
+    /opt/calibre/resources/editor \
+    /opt/calibre/resources/content-server \
+    /opt/calibre/resources/images/mimetypes \
+    /opt/calibre/resources/images/library.png \
+    /opt/calibre/resources/images/viewer 2>/dev/null || true && \
+    # Remove fonts and other GUI assets we don't need for calibredb
+    rm -rf /opt/calibre/resources/fonts/liberation 2>/dev/null || true && \
     # CRITICAL: Remove conflicting OpenSSL libraries from Calibre that break Python's SSL
     echo "*** Removing conflicting Calibre OpenSSL libraries ***" && \
     rm -f /opt/calibre/lib/libcrypto.so* /opt/calibre/lib/libssl.so* 2>/dev/null || true && \
-    rm -rf /opt/calibre/resources/images/mimetypes 2>/dev/null || true && \
+    # Remove unnecessary Qt plugins for headless operation
+    rm -rf /opt/calibre/lib/qt-plugins/platforms \
+    /opt/calibre/lib/qt-plugins/imageformats \
+    /opt/calibre/lib/qt-plugins/iconengines 2>/dev/null || true && \
     # Final verification that calibredb still works after cleanup
     echo "*** Final verification of calibredb ***" && \
     /usr/local/bin/calibredb --version && \
@@ -217,7 +220,7 @@ LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 # Runtime configuration
 ENV VERBOSE=false
 
-# Ensure Calibre shared libraries can be found
+# Ensure Calibre shared libraries can be found (but not conflicting OpenSSL ones)
 ENV LD_LIBRARY_PATH="/opt/calibre/lib"
 
 VOLUME /config
