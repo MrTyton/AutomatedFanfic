@@ -209,41 +209,6 @@ def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> Tuple[st
     return pattern, prefix
 
 
-def _build_path_pattern(path: str, is_forum_site: bool) -> str:
-    """Builds a regex pattern for the URL path component.
-
-    Legacy function maintained for compatibility. The path pattern building
-    logic has been integrated into _generate_pattern_and_prefix for better
-    cohesion and site-specific handling.
-
-    Args:
-        path (str): The URL path to process.
-        is_forum_site (bool): Whether this is a forum site.
-
-    Returns:
-        str: The original path (functionality moved to main function).
-    """
-    # This function is now simplified and integrated into _generate_pattern_and_prefix
-    return path
-
-
-def _get_essential_forum_path(path_pattern: str) -> str:
-    """Extracts the essential part of a forum URL path (up to thread ID).
-
-    Legacy function maintained for compatibility. The forum path extraction
-    logic has been integrated into _generate_pattern_and_prefix for better
-    site-specific pattern generation.
-
-    Args:
-        path_pattern (str): The forum path pattern to process.
-
-    Returns:
-        str: The original path pattern (functionality moved to main function).
-    """
-    # This function is now simplified and integrated into _generate_pattern_and_prefix
-    return path_pattern
-
-
 def _generate_site_identifier(domain: str, site: str) -> str:
     """Generates a meaningful site identifier from the domain algorithmically.
 
