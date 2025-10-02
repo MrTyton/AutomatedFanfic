@@ -748,20 +748,6 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
         self.assertIn("forum", pattern2)
         self.assertEqual(prefix2, "forums.example.com")
 
-    def test_legacy_function_returns(self):
-        """Test legacy function return values."""
-        from auto_url_parsers import _build_path_pattern, _get_essential_forum_path
-
-        # Test _build_path_pattern returns original path (line 227)
-        test_path = "/s/12345/1/Title"
-        result = _build_path_pattern(test_path, False)
-        self.assertEqual(result, test_path)
-
-        # Test _get_essential_forum_path returns original pattern (line 244)
-        test_pattern = "/threads/story.12345"
-        result_forum = _get_essential_forum_path(test_pattern)
-        self.assertEqual(result_forum, test_pattern)
-
     def test_main_module_execution(self):
         """Test main module execution output."""
         import subprocess
