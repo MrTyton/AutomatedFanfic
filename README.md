@@ -18,6 +18,7 @@ This is a docker image to run the Automated FFF CLI, with Apprise integration.
   - [Configuration](#configuration)
     - [Email](#email)
     - [Calibre](#calibre)
+    - [Retry and Hail-Mary Protocol](#retry-and-hail-mary-protocol)
     - [Pushbullet](#pushbullet)
     - [Apprise](#apprise)
 
@@ -146,6 +147,23 @@ The system can automatically trigger force updates in certain circumstances, reg
    - If the final Hail-Mary attempt fails under these conditions, a special notification explains that the force request was ignored
 
 For both the default and personal INI, any changes made to them will take effect during the next update check, it does not require a restart of the script.
+
+### Retry and Hail-Mary Protocol
+
+Configure the retry behavior and Hail-Mary protocol settings:
+
+```toml
+[retry]
+hail_mary_enabled = true
+hail_mary_wait_hours = 12.0
+max_normal_retries = 11
+```
+
+- `hail_mary_enabled`: Whether to enable the Hail-Mary protocol (defaults to `true` for backward compatibility). When `false`, stories that reach maximum retry attempts will be permanently failed without the final extended wait attempt.
+- `hail_mary_wait_hours`: Hours to wait before attempting the final Hail-Mary retry (defaults to `12.0`). Can be set to any value between 0.1 and 168 hours (1 week). This allows customization for different use cases - you might want 24 or 36 hours for sites with longer outages.
+- `max_normal_retries`: Maximum number of normal retry attempts before activating Hail-Mary protocol (defaults to `11`). Normal retries use exponential backoff (1min, 2min, 3min, etc.). Can be set between 1 and 50 attempts.
+
+**Backward Compatibility:** If this section is omitted from your configuration, the application will use the original behavior: 11 normal retries followed by a 12-hour Hail-Mary attempt.
 
 ### Pushbullet
 

@@ -5,6 +5,7 @@ import multiprocessing as mp
 from subprocess import STDOUT, PIPE
 
 import url_worker
+import config_models
 from fanfic_info import FanficInfo
 from calibre_info import CalibreInfo
 from notification_wrapper import NotificationWrapper
@@ -13,87 +14,100 @@ from typing import NamedTuple, Optional
 
 class TestUrlWorker(unittest.TestCase):
     class HandleFailureTestCase(NamedTuple):
-        reached_maximum_repeats: bool
-        hail_mary: bool  # Added hail_mary flag
-        expected_log_failure_call: bool
-        expected_log_message: Optional[str]  # Specific message expected
+        name: str
+        retry_count: int  # The current repeats value
+        max_normal_retries: int  # Config setting
+        hail_mary_enabled: bool  # Config setting
+        expected_log_message: str
         expected_notification_call: bool
-        expected_notification_title: Optional[str]  # Specific notification title
+        expected_notification_title: Optional[str]
         expected_queue_put_call: bool
-        expected_increment_repeat_call: bool
 
     @parameterized.expand(
         [
-            # Case 1: Not reached maximum repeats
+            # Case 1: Normal retry - not reached maximum repeats
             HandleFailureTestCase(
-                reached_maximum_repeats=False,
-                hail_mary=False,
-                expected_log_failure_call=False,
-                expected_log_message=None,
+                name="normal_retry",
+                retry_count=3,  # Will become 4 after increment, less than max_normal_retries (11)
+                max_normal_retries=11,
+                hail_mary_enabled=True,
+                expected_log_message="Sending Test Story to waiting queue for retry. Attempt 4",
                 expected_notification_call=False,
                 expected_notification_title=None,
                 expected_queue_put_call=True,
-                expected_increment_repeat_call=True,
             ),
-            # Case 2: Reached maximum repeats, hail_mary not yet attempted
+            # Case 2: Hail-Mary activation - exactly at maximum normal retries
             HandleFailureTestCase(
-                reached_maximum_repeats=True,
-                hail_mary=False,
-                expected_log_failure_call=True,
-                expected_log_message="Maximum attempts reached for http://example.com/story. Activating Hail-Mary Protocol.",
+                name="hail_mary_activation",
+                retry_count=10,  # Will become 11 after increment, equals max_normal_retries
+                max_normal_retries=11,
+                hail_mary_enabled=True,
+                expected_log_message="Sending Test Story to waiting queue for hail_mary. Attempt 11",
                 expected_notification_call=True,
-                expected_notification_title="Fanfiction Download Failed, trying Hail-Mary in 12 hours.",
+                expected_notification_title="Fanfiction Download Failed, trying Hail-Mary in 12.00 hours.",
                 expected_queue_put_call=True,
-                expected_increment_repeat_call=False,
             ),
-            # Case 3: Reached maximum repeats, hail_mary already attempted
+            # Case 3: Abandonment - beyond maximum retries
             HandleFailureTestCase(
-                reached_maximum_repeats=True,
-                hail_mary=True,
-                expected_log_failure_call=True,
-                expected_log_message="Hail Mary attempted for http://example.com/story and failed.",
+                name="abandonment",
+                retry_count=11,  # Will become 12 after increment, beyond max_normal_retries + hail_mary
+                max_normal_retries=11,
+                hail_mary_enabled=True,
+                expected_log_message="Maximum retries reached for Test Story. Abandoning after 12 attempts.",
                 expected_notification_call=False,
                 expected_notification_title=None,
                 expected_queue_put_call=False,
-                expected_increment_repeat_call=False,
             ),
         ]
     )
     @patch("ff_logging.log_failure")
     def test_handle_failure(
         self,
-        reached_maximum_repeats,
-        hail_mary,
-        expected_log_failure_call,
+        name,
+        retry_count,
+        max_normal_retries,
+        hail_mary_enabled,
         expected_log_message,
         expected_notification_call,
         expected_notification_title,
         expected_queue_put_call,
-        expected_increment_repeat_call,
         mock_log_failure,
     ):
         # Setup
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "site"
-        # Mock reached_maximum_repeats to return a tuple
-        mock_fanfic.reached_maximum_repeats.return_value = (
-            reached_maximum_repeats,
-            hail_mary,
-        )
+        mock_fanfic.title = "Test Story"
+        mock_fanfic.repeats = retry_count  # Set the repeats to control decision
+
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_queue = MagicMock(spec=mp.Queue)
-        mock_queue.put = MagicMock()
-        mock_fanfic.increment_repeat = MagicMock()  # Ensure increment_repeat is mocked
+        mock_waiting_queue = MagicMock(spec=mp.Queue)
+        mock_waiting_queue.put = MagicMock()
+
+        # Mock increment_repeat to simulate the actual increment behavior
+        def simulate_increment():
+            mock_fanfic.repeats += 1
+
+        mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
+
+        # Create retry config with specific settings for this test
+        retry_config = config_models.RetryConfig(
+            max_normal_retries=max_normal_retries,
+            hail_mary_enabled=hail_mary_enabled,
+            hail_mary_wait_hours=12.0,  # Standard wait time
+        )
 
         # Execution
-        url_worker.handle_failure(mock_fanfic, mock_notification_info, mock_queue, None)
+        url_worker.handle_failure(
+            mock_fanfic,
+            mock_notification_info,
+            mock_waiting_queue,
+            retry_config,
+        )
 
         # Assertions
-        if expected_log_failure_call:
-            mock_log_failure.assert_called_once_with(expected_log_message)
-        else:
-            mock_log_failure.assert_not_called()
+        # log_failure should be called with the expected message
+        mock_log_failure.assert_called_with(expected_log_message)
 
         if expected_notification_call:
             mock_notification_info.send_notification.assert_called_once_with(
@@ -103,14 +117,12 @@ class TestUrlWorker(unittest.TestCase):
             mock_notification_info.send_notification.assert_not_called()
 
         if expected_queue_put_call:
-            mock_queue.put.assert_called_once_with(mock_fanfic)
+            mock_waiting_queue.put.assert_called_once_with(mock_fanfic)
         else:
-            mock_queue.put.assert_not_called()
+            mock_waiting_queue.put.assert_not_called()
 
-        if expected_increment_repeat_call:
-            mock_fanfic.increment_repeat.assert_called_once()
-        else:
-            mock_fanfic.increment_repeat.assert_not_called()
+        # increment_repeat is always called in the new architecture
+        mock_fanfic.increment_repeat.assert_called_once()
 
     class HandleFailureUpdateNoForceTestCase(NamedTuple):
         name: str
@@ -132,7 +144,7 @@ class TestUrlWorker(unittest.TestCase):
                 should_send_notification=True,
                 expected_notification_title="Fanfiction Update Permanently Skipped",
                 expected_notification_body="Update for http://example.com/story was permanently skipped because a force was requested but the update method is set to 'update_no_force'. The force request was ignored and a normal update was attempted instead.",
-                expected_log_message="Hail Mary attempted for http://example.com/story and failed.",
+                expected_log_message="Maximum retries reached for Test Story. Abandoning after 12 attempts.",
             ),
             HandleFailureUpdateNoForceTestCase(
                 name="hail_mary_non_force_update_no_force",
@@ -142,7 +154,7 @@ class TestUrlWorker(unittest.TestCase):
                 should_send_notification=False,
                 expected_notification_title="",
                 expected_notification_body="",
-                expected_log_message="Hail Mary attempted for http://example.com/story and failed.",
+                expected_log_message="Maximum retries reached for Test Story. Abandoning after 12 attempts.",
             ),
             HandleFailureUpdateNoForceTestCase(
                 name="hail_mary_force_different_update_method",
@@ -152,7 +164,7 @@ class TestUrlWorker(unittest.TestCase):
                 should_send_notification=False,
                 expected_notification_title="",
                 expected_notification_body="",
-                expected_log_message="Hail Mary attempted for http://example.com/story and failed.",
+                expected_log_message="Maximum retries reached for Test Story. Abandoning after 12 attempts.",
             ),
         ]
     )
@@ -174,20 +186,37 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "test_site"
+        mock_fanfic.title = "Test Story"
+        mock_fanfic.repeats = 11  # Will become 12 after increment, triggers abandonment
         mock_fanfic.behavior = behavior
-        mock_fanfic.reached_maximum_repeats.return_value = reached_maximum_repeats
+
+        # Mock increment_repeat to simulate the actual increment behavior
+        def simulate_increment():
+            mock_fanfic.repeats += 1
+
+        mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
+
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_queue = MagicMock(spec=mp.Queue)
-        mock_queue.put = MagicMock()
+        mock_waiting_queue = MagicMock(spec=mp.Queue)
+        mock_waiting_queue.put = MagicMock()
         mock_cdb = MagicMock(spec=CalibreInfo)
         mock_cdb.update_method = update_method
 
+        # Create real retry config
+        retry_config = config_models.RetryConfig(
+            max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
+        )
+
         url_worker.handle_failure(
-            mock_fanfic, mock_notification_info, mock_queue, mock_cdb
+            mock_fanfic,
+            mock_notification_info,
+            mock_waiting_queue,
+            retry_config,
+            mock_cdb,
         )
 
         # Assertions
-        mock_log_failure.assert_called_once_with(expected_log_message)
+        mock_log_failure.assert_called_with(expected_log_message)
 
         if should_send_notification:
             mock_notification_info.send_notification.assert_called_once_with(
@@ -198,7 +227,7 @@ class TestUrlWorker(unittest.TestCase):
         else:
             mock_notification_info.send_notification.assert_not_called()
 
-        mock_queue.put.assert_not_called()
+        mock_waiting_queue.put.assert_not_called()
 
     @patch("ff_logging.log_failure")
     def test_handle_failure_with_none_cdb(self, mock_log_failure):
@@ -207,22 +236,38 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "test_site"
+        mock_fanfic.title = "Test Story"
+        mock_fanfic.repeats = 3  # Will become 4 after increment, triggers normal retry
         mock_fanfic.behavior = "force"
+
+        # Mock increment_repeat to simulate the actual increment behavior
+        def simulate_increment():
+            mock_fanfic.repeats += 1
+
+        mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_queue = MagicMock(spec=mp.Queue)
-        mock_queue.put = MagicMock()
+        mock_waiting_queue = MagicMock(spec=mp.Queue)
+        mock_waiting_queue.put = MagicMock()
 
-        # Test Case: Hail Mary with force behavior but cdb=None -> should not send special notification
-        mock_fanfic.reached_maximum_repeats.return_value = (True, True)
+        # Create real retry config
+        retry_config = config_models.RetryConfig(
+            max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
+        )
 
-        url_worker.handle_failure(mock_fanfic, mock_notification_info, mock_queue, None)
+        # Test Case: Normal retry with force behavior but cdb=None -> should retry normally
+        url_worker.handle_failure(
+            mock_fanfic,
+            mock_notification_info,
+            mock_waiting_queue,
+            retry_config,
+        )
 
-        # Assertions - should log but not send special notification
+        # Assertions - should log retry and queue the fanfic
         mock_log_failure.assert_called_once_with(
-            "Hail Mary attempted for http://example.com/story and failed."
+            "Sending Test Story to waiting queue for retry. Attempt 4"
         )
         mock_notification_info.send_notification.assert_not_called()
-        mock_queue.put.assert_not_called()
+        mock_waiting_queue.put.assert_called_once_with(mock_fanfic)
 
     class HandleFailureEdgeCaseTestCase(NamedTuple):
         name: str
@@ -236,13 +281,13 @@ class TestUrlWorker(unittest.TestCase):
                 name="none_behavior",
                 behavior=None,
                 reached_maximum_repeats=(True, True),
-                expected_log_message="Hail Mary attempted for http://example.com/story and failed.",
+                expected_log_message="Maximum retries reached for Test Story. Abandoning after 12 attempts.",
             ),
             HandleFailureEdgeCaseTestCase(
                 name="empty_behavior",
                 behavior="",
                 reached_maximum_repeats=(True, True),
-                expected_log_message="Hail Mary attempted for http://example.com/story and failed.",
+                expected_log_message="Maximum retries reached for Test Story. Abandoning after 12 attempts.",
             ),
         ]
     )
@@ -260,19 +305,30 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic = MagicMock(spec=FanficInfo)
         mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "test_site"
+        mock_fanfic.title = "Test Story"
+        mock_fanfic.repeats = 11  # Will become 12 after increment, triggers abandonment
         mock_fanfic.behavior = behavior
-        mock_fanfic.reached_maximum_repeats.return_value = reached_maximum_repeats
-        mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_queue = MagicMock(spec=mp.Queue)
-        mock_queue.put = MagicMock()
-        mock_cdb = MagicMock(spec=CalibreInfo)
-        mock_cdb.update_method = "update_no_force"
 
-        url_worker.handle_failure(
-            mock_fanfic, mock_notification_info, mock_queue, mock_cdb
+        # Mock increment_repeat to simulate the actual increment behavior
+        def simulate_increment():
+            mock_fanfic.repeats += 1
+
+        mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
+
+        mock_notification_info = MagicMock(spec=NotificationWrapper)
+        mock_waiting_queue = MagicMock(spec=mp.Queue)
+        mock_waiting_queue.put = MagicMock()
+
+        # Create real retry config
+        retry_config = config_models.RetryConfig(
+            max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
 
-        mock_log_failure.assert_called_once_with(expected_log_message)
+        url_worker.handle_failure(
+            mock_fanfic, mock_notification_info, mock_waiting_queue, retry_config
+        )
+
+        mock_log_failure.assert_called_with(expected_log_message)
         mock_notification_info.send_notification.assert_not_called()
 
     class GetPathOrUrlTestCase(NamedTuple):
@@ -477,6 +533,7 @@ class TestUrlWorker(unittest.TestCase):
             "path_or_url",
             mock_queue,
             mock_notification_info,
+            config_models.RetryConfig(),
         )
 
         # Assertions
@@ -503,7 +560,11 @@ class TestUrlWorker(unittest.TestCase):
             )
             # Check if handle_failure was called
             mock_handle_failure.assert_called_once_with(
-                mock_fanfic, mock_notification_info, mock_queue, mock_cdb
+                mock_fanfic,
+                mock_notification_info,
+                mock_queue,
+                config_models.RetryConfig(),
+                mock_cdb,
             )
             # Ensure success notification was NOT called if handle_failure was called
             mock_notification_info.send_notification.assert_not_called()
@@ -538,6 +599,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.test_fanfic.site = "test_site"
         self.test_fanfic.url = "http://example.com/story"
         self.test_fanfic.behavior = "update"
+        self.test_fanfic.max_repeats = None
 
         # Counter to track calls and exit after processing one item
         self.call_count = 0
@@ -554,6 +616,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         return queue_get_side_effect
 
+    @patch("url_worker.config_models.ConfigManager.load_config")
     @patch("url_worker.system_utils.temporary_directory")
     @patch("url_worker.get_path_or_url")
     @patch("url_worker.construct_fanficfare_command")
@@ -566,6 +629,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
+        mock_load_config,
     ):
         """Test exception handling for force request with update_no_force configuration."""
         # Set up fanfic that requests force with update_no_force config
@@ -577,6 +641,15 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.mock_queue.get.side_effect = self.create_queue_get_side_effect(
             self.test_fanfic
         )
+
+        # Set up mock config with default retry settings
+        mock_config = MagicMock()
+        mock_config.retry = MagicMock()
+        mock_config.retry.hail_mary_enabled = True
+        mock_config.retry.hail_mary_wait_hours = 12.0
+        mock_config.retry.max_normal_retries = 11
+        mock_config.retry.hail_mary_wait_minutes = 720.0
+        mock_load_config.return_value = mock_config
 
         # Set up temp directory and basic processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
@@ -592,6 +665,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_cdb,
                     self.mock_notification_info,
                     self.mock_waiting_queue,
+                    "test_config.toml",
                 )
 
             # Verify that exception was triggered and failure handler called
@@ -602,6 +676,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.test_fanfic,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
+                mock_config.retry,
                 self.mock_cdb,
             )
 
@@ -644,16 +719,18 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_cdb,
                     self.mock_notification_info,
                     self.mock_waiting_queue,
+                    "test_config.toml",
                 )
 
             # Verify that exception was caught and failure handler called
-            mock_log_failure.assert_called_once_with(
+            mock_log_failure.assert_any_call(
                 "\t(test_site) Failed to update test_file.epub: Command execution failed"
             )
             mock_handle_failure.assert_called_once_with(
                 self.test_fanfic,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
+                config_models.RetryConfig(),
                 self.mock_cdb,
             )
 
@@ -697,6 +774,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_cdb,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
+                "test_config.toml",
             )
 
         # Verify failure handler was called due to regex detection
@@ -704,6 +782,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.test_fanfic,
             self.mock_notification_info,
             self.mock_waiting_queue,
+            config_models.RetryConfig(),
             self.mock_cdb,
         )
 
@@ -748,6 +827,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_cdb,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
+                "test_config.toml",
             )
 
         # Verify fanfic was re-queued with force behavior
@@ -797,6 +877,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_cdb,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
+                "test_config.toml",
             )
 
         # Verify successful processing
@@ -808,6 +889,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             "test_file.epub",
             self.mock_waiting_queue,
             self.mock_notification_info,
+            config_models.RetryConfig(),
         )
 
 

@@ -354,6 +354,51 @@ class AppriseConfig(BaseModel):
         return [url.strip() for url in v if url and url.strip()]
 
 
+class RetryConfig(BaseModel):
+    """Configuration model for retry and Hail-Mary protocol settings.
+
+    This class defines settings for the retry mechanism and the special Hail-Mary
+    protocol that provides a final retry attempt after normal retry exhaustion.
+    The Hail-Mary protocol allows for extended wait times to handle temporary
+    server issues or rate limiting.
+
+    Attributes:
+        hail_mary_enabled (bool): Whether to enable the Hail-Mary protocol.
+        hail_mary_wait_hours (float): Hours to wait before Hail-Mary attempt.
+        max_normal_retries (int): Maximum number of normal retry attempts.
+
+    Note:
+        The default configuration maintains backward compatibility with the
+        original behavior of 11 normal retries and a 12-hour Hail-Mary wait.
+        The wait time is specified in hours for user convenience but internally
+        converted to minutes for processing.
+    """
+
+    hail_mary_enabled: bool = Field(
+        default=True,
+        description="Enable the Hail-Mary protocol for final retry attempts",
+    )
+
+    hail_mary_wait_hours: float = Field(
+        default=12.0,
+        ge=0.1,
+        le=168.0,  # Maximum 1 week
+        description="Hours to wait before attempting Hail-Mary retry",
+    )
+
+    max_normal_retries: int = Field(
+        default=11,
+        ge=1,
+        le=50,
+        description="Maximum number of normal retry attempts before Hail-Mary",
+    )
+
+    @property
+    def hail_mary_wait_minutes(self) -> float:
+        """Convert Hail-Mary wait time from hours to minutes for internal use."""
+        return self.hail_mary_wait_hours * 60.0
+
+
 class ProcessConfig(BaseModel):
     """Configuration model for process management and monitoring.
 
@@ -447,6 +492,7 @@ class AppConfig(BaseSettings):
         calibre (CalibreConfig): Calibre library integration configuration.
         pushbullet (PushbulletConfig): Pushbullet notification configuration.
         apprise (AppriseConfig): Apprise notification services configuration.
+        retry (RetryConfig): Retry and Hail-Mary protocol configuration.
         process (ProcessConfig): Process management and monitoring configuration.
         version (str): Application version string.
         max_workers (Optional[int]): Maximum number of worker processes.
@@ -466,6 +512,7 @@ class AppConfig(BaseSettings):
     calibre: CalibreConfig
     pushbullet: PushbulletConfig = Field(default_factory=PushbulletConfig)
     apprise: AppriseConfig = Field(default_factory=AppriseConfig)
+    retry: RetryConfig = Field(default_factory=RetryConfig)
     process: ProcessConfig = Field(default_factory=ProcessConfig)
 
     # Application settings

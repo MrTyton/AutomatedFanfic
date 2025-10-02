@@ -220,7 +220,13 @@ def main() -> None:
                 process_manager.register_process(
                     f"worker_{site}",
                     url_worker.url_worker,
-                    args=(queues[site], cdb_info, notification_info, waiting_queue),
+                    args=(
+                        queues[site],
+                        cdb_info,
+                        notification_info,
+                        waiting_queue,
+                        args.config,
+                    ),
                 )
 
             # Start all processes with monitoring and graceful shutdown capability

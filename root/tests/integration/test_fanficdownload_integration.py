@@ -474,14 +474,31 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_fanfic = MagicMock(spec=fanfic_info.FanficInfo)
         mock_fanfic.url = "http://test.site/story"
         mock_fanfic.site = "test_site"
-        mock_fanfic.reached_maximum_repeats.return_value = (
-            config_data["max_repeats"],
-            config_data.get("hail_mary", False),
-        )
+
+        # Set up fanfic state based on test scenario instead of using reached_maximum_repeats
+        if config_data["max_repeats"] and not config_data.get("hail_mary", False):
+            # Hail-Mary activation scenario - exactly at max normal retries after increment
+            mock_fanfic.repeats = (
+                10  # Will become 11 after increment (equals max_normal_retries)
+            )
+        elif config_data["max_repeats"] and config_data.get("hail_mary", False):
+            # Beyond hail-mary scenario - should abandon
+            # For force+update_no_force, we still want abandonment case to trigger special notification
+            mock_fanfic.repeats = 11  # Will become 12 after increment (beyond max normal retries + hail mary)
+        else:
+            # Normal retry scenario
+            mock_fanfic.repeats = 4  # Will become 5 after increment
+
+        # Set behavior for force/update_no_force scenarios
+        mock_fanfic.behavior = config_data.get("behavior", "update")
+        mock_fanfic.title = "Test Story"
+
+        # Mock increment_repeat to simulate the actual increment behavior
+        def simulate_increment():
+            mock_fanfic.repeats += 1
+
+        mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
         mock_fanfic.behavior = config_data.get("behavior", None)
-        mock_fanfic.increment_repeat = (
-            MagicMock()
-        )  # Ensure increment_repeat is available
 
         mock_notification = MagicMock(spec=notification_wrapper.NotificationWrapper)
         mock_queue = MagicMock(spec=mp.Queue)
@@ -493,10 +510,17 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             mock_cdb = MagicMock(spec=calibre_info.CalibreInfo)
             mock_cdb.update_method = config_data["update_method"]
 
+        # Create retry config for the new architecture
+        import config_models
+
+        retry_config = config_models.RetryConfig(
+            max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
+        )
+
         # Test failure handling
         with patch("url_worker.ff_logging") as mock_logging:
             url_worker.handle_failure(
-                mock_fanfic, mock_notification, mock_queue, mock_cdb
+                mock_fanfic, mock_notification, mock_queue, retry_config, mock_cdb
             )
 
             # Validate expected behaviors
