@@ -213,6 +213,31 @@ def get_path_or_url(
     return ff_info.url
 
 
+def extract_title_from_epub_path(epub_path: str) -> str:
+    """
+    Extract the story title from an epub file path.
+
+    Args:
+        epub_path (str): Path to the epub file, which may contain the story title
+
+    Returns:
+        str: Extracted title, or the original path if extraction fails
+    """
+    import os
+
+    try:
+        # Get the filename without directory path
+        filename = os.path.basename(epub_path)
+        # Remove the .epub extension
+        if filename.lower().endswith(".epub"):
+            title = filename[:-5]  # Remove last 5 characters (.epub)
+            return title
+    except Exception:
+        # If extraction fails, return the original path
+        pass
+    return epub_path
+
+
 def execute_command(command: str) -> str:
     """
     Executes a shell command and returns its output.
@@ -487,6 +512,16 @@ def url_worker(
 
             # Determine if this is an update (existing file) or new download (URL)
             path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
+
+            # Extract title from epub filename if we're updating an existing story
+            if path_or_url.endswith(".epub"):
+                extracted_title = extract_title_from_epub_path(path_or_url)
+                if (
+                    extracted_title != path_or_url
+                ):  # Only update if extraction succeeded
+                    fanfic.title = extracted_title
+                    ff_logging.log_debug(f"\t({site}) Extracted title: {fanfic.title}")
+
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
             # Build FanFicFare command based on configuration and fanfic state

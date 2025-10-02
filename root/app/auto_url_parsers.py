@@ -281,12 +281,12 @@ def _generate_site_identifier(domain: str, site: str) -> str:
     return site.lower().replace(".", "_").replace("-", "_")
 
 
-# Generate the URL parsers when this module is imported
-# This provides immediate availability of patterns for URL processing
-url_parsers = generate_url_parsers_from_fanficfare()
+# Note: URL parsers are no longer automatically generated at module import.
+# Call generate_url_parsers_from_fanficfare() explicitly when needed.
 
-# Print statistics and key parsers when run as main module
+# Generate the parsers when running as script for testing/debugging
 if __name__ == "__main__":
+    url_parsers = generate_url_parsers_from_fanficfare()
     print(f"Auto-generated {len(url_parsers)} URL parsers from FanFicFare adapters")
 
     # Show some key parsers for verification
@@ -298,6 +298,3 @@ if __name__ == "__main__":
             print(f"  {site:12} -> {pattern.pattern}")
             if prefix:
                 print(f"               Prefix: {prefix}")
-else:
-    # Log successful loading when imported as module
-    print(f"Loaded {len(url_parsers)} auto-generated URL parsers from FanFicFare")

@@ -188,6 +188,13 @@ class TestEmailWatcher(unittest.TestCase):
             "other": mp.Queue(),
         }
 
+        # Mock URL parsers for testing
+        self.mock_url_parsers = {
+            "fanfiction": (MagicMock(), "https://www.fanfiction.net/s/"),
+            "archiveofourown": (MagicMock(), "https://archiveofourown.org/works/"),
+            "other": (MagicMock(), ""),
+        }
+
     def assert_queue_has_item(self, queue_name, expected_fanfic=None, timeout=1.0):
         """Assert that a queue has an item, with retry logic for race conditions.
 
@@ -268,12 +275,15 @@ class TestEmailWatcher(unittest.TestCase):
         # Run email_watcher until KeyboardInterrupt
         with self.assertRaises(KeyboardInterrupt):
             email_watcher(
-                self.mock_email_info, self.mock_notification_info, self.processor_queues
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.processor_queues,
+                self.mock_url_parsers,
             )
 
         # Verify URL was processed
         mock_generate_fanfic.assert_called_once_with(
-            "https://www.fanfiction.net/s/12345/1/Test-Story"
+            "https://www.fanfiction.net/s/12345/1/Test-Story", self.mock_url_parsers
         )
 
         # Verify logging
@@ -307,7 +317,10 @@ class TestEmailWatcher(unittest.TestCase):
         # Run email_watcher until KeyboardInterrupt
         with self.assertRaises(KeyboardInterrupt):
             email_watcher(
-                self.mock_email_info, self.mock_notification_info, self.processor_queues
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.processor_queues,
+                self.mock_url_parsers,
             )
 
         # Verify notification was sent
@@ -353,7 +366,10 @@ class TestEmailWatcher(unittest.TestCase):
         # Run email_watcher until KeyboardInterrupt
         with self.assertRaises(KeyboardInterrupt):
             email_watcher(
-                self.mock_email_info, self.mock_notification_info, self.processor_queues
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.processor_queues,
+                self.mock_url_parsers,
             )
 
         # Verify each fanfic was added to the correct queue (with race condition handling)
@@ -381,7 +397,10 @@ class TestEmailWatcher(unittest.TestCase):
         # Run email_watcher until KeyboardInterrupt
         with self.assertRaises(KeyboardInterrupt):
             email_watcher(
-                self.mock_email_info, self.mock_notification_info, self.processor_queues
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.processor_queues,
+                self.mock_url_parsers,
             )
 
         # Verify all queues remain empty
@@ -404,7 +423,10 @@ class TestEmailWatcher(unittest.TestCase):
         # Run email_watcher until KeyboardInterrupt
         with self.assertRaises(KeyboardInterrupt):
             email_watcher(
-                self.mock_email_info, self.mock_notification_info, self.processor_queues
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.processor_queues,
+                self.mock_url_parsers,
             )
 
         # Verify sleep was called with correct duration

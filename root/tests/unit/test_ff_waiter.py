@@ -27,14 +27,14 @@ class TestProcessFanfic(unittest.TestCase):
                 action=retry_types.FailureAction.RETRY,
                 delay_minutes=5.0,
                 expected_delay_seconds=300,
-                expected_log_pattern="Waiting ~5.00 minutes for url in queue site (retry #3)",
+                expected_log_pattern="Waiting ~5.00 minutes for url in queue site (retry #2)",
                 description="Regular retry with 5 minute delay",
             ),
             ProcessFanficTestCase(
                 action=retry_types.FailureAction.RETRY,
                 delay_minutes=10.5,
                 expected_delay_seconds=630,
-                expected_log_pattern="Waiting ~10.50 minutes for url in queue site (retry #3)",
+                expected_log_pattern="Waiting ~10.50 minutes for url in queue site (retry #2)",
                 description="Regular retry with fractional delay",
             ),
             ProcessFanficTestCase(

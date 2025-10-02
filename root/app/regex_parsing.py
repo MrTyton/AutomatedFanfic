@@ -34,9 +34,11 @@ Error Detection:
 Example:
     ```python
     from regex_parsing import generate_FanficInfo_from_url, check_failure_regexes
+    from auto_url_parsers import generate_url_parsers_from_fanficfare
 
-    # Parse URL and identify site
-    fanfic_info = generate_FanficInfo_from_url("https://archiveofourown.org/works/12345")
+    # Generate URL parsers and parse URL to identify site
+    url_parsers = generate_url_parsers_from_fanficfare()
+    fanfic_info = generate_FanficInfo_from_url("https://archiveofourown.org/works/12345", url_parsers)
 
     # Check FanFicFare output for errors
     if check_failure_regexes(fanficfare_output):
@@ -61,12 +63,8 @@ import re
 import fanfic_info
 import ff_logging
 
-# Import auto-generated URL parsers from FanFicFare adapters
-from auto_url_parsers import url_parsers
-
-# Note: url_parsers is now automatically generated from FanFicFare adapters
-# This eliminates the need to manually maintain regex patterns for each site
-# The patterns are extracted from getSiteExamples() in fanficfare.adapters
+# Note: url_parsers is now passed as a parameter to avoid loading
+# FanFicFare adapters in every worker process
 
 # Define regular expressions for different story formats and errors
 # These patterns are used to parse FanFicFare output for various conditions
@@ -295,7 +293,7 @@ def check_forceable_regexes(output: str) -> bool:
     )
 
 
-def generate_FanficInfo_from_url(url: str) -> fanfic_info.FanficInfo:
+def generate_FanficInfo_from_url(url: str, url_parsers: dict) -> fanfic_info.FanficInfo:
     """
     Generate a FanficInfo object from a URL by identifying the site and normalizing the URL.
 
@@ -321,15 +319,15 @@ def generate_FanficInfo_from_url(url: str) -> fanfic_info.FanficInfo:
     Example:
         ```python
         # Archive of Our Own URL
-        info = generate_FanficInfo_from_url("https://archiveofourown.org/works/12345")
+        info = generate_FanficInfo_from_url("https://archiveofourown.org/works/12345", url_parsers)
         # Returns: FanficInfo(url="https://archiveofourown.org/works/12345", site="archiveofourown.org")
 
         # FanFiction.Net URL
-        info = generate_FanficInfo_from_url("https://www.fanfiction.net/s/789123/1/")
+        info = generate_FanficInfo_from_url("https://www.fanfiction.net/s/789123/1/", url_parsers)
         # Returns: FanficInfo(url="https://www.fanfiction.net/s/789123", site="fanfiction.net")
 
         # Unrecognized site
-        info = generate_FanficInfo_from_url("https://unknown-site.com/story/456")
+        info = generate_FanficInfo_from_url("https://unknown-site.com/story/456", url_parsers)
         # Returns: FanficInfo(url="https://unknown-site.com/story/456", site="other")
         ```
 
@@ -365,7 +363,7 @@ def generate_FanficInfo_from_url(url: str) -> fanfic_info.FanficInfo:
                 # Fallback: use the entire matched portion
                 url = match.group(0)
 
-            return fanfic_info.FanficInfo(url, site)
+            return fanfic_info.FanficInfo(url, site, title=url)
 
     # No recognized site pattern matched - classify as "other"
-    return fanfic_info.FanficInfo(url, "other")
+    return fanfic_info.FanficInfo(url, "other", title=url)
