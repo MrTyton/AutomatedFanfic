@@ -2,7 +2,7 @@ name: Update Dependencies and Run CI
 
 on:
   schedule:
-    - cron: '0 23 * * *' # Every day at 11pm UTC
+    - cron: "0 23 * * *" # Every day at 11pm UTC
   workflow_dispatch:
 
 permissions:
@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Cache pip dependencies
         uses: actions/cache@v4
@@ -148,8 +148,8 @@ jobs:
         if: steps.check_updates.outputs.any_changed == 'true'
         uses: ./.github/actions/bump-version
         with:
-          bump-type: 'patch'
-          reason: 'dependency'
+          bump-type: "patch"
+          reason: "dependency"
 
       - name: Update version in fanficdownload.py
         if: steps.update_latest_txt.outputs.version-changed == 'true'
@@ -189,7 +189,7 @@ jobs:
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
           # Ensure latest.txt is committed along with dependency files
-          add: 'release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py'
+          add: "release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py"
 
       - name: Verify commit and set output
         id: verify_commit
@@ -223,8 +223,8 @@ jobs:
       - name: Notify if no changes were committed (Should not happen with default token)
         if: steps.update_latest_txt.outputs.version-changed == 'true' && steps.commit_changes.outputs.commit_long_sha == ''
         run: |
-            echo "::warning::Commit step was skipped or failed unexpectedly."
-            # exit 1 # Consider removing exit 1 if it's just a warning
+          echo "::warning::Commit step was skipped or failed unexpectedly."
+          # exit 1 # Consider removing exit 1 if it's just a warning
 
       - name: Notify if no updates were found
         if: steps.update_latest_txt.outputs.version-changed != 'true'
