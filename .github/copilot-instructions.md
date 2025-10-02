@@ -17,8 +17,10 @@ AutomatedFanfic is a Python multiprocessing application that automates fanfictio
 ### 2. Configuration Management
 - **Pydantic Models**: Type-safe configuration with validation (`config_models.py`)
 - **TOML-Based**: Primary config in `config.toml`, with defaults and validation
-- **Hierarchical Structure**: Email, Calibre, Pushbullet, Apprise, and Process configurations
+- **Hierarchical Structure**: Email, Calibre, Pushbullet, Apprise, Retry, and Process configurations
+- **Comprehensive Validation**: RetryConfig and ProcessConfig models with field constraints and custom validators
 - **Hot Reload**: Some configs (INI files) reload without restart; TOML requires restart
+- **ConfigManager**: Centralized loading with error handling (ConfigError, ConfigValidationError)
 
 ### 3. URL Processing & Site Recognition
 - **Auto-Generated Parsers**: `auto_url_parsers.py` dynamically generates regex patterns from FanFicFare adapters
@@ -27,10 +29,12 @@ AutomatedFanfic is a Python multiprocessing application that automates fanfictio
 - **URL Patterns**: Algorithmic generation eliminates manual regex maintenance
 
 ### 4. Error Handling & Retry Logic
-- **Exponential Backoff**: Failures wait progressively (1min, 2min, 3min... up to 11 attempts)
-- **Hail-Mary Protocol**: Final attempt waits 12 hours before retry
+- **Exponential Backoff**: Failures wait progressively (1min, 2min, 3min... up to configurable max_normal_retries)
+- **Hail-Mary Protocol**: Final attempt waits configurable hours (default 12) before retry
+- **RetryConfig Model**: Centralized retry configuration with hail_mary_enabled, max_normal_retries, hail_mary_wait_hours
 - **Force Update Logic**: Automatic force detection for chapter mismatches, with `update_no_force` override
 - **Behavior Tracking**: Stories track retry count, force requests, and failure states
+- **Special Handling**: update_no_force method ignores force requests with dedicated notification
 
 ## Critical Workflows
 
@@ -67,9 +71,10 @@ AutomatedFanfic is a Python multiprocessing application that automates fanfictio
 ## Testing Conventions
 
 ### Test Structure
-- **Unit Tests**: `root/tests/unit/` - Fast, isolated component testing
+- **Unit Tests**: `root/tests/unit/` - Fast, isolated component testing (387 tests total, 96% coverage)
 - **Integration Tests**: `root/tests/integration/` - Multi-component interaction testing
 - **Manual Tests**: `root/tests/manual_signal_test.py` - Interactive verification scripts
+- **Comprehensive Coverage**: Full coverage of configuration models, notification systems, workers, and core logic
 
 ### Parameterized Testing
 - **Pattern**: Extensive use of `@parameterized.expand()` for data-driven tests
@@ -101,6 +106,11 @@ update_method = "update"  # "update"|"update_always"|"force"|"update_no_force"
 health_check_interval = 60.0
 shutdown_timeout = 30.0
 restart_threshold = 3
+
+[retry]
+hail_mary_enabled = true
+max_normal_retries = 11
+hail_mary_wait_hours = 12.0
 ```
 
 ### Update Method Behavior
@@ -134,6 +144,16 @@ restart_threshold = 3
 - **Error Handling**: Distinguish between retryable failures and permanent errors
 - **Configuration Changes**: TOML changes require restart; INI files reload automatically
 - **Testing**: Run full test suite with `pytest root/tests/` from project root
+- **Dead Code Analysis**: Use `vulture` tool to identify unused code (e.g., `vulture root/app/`)
+
+## Dead Code Management
+
+### Using Vulture for Code Cleanup
+- **Installation**: `pip install vulture` (included in dev requirements)
+- **Analysis**: `vulture root/app/` to find potentially unused code
+- **Verification**: Always verify findings before deletion (may have false positives)
+- **Safe Patterns**: Remove unused imports, legacy functions, and obsolete modules
+- **Test Cleanup**: Also run `vulture root/tests/` to find unused test code
 
 ## Common Operations
 
@@ -155,5 +175,11 @@ restart_threshold = 3
 2. Test edge cases in `test_config_models.py`
 3. Verify TOML parsing and error handling
 4. Ensure backward compatibility for existing configs
+
+### Code Quality & Maintenance
+1. Run `vulture root/app/ root/tests/` to identify dead code
+2. Verify test coverage with `pytest --cov=root/app root/tests/`
+3. Use parameterized tests for comprehensive edge case coverage
+4. Maintain configuration validation tests for all config sections
 
 This document captures the essential patterns, workflows, and conventions that make AutomatedFanfic work effectively. Focus on multiprocessing coordination, configuration management, and robust error handling when making changes.
