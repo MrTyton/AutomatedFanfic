@@ -9,11 +9,7 @@ import sys
 from url_ingester import EmailInfo, email_watcher
 from fanfic_info import FanficInfo
 from config_models import (
-    AppConfig,
     EmailConfig,
-    CalibreConfig,
-    AppriseConfig,
-    PushbulletConfig,
 )
 
 
@@ -46,26 +42,19 @@ class TestUrlIngester(unittest.TestCase):
             ),
         ]
     )
-    @patch("config_models.ConfigManager.load_config")
     def test_email_info_init_basic(
-        self, name, email, password, server, mailbox, sleep_time, mock_load_config
+        self, name, email, password, server, mailbox, sleep_time
     ):
-        # Setup mock config
-        mock_config = AppConfig(
-            email=EmailConfig(
-                email=email,
-                password=password,
-                server=server,
-                mailbox=mailbox,
-                sleep_time=sleep_time,
-            ),
-            calibre=CalibreConfig(path="/tmp/calibre"),
-            apprise=AppriseConfig(),
-            pushbullet=PushbulletConfig(),
+        # Create EmailConfig directly
+        email_config = EmailConfig(
+            email=email,
+            password=password,
+            server=server,
+            mailbox=mailbox,
+            sleep_time=sleep_time,
         )
-        mock_load_config.return_value = mock_config
 
-        email_info = EmailInfo("test_path.toml")
+        email_info = EmailInfo(email_config)
 
         self.assertEqual(email_info.email, email)
         self.assertEqual(email_info.password, password)
@@ -79,23 +68,16 @@ class TestUrlIngester(unittest.TestCase):
             ("ffnet_disabled", False),
         ]
     )
-    @patch("config_models.ConfigManager.load_config")
-    def test_email_info_init_ffnet_disable(self, name, ffnet_disable, mock_load_config):
-        # Setup mock config with ffnet_disable setting
-        mock_config = AppConfig(
-            email=EmailConfig(
-                email="testuser",
-                password="test_password",
-                server="test_server",
-                ffnet_disable=ffnet_disable,
-            ),
-            calibre=CalibreConfig(path="/tmp/calibre"),
-            apprise=AppriseConfig(),
-            pushbullet=PushbulletConfig(),
+    def test_email_info_init_ffnet_disable(self, name, ffnet_disable):
+        # Create EmailConfig directly with ffnet_disable setting
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            ffnet_disable=ffnet_disable,
         )
-        mock_load_config.return_value = mock_config
 
-        email_info = EmailInfo("test_path.toml")
+        email_info = EmailInfo(email_config)
 
         self.assertEqual(email_info.ffnet_disable, ffnet_disable)
 
@@ -107,59 +89,41 @@ class TestUrlIngester(unittest.TestCase):
         ]
     )
     @patch("url_ingester.geturls.get_urls_from_imap")
-    @patch("config_models.ConfigManager.load_config")
-    def test_email_info_get_urls(
-        self, name, expected_urls, mock_load_config, mock_get_urls_from_imap
-    ):
-        # Setup mock config
-        mock_config = AppConfig(
-            email=EmailConfig(
-                email="testuser",
-                password="test_password",
-                server="test_server",
-                mailbox="test_mailbox",
-                sleep_time=10,
-            ),
-            calibre=CalibreConfig(path="/tmp/calibre"),
-            apprise=AppriseConfig(),
-            pushbullet=PushbulletConfig(),
+    def test_email_info_get_urls(self, name, expected_urls, mock_get_urls_from_imap):
+        # Create EmailConfig directly
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            mailbox="test_mailbox",
+            sleep_time=10,
         )
-        mock_load_config.return_value = mock_config
 
         # Setup mock URL return
         mock_get_urls_from_imap.return_value = expected_urls
 
-        email_info = EmailInfo("test_path.toml")
+        email_info = EmailInfo(email_config)
         result = email_info.get_urls()
 
         self.assertEqual(result, expected_urls)
         mock_get_urls_from_imap.assert_called_once()
 
     @patch("url_ingester.geturls.get_urls_from_imap")
-    @patch("config_models.ConfigManager.load_config")
-    def test_email_info_get_urls_exception_handling(
-        self, mock_load_config, mock_get_urls_from_imap
-    ):
+    def test_email_info_get_urls_exception_handling(self, mock_get_urls_from_imap):
         """Test that get_urls handles exceptions gracefully."""
-        # Setup mock config
-        mock_config = AppConfig(
-            email=EmailConfig(
-                email="testuser",
-                password="test_password",
-                server="test_server",
-                mailbox="test_mailbox",
-                sleep_time=10,
-            ),
-            calibre=CalibreConfig(path="/tmp/calibre"),
-            apprise=AppriseConfig(),
-            pushbullet=PushbulletConfig(),
+        # Create EmailConfig directly
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            mailbox="test_mailbox",
+            sleep_time=10,
         )
-        mock_load_config.return_value = mock_config
 
         # Setup mock to raise exception
         mock_get_urls_from_imap.side_effect = Exception("Connection failed")
 
-        email_info = EmailInfo("test_path.toml")
+        email_info = EmailInfo(email_config)
 
         with patch("url_ingester.ff_logging.log_failure") as mock_log_failure:
             result = email_info.get_urls()

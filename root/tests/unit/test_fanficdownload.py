@@ -55,6 +55,9 @@ class TestFanficDownloadMain(unittest.TestCase):
         self.mock_config.process.enable_monitoring = True
         self.mock_config.process.auto_restart = True
 
+        # Set up retry config
+        self.mock_config.retry = MagicMock()
+
         # Set up top-level config
         self.mock_config.max_workers = 4
 
