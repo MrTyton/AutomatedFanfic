@@ -642,14 +642,10 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.test_fanfic
         )
 
-        # Set up mock config with default retry settings
-        mock_config = MagicMock()
-        mock_config.retry = MagicMock()
-        mock_config.retry.hail_mary_enabled = True
-        mock_config.retry.hail_mary_wait_hours = 12.0
-        mock_config.retry.max_normal_retries = 11
-        mock_config.retry.hail_mary_wait_minutes = 720.0
-        mock_load_config.return_value = mock_config
+        # Create retry config for testing
+        retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
+        )
 
         # Set up temp directory and basic processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
@@ -665,7 +661,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_cdb,
                     self.mock_notification_info,
                     self.mock_waiting_queue,
-                    "test_config.toml",
+                    retry_config,
                 )
 
             # Verify that exception was triggered and failure handler called
@@ -676,7 +672,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.test_fanfic,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
-                mock_config.retry,
+                retry_config,
                 self.mock_cdb,
             )
 
@@ -710,6 +706,11 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_construct_cmd.return_value = "fanficfare command"
         mock_execute.side_effect = Exception("Command execution failed")
 
+        # Create retry config for testing
+        retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
+        )
+
         # Mock logging failure to capture the specific error message
         with patch("url_worker.ff_logging.log_failure") as mock_log_failure:
             # Run worker - will exit with KeyboardInterrupt after processing
@@ -719,7 +720,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_cdb,
                     self.mock_notification_info,
                     self.mock_waiting_queue,
-                    "test_config.toml",
+                    retry_config,
                 )
 
             # Verify that exception was caught and failure handler called
@@ -730,7 +731,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.test_fanfic,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
-                config_models.RetryConfig(),
+                retry_config,
                 self.mock_cdb,
             )
 
@@ -767,6 +768,11 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_execute.return_value = "output with failure indicators"
         mock_check_failure.return_value = False  # Failure detected
 
+        # Create retry config for testing
+        retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
+        )
+
         # Run worker - will exit with KeyboardInterrupt after processing
         with self.assertRaises(KeyboardInterrupt):
             url_worker.url_worker(
@@ -774,7 +780,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_cdb,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
-                "test_config.toml",
+                retry_config,
             )
 
         # Verify failure handler was called due to regex detection
@@ -782,7 +788,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.test_fanfic,
             self.mock_notification_info,
             self.mock_waiting_queue,
-            config_models.RetryConfig(),
+            retry_config,
             self.mock_cdb,
         )
 
@@ -820,6 +826,11 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_check_failure.return_value = True  # No permanent failure
         mock_check_forceable.return_value = True  # Force retry needed
 
+        # Create retry config for testing
+        retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
+        )
+
         # Run worker - will exit with KeyboardInterrupt after processing
         with self.assertRaises(KeyboardInterrupt):
             url_worker.url_worker(
@@ -827,7 +838,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_cdb,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
-                "test_config.toml",
+                retry_config,
             )
 
         # Verify fanfic was re-queued with force behavior
@@ -870,6 +881,11 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_check_failure.return_value = True  # No failure
         mock_check_forceable.return_value = False  # No force needed
 
+        # Create retry config for testing
+        retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
+        )
+
         # Run worker - will exit with KeyboardInterrupt after processing
         with self.assertRaises(KeyboardInterrupt):
             url_worker.url_worker(
@@ -877,7 +893,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_cdb,
                 self.mock_notification_info,
                 self.mock_waiting_queue,
-                "test_config.toml",
+                retry_config,
             )
 
         # Verify successful processing
@@ -889,7 +905,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             "test_file.epub",
             self.mock_waiting_queue,
             self.mock_notification_info,
-            config_models.RetryConfig(),
+            retry_config,
         )
 
 

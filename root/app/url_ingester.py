@@ -76,7 +76,7 @@ from fanficfare import geturls
 import ff_logging
 import regex_parsing
 import notification_wrapper
-from config_models import ConfigManager
+from config_models import EmailConfig
 
 
 @contextmanager
@@ -198,39 +198,27 @@ class EmailInfo:
         rather than main account passwords for IMAP access.
     """
 
-    def __init__(self, toml_path: str):
+    def __init__(self, email_config: EmailConfig):
         """
-        Initialize EmailInfo with configuration from TOML file.
+        Initialize EmailInfo with email configuration object.
 
-        Loads and validates email configuration from the specified TOML file
-        using the ConfigManager. All email settings are extracted and stored
-        as instance attributes for use in URL extraction operations.
+        Takes a pre-loaded and validated email configuration object instead of
+        loading from file. This avoids redundant config parsing when the
+        configuration has already been loaded in the main process.
 
         Args:
-            toml_path (str): Path to the TOML configuration file containing
-                           email settings in the [email] section.
-
-        Raises:
-            FileNotFoundError: If the TOML configuration file doesn't exist.
-            ConfigError: If required email configuration is missing or invalid.
-            ValidationError: If email configuration fails Pydantic validation.
+            email_config (config_models.EmailConfig): Pre-loaded email configuration
+                                                     containing all email settings.
 
         Example:
             ```python
-            try:
-                email_info = EmailInfo("config.toml")
-                print(f"Monitoring {email_info.email}@{email_info.server}")
-            except FileNotFoundError:
-                print("Configuration file not found")
+            # In main process
+            config = ConfigManager.load_config("config.toml")
+            email_info = EmailInfo(config.email)
+            print(f"Monitoring {email_info.email}@{email_info.server}")
             ```
         """
-        # Load and validate configuration using ConfigManager
-        config = ConfigManager.load_config(toml_path)
-
-        # Extract email configuration with type safety validation
-        email_config = config.email
-
-        # Set instance attributes from validated configuration
+        # Set instance attributes from the provided configuration object
         self.email = email_config.email
         self.password = email_config.password
         self.server = email_config.server

@@ -403,7 +403,7 @@ def url_worker(
     cdb: calibre_info.CalibreInfo,
     notification_info: notification_wrapper.NotificationWrapper,
     waiting_queue: mp.Queue,
-    config_path: str,
+    retry_config: config_models.RetryConfig,
 ) -> None:
     """
     Main worker function for processing fanfiction downloads in a dedicated process.
@@ -422,7 +422,8 @@ def url_worker(
                                                                      system for sending success/failure alerts.
         waiting_queue (mp.Queue): Queue for stories that need to be retried later
                                  due to failures or timing issues.
-        config_path (str): Path to the TOML configuration file for loading retry settings.
+        retry_config (config_models.RetryConfig): Retry configuration settings
+                                                 loaded from the main process to avoid redundant config parsing.
 
     Processing Flow:
         1. Monitor queue for new FanficInfo objects
@@ -481,18 +482,6 @@ def url_worker(
         Workers sleep for 5 seconds when the queue is empty to reduce CPU
         usage while maintaining reasonable responsiveness to new work.
     """
-    # Load retry configuration from TOML file
-    retry_config = None
-    try:
-        config = config_models.ConfigManager.load_config(config_path)
-        retry_config = config.retry
-    except (config_models.ConfigError, config_models.ConfigValidationError) as e:
-        ff_logging.log_failure(f"Failed to load retry configuration: {e}")
-
-    # Use default configuration if loading failed
-    if retry_config is None:
-        retry_config = config_models.RetryConfig()
-
     while True:
         # Check for available work, sleep briefly if queue is empty
         if queue.empty():

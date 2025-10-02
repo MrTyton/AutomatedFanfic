@@ -186,7 +186,7 @@ def main() -> None:
     # --- End Logging ---
 
     # Initialize configurations for email monitoring and processing
-    email_info = url_ingester.EmailInfo(args.config)
+    email_info = url_ingester.EmailInfo(config.email)
 
     # Use ProcessManager for robust process handling with signal management
     with ProcessManager(config=config) as process_manager:
@@ -230,7 +230,7 @@ def main() -> None:
                         cdb_info,
                         notification_info,
                         waiting_queue,
-                        args.config,
+                        config.retry,
                     ),
                 )
 
