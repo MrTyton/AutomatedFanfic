@@ -11,6 +11,8 @@ from config_models import (
     CalibreConfig,
     PushbulletConfig,
     AppriseConfig,
+    RetryConfig,
+    ProcessConfig,
     AppConfig,
     ConfigError,
     ConfigValidationError,
@@ -37,6 +39,7 @@ username = "calibre_user"
 password = "calibre_pass"
 default_ini = "/path/to/defaults.ini"
 personal_ini = "/path/to/personal.ini"
+update_method = "update_always"
 
 [pushbullet]
 enabled = true
@@ -45,6 +48,21 @@ device = "test_device"
 
 [apprise]
 urls = ["discord://webhook_id/webhook_token", "mailto://user:pass@gmail.com"]
+
+[retry]
+hail_mary_enabled = true
+hail_mary_wait_hours = 24.0
+max_normal_retries = 15
+
+[process]
+shutdown_timeout = 45.0
+health_check_interval = 30.0
+auto_restart = false
+max_restart_attempts = 5
+restart_delay = 10.0
+enable_monitoring = false
+worker_timeout = 600.0
+signal_timeout = 15.0
 """
 
         self.minimal_toml_content = """
@@ -374,11 +392,271 @@ path = ""
             self.assertEqual(config.email.email, "testuser")
             self.assertEqual(config.email.server, "imap.gmail.com")
             self.assertEqual(config.calibre.path, "/path/to/calibre")
+            self.assertEqual(config.calibre.update_method, "update_always")
             self.assertTrue(config.pushbullet.enabled)
             self.assertEqual(len(config.apprise.urls), 2)
+
+            # Verify new retry section
+            self.assertTrue(config.retry.hail_mary_enabled)
+            self.assertEqual(config.retry.hail_mary_wait_hours, 24.0)
+            self.assertEqual(config.retry.max_normal_retries, 15)
+
+            # Verify new process section
+            self.assertEqual(config.process.shutdown_timeout, 45.0)
+            self.assertEqual(config.process.health_check_interval, 30.0)
+            self.assertFalse(config.process.auto_restart)
+            self.assertEqual(config.process.max_restart_attempts, 5)
+            self.assertEqual(config.process.restart_delay, 10.0)
+            self.assertFalse(config.process.enable_monitoring)
+            self.assertEqual(config.process.worker_timeout, 600.0)
+            self.assertEqual(config.process.signal_timeout, 15.0)
         finally:
             os.unlink(temp_path)
             ConfigManager.clear_cache()
+
+    # ============================================================================
+    # RETRY CONFIG TESTS
+    # ============================================================================
+
+    def test_retry_config_defaults(self):
+        """Test RetryConfig with default values."""
+        retry_config = RetryConfig()
+
+        self.assertTrue(retry_config.hail_mary_enabled)
+        self.assertEqual(retry_config.hail_mary_wait_hours, 12.0)
+        self.assertEqual(retry_config.max_normal_retries, 11)
+        self.assertEqual(retry_config.hail_mary_wait_minutes, 720.0)  # 12 * 60
+
+    def test_retry_config_custom_values(self):
+        """Test RetryConfig with custom values."""
+        retry_config = RetryConfig(
+            hail_mary_enabled=False, hail_mary_wait_hours=6.0, max_normal_retries=5
+        )
+
+        self.assertFalse(retry_config.hail_mary_enabled)
+        self.assertEqual(retry_config.hail_mary_wait_hours, 6.0)
+        self.assertEqual(retry_config.max_normal_retries, 5)
+        self.assertEqual(retry_config.hail_mary_wait_minutes, 360.0)  # 6 * 60
+
+    @parameterized.expand(
+        [
+            ("too_low_hours", {"hail_mary_wait_hours": 0.05}, True),
+            ("too_high_hours", {"hail_mary_wait_hours": 200.0}, True),
+            ("too_low_retries", {"max_normal_retries": 0}, True),
+            ("too_high_retries", {"max_normal_retries": 100}, True),
+            ("valid_minimum_hours", {"hail_mary_wait_hours": 0.1}, False),
+            ("valid_maximum_hours", {"hail_mary_wait_hours": 168.0}, False),
+            ("valid_minimum_retries", {"max_normal_retries": 1}, False),
+            ("valid_maximum_retries", {"max_normal_retries": 50}, False),
+        ]
+    )
+    def test_retry_config_validation(self, name, config_params, should_raise):
+        """Test RetryConfig validation with various edge cases."""
+        if should_raise:
+            with self.assertRaises(Exception):  # Pydantic validation error
+                RetryConfig(**config_params)
+        else:
+            try:
+                config = RetryConfig(**config_params)
+                self.assertIsInstance(config, RetryConfig)
+            except Exception as e:
+                self.fail(f"Valid config should not raise exception: {e}")
+
+    # ============================================================================
+    # PROCESS CONFIG TESTS
+    # ============================================================================
+
+    def test_process_config_defaults(self):
+        """Test ProcessConfig with default values."""
+        process_config = ProcessConfig()
+
+        self.assertEqual(process_config.shutdown_timeout, 30.0)
+        self.assertEqual(process_config.health_check_interval, 60.0)
+        self.assertTrue(process_config.auto_restart)
+        self.assertEqual(process_config.max_restart_attempts, 3)
+        self.assertEqual(process_config.restart_delay, 5.0)
+        self.assertTrue(process_config.enable_monitoring)
+        self.assertIsNone(process_config.worker_timeout)
+        self.assertEqual(process_config.signal_timeout, 10.0)
+
+    def test_process_config_custom_values(self):
+        """Test ProcessConfig with custom values."""
+        process_config = ProcessConfig(
+            shutdown_timeout=60.0,
+            health_check_interval=120.0,
+            auto_restart=False,
+            max_restart_attempts=7,
+            restart_delay=15.0,
+            enable_monitoring=False,
+            worker_timeout=300.0,
+            signal_timeout=20.0,
+        )
+
+        self.assertEqual(process_config.shutdown_timeout, 60.0)
+        self.assertEqual(process_config.health_check_interval, 120.0)
+        self.assertFalse(process_config.auto_restart)
+        self.assertEqual(process_config.max_restart_attempts, 7)
+        self.assertEqual(process_config.restart_delay, 15.0)
+        self.assertFalse(process_config.enable_monitoring)
+        self.assertEqual(process_config.worker_timeout, 300.0)
+        self.assertEqual(process_config.signal_timeout, 20.0)
+
+    @parameterized.expand(
+        [
+            ("shutdown_timeout_too_low", {"shutdown_timeout": 0.5}, True),
+            ("shutdown_timeout_too_high", {"shutdown_timeout": 400.0}, True),
+            ("health_check_too_low", {"health_check_interval": 0.05}, True),
+            ("health_check_too_high", {"health_check_interval": 700.0}, True),
+            ("restart_attempts_negative", {"max_restart_attempts": -1}, True),
+            ("restart_attempts_too_high", {"max_restart_attempts": 15}, True),
+            ("restart_delay_negative", {"restart_delay": -1.0}, True),
+            ("restart_delay_too_high", {"restart_delay": 80.0}, True),
+            ("worker_timeout_too_low", {"worker_timeout": 20.0}, True),
+            ("signal_timeout_too_low", {"signal_timeout": 0.5}, True),
+            ("signal_timeout_too_high", {"signal_timeout": 80.0}, True),
+            ("valid_minimum_shutdown", {"shutdown_timeout": 1.0}, False),
+            ("valid_maximum_shutdown", {"shutdown_timeout": 300.0}, False),
+            ("valid_minimum_health", {"health_check_interval": 0.1}, False),
+            ("valid_maximum_health", {"health_check_interval": 600.0}, False),
+            ("valid_zero_restarts", {"max_restart_attempts": 0}, False),
+            ("valid_maximum_restarts", {"max_restart_attempts": 10}, False),
+            ("valid_zero_delay", {"restart_delay": 0.0}, False),
+            ("valid_maximum_delay", {"restart_delay": 60.0}, False),
+            ("valid_minimum_worker_timeout", {"worker_timeout": 30.0}, False),
+            ("valid_minimum_signal", {"signal_timeout": 1.0}, False),
+            ("valid_maximum_signal", {"signal_timeout": 60.0}, False),
+        ]
+    )
+    def test_process_config_validation(self, name, config_params, should_raise):
+        """Test ProcessConfig validation with various edge cases."""
+        if should_raise:
+            with self.assertRaises(Exception):  # Pydantic validation error
+                ProcessConfig(**config_params)
+        else:
+            try:
+                config = ProcessConfig(**config_params)
+                self.assertIsInstance(config, ProcessConfig)
+            except Exception as e:
+                self.fail(f"Valid config should not raise exception: {e}")
+
+    # ============================================================================
+    # ENHANCED EXISTING CONFIG TESTS
+    # ============================================================================
+
+    def test_calibre_config_update_methods(self):
+        """Test CalibreConfig update_method validation."""
+        valid_methods = ["update", "update_always", "force", "update_no_force"]
+
+        for method in valid_methods:
+            # Cast to the Literal type for type checking
+            config = CalibreConfig(path="/test/path", update_method=method)  # type: ignore
+            self.assertEqual(config.update_method, method)
+
+        # Test invalid method - this will only be caught at runtime
+        try:
+            config = CalibreConfig(path="/test/path", update_method="invalid_method")  # type: ignore
+            self.fail("Should have raised validation error for invalid update method")
+        except Exception:
+            pass  # Expected validation error
+
+    def test_email_config_ffnet_disable_default(self):
+        """Test EmailConfig ffnet_disable default value."""
+        email_config = EmailConfig(
+            email="test@example.com", password="password", server="imap.gmail.com"
+        )
+
+        # Should default to False per the model definition
+        self.assertFalse(email_config.ffnet_disable)
+
+    def test_pushbullet_config_validation_with_enabled_but_no_key(self):
+        """Test PushbulletConfig validation when enabled but no API key."""
+        with self.assertRaises(Exception) as context:
+            PushbulletConfig(enabled=True, api_key=None)
+
+        self.assertIn("api_key is required", str(context.exception))
+
+    def test_apprise_config_url_filtering(self):
+        """Test AppriseConfig filters out empty URLs."""
+        urls_with_empty = [
+            "discord://valid_webhook",
+            "",
+            "   ",  # whitespace only
+            "mailto://valid@email.com",
+            "",
+        ]
+
+        config = AppriseConfig(urls=urls_with_empty)
+
+        # Should filter out empty and whitespace-only entries
+        self.assertEqual(len(config.urls), 2)
+        self.assertIn("discord://valid_webhook", config.urls)
+        self.assertIn("mailto://valid@email.com", config.urls)
+
+    def test_email_config_is_configured_method(self):
+        """Test EmailConfig.is_configured() method."""
+        # Complete configuration
+        complete_config = EmailConfig(
+            email="test@example.com", password="password", server="imap.gmail.com"
+        )
+        self.assertTrue(complete_config.is_configured())
+
+        # Missing email
+        incomplete_config = EmailConfig(
+            email="", password="password", server="imap.gmail.com"
+        )
+        self.assertFalse(incomplete_config.is_configured())
+
+        # Missing password
+        incomplete_config = EmailConfig(
+            email="test@example.com", password="", server="imap.gmail.com"
+        )
+        self.assertFalse(incomplete_config.is_configured())
+
+        # Missing server
+        incomplete_config = EmailConfig(
+            email="test@example.com", password="password", server=""
+        )
+        self.assertFalse(incomplete_config.is_configured())
+
+    def test_calibre_config_is_configured_method(self):
+        """Test CalibreConfig.is_configured() method."""
+        # With path
+        config_with_path = CalibreConfig(path="/path/to/calibre")
+        self.assertTrue(config_with_path.is_configured())
+
+        # Without path
+        config_without_path = CalibreConfig(path="")
+        self.assertFalse(config_without_path.is_configured())
+
+        # With whitespace only path
+        config_whitespace_path = CalibreConfig(path="   ")
+        self.assertFalse(config_whitespace_path.is_configured())
+
+    def test_app_config_max_workers_validation(self):
+        """Test AppConfig max_workers validation and default behavior."""
+        # Create proper config objects
+        email_config = EmailConfig(
+            email="test@example.com", password="password", server="imap.gmail.com"
+        )
+        calibre_config = CalibreConfig(path="/path/to/calibre")
+
+        # Test with no max_workers specified - should default to CPU count
+        config = AppConfig(email=email_config, calibre=calibre_config)
+        self.assertIsNotNone(config.max_workers)
+        self.assertIsInstance(config.max_workers, int)
+        self.assertGreater(config.max_workers, 0)  # type: ignore
+
+        # Test with explicit max_workers
+        config = AppConfig(email=email_config, calibre=calibre_config, max_workers=4)
+        self.assertEqual(config.max_workers, 4)
+
+        # Test with invalid max_workers (zero)
+        with self.assertRaises(Exception):
+            AppConfig(email=email_config, calibre=calibre_config, max_workers=0)
+
+        # Test with invalid max_workers (negative)
+        with self.assertRaises(Exception):
+            AppConfig(email=email_config, calibre=calibre_config, max_workers=-1)
 
     def tearDown(self):
         """Clean up after each test."""
