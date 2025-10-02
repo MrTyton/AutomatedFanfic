@@ -105,7 +105,7 @@ class EmailConfig(BaseModel):
         default=60, ge=1, description="Sleep time between checks in seconds"
     )
     ffnet_disable: bool = Field(
-        default=True, description="Disable FanFiction.Net processing"
+        default=False, description="Disable FanFiction.Net processing"
     )
 
     @field_validator("email")

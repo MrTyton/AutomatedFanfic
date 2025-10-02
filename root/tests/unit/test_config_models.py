@@ -248,7 +248,7 @@ path = ""
         )
 
         self.assertEqual(email_config.sleep_time, 60)
-        self.assertTrue(email_config.ffnet_disable)
+        self.assertFalse(email_config.ffnet_disable)
 
     def test_calibre_config_minimal(self):
         """Test CalibreConfig with only required fields."""

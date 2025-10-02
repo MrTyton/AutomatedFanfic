@@ -1,30 +1,146 @@
+# AutomatedFanfic Configuration File
+# This file contains all available configuration options with their default values.
+# Uncomment and modify the settings you want to change from their defaults.
+
+# ============================================================================
+# EMAIL CONFIGURATION
+# Configuration for email monitoring and authentication
+# ============================================================================
 [email]
+# Email authentication field (username only or full email address depending on provider)
 email = ""
+
+# Password or app-specific password for email authentication
+# Note: Use app passwords for Gmail and other providers that require them
 password = ""
+
+# IMAP server address (e.g., 'imap.gmail.com', 'imap.outlook.com')
 server = ""
-mailbox = ""
+
+# Mailbox name to monitor for new emails
+mailbox = "INBOX"
+
+# Interval in seconds between email checks (minimum: 1)
 sleep_time = 60
+
+# Whether to disable FanFiction.Net processing (true = notify only, false = process)
 ffnet_disable = false
 
+# ============================================================================
+# CALIBRE CONFIGURATION
+# Configuration for Calibre e-book library integration
+# ============================================================================
 [calibre]
-path=""
-username=""
-password=""
-default_ini=""
-personal_ini=""
-update_method="update"
+# Path to local Calibre library directory or URL to Calibre Content Server
+# Examples:
+#   Local library: "/path/to/calibre/library"
+#   Remote server: "http://localhost:8080" or "https://your-server.com:8080"
+path = ""
 
+# Username for Calibre server authentication (only needed for protected servers)
+username = ""
+
+# Password for Calibre server authentication (only needed for protected servers)
+password = ""
+
+# Path to FanFicFare defaults.ini configuration file (optional)
+default_ini = ""
+
+# Path to FanFicFare personal.ini configuration file (optional)
+personal_ini = ""
+
+# Method for updating stories in Calibre
+# Options:
+#   "update" - Normal update with force detection (default)
+#   "update_always" - Always perform full refresh
+#   "force" - Always use force flag
+#   "update_no_force" - Update but ignore force requests
+update_method = "update"
+
+# ============================================================================
+# PUSHBULLET CONFIGURATION
+# Configuration for Pushbullet notification service
+# ============================================================================
 [pushbullet]
+# Whether Pushbullet notifications are enabled
 enabled = false
+
+# Pushbullet API key for authentication (required when enabled=true)
+# Get your API key from: https://www.pushbullet.com/#settings/account
 api_key = ""
+
+# Optional target device name for notifications
+# Leave empty to send to all devices
 device = ""
 
+# ============================================================================
+# APPRISE CONFIGURATION
+# Configuration for Apprise notification framework (supports many services)
+# ============================================================================
 [apprise]
-# List of Apprise URLs to send notifications to.
-# For example:
-# urls = [
-#   "pbul://PUSHBULLET_API_KEY",  # For Pushbullet
-#   "discord://WEBHOOK_ID/WEBHOOK_TOKEN", # For Discord
-#   "mailto://USER:PASSWORD@HOST:PORT", # For Email
-# ]
+# List of Apprise URLs to send notifications to
+# Apprise supports many notification services through URL-based configuration
+# Examples:
+#   Pushbullet: "pbul://PUSHBULLET_API_KEY"
+#   Discord: "discord://WEBHOOK_ID/WEBHOOK_TOKEN"
+#   Email: "mailto://USER:PASSWORD@HOST:PORT"
+#   Slack: "slack://TOKEN_A/TOKEN_B/TOKEN_C"
+#   Telegram: "tgram://BOT_TOKEN/CHAT_ID"
+# See Apprise documentation for complete list of supported services
 urls = []
+
+# ============================================================================
+# RETRY CONFIGURATION
+# Configuration for retry mechanism and Hail-Mary protocol
+# ============================================================================
+[retry]
+# Whether to enable the Hail-Mary protocol for final retry attempts
+# The Hail-Mary protocol provides one last attempt after normal retries are exhausted
+hail_mary_enabled = true
+
+# Hours to wait before attempting Hail-Mary retry (minimum: 0.1, maximum: 168.0)
+# Default: 12 hours provides balance between timely retries and server consideration
+hail_mary_wait_hours = 12.0
+
+# Maximum number of normal retry attempts before Hail-Mary (minimum: 1, maximum: 50)
+# Normal retries use exponential backoff (1min, 2min, 3min, etc.)
+max_normal_retries = 11
+
+# ============================================================================
+# PROCESS CONFIGURATION
+# Configuration for process management and monitoring
+# ============================================================================
+[process]
+# Timeout in seconds for graceful shutdown before force termination (1.0-300.0)
+shutdown_timeout = 30.0
+
+# Interval in seconds between process health checks (0.1-600.0)
+health_check_interval = 60.0
+
+# Whether to automatically restart failed processes
+auto_restart = true
+
+# Maximum number of restart attempts before giving up (0-10)
+max_restart_attempts = 3
+
+# Delay in seconds before restarting a failed process (0.0-60.0)
+restart_delay = 5.0
+
+# Whether to enable process health monitoring and restart capabilities
+enable_monitoring = true
+
+# Timeout in seconds for individual worker operations (minimum: 30.0, optional)
+# Leave commented out to use default (no timeout)
+# worker_timeout = 300.0
+
+# Timeout in seconds to wait for signal handling completion (1.0-60.0)
+signal_timeout = 10.0
+
+# ============================================================================
+# APPLICATION SETTINGS
+# Global application configuration
+# ============================================================================
+
+# Maximum number of worker processes (optional)
+# If not specified, defaults to the number of CPU cores
+# max_workers = 4
