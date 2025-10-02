@@ -214,6 +214,12 @@ jobs:
             echo "verified_sha=$CURRENT_SHA" >> $GITHUB_OUTPUT
           fi
 
+          # Debug outputs for Docker workflow
+          echo "DEBUG: Job outputs that will be set:"
+          echo "  changes_detected: ${{ steps.check_updates.outputs.any_changed }}"
+          echo "  commit_sha: $COMMIT_SHA"
+          echo "  latest_updated: ${{ steps.update_latest_txt.outputs.version-changed }}"
+
       - name: Notify if no changes were committed (Should not happen with default token)
         if: steps.update_latest_txt.outputs.version-changed == 'true' && steps.commit_changes.outputs.commit_long_sha == ''
         run: |
@@ -238,8 +244,8 @@ jobs:
   # Third job: Build Docker - directly depend on both jobs
   build_docker:
     needs: [check_and_update, run_ci]
-    # Only run if changes detected (CI success is guaranteed by dependency)
-    if: needs.check_and_update.outputs.changes_detected == 'true'
+    # Only run if changes detected AND commit SHA exists (CI success is guaranteed by dependency)
+    if: needs.check_and_update.outputs.changes_detected == 'true' && needs.check_and_update.outputs.commit_sha != ''
     uses: ./.github/workflows/docker-image.yml
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
