@@ -924,7 +924,7 @@ class TestExtractTitleFromEpubPath(unittest.TestCase):
         [
             TitleExtractionTestCase(
                 name="windows_path_with_title",
-                input_path=r"C:\Users\Joshua\AppData\Local\Temp\tmpoz7malhf\Save Scumming - RavensDagger.epub",
+                input_path=r"C:\Users\TestUser\AppData\Local\Temp\tmpoz7malhf\Save Scumming - RavensDagger.epub",
                 expected_output="Save Scumming - RavensDagger",
                 description="Extract title from Windows temporary directory path",
             ),
