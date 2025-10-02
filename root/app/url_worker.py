@@ -224,33 +224,20 @@ def extract_title_from_epub_path(epub_path: str) -> str:
         str: Extracted title, or the original path if extraction fails
     """
     import os
-    import sys
 
     try:
-        # DEBUG: Print input and basename result
-        print(
-            f"DEBUG extract_title_from_epub_path input: {repr(epub_path)}",
-            file=sys.stderr,
-        )
-
         # Get the filename without directory path
-        filename = os.path.basename(epub_path)
-        print(f"DEBUG basename result: {repr(filename)}", file=sys.stderr)
+        # Handle both Windows (\) and Unix (/) path separators
+        filename = os.path.basename(epub_path.replace("\\", "/"))
 
         # Remove the .epub extension
         if filename.lower().endswith(".epub"):
             title = filename[:-5]  # Remove last 5 characters (.epub)
-            print(f"DEBUG final title: {repr(title)}", file=sys.stderr)
             return title
-        else:
-            print("DEBUG not epub file, returning original", file=sys.stderr)
-    except Exception as e:
+    except Exception:
         # If extraction fails, return the original path
-        # DEBUG: Print exception details for troubleshooting
-        print(f"DEBUG extract_title_from_epub_path exception: {e}", file=sys.stderr)
         pass
 
-    print(f"DEBUG returning original path: {repr(epub_path)}", file=sys.stderr)
     return epub_path
 
 
