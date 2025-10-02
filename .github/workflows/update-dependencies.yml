@@ -14,8 +14,8 @@ jobs:
   check_and_update:
     runs-on: ubuntu-latest
     outputs:
-      # Output commit SHA if changes were made - use verified SHA as fallback
-      commit_sha: ${{ steps.verify_commit.outputs.verified_sha || steps.commit_changes.outputs.commit_long_sha }}
+      # Output commit SHA if changes were made - use commit_changes as primary source
+      commit_sha: ${{ steps.commit_changes.outputs.commit_long_sha }}
       # Output whether latest.txt was updated specifically (for potential future use, not strictly needed now)
       latest_updated: ${{ steps.update_latest_txt.outputs.version-changed }}
       # Additional output to ensure we trigger builds when updates are found
@@ -244,8 +244,8 @@ jobs:
   # Third job: Build Docker - directly depend on both jobs
   build_docker:
     needs: [check_and_update, run_ci]
-    # Only run if changes detected AND commit SHA exists (CI success is guaranteed by dependency)
-    if: needs.check_and_update.outputs.changes_detected == 'true' && needs.check_and_update.outputs.commit_sha != ''
+    # Only run if changes detected (simplified condition - commit_sha will always exist when changes detected)
+    if: needs.check_and_update.outputs.changes_detected == 'true'
     uses: ./.github/workflows/docker-image.yml
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
