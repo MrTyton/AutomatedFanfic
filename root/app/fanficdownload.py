@@ -35,10 +35,10 @@ import multiprocessing as mp
 import sys
 import ff_logging  # Custom logging module for formatted logging
 
+import auto_url_parsers
 import calibre_info
 import ff_waiter
 import notification_wrapper
-import regex_parsing
 import url_ingester
 import url_worker
 from config_models import ConfigManager, ConfigError, ConfigValidationError
@@ -191,10 +191,15 @@ def main() -> None:
     # Use ProcessManager for robust process handling with signal management
     with ProcessManager(config=config) as process_manager:
         with mp.Manager() as manager:
+            # Generate URL parsers once in the main process to avoid loading adapters in each worker
+            ff_logging.log("Generating URL parsers from FanFicFare adapters...")
+            url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+            ff_logging.log(
+                f"Generated {len(url_parsers)} URL parsers for site recognition"
+            )
+
             # Create site-specific queues for URL processing parallelization
-            queues = {
-                site: manager.Queue() for site in regex_parsing.url_parsers.keys()
-            }
+            queues = {site: manager.Queue() for site in url_parsers.keys()}
             # Separate queue for delayed retry processing (Hail-Mary protocol)
             waiting_queue = manager.Queue()
             # Initialize Calibre database interface with multiprocessing support
@@ -205,7 +210,7 @@ def main() -> None:
             process_manager.register_process(
                 "email_watcher",
                 url_ingester.email_watcher,
-                args=(email_info, notification_info, queues),
+                args=(email_info, notification_info, queues, url_parsers),
             )
 
             # Register waiting watcher process for retry handling

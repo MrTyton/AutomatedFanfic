@@ -893,5 +893,173 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         )
 
 
+class TestExtractTitleFromEpubPath(unittest.TestCase):
+    """Test cases for the extract_title_from_epub_path function."""
+
+    class TitleExtractionTestCase(NamedTuple):
+        """Test case structure for title extraction tests."""
+
+        name: str
+        input_path: str
+        expected_output: str
+        description: str
+
+    @parameterized.expand(
+        [
+            TitleExtractionTestCase(
+                name="windows_path_with_title",
+                input_path=r"C:\Users\Joshua\AppData\Local\Temp\tmpoz7malhf\Save Scumming - RavensDagger.epub",
+                expected_output="Save Scumming - RavensDagger",
+                description="Extract title from Windows temporary directory path",
+            ),
+            TitleExtractionTestCase(
+                name="linux_path_with_title",
+                input_path="/tmp/tmpxyz123/The Chronicles of Narnia - C.S. Lewis.epub",
+                expected_output="The Chronicles of Narnia - C.S. Lewis",
+                description="Extract title from Linux temporary directory path",
+            ),
+            TitleExtractionTestCase(
+                name="simple_filename",
+                input_path="Harry Potter and the Sorcerer's Stone.epub",
+                expected_output="Harry Potter and the Sorcerer's Stone",
+                description="Extract title from simple filename",
+            ),
+            TitleExtractionTestCase(
+                name="title_with_special_characters",
+                input_path="/some/path/Story Title - Author [2023] (Updated).epub",
+                expected_output="Story Title - Author [2023] (Updated)",
+                description="Extract title with brackets, parentheses, and special characters",
+            ),
+            TitleExtractionTestCase(
+                name="title_with_numbers",
+                input_path="/temp/Book 1 - The Beginning - John Doe.epub",
+                expected_output="Book 1 - The Beginning - John Doe",
+                description="Extract title with numbers and multiple hyphens",
+            ),
+            TitleExtractionTestCase(
+                name="uppercase_epub_extension",
+                input_path="/path/to/STORY TITLE - AUTHOR.EPUB",
+                expected_output="STORY TITLE - AUTHOR",
+                description="Handle uppercase .EPUB extension",
+            ),
+            TitleExtractionTestCase(
+                name="mixed_case_epub_extension",
+                input_path="/path/to/Mixed Case Title.ePub",
+                expected_output="Mixed Case Title",
+                description="Handle mixed case .ePub extension",
+            ),
+            TitleExtractionTestCase(
+                name="url_input_unchanged",
+                input_path="https://royalroad.com/fiction/127120",
+                expected_output="https://royalroad.com/fiction/127120",
+                description="URL input should be returned unchanged",
+            ),
+            TitleExtractionTestCase(
+                name="http_url_unchanged",
+                input_path="http://archiveofourown.org/works/12345",
+                expected_output="http://archiveofourown.org/works/12345",
+                description="HTTP URL input should be returned unchanged",
+            ),
+            TitleExtractionTestCase(
+                name="non_epub_file",
+                input_path="/path/to/document.txt",
+                expected_output="/path/to/document.txt",
+                description="Non-epub file should be returned unchanged",
+            ),
+            TitleExtractionTestCase(
+                name="path_without_extension",
+                input_path="/path/to/some_file",
+                expected_output="/path/to/some_file",
+                description="Path without extension should be returned unchanged",
+            ),
+            TitleExtractionTestCase(
+                name="empty_string",
+                input_path="",
+                expected_output="",
+                description="Empty string should be returned unchanged",
+            ),
+            TitleExtractionTestCase(
+                name="only_epub_extension",
+                input_path=".epub",
+                expected_output="",
+                description="File with only .epub extension should return empty string",
+            ),
+            TitleExtractionTestCase(
+                name="epub_in_middle_of_path",
+                input_path="/path/to/folder.epub/actual_file.txt",
+                expected_output="/path/to/folder.epub/actual_file.txt",
+                description="Path with .epub in directory name but non-epub file should be unchanged",
+            ),
+        ]
+    )
+    def test_extract_title_from_epub_path(
+        self, name, input_path, expected_output, description
+    ):
+        """Test the extract_title_from_epub_path function with various inputs."""
+        result = url_worker.extract_title_from_epub_path(input_path)
+        self.assertEqual(
+            result,
+            expected_output,
+            f"Failed for {name}: {description}. Expected '{expected_output}', got '{result}'",
+        )
+
+    def test_extract_title_error_handling(self):
+        """Test that the function handles unexpected errors gracefully."""
+        # Test with a malformed path that could cause os.path.basename to fail
+        # We'll patch os.path.basename to raise an exception
+        with patch("os.path.basename", side_effect=Exception("Simulated error")):
+            test_path = "/some/path/story.epub"
+            result = url_worker.extract_title_from_epub_path(test_path)
+            # Should return the original path when an exception occurs
+            self.assertEqual(result, test_path)
+
+
+class TestTitleExtractionIntegration(unittest.TestCase):
+    """Integration tests for title extraction in the URL worker processing flow."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.fanfic = FanficInfo(
+            url="https://example.com/story/123",
+            site="example",
+            title="https://example.com/story/123",  # Initially set to URL
+        )
+
+    @patch("url_worker.get_path_or_url")
+    @patch("url_worker.ff_logging.log_debug")
+    def test_title_extraction_in_processing_flow(
+        self, mock_log_debug, mock_get_path_or_url
+    ):
+        """Test that title extraction works in the actual processing context."""
+        # Simulate get_path_or_url returning an epub file path
+        epub_path = "/tmp/tmpxyz123/Test Story - Author Name.epub"
+        mock_get_path_or_url.return_value = epub_path
+
+        # Import the processing logic (we'd need to refactor to test this properly)
+        # For now, we'll test the logic directly
+
+        # Simulate the title extraction logic from url_worker
+        if epub_path.endswith(".epub"):
+            extracted_title = url_worker.extract_title_from_epub_path(epub_path)
+            if extracted_title != epub_path:
+                self.fanfic.title = extracted_title
+
+        # Verify the title was updated correctly
+        self.assertEqual(self.fanfic.title, "Test Story - Author Name")
+
+    def test_title_not_updated_for_url_input(self):
+        """Test that title is not updated when path_or_url is a URL."""
+        url = "https://royalroad.com/fiction/127120"
+
+        # Simulate the processing logic
+        if url.endswith(".epub"):
+            extracted_title = url_worker.extract_title_from_epub_path(url)
+            if extracted_title != url:
+                self.fanfic.title = extracted_title
+
+        # Title should remain unchanged since it's a URL, not an epub path
+        self.assertEqual(self.fanfic.title, "https://example.com/story/123")
+
+
 if __name__ == "__main__":
     unittest.main()

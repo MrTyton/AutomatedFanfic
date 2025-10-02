@@ -294,6 +294,7 @@ def email_watcher(
     email_info: EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
     processor_queues: dict[str, mp.Queue],
+    url_parsers: dict,
 ):
     """
     Continuously monitor email for fanfiction URLs and route to processing queues.
@@ -308,6 +309,10 @@ def email_watcher(
                                credentials, server details, and polling settings.
         notification_info (notification_wrapper.NotificationWrapper): Notification
                                                                      system for sending alerts about new URLs.
+        processor_queues (dict[str, mp.Queue]): Dictionary mapping site identifiers
+                                               to processing queues for URL routing.
+        url_parsers (dict): Dictionary of compiled regex patterns for site recognition.
+                           Generated from FanFicFare adapters in the main process.
         processor_queues (dict[str, mp.Queue]): Dictionary mapping fanfiction site
                                                names to their dedicated processing queues.
 
@@ -362,7 +367,7 @@ def email_watcher(
         # Process each URL found in email messages
         for url in urls:
             # Parse URL to identify site and normalize format
-            fanfic = regex_parsing.generate_FanficInfo_from_url(url)
+            fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
 
             # Special handling for FFNet when disabled - notification only
             if email_info.ffnet_disable and fanfic.site == "fanfiction":

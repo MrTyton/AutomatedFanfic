@@ -142,10 +142,10 @@ class TestFanficDownloadMain(unittest.TestCase):
                 mock_cdb = MagicMock()
                 mock_calibre_info.return_value = mock_cdb
 
-                # Mock regex_parsing.url_parsers
+                # Mock auto_url_parsers.generate_url_parsers_from_fanficfare
                 with patch(
-                    "fanficdownload.regex_parsing.url_parsers",
-                    {"fanfiction.net": None, "other": None},
+                    "fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare",
+                    return_value={"fanfiction": None, "other": None},
                 ):
                     # Run main function
                     fanficdownload.main()
@@ -351,9 +351,10 @@ class TestFanficDownloadMain(unittest.TestCase):
                 mock_cdb = MagicMock()
                 mock_calibre_info.return_value = mock_cdb
 
-                # Mock regex_parsing.url_parsers
+                # Mock auto_url_parsers.generate_url_parsers_from_fanficfare
                 with patch(
-                    "fanficdownload.regex_parsing.url_parsers", {"fanfiction.net": None}
+                    "fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare",
+                    return_value={"fanfiction": None},
                 ):
                     # Run main function
                     fanficdownload.main()

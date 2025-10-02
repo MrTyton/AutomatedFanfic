@@ -17,7 +17,7 @@ class TestAutoUrlParsers(unittest.TestCase):
     def setUpClass(cls):
         """Set up test data from FanFicFare adapters."""
         cls.fanficfare_examples = adapters.getSiteExamples()
-        cls.url_parsers = auto_url_parsers.url_parsers
+        cls.url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
 
     class URLPatternTestCase(NamedTuple):
         """Test case for URL pattern matching."""
@@ -164,7 +164,7 @@ class TestAutoUrlParsers(unittest.TestCase):
         # Use the actual regex_parsing function which includes special handling
         from regex_parsing import generate_FanficInfo_from_url
 
-        fanfic_info = generate_FanficInfo_from_url(input_url)
+        fanfic_info = generate_FanficInfo_from_url(input_url, self.url_parsers)
 
         # Assert the correct site was identified
         self.assertEqual(
@@ -467,7 +467,7 @@ class TestAutoUrlParsers(unittest.TestCase):
     )
     def test_pattern_robustness(self, input_url, expected_site, description):
         """Test that generated patterns are robust and handle edge cases."""
-        result = regex_parsing.generate_FanficInfo_from_url(input_url)
+        result = regex_parsing.generate_FanficInfo_from_url(input_url, self.url_parsers)
         self.assertEqual(
             result.site,
             expected_site,
@@ -505,7 +505,7 @@ class TestAutoUrlParsers(unittest.TestCase):
     )
     def test_pattern_specificity(self, input_url, expected_site, description):
         """Test that patterns don't over-match or under-match."""
-        result = regex_parsing.generate_FanficInfo_from_url(input_url)
+        result = regex_parsing.generate_FanficInfo_from_url(input_url, self.url_parsers)
         self.assertEqual(
             result.site,
             expected_site,
@@ -541,7 +541,7 @@ class TestAutoUrlParsers(unittest.TestCase):
         """Test that URL normalization is consistent across different input formats."""
         normalized_urls = []
         for url in input_urls:
-            result = regex_parsing.generate_FanficInfo_from_url(url)
+            result = regex_parsing.generate_FanficInfo_from_url(url, self.url_parsers)
             normalized_url = result.url.replace("https://", "").replace("http://", "")
             normalized_urls.append(normalized_url)
 
@@ -653,7 +653,9 @@ class TestAutoUrlParsers(unittest.TestCase):
 
         for url in test_urls:
             with self.subTest(url=url):
-                result = regex_parsing.generate_FanficInfo_from_url(url)
+                result = regex_parsing.generate_FanficInfo_from_url(
+                    url, self.url_parsers
+                )
 
                 # Should return FanficInfo object
                 self.assertIsInstance(result, fanfic_info.FanficInfo)
@@ -794,8 +796,8 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
         # Test that the main execution code would work by simulating it
         # Since reloading with patched __name__ is unreliable, we'll test the logic directly
 
-        # Get the current url_parsers to verify they exist
-        parsers = auto_url_parsers.url_parsers
+        # Get the url_parsers by generating them explicitly
+        parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
         self.assertIsInstance(parsers, dict)
         self.assertGreater(len(parsers), 0, "URL parsers should be generated")
 
@@ -817,22 +819,6 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
             self.assertGreater(
                 len(main_messages), 0, "Main execution print simulation successful"
             )
-
-    def test_module_import_loading_message(self):
-        """Test loading message when imported as module."""
-        from unittest.mock import patch
-        import importlib
-
-        # Mock print to capture loading message
-        with patch("builtins.print") as mock_print:
-            # Re-import the module to trigger import code path
-            importlib.reload(auto_url_parsers)
-
-            # Should print loading message (lines 301-302)
-            mock_print.assert_called()
-            loading_call = mock_print.call_args[0][0]
-            self.assertIn("Loaded", loading_call)
-            self.assertIn("auto-generated URL parsers", loading_call)
 
 
 if __name__ == "__main__":

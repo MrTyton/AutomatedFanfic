@@ -25,6 +25,7 @@ import regex_parsing
 import fanfic_info
 import calibre_info
 import notification_wrapper
+import auto_url_parsers
 from config_models import (
     AppConfig,
     EmailConfig,
@@ -37,6 +38,11 @@ from process_manager import ProcessManager
 
 class TestFanficdownloadIntegration(unittest.TestCase):
     """Comprehensive integration tests for AutomatedFanfic."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up URL parsers once for all test methods."""
+        cls.url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
 
     def setUp(self):
         """Set up test fixtures and temporary files."""
@@ -415,7 +421,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
     ):
         """Test URL processing and site detection."""
         url = config_data["url"]
-        fanfic = regex_parsing.generate_FanficInfo_from_url(url)
+        fanfic = regex_parsing.generate_FanficInfo_from_url(url, self.url_parsers)
 
         # Validate site detection using algorithmic identifiers
         if expected_behavior == "ffnet_processing":
@@ -572,13 +578,22 @@ class TestFanficdownloadIntegration(unittest.TestCase):
     @patch("fanficdownload.url_ingester.EmailInfo")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.calibre_info.CalibreInfo")
-    @patch("fanficdownload.regex_parsing.url_parsers", {"test_site": MagicMock()})
+    @patch("fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare")
     @patch("fanficdownload.parse_arguments")
     @patch("fanficdownload.ff_logging")
     def test_full_application_integration(
-        self, mock_logging, mock_args, mock_calibre, mock_notification, mock_email
+        self,
+        mock_logging,
+        mock_args,
+        mock_url_parsers,
+        mock_calibre,
+        mock_notification,
+        mock_email,
     ):
         """Test full application startup and shutdown."""
+        # Configure mock URL parsers
+        mock_url_parsers.return_value = {"test_site": MagicMock()}
+
         # Write test configuration
         config_path = self._write_config_file(self.base_config)
 
@@ -648,7 +663,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         url = config_data["url"]
 
         try:
-            fanfic = regex_parsing.generate_FanficInfo_from_url(url)
+            fanfic = regex_parsing.generate_FanficInfo_from_url(url, self.url_parsers)
             self.assertIsNotNone(fanfic)
             self.assertIsInstance(fanfic.url, str)
             self.assertIsInstance(fanfic.site, str)

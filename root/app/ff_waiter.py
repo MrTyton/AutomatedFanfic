@@ -118,7 +118,7 @@ def process_fanfic(
         retry_count = fanfic.repeats or 0
         ff_logging.log(
             f"Waiting ~{decision.delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
-            f"(retry #{retry_count + 1})",
+            f"(retry #{retry_count})",
             "WARNING",
         )
     else:

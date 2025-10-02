@@ -6,11 +6,17 @@ from unittest.mock import patch
 
 from parameterized import parameterized
 
+import auto_url_parsers
 import fanfic_info
 import regex_parsing
 
 
 class TestRegexParsing(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        """Generate URL parsers once for all tests."""
+        cls.url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+
     class CheckFilenameExtractionTestCase(NamedTuple):
         input: str
         expected: str
@@ -226,7 +232,7 @@ class TestRegexParsing(unittest.TestCase):
     )
     def test_generate_FanficInfo_from_url(self, input_url, expected_url, expected_site):
         """Tests the generate_FanficInfo_from_url function for various sites."""
-        fanfic = regex_parsing.generate_FanficInfo_from_url(input_url)
+        fanfic = regex_parsing.generate_FanficInfo_from_url(input_url, self.url_parsers)
         self.assertIsInstance(fanfic, fanfic_info.FanficInfo)
         self.assertEqual(fanfic.url, expected_url)
         self.assertEqual(fanfic.site, expected_site)
