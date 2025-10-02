@@ -29,12 +29,12 @@ Example:
 """
 
 import multiprocessing as mp
-import random
 import threading
 from time import sleep
 
 import fanfic_info
 import ff_logging
+import retry_types
 
 
 def insert_after_time(queue: mp.Queue, fanfic: fanfic_info.FanficInfo) -> None:
@@ -66,71 +66,72 @@ def insert_after_time(queue: mp.Queue, fanfic: fanfic_info.FanficInfo) -> None:
 
 
 def process_fanfic(
-    fanfic: fanfic_info.FanficInfo, processor_queues: dict[str, mp.Queue]
+    fanfic: fanfic_info.FanficInfo,
+    processor_queues: dict[str, mp.Queue],
 ) -> None:
     """Processes a failed fanfiction by scheduling delayed retry via timer.
 
-    Implements gradual backoff with random jitter for failed fanfiction
-    downloads as part of the Hail-Mary protocol. Calculates retry delay using
-    a gradual increase with jitter to prevent thundering herd effects when
-    multiple retries occur simultaneously.
+    Schedules delayed retry for fanfictions that have been routed to the waiting
+    queue by url_worker after failure. Uses the retry decision that was already
+    made and stored in the fanfic object to determine delay timing and logging.
 
-    The delay calculation uses gradual backoff with jitter:
-    base_delay = min(60 * retry_count, 1200)  # 1min per retry, capped at 20 minutes
-    jitter = random.uniform(0.5, 1.5)  # ±50% random jitter
-    final_delay = base_delay * jitter
-
-    This provides gradual growth (1min, 2min, 3min, 4min, 5min, etc.) up to
-    20 minutes maximum, with randomization to spread out retry attempts.
+    This function assumes the retry decision has already been made by url_worker
+    and stored in fanfic.retry_decision. It focuses solely on implementing the
+    delay timing and timer scheduling.
 
     Args:
         fanfic (fanfic_info.FanficInfo): The fanfiction metadata object containing
-                                        URL, site information, and retry state
-                                        including the repeat count for delay calculation.
+                                        URL, site information, current retry state,
+                                        and the pre-calculated retry decision.
         processor_queues (dict[str, mp.Queue]): Dictionary mapping site names to
                                                 their corresponding processing queues.
-                                                Used to route the fanfiction back to
-                                                the correct site-specific worker.
 
     Note:
         This function starts a daemon timer thread that will execute independently.
         The timer thread will call insert_after_time() when the delay expires.
         Multiple timers can run concurrently for different fanfictions.
-
-    Example:
-        >>> fanfic = FanficInfo(url="...", repeats=10)  # 10th retry
-        >>> process_fanfic(fanfic, {"archiveofourown.org": queue})
-        # Will log "Waiting ~18.3 minutes..." and schedule requeue in ~1098 seconds
     """
-    # Get retry count, defaulting to 0 if None
-    retry_count = fanfic.repeats or 0
-
-    # Calculate delay based on retry count
-    if retry_count == 720:
-        # Special case: Hail-Mary protocol final attempt (12 hours)
-        delay_seconds = 720 * 60
-        delay_minutes = 720
+    # Use the retry decision that was already calculated by url_worker
+    decision = fanfic.retry_decision
+    if decision is None:
+        # Fallback in case decision wasn't set (shouldn't happen in normal flow)
+        # Use a simple default retry with minimal delay
         ff_logging.log(
-            f"Hail-Mary attempt: Waiting {delay_minutes} minutes for {fanfic.url} "
+            f"No retry decision found for {fanfic.url}. Using default retry action.",
+            "WARNING",
+        )
+        decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.RETRY,
+            delay_minutes=5.0,  # Default 5 minute delay
+            should_notify=False,
+            notification_message="",
+        )
+
+    # Log the delay and schedule timer
+    if decision.action == retry_types.FailureAction.HAIL_MARY:
+        ff_logging.log(
+            f"Hail-Mary attempt: Waiting {decision.delay_minutes} minutes for {fanfic.url} "
             f"in queue {fanfic.site}",
             "WARNING",
         )
-    else:
-        # Gradual backoff: 1 minute per retry, capped at 20 minutes
-        base_delay_seconds = min(60 * retry_count, 1200)
-
-        # Add jitter (±50%) to prevent thundering herd effects
-        jitter_multiplier = random.uniform(0.5, 1.5)
-        delay_seconds = int(base_delay_seconds * jitter_multiplier)
-        delay_minutes = delay_seconds / 60.0
-
+    elif decision.action == retry_types.FailureAction.RETRY:
+        retry_count = fanfic.repeats or 0
         ff_logging.log(
-            f"Waiting ~{delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
-            f"(retry #{retry_count + 1}, base: {base_delay_seconds//60}min, jitter: {jitter_multiplier:.2f}x)",
+            f"Waiting ~{decision.delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
+            f"(retry #{retry_count + 1})",
             "WARNING",
         )
+    else:
+        # This shouldn't happen since url_worker already filtered out ABANDON cases
+        ff_logging.log(
+            f"Unexpected {decision.action.value} action in waiting queue for {fanfic.url}. "
+            f"Abandoning processing.",
+            "ERROR",
+        )
+        return
 
-    # Schedule delayed requeue using timer thread
+    # Convert delay to seconds and schedule timer
+    delay_seconds = int(decision.delay_minutes * 60)
     target_queue = processor_queues[fanfic.site]
     timer = threading.Timer(
         delay_seconds, insert_after_time, args=(target_queue, fanfic)
@@ -145,13 +146,13 @@ def wait_processor(
 
     Continuously monitors the waiting queue for failed fanfiction entries that
     need delayed retry processing. Implements the waiting queue component of
-    the Hail-Mary protocol by receiving failed fanfictions, scheduling their
-    delayed reprocessing, and managing graceful shutdown.
+    the retry protocol by receiving failed fanfictions and scheduling their
+    delayed reprocessing via the pre-calculated retry decisions.
 
     This function runs in a dedicated process and processes entries from the
     waiting queue in a continuous loop. Each failed fanfiction is processed
-    via process_fanfic() which calculates appropriate delays and schedules
-    timer-based requeuing back to site-specific processing queues.
+    via process_fanfic() which uses the pre-calculated retry decision to
+    schedule timer-based requeuing back to site-specific processing queues.
 
     Args:
         processor_queues (dict[str, mp.Queue]): Dictionary mapping fanfiction

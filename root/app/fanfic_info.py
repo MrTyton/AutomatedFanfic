@@ -21,10 +21,11 @@ for fanfiction download, update, retry, and Calibre integration workflows.
 """
 
 from subprocess import CalledProcessError, check_output, PIPE, STDOUT
-from typing import Optional, Tuple
+from typing import Optional
 
 import calibre_info
 import ff_logging
+import retry_types
 
 
 class FanficInfo:
@@ -44,15 +45,14 @@ class FanficInfo:
         calibre_id (Optional[str]): The unique ID in the Calibre database if the
             story exists there, None if not found or not yet searched.
         repeats (Optional[int]): Current retry count for failed processing attempts.
-        max_repeats (Optional[int]): Maximum allowed retry attempts before giving up.
         behavior (Optional[str]): Special processing behavior flag (e.g., 'force').
         title (Optional[str]): The extracted or provided title of the story.
-        hail_mary (bool): Whether the Hail-Mary protocol has been activated for
-            this story, providing one final retry attempt after extended delay.
 
     Note:
-        The Hail-Mary protocol is activated when max_repeats is reached, providing
-        one additional retry attempt after a 12-hour delay (720 minutes).
+        This class now focuses solely on maintaining the current state of a story.
+        Retry logic and failure action determination are handled externally by
+        specialized components that can access configuration and make decisions
+        based on the current state stored here.
     """
 
     def __init__(
@@ -61,15 +61,16 @@ class FanficInfo:
         site: str,
         calibre_id: Optional[str] = None,
         repeats: Optional[int] = 0,
-        max_repeats: Optional[int] = 10,
         behavior: Optional[str] = None,
         title: Optional[str] = None,
+        retry_decision: Optional[retry_types.RetryDecision] = None,
     ):
-        """Initializes a FanficInfo object with story metadata and processing state.
+        """Initializes a FanficInfo object with story metadata and current state.
 
         Creates a new fanfiction story object with the provided metadata and
-        sets up the initial processing state. The retry mechanism is initialized
-        with sensible defaults, and the Hail-Mary protocol is disabled initially.
+        sets up the initial processing state. The object focuses on maintaining
+        current state information; retry logic and failure decisions are handled
+        by external components with access to configuration.
 
         Args:
             url (str): The canonical URL of the fanfiction story. Should be the
@@ -80,34 +81,35 @@ class FanficInfo:
                 Defaults to None, will be populated during database lookup.
             repeats (Optional[int], optional): Initial retry count. Defaults to 0
                 for new stories.
-            max_repeats (Optional[int], optional): Maximum retry attempts before
-                activating Hail-Mary protocol. Defaults to 10.
             behavior (Optional[str], optional): Special processing behavior flag
                 such as 'force' for forced updates. Defaults to None.
             title (Optional[str], optional): The story title if known. Defaults
                 to None, will be extracted during processing.
+            retry_decision (Optional[retry_types.RetryDecision], optional): The
+                last retry decision made for this story, including delay timing
+                and notification requirements. Defaults to None.
 
         Note:
-            The hail_mary attribute is automatically initialized to False and
-            managed by the reached_maximum_repeats() method.
+            This simplified design removes retry configuration from the story
+            object itself. Retry decisions are now made externally by components
+            that have access to both the current state and configuration settings.
+            The retry_decision field stores the results to avoid recalculation.
         """
         self.url = url
         self.calibre_id = calibre_id
         self.site = site
         self.repeats = repeats
-        self.max_repeats = max_repeats
         self.behavior = behavior
         self.title = title
-        # Initialize Hail-Mary protocol as disabled
-        self.hail_mary = False
+        self.retry_decision = retry_decision
 
     def increment_repeat(self) -> None:
         """Increments the retry counter for failed processing attempts.
 
         Increases the repeats counter by one to track the number of failed
-        processing attempts for this story. This counter is used by the
-        retry logic to determine when to activate the Hail-Mary protocol
-        or abandon processing entirely.
+        processing attempts for this story. This counter represents the current
+        state and is used by external retry logic components to determine
+        appropriate next actions.
 
         Note:
             If repeats is None, this method safely handles the case by
@@ -117,55 +119,6 @@ class FanficInfo:
         if self.repeats is not None:
             # Safely increment the retry counter
             self.repeats += 1
-
-    def reached_maximum_repeats(self) -> Tuple[bool, bool]:
-        """Evaluates retry status and manages the Hail-Mary protocol activation.
-
-        Determines if the story has reached its maximum retry limit and handles
-        the transition to the Hail-Mary protocol. This method implements a
-        two-stage retry system: normal retries up to max_repeats, followed by
-        one final Hail-Mary attempt after an extended delay.
-
-        The Hail-Mary protocol provides one additional retry opportunity for
-        stories that have exhausted their normal retry allocation, with a
-        12-hour delay (720 minutes) to allow for potential site recovery.
-
-        Returns:
-            Tuple[bool, bool]: A tuple containing:
-                - First boolean: True if maximum repeats have been reached
-                - Second boolean: True if Hail-Mary protocol has been activated
-                  and this is the final attempt
-
-        Note:
-            When Hail-Mary is activated, the repeats counter is set to 720 to
-            implement the 12-hour delay through the existing retry timing logic.
-            This clever reuse of the retry system provides the extended delay
-            without additional complexity.
-        """
-        # Handle cases where retry limits are not configured
-        if self.repeats is None or self.max_repeats is None:
-            return False, False
-
-        # Check if we've reached the maximum retry limit
-        if self.repeats >= self.max_repeats:
-            # If Hail-Mary is already active, this is the final attempt
-            if self.hail_mary:
-                return True, True
-            else:
-                # Activate Hail-Mary protocol for one final attempt
-                ff_logging.log(
-                    f"\t({self.site}) Story has been repeated {self.repeats} times. "
-                    f"Max repeats is {self.max_repeats}."
-                    "Enabling Hail-Mary protocol, will give one more attempt in 12 hours.",
-                    "WARNING",
-                )
-                self.hail_mary = True
-                # Set repeats to 720 (12 hours in minutes) for extended delay
-                self.repeats = 720
-                return True, False
-
-        # Normal case: retry limit not yet reached
-        return False, False
 
     def get_id_from_calibredb(
         self, calibre_information: calibre_info.CalibreInfo

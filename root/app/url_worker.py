@@ -78,100 +78,94 @@ from time import sleep
 
 import calibre_info
 import calibredb_utils
+import config_models
 import fanfic_info
 import ff_logging
 import notification_wrapper
 import regex_parsing
+import retry_types
 import system_utils
 
 
 def handle_failure(
     fanfic: fanfic_info.FanficInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    queue: mp.Queue,
+    waiting_queue: mp.Queue,
+    retry_config: config_models.RetryConfig,
     cdb: calibre_info.CalibreInfo | None = None,
 ) -> None:
     """
-    Handle fanfiction download failures with sophisticated retry logic.
+    Handle fanfiction download failures using comprehensive retry decision logic.
 
-    This function implements the core retry mechanism for failed downloads,
-    including exponential backoff, Hail-Mary attempts, and special handling
-    for configuration conflicts. It manages the progression through retry
-    attempts and coordinates notifications for permanent failures.
+    This function processes failed downloads by incrementing the failure count
+    and determining the complete retry strategy including timing, notifications,
+    and routing. Uses the centralized retry decision logic to eliminate redundancy.
 
     Args:
         fanfic (fanfic_info.FanficInfo): The fanfiction object that failed to process.
-                                       Contains retry count and behavior state.
         notification_info (notification_wrapper.NotificationWrapper): Notification
                                                                      system for sending failure alerts.
-        queue (mp.Queue): Processing queue where fanfiction should be re-queued
-                         for retry attempts.
+        waiting_queue (mp.Queue): Queue for stories that need delayed retry
+        retry_config (config_models.RetryConfig): Retry configuration settings
         cdb (calibre_info.CalibreInfo, optional): Calibre configuration for checking
                                                  update method compatibility with force requests.
 
-    Retry Strategy:
-        - Normal failures: Increment retry count and re-queue with exponential backoff
-        - Maximum attempts reached: Activate Hail-Mary protocol (12-hour delay)
-        - Hail-Mary failure: Send final failure notification or special handling
-        - Force/update_no_force conflict: Send specific configuration error notification
-
-    Special Cases:
-        When update_method is "update_no_force" but a force was requested,
-        sends a specific notification explaining that the force request was
-        ignored and the download failed with normal update method.
-
-    Example:
-        ```python
-        try:
-            download_fanfiction(fanfic)
-        except Exception:
-            handle_failure(fanfic, notifier, queue, calibre_info)
-            # fanfic may be re-queued for retry or marked as permanently failed
-        ```
-
     Note:
-        This function modifies the fanfic object's retry state and may re-queue
-        it for future processing. The actual delay logic is handled by the
-        fanfic object's timing mechanisms.
+        This function makes the complete retry decision and handles all aspects
+        including notifications, logging, and routing to appropriate queues.
     """
-    # Check current retry status and determine next action
-    maximum_repeats, hail_mary = fanfic.reached_maximum_repeats()
+    fanfic.increment_repeat()
 
-    if maximum_repeats and not hail_mary:
-        # First time reaching maximum attempts - activate Hail-Mary protocol
-        ff_logging.log_failure(
-            f"Maximum attempts reached for {fanfic.url}. Activating Hail-Mary Protocol."
-        )
-        notification_info.send_notification(
-            "Fanfiction Download Failed, trying Hail-Mary in 12 hours.",
-            fanfic.url,
-            fanfic.site,
-        )
-        # We enqueue one final time for the Hail Mary attempt. The fanfic object has already set the proper increment.
-        queue.put(fanfic)
-    elif maximum_repeats and hail_mary:
-        # Hail-Mary attempt also failed - this is permanent failure
-        ff_logging.log_failure(f"Hail Mary attempted for {fanfic.url} and failed.")
+    # Check for special case: force requested but update_no_force configured
+    is_force_with_update_no_force = bool(
+        cdb and fanfic.behavior == "force" and cdb.update_method == "update_no_force"
+    )
 
-        # Check for special case: force requested but update_no_force configured
-        if (
-            cdb
-            and fanfic.behavior == "force"
-            and cdb.update_method == "update_no_force"
-        ):
-            # Send specific notification for configuration conflict
+    # Get comprehensive retry decision including timing and notifications
+    retry_count = fanfic.repeats or 0
+    decision = retry_types.determine_retry_decision(
+        retry_count, retry_config, is_force_with_update_no_force
+    )
+
+    # Store the decision in the fanfic object for later use by ff_waiter
+    fanfic.retry_decision = decision
+
+    # Handle decision based on action
+    if decision.action == retry_types.FailureAction.ABANDON:
+        if decision.should_notify:
             notification_info.send_notification(
                 "Fanfiction Update Permanently Skipped",
                 f"Update for {fanfic.url} was permanently skipped because a force was requested but the update method is set to 'update_no_force'. The force request was ignored and a normal update was attempted instead.",
                 fanfic.site,
             )
-        else:
-            # Standard Hail-Mary failure - fail silently to avoid notification spam
-            pass
-    else:
-        # Haven't reached maximum attempts yet - increment and re-queue for retry
-        fanfic.increment_repeat()
-        queue.put(fanfic)
+
+        ff_logging.log_failure(
+            f"Maximum retries reached for {fanfic.title}. "
+            f"Abandoning after {fanfic.repeats} attempts."
+        )
+        return
+
+    # Handle RETRY and HAIL_MARY cases
+    if decision.action == retry_types.FailureAction.HAIL_MARY:
+        ff_logging.log_failure(
+            f"Maximum attempts reached for {fanfic.url}. Activating Hail-Mary Protocol."
+        )
+
+        if decision.should_notify:
+            notification_info.send_notification(
+                f"Fanfiction Download Failed, trying Hail-Mary in {decision.delay_minutes / 60:.2f} hours.",
+                fanfic.url,
+                fanfic.site,
+            )
+
+    ff_logging.log_failure(
+        f"Sending {fanfic.title} to waiting queue for {decision.action.value}. "
+        f"Attempt {fanfic.repeats}"
+    )
+
+    # Send to waiting queue with decision information attached
+    # Note: We could attach the decision to the fanfic object if needed
+    waiting_queue.put(fanfic)
 
 
 def get_path_or_url(
@@ -241,6 +235,7 @@ def process_fanfic_addition(
     path_or_url: str,
     waiting_queue: mp.Queue,
     notification_info: notification_wrapper.NotificationWrapper,
+    retry_config: config_models.RetryConfig,
 ) -> None:
     """
     Processes the addition of a fanfic to Calibre, updates the database, and sends
@@ -288,7 +283,7 @@ def process_fanfic_addition(
         # If the story's ID cannot be retrieved, log the failure and handle it accordingly.
         # This might involve sending a notification about the failure and possibly re-queuing the story for another attempt.
         ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-        handle_failure(fanfic, notification_info, waiting_queue, cdb)
+        handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
     else:
         # If the story was successfully added to Calibre, send a notification about the new download.
         # This notification includes the story's title and the site it was downloaded from.
@@ -383,6 +378,7 @@ def url_worker(
     cdb: calibre_info.CalibreInfo,
     notification_info: notification_wrapper.NotificationWrapper,
     waiting_queue: mp.Queue,
+    config_path: str,
 ) -> None:
     """
     Main worker function for processing fanfiction downloads in a dedicated process.
@@ -401,6 +397,7 @@ def url_worker(
                                                                      system for sending success/failure alerts.
         waiting_queue (mp.Queue): Queue for stories that need to be retried later
                                  due to failures or timing issues.
+        config_path (str): Path to the TOML configuration file for loading retry settings.
 
     Processing Flow:
         1. Monitor queue for new FanficInfo objects
@@ -459,6 +456,18 @@ def url_worker(
         Workers sleep for 5 seconds when the queue is empty to reduce CPU
         usage while maintaining reasonable responsiveness to new work.
     """
+    # Load retry configuration from TOML file
+    retry_config = None
+    try:
+        config = config_models.ConfigManager.load_config(config_path)
+        retry_config = config.retry
+    except (config_models.ConfigError, config_models.ConfigValidationError) as e:
+        ff_logging.log_failure(f"Failed to load retry configuration: {e}")
+
+    # Use default configuration if loading failed
+    if retry_config is None:
+        retry_config = config_models.RetryConfig()
+
     while True:
         # Check for available work, sleep briefly if queue is empty
         if queue.empty():
@@ -507,12 +516,16 @@ def url_worker(
                 ff_logging.log_failure(
                     f"\t({site}) Failed to update {path_or_url}: {e}"
                 )
-                handle_failure(fanfic, notification_info, waiting_queue, cdb)
+                handle_failure(
+                    fanfic, notification_info, waiting_queue, retry_config, cdb
+                )
                 continue
 
             # Parse FanFicFare output for permanent failure conditions
             if not regex_parsing.check_failure_regexes(output):
-                handle_failure(fanfic, notification_info, waiting_queue, cdb)
+                handle_failure(
+                    fanfic, notification_info, waiting_queue, retry_config, cdb
+                )
                 continue
 
             # Check for conditions that can be resolved with force retry
@@ -531,4 +544,5 @@ def url_worker(
                 path_or_url,
                 waiting_queue,
                 notification_info,
+                retry_config,
             )

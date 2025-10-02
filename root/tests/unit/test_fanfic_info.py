@@ -14,7 +14,6 @@ class TestFanficInfo(unittest.TestCase):
             site="ffnet",
             calibre_id="1234",
             repeats=0,
-            max_repeats=10,
             behavior="update",
             title="Test Story",
         )
@@ -31,10 +30,9 @@ class TestFanficInfo(unittest.TestCase):
         self.assertEqual(fanfic_info_default.site, "ao3")
         self.assertIsNone(fanfic_info_default.calibre_id)
         self.assertEqual(fanfic_info_default.repeats, 0)
-        self.assertEqual(fanfic_info_default.max_repeats, 10)
         self.assertIsNone(fanfic_info_default.behavior)
         self.assertIsNone(fanfic_info_default.title)
-        self.assertFalse(fanfic_info_default.hail_mary)
+        self.assertIsNone(fanfic_info_default.retry_decision)
 
     def test_increment_repeat(self):
         self.fanfic_info.increment_repeat()
@@ -43,52 +41,6 @@ class TestFanficInfo(unittest.TestCase):
         self.fanfic_info.repeats = None
         self.fanfic_info.increment_repeat()
         self.assertIsNone(self.fanfic_info.repeats)
-
-    def test_reached_maximum_repeats_false(self):
-        """Test when repeats are less than max_repeats."""
-        self.fanfic_info.repeats = 5
-        reached, hail_mary = self.fanfic_info.reached_maximum_repeats()
-        self.assertFalse(reached)
-        self.assertFalse(hail_mary)
-        self.assertFalse(self.fanfic_info.hail_mary)
-
-    @patch("fanfic_info.ff_logging.log")
-    def test_reached_maximum_repeats_true_first_time(self, mock_ff_logger):
-        """Test when repeats reach max_repeats for the first time (enable hail mary)."""
-        self.fanfic_info.repeats = 10
-        reached, hail_mary = self.fanfic_info.reached_maximum_repeats()
-        self.assertTrue(reached)
-        self.assertFalse(hail_mary)
-        self.assertTrue(self.fanfic_info.hail_mary)
-        self.assertEqual(
-            self.fanfic_info.repeats, 720
-        )  # Check if repeats reset for hail mary
-        mock_ff_logger.assert_called_once()
-        self.assertIn(
-            "Enabling Hail-Mary protocol",
-            mock_ff_logger.call_args[0][0],
-        )
-
-    def test_reached_maximum_repeats_true_hail_mary_active(self):
-        """Test when repeats exceed max_repeats and hail mary is active."""
-        self.fanfic_info.repeats = 11
-        self.fanfic_info.hail_mary = True
-        reached, hail_mary = self.fanfic_info.reached_maximum_repeats()
-        self.assertTrue(reached)
-        self.assertTrue(hail_mary)
-
-    def test_reached_maximum_repeats_none(self):
-        """Test when repeats or max_repeats is None."""
-        self.fanfic_info.repeats = None
-        reached, hail_mary = self.fanfic_info.reached_maximum_repeats()
-        self.assertFalse(reached)
-        self.assertFalse(hail_mary)
-
-        self.fanfic_info.repeats = 5
-        self.fanfic_info.max_repeats = None
-        reached, hail_mary = self.fanfic_info.reached_maximum_repeats()
-        self.assertFalse(reached)
-        self.assertFalse(hail_mary)
 
     @patch("fanfic_info.check_output")
     @patch("fanfic_info.ff_logging.log")
