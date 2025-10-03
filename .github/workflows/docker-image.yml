@@ -12,7 +12,7 @@ on:
   workflow_call:
     inputs:
       commit_sha:
-        description: 'The specific commit SHA to checkout and build (from update-dependencies)'
+        description: "The specific commit SHA to checkout and build (from update-dependencies)"
         required: true # Required when called
         type: string
     secrets: # Define secrets that can be passed by the caller
@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Branch, tag, or SHA to build (default: master)'
+        description: "Branch, tag, or SHA to build (default: master)"
         required: false
-        default: 'master'
+        default: "master"
 
 permissions:
   contents: write # Required to create releases/tags
@@ -267,28 +267,29 @@ jobs:
           push: true
           tags: ${{ env.PLATFORM_TAG }}
           # Optimized cache strategy for dependency-focused updates
+          # Order matters: most specific caches first, then fallbacks
           cache-from: |
-            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }}
-            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
             type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
+            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }}
             type=gha,scope=calibre-fallback-${{ steps.platform.outputs.arch }}
             type=gha,scope=fanficfare-fallback-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }}
           cache-to: |
-            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
             type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
             type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }},mode=max
             type=gha,scope=calibre-fallback-${{ steps.platform.outputs.arch }},mode=max
             type=gha,scope=fanficfare-fallback-${{ steps.platform.outputs.arch }},mode=max
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }},mode=max
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }},mode=max
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}

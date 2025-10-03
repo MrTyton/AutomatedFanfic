@@ -1,4 +1,8 @@
-# Use a multi-stage build optimized for change frequency
+# Use a multi-stage build optimized for change frequency and cache efficiency
+# CACHE OPTIMIZATION STRATEGY:
+# - Version-related ARGs (VERSION) are deferred until the final stage to prevent cache invalidation
+# - Dependency-specific ARGs (CALIBRE_RELEASE, FANFICFARE_VERSION) are only used in their respective stages
+# - This ensures that app code changes don't invalidate Calibre/FanFicFare installation cache layers
 FROM python:3.12-slim AS python-base
 
 # Set up environment variables early
@@ -54,10 +58,8 @@ ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
-# Set version labels
-ARG VERSION
+# Only include the Calibre version ARG here - defer VERSION until later
 ARG CALIBRE_RELEASE
-LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 
 # Download and extract Calibre (optimized multi-architecture)
 RUN --mount=type=cache,target=/tmp/calibre-cache \
@@ -184,6 +186,7 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
 # Stage 5: FanFicFare installation (changes weekly)
 FROM calibre-installer AS fanficfare-installer
 
+# Only include FanFicFare version ARG here - defer VERSION until later
 ARG FANFICFARE_VERSION
 RUN --mount=type=cache,target=/root/.cache/pip \
     set -e && \
@@ -204,7 +207,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Stage 6: Application code (changes with every code update)
 FROM fanficfare-installer AS app-code
 
-# Copy application files
+# Copy application files - this is where app version changes should invalidate cache
 COPY root/ /
 RUN chmod -R +x /app/ && \
     chown -R abc:abc /app/
@@ -212,7 +215,7 @@ RUN chmod -R +x /app/ && \
 # Final runtime stage - minimal, just sets labels and runtime configuration
 FROM app-code AS runtime
 
-# Set version labels
+# Now add version-specific ARGs that change with each app update
 ARG VERSION
 ARG CALIBRE_RELEASE
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
