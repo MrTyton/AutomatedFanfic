@@ -33,7 +33,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         self.mock_config.email.server = "imap.gmail.com"
         self.mock_config.email.mailbox = "INBOX"
         self.mock_config.email.sleep_time = 60
-        self.mock_config.email.ffnet_disable = True
+        self.mock_config.email.disabled_sites = ["fanfiction"]
 
         # Set up calibre config
         self.mock_config.calibre = MagicMock()

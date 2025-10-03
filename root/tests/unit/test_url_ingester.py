@@ -64,22 +64,23 @@ class TestUrlIngester(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("ffnet_enabled", True),
-            ("ffnet_disabled", False),
+            ("no_sites_disabled", []),
+            ("ffnet_disabled", ["fanfiction"]),
+            ("multiple_sites_disabled", ["fanfiction", "archiveofourown"]),
         ]
     )
-    def test_email_info_init_ffnet_disable(self, name, ffnet_disable):
-        # Create EmailConfig directly with ffnet_disable setting
+    def test_email_info_init_disabled_sites(self, name, disabled_sites):
+        # Create EmailConfig directly with disabled_sites setting
         email_config = EmailConfig(
             email="testuser",
             password="test_password",
             server="test_server",
-            ffnet_disable=ffnet_disable,
+            disabled_sites=disabled_sites,
         )
 
         email_info = EmailInfo(email_config)
 
-        self.assertEqual(email_info.ffnet_disable, ffnet_disable)
+        self.assertEqual(email_info.disabled_sites, disabled_sites)
 
     @parameterized.expand(
         [
@@ -142,7 +143,7 @@ class TestEmailWatcher(unittest.TestCase):
         """Set up common test fixtures."""
         self.mock_email_info = MagicMock()
         self.mock_email_info.sleep_time = 1  # Short sleep for testing
-        self.mock_email_info.ffnet_disable = False
+        self.mock_email_info.disabled_sites = []
 
         self.mock_notification_info = MagicMock()
 
@@ -261,12 +262,12 @@ class TestEmailWatcher(unittest.TestCase):
 
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    def test_email_watcher_ffnet_disable_notification_only(
+    def test_email_watcher_disabled_sites_notification_only(
         self, mock_generate_fanfic, mock_sleep
     ):
-        """Test that FFNet URLs only send notifications when ffnet_disable is True."""
-        # Enable FFNet disable mode
-        self.mock_email_info.ffnet_disable = True
+        """Test that disabled site URLs only send notifications when site is in disabled_sites."""
+        # Enable FFNet disable mode by adding it to disabled_sites
+        self.mock_email_info.disabled_sites = ["fanfiction"]
         self.mock_email_info.get_urls.side_effect = [
             ["https://www.fanfiction.net/s/12345/1/Test-Story"],
             KeyboardInterrupt(),  # Stop the infinite loop
