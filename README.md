@@ -87,7 +87,7 @@ password = ""
 server = ""
 mailbox = ""
 sleep_time = 60
-ffnet_disable = false
+disabled_sites = []
 ```
 
 
@@ -99,7 +99,40 @@ ffnet_disable = false
 - `server`: Address for the email server. For Gmail, this is going to be `imap.gmail.com`. For other web services, you'll have to search for them.
 - `mailbox`: Which mailbox to check, such as `INBOX`, for the unread update emails.
 - `sleep_time`: How often to check the email account for new updates, in seconds. Default is 60 seconds, but you can make this as often as you want. Recommended that you don't go too fast though, since some email providers will not be happy.
-- `ffnet_disable`: A boolean (`true`/`false`) to control behavior for FanFiction.Net (FFNet) URLs. Defaults to `true`. When `true`, FFNet URLs found in emails will only trigger a notification (if configured) and will not be downloaded or processed further. If set to `false`, FFNet URLs will be processed like any other supported site. This is due to FFNet often having issues with automated access. The current versions of Flaresolver seem to mostly resolve this, so it defaults to `false.`
+- `disabled_sites`: A list of site identifiers for which URLs should only trigger notifications without being processed by FanFicFare. Defaults to an empty list `[]` (all sites enabled). When a site is disabled, URLs from that site found in emails will only send a notification and will not be downloaded or processed further.
+
+**Site Identifier Parsing:**
+Site identifiers are automatically generated from FanFicFare's supported adapters and use a standardized format. The system extracts the base domain from a fanfiction site URL and converts it to an identifier by:
+
+1. **Domain Extraction**: Takes the main domain from the site (e.g., `www.fanfiction.net` → `fanfiction.net`)
+2. **Subdomain Removal**: Removes common subdomains like `www.`, `m.`, `forums.`
+3. **Identifier Generation**: Converts the remaining domain to a simple identifier (e.g., `fanfiction.net` → `fanfiction`)
+
+**Common Site Identifiers:**
+- `fanfiction` (FanFiction.Net)
+- `archiveofourown` (Archive of Our Own)
+- `spacebattles` (SpaceBattles Forums)
+- `sufficientvelocity` (Sufficient Velocity Forums)
+- `questionablequesting` (Questionable Questing Forums)
+- `royalroad` (Royal Road)
+- `fictionpress` (FictionPress)
+- `webnovel` (WebNovel)
+- `scribblehub` (ScribbleHub)
+
+**Examples:**
+```toml
+# Disable FanFiction.Net only (due to access issues)
+disabled_sites = ["fanfiction"]
+
+# Disable multiple forum sites
+disabled_sites = ["spacebattles", "sufficientvelocity", "questionablequesting"]
+
+# Enable all sites (default)
+disabled_sites = []
+```
+
+**Backward Compatibility:**
+The old `ffnet_disable = true` configuration is automatically converted to `disabled_sites = ["fanfiction"]` when the application starts, so existing configurations will continue to work without changes.
 
 ### Calibre
 
