@@ -23,8 +23,10 @@ mailbox = "INBOX"
 # Interval in seconds between email checks (minimum: 1)
 sleep_time = 60
 
-# Whether to disable FanFiction.Net processing (true = notify only, false = process)
-ffnet_disable = false
+# List of site identifiers to disable processing for (notification only)
+# Common sites: "fanfiction", "archiveofourown", "wattpad", "royalroad", "spacebattles"
+# Leave empty to process all sites: disabled_sites = []
+disabled_sites = []
 
 # ============================================================================
 # CALIBRE CONFIGURATION

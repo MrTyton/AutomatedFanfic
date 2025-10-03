@@ -61,7 +61,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                 "server": "imap.test.com",
                 "mailbox": "INBOX",
                 "sleep_time": 1,
-                "ffnet_disable": True,
+                "disabled_sites": ["fanfiction"],
             },
             "calibre": {"path": "/test/calibre/path", "update_method": "update"},
             "pushbullet": {"enabled": False},
@@ -155,7 +155,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                         "server": "imap.test.com",
                         "mailbox": "INBOX",
                         "sleep_time": 30,
-                        "ffnet_disable": False,
+                        "disabled_sites": [],
                     },
                     "calibre": {
                         "path": "/test/path",

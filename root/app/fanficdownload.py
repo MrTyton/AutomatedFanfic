@@ -143,7 +143,9 @@ def main() -> None:
         ff_logging.log(f"  Email Server: {config.email.server or 'Not Specified'}")
         ff_logging.log(f"  Email Mailbox: {config.email.mailbox}")
         ff_logging.log(f"  Email Sleep Time: {config.email.sleep_time}")
-        ff_logging.log(f"  FFNet Disabled: {config.email.ffnet_disable}")
+        ff_logging.log(
+            f"  Disabled Sites: {config.email.disabled_sites if config.email.disabled_sites else 'None'}"
+        )
 
         # Log Calibre Configuration - Library and processing settings
         ff_logging.log(f"  Calibre Path: {config.calibre.path or 'Not Specified'}")

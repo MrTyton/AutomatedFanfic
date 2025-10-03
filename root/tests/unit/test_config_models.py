@@ -31,7 +31,7 @@ password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
 sleep_time = 60
-ffnet_disable = true
+disabled_sites = ["fanfiction"]
 
 [calibre]
 path = "/path/to/calibre"
@@ -96,7 +96,7 @@ password = "test_password"
 server = "imap.gmail.com"
 mailbox = "INBOX"
 sleep_time = 60
-ffnet_disable = true
+disabled_sites = ["fanfiction"]
 
 [calibre]
 path = "/path/to/calibre"
@@ -266,7 +266,7 @@ path = ""
         )
 
         self.assertEqual(email_config.sleep_time, 60)
-        self.assertFalse(email_config.ffnet_disable)
+        self.assertEqual(email_config.disabled_sites, [])
 
     def test_calibre_config_minimal(self):
         """Test CalibreConfig with only required fields."""
@@ -559,14 +559,50 @@ path = ""
         except Exception:
             pass  # Expected validation error
 
-    def test_email_config_ffnet_disable_default(self):
-        """Test EmailConfig ffnet_disable default value."""
+    def test_email_config_disabled_sites_default(self):
+        """Test EmailConfig disabled_sites default value."""
         email_config = EmailConfig(
             email="test@example.com", password="password", server="imap.gmail.com"
         )
 
-        # Should default to False per the model definition
-        self.assertFalse(email_config.ffnet_disable)
+        # Should default to empty list per the model definition
+        self.assertEqual(email_config.disabled_sites, [])
+
+    def test_email_config_ffnet_disable_backward_compatibility(self):
+        """Test EmailConfig backward compatibility with old ffnet_disable setting."""
+        # Test with ffnet_disable=true should convert to disabled_sites=["fanfiction"]
+        email_config = EmailConfig.model_validate(
+            {
+                "email": "test@example.com",
+                "password": "password",
+                "server": "imap.gmail.com",
+                "ffnet_disable": True,
+            }
+        )
+        self.assertEqual(email_config.disabled_sites, ["fanfiction"])
+
+        # Test with ffnet_disable=false should convert to disabled_sites=[]
+        email_config = EmailConfig.model_validate(
+            {
+                "email": "test@example.com",
+                "password": "password",
+                "server": "imap.gmail.com",
+                "ffnet_disable": False,
+            }
+        )
+        self.assertEqual(email_config.disabled_sites, [])
+
+        # Test that providing both ffnet_disable and disabled_sites prioritizes disabled_sites
+        email_config = EmailConfig.model_validate(
+            {
+                "email": "test@example.com",
+                "password": "password",
+                "server": "imap.gmail.com",
+                "ffnet_disable": True,
+                "disabled_sites": ["archiveofourown"],
+            }
+        )
+        self.assertEqual(email_config.disabled_sites, ["archiveofourown"])
 
     def test_pushbullet_config_validation_with_enabled_but_no_key(self):
         """Test PushbulletConfig validation when enabled but no API key."""

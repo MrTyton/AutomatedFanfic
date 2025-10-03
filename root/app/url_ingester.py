@@ -53,7 +53,7 @@ Configuration:
     - server: IMAP server address
     - mailbox: Mailbox to monitor (typically "INBOX")
     - sleep_time: Seconds between polling cycles
-    - ffnet_disable: Whether to disable FFNet processing
+    - disabled_sites: List of site identifiers to disable processing for
 
 Dependencies:
     - fanficfare.geturls: For URL extraction from emails
@@ -169,7 +169,7 @@ class EmailInfo:
         server (str): IMAP server hostname (e.g., "imap.gmail.com")
         mailbox (str): Mailbox to monitor (typically "INBOX")
         sleep_time (int): Seconds to wait between email checks
-        ffnet_disable (bool): Whether to disable FanFiction.Net processing
+        disabled_sites (List[str]): List of site identifiers to disable processing for
 
     Example:
         ```python
@@ -190,7 +190,7 @@ class EmailInfo:
         server = "imap.gmail.com"
         mailbox = "INBOX"
         sleep_time = 60
-        ffnet_disable = true
+        disabled_sites = ["fanfiction", "wattpad"]  # Sites to disable processing for
         ```
 
     Security Note:
@@ -224,7 +224,7 @@ class EmailInfo:
         self.server = email_config.server
         self.mailbox = email_config.mailbox
         self.sleep_time = email_config.sleep_time
-        self.ffnet_disable = email_config.ffnet_disable
+        self.disabled_sites = email_config.disabled_sites
 
     def get_urls(self) -> set[str]:
         """
@@ -312,8 +312,8 @@ def email_watcher(
         5. Sleep until next polling cycle
 
     Special Handling:
-        - FFNet URLs: If ffnet_disable is True, sends notification only
-                     without adding to processing queue
+        - Disabled Sites: URLs from sites listed in disabled_sites only send
+                         notifications without being added to processing queues
         - Unknown Sites: URLs that don't match known patterns are routed
                         to the "other" queue
 
@@ -357,8 +357,8 @@ def email_watcher(
             # Parse URL to identify site and normalize format
             fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
 
-            # Special handling for FFNet when disabled - notification only
-            if email_info.ffnet_disable and fanfic.site == "fanfiction":
+            # Skip processing for disabled sites - notification only
+            if fanfic.site in email_info.disabled_sites:
                 notification_info.send_notification(
                     "New Fanfiction Download", fanfic.url, fanfic.site
                 )

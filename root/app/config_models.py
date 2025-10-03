@@ -88,11 +88,15 @@ class EmailConfig(BaseModel):
         server (str): IMAP server address (e.g., 'imap.gmail.com').
         mailbox (str): Mailbox name to monitor for new emails (default: 'INBOX').
         sleep_time (int): Interval in seconds between email checks (minimum: 1).
-        ffnet_disable (bool): Whether to disable FanFiction.Net processing.
+        disabled_sites (List[str]): List of site identifiers to disable processing for (notification only).
 
     Note:
         Different email providers have different authentication requirements.
         Some require just the username, while others require the full email address.
+
+        For disabled_sites, use site identifiers like: 'fanfiction', 'archiveofourown',
+        'spacebattles', 'royalroad', etc. Stories from these sites will only send
+        notifications without being processed by FanFicFare.
     """
 
     email: str = Field(
@@ -104,8 +108,9 @@ class EmailConfig(BaseModel):
     sleep_time: int = Field(
         default=60, ge=1, description="Sleep time between checks in seconds"
     )
-    ffnet_disable: bool = Field(
-        default=False, description="Disable FanFiction.Net processing"
+    disabled_sites: List[str] = Field(
+        default_factory=list,
+        description="List of site identifiers to disable processing for (notification only)",
     )
 
     @field_validator("email")
@@ -142,6 +147,31 @@ class EmailConfig(BaseModel):
             str: The validated and trimmed server address.
         """
         return v.strip() if v else v
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_legacy_ffnet_disable(cls, values):
+        """Handle backward compatibility with old ffnet_disable configuration.
+
+        If the old ffnet_disable boolean is present, automatically convert it
+        to the new disabled_sites list format for seamless migration.
+        """
+        if isinstance(values, dict):
+            # Check if old ffnet_disable is present
+            if "ffnet_disable" in values and "disabled_sites" not in values:
+                if values.get("ffnet_disable", False):
+                    values["disabled_sites"] = ["fanfiction"]
+                else:
+                    values["disabled_sites"] = []
+                # Remove the old field to prevent validation errors
+                values.pop("ffnet_disable", None)
+
+                # Log the migration
+                ff_logging.log(
+                    "Migrating deprecated 'ffnet_disable' to 'disabled_sites'",
+                    "WARNING",
+                )
+        return values
 
     def is_configured(self) -> bool:
         """Checks if email configuration is complete and ready for use.
