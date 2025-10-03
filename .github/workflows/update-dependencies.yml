@@ -140,6 +140,7 @@ jobs:
             echo "any_changed=true" >> $GITHUB_OUTPUT
             echo "Updates detected, will proceed with version bump"
           else
+            echo "any_changed=false" >> $GITHUB_OUTPUT
             echo "No updates detected"
           fi
 
@@ -220,6 +221,23 @@ jobs:
           echo "  commit_sha: $COMMIT_SHA"
           echo "  latest_updated: ${{ steps.update_latest_txt.outputs.version-changed }}"
 
+      - name: Debug final job outputs
+        run: |
+          echo "=== FINAL JOB OUTPUTS FOR DOWNSTREAM WORKFLOWS ==="
+          echo "changes_detected: ${{ steps.check_updates.outputs.any_changed }}"
+          echo "commit_sha: ${{ steps.commit_changes.outputs.commit_long_sha }}"
+          echo "latest_updated: ${{ steps.update_latest_txt.outputs.version-changed }}"
+          echo "=================================================="
+
+          # Test the exact condition that build_docker uses
+          if [ "${{ steps.check_updates.outputs.any_changed }}" == "true" ]; then
+            echo "✅ build_docker condition should PASS"
+          else
+            echo "❌ build_docker condition will FAIL"
+            echo "   actual value: '${{ steps.check_updates.outputs.any_changed }}'"
+            echo "   expected: 'true'"
+          fi
+
       - name: Notify if no changes were committed (Should not happen with default token)
         if: steps.update_latest_txt.outputs.version-changed == 'true' && steps.commit_changes.outputs.commit_long_sha == ''
         run: |
@@ -241,11 +259,51 @@ jobs:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Inherit secrets if python-app ever needs them
 
+  # Debug job to validate outputs before Docker build
+  debug_outputs:
+    needs: [check_and_update, run_ci]
+    if: always() # Always run to help debug issues
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug job outputs for Docker build decision
+        run: |
+          echo "=== DEBUG: Analyzing Docker build trigger conditions ==="
+          echo "check_and_update job result: ${{ needs.check_and_update.result }}"
+          echo "run_ci job result: ${{ needs.run_ci.result }}"
+          echo ""
+          echo "Job outputs from check_and_update:"
+          echo "  changes_detected: '${{ needs.check_and_update.outputs.changes_detected }}'"
+          echo "  latest_updated: '${{ needs.check_and_update.outputs.latest_updated }}'"
+          echo "  commit_sha: '${{ needs.check_and_update.outputs.commit_sha }}'"
+          echo ""
+          echo "Docker build trigger evaluation:"
+          if [ "${{ needs.check_and_update.outputs.changes_detected }}" == "true" ]; then
+            echo "✅ Condition 1 PASS: changes_detected == 'true'"
+          else
+            echo "❌ Condition 1 FAIL: changes_detected = '${{ needs.check_and_update.outputs.changes_detected }}'"
+          fi
+
+          if [ "${{ needs.check_and_update.outputs.latest_updated }}" == "true" ]; then
+            echo "✅ Condition 2 PASS: latest_updated == 'true'"
+          else
+            echo "❌ Condition 2 FAIL: latest_updated = '${{ needs.check_and_update.outputs.latest_updated }}'"
+          fi
+
+          if [ -n "${{ needs.check_and_update.outputs.commit_sha }}" ]; then
+            echo "✅ Condition 3 PASS: commit_sha is not empty"
+          else
+            echo "❌ Condition 3 FAIL: commit_sha is empty"
+          fi
+          echo "============================="
+
   # Third job: Build Docker - directly depend on both jobs
   build_docker:
     needs: [check_and_update, run_ci]
-    # Only run if changes detected (simplified condition - commit_sha will always exist when changes detected)
-    if: needs.check_and_update.outputs.changes_detected == 'true'
+    # Use multiple fallback conditions to ensure this runs when updates are detected
+    if: |
+      (needs.check_and_update.outputs.changes_detected == 'true') ||
+      (needs.check_and_update.outputs.latest_updated == 'true') ||
+      (needs.check_and_update.outputs.commit_sha != '')
     uses: ./.github/workflows/docker-image.yml
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
