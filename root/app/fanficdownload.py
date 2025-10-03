@@ -37,6 +37,7 @@ import ff_logging  # Custom logging module for formatted logging
 
 import auto_url_parsers
 import calibre_info
+import calibredb_utils
 import ff_waiter
 import notification_wrapper
 import url_ingester
@@ -117,6 +118,12 @@ def main() -> None:
         "For issues and updates, please go to https://github.com/MrTyton/AutomatedFanfic"
     )
     ff_logging.log(f"Using configuration file: {args.config}")
+
+    # Log external tool versions
+    calibre_version = calibredb_utils.get_calibre_version()
+    fanficfare_version = url_worker.get_fanficfare_version()
+    ff_logging.log(f"Calibre version: {calibre_version}")
+    ff_logging.log(f"FanFicFare version: {fanficfare_version}")
 
     # Load and validate configuration using the new system
     try:

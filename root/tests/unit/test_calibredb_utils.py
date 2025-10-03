@@ -1,4 +1,5 @@
 import unittest
+import subprocess
 from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 from typing import NamedTuple, Optional
@@ -11,6 +12,7 @@ from calibredb_utils import (
     export_story,
     remove_story,
     add_story,
+    get_calibre_version,
 )
 
 
@@ -219,6 +221,108 @@ class AddStoryTestCase(unittest.TestCase):
                 fanfic_info=None,
             )
             self.assertEqual(fanfic_info.title, "Story Title")
+
+
+class GetCalibreVersionTestCase(unittest.TestCase):
+    """Test cases for get_calibre_version function."""
+
+    @parameterized.expand(
+        [
+            (
+                "windows_calibre_version",
+                b"calibredb.exe (calibre 8.4)\n",
+                "8.4",
+            ),
+            (
+                "linux_calibre_version",
+                b"calibredb (calibre 6.29.0)\n",
+                "6.29.0",
+            ),
+            (
+                "minimal_version",
+                b"calibredb (calibre 5.0)\n",
+                "5.0",
+            ),
+            (
+                "beta_version",
+                b"calibredb (calibre 7.15.1)\n",
+                "7.15.1",
+            ),
+        ]
+    )
+    @patch("subprocess.check_output")
+    def test_get_calibre_version_success(
+        self, name, mock_output, expected_version, mock_check_output
+    ):
+        """Test successful Calibre version extraction with various output formats."""
+        mock_check_output.return_value = mock_output
+
+        result = get_calibre_version()
+
+        self.assertEqual(result, expected_version)
+        mock_check_output.assert_called_once_with(
+            ["calibredb", "--version"], stderr=subprocess.DEVNULL, timeout=10
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "file_not_found",
+                FileNotFoundError("calibredb not found"),
+                "Error: calibredb not found",
+            ),
+            (
+                "timeout_error",
+                subprocess.TimeoutExpired("calibredb", 10),
+                "Error: Command 'calibredb' timed out after 10 seconds",
+            ),
+            (
+                "generic_exception",
+                Exception("Something went wrong"),
+                "Error: Something went wrong",
+            ),
+        ]
+    )
+    @patch("subprocess.check_output")
+    def test_get_calibre_version_errors(
+        self, name, mock_exception, expected_message, mock_check_output
+    ):
+        """Test error handling for various failure scenarios."""
+        mock_check_output.side_effect = mock_exception
+
+        result = get_calibre_version()
+
+        self.assertEqual(result, expected_message)
+
+    @parameterized.expand(
+        [
+            (
+                "unexpected_format",
+                b"Some unexpected output\n",
+                "Some unexpected output",
+            ),
+            (
+                "no_calibre_keyword",
+                b"version 8.4\n",
+                "version 8.4",
+            ),
+            (
+                "empty_output",
+                b"",
+                "",
+            ),
+        ]
+    )
+    @patch("subprocess.check_output")
+    def test_get_calibre_version_unexpected_format(
+        self, name, mock_output, expected_result, mock_check_output
+    ):
+        """Test handling of unexpected output formats."""
+        mock_check_output.return_value = mock_output
+
+        result = get_calibre_version()
+
+        self.assertEqual(result, expected_result)
 
 
 if __name__ == "__main__":

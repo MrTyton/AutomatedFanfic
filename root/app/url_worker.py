@@ -87,6 +87,31 @@ import retry_types
 import system_utils
 
 
+def get_fanficfare_version() -> str:
+    """Get the FanFicFare version by running python -m fanficfare.cli --version.
+
+    Returns:
+        str: FanFicFare version string or error message if unavailable.
+    """
+    try:
+        command = "python -m fanficfare.cli --version"
+        output = execute_command(command)
+
+        # Output format is typically "Version: X.X.X"
+        output = output.strip()
+
+        # Extract just the version number if possible
+        import re
+
+        version_match = re.search(r"Version:\s*(\d+\.\d+\.\d+)", output)
+        if version_match:
+            return version_match.group(1)
+        return output  # Return full output if pattern not found
+
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def handle_failure(
     fanfic: fanfic_info.FanficInfo,
     notification_info: notification_wrapper.NotificationWrapper,

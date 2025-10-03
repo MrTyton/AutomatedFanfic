@@ -32,6 +32,36 @@ from subprocess import call, PIPE, DEVNULL
 from typing import Optional
 
 
+def get_calibre_version() -> str:
+    """Get the Calibre version by running calibredb --version.
+
+    Returns:
+        str: Calibre version string or error message if unavailable.
+    """
+    try:
+        from subprocess import check_output
+
+        output = check_output(
+            ["calibredb", "--version"], stderr=DEVNULL, timeout=10
+        ).decode("utf-8")
+
+        # Output format is typically "calibredb.exe (calibre X.X)" or "calibredb (calibre X.X.X)"
+        output = output.strip()
+        # Extract just the version number from the output
+        if "calibre" in output:
+            # Find version pattern like "X.X" or "X.X.X" inside parentheses
+            import re
+
+            version_match = re.search(r"calibre (\d+\.\d+(?:\.\d+)?)", output)
+            if version_match:
+                return version_match.group(1)
+            return output  # Return full output if pattern not found
+        return output
+
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def call_calibre_db(
     command: str,
     calibre_info: calibre_info.CalibreInfo,
