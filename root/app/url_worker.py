@@ -1,13 +1,13 @@
 """
-Fanfiction Download Worker Processes for AutomatedFanfic
+Fanfiction Download Worker Tasks for AutomatedFanfic
 
 This module implements the core fanfiction download and processing logic for the
-AutomatedFanfic application. It manages worker processes that consume URLs from
+AutomatedFanfic application. It manages worker tasks that consume URLs from
 queues, download fanfiction using FanFicFare, integrate with Calibre libraries,
 and handle retry logic with exponential backoff.
 
 Key Features:
-    - Multiprocessing worker pools for concurrent fanfiction downloads
+    - Async task pools for concurrent fanfiction downloads
     - FanFicFare CLI integration with dynamic command construction
     - Calibre library integration for story management
     - Sophisticated retry logic with exponential backoff and "Hail-Mary" attempts
@@ -16,8 +16,8 @@ Key Features:
     - Notification system integration for success/failure reporting
 
 Architecture:
-    Workers operate in separate processes, consuming FanficInfo objects from
-    multiprocessing queues. Each worker manages its own temporary workspace
+    Workers operate as async tasks, consuming FanficInfo objects from
+    asyncio queues. Each worker manages its own temporary workspace
     and Calibre interactions, with sophisticated error handling and retry
     mechanisms to handle various failure scenarios.
 
@@ -39,18 +39,18 @@ Retry Logic:
 
 Example:
     ```python
-    import multiprocessing as mp
+    import asyncio
     from url_worker import url_worker
     from calibre_info import CalibreInfo
 
-    # Set up worker process
-    queue = mp.Queue()
+    # Set up worker task
+    queue = asyncio.Queue()
     calibre_info = CalibreInfo("/path/to/library")
     notification_wrapper = NotificationWrapper(config)
-    waiting_queue = mp.Queue()
+    waiting_queue = asyncio.Queue()
 
-    # Start worker (typically in separate process)
-    url_worker(queue, calibre_info, notification_wrapper, waiting_queue)
+    # Start worker (typically as async task)
+    await url_worker(queue, calibre_info, notification_wrapper, waiting_queue)
     ```
 
 Configuration Integration:
@@ -63,18 +63,17 @@ Configuration Integration:
 Dependencies:
     - fanficfare: CLI tool for downloading fanfiction
     - calibre: Library management and book format conversion
-    - multiprocessing: Queue-based worker coordination
+    - asyncio: Queue-based worker coordination
     - Various internal modules for configuration, logging, and utilities
 
-Thread Safety:
-    All functions are designed for multiprocessing environments with
+Async Safety:
+    All functions are designed for asyncio environments with
     proper queue-based communication and isolated temporary workspaces
-    for each worker process.
+    for each worker task.
 """
 
-import multiprocessing as mp
+import asyncio
 from subprocess import check_output, PIPE, STDOUT
-from time import sleep
 
 import calibre_info
 import calibredb_utils
@@ -112,10 +111,10 @@ def get_fanficfare_version() -> str:
         return f"Error: {e}"
 
 
-def handle_failure(
+async def handle_failure(
     fanfic: fanfic_info.FanficInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    waiting_queue: mp.Queue,
+    waiting_queue: asyncio.Queue,
     retry_config: config_models.RetryConfig,
     cdb: calibre_info.CalibreInfo | None = None,
 ) -> None:
@@ -130,7 +129,7 @@ def handle_failure(
         fanfic (fanfic_info.FanficInfo): The fanfiction object that failed to process.
         notification_info (notification_wrapper.NotificationWrapper): Notification
                                                                      system for sending failure alerts.
-        waiting_queue (mp.Queue): Queue for stories that need delayed retry
+        waiting_queue (asyncio.Queue): Queue for stories that need delayed retry
         retry_config (config_models.RetryConfig): Retry configuration settings
         cdb (calibre_info.CalibreInfo, optional): Calibre configuration for checking
                                                  update method compatibility with force requests.
@@ -190,7 +189,7 @@ def handle_failure(
 
     # Send to waiting queue with decision information attached
     # Note: We could attach the decision to the fanfic object if needed
-    waiting_queue.put(fanfic)
+    await waiting_queue.put(fanfic)
 
 
 def get_path_or_url(
@@ -280,13 +279,13 @@ def execute_command(command: str) -> str:
     return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
 
 
-def process_fanfic_addition(
+async def process_fanfic_addition(
     fanfic: fanfic_info.FanficInfo,
     cdb: calibre_info.CalibreInfo,
     temp_dir: str,
     site: str,
     path_or_url: str,
-    waiting_queue: mp.Queue,
+    waiting_queue: asyncio.Queue,
     notification_info: notification_wrapper.NotificationWrapper,
     retry_config: config_models.RetryConfig,
 ) -> None:
@@ -310,7 +309,7 @@ def process_fanfic_addition(
             downloaded.
         site (str): The name of the site from which the fanfic is being updated.
         path_or_url (str): The path or URL to the fanfic that is being updated.
-        waiting_queue (mp.Queue): The multiprocessing queue where fanfics are
+        waiting_queue (asyncio.Queue): The asyncio queue where fanfics are
             placed if they need to be reprocessed.
         notification_info (notification_wrapper.NotificationWrapper): The object for sending notifications.
 
@@ -336,7 +335,7 @@ def process_fanfic_addition(
         # If the story's ID cannot be retrieved, log the failure and handle it accordingly.
         # This might involve sending a notification about the failure and possibly re-queuing the story for another attempt.
         ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-        handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
+        await handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
     else:
         # If the story was successfully added to Calibre, send a notification about the new download.
         # This notification includes the story's title and the site it was downloaded from.
@@ -426,15 +425,15 @@ def construct_fanficfare_command(
     return command
 
 
-def url_worker(
-    queue: mp.Queue,
+async def url_worker(
+    queue: asyncio.Queue,
     cdb: calibre_info.CalibreInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    waiting_queue: mp.Queue,
+    waiting_queue: asyncio.Queue,
     retry_config: config_models.RetryConfig,
 ) -> None:
     """
-    Main worker function for processing fanfiction downloads in a dedicated process.
+    Main worker function for processing fanfiction downloads as an async task.
 
     This function implements the core download worker loop that processes FanficInfo
     objects from a queue, downloads or updates stories using FanFicFare, integrates
@@ -442,14 +441,14 @@ def url_worker(
     retry logic.
 
     Args:
-        queue (mp.Queue): Input queue containing FanficInfo objects to process.
-                         Worker continuously monitors this queue for new work.
+        queue (asyncio.Queue): Input queue containing FanficInfo objects to process.
+                              Worker continuously monitors this queue for new work.
         cdb (calibre_info.CalibreInfo): Calibre library configuration and connection
                                        information for story management.
         notification_info (notification_wrapper.NotificationWrapper): Notification
                                                                      system for sending success/failure alerts.
-        waiting_queue (mp.Queue): Queue for stories that need to be retried later
-                                 due to failures or timing issues.
+        waiting_queue (asyncio.Queue): Queue for stories that need to be retried later
+                                      due to failures or timing issues.
         retry_config (config_models.RetryConfig): Retry configuration settings
                                                  loaded from the main process to avoid redundant config parsing.
 
@@ -477,27 +476,26 @@ def url_worker(
 
     Example Usage:
         ```python
-        # Typically run in separate process via ProcessManager
-        import multiprocessing as mp
+        # Typically run as async task via TaskManager
+        import asyncio
 
-        work_queue = mp.Queue()
-        retry_queue = mp.Queue()
+        work_queue = asyncio.Queue()
+        retry_queue = asyncio.Queue()
         calibre_config = CalibreInfo("/path/to/library")
         notifier = NotificationWrapper(config)
 
-        # This runs indefinitely until process termination
-        url_worker(work_queue, calibre_config, notifier, retry_queue)
+        # This runs indefinitely as an async task
+        await url_worker(work_queue, calibre_config, notifier, retry_queue)
         ```
 
     Infinite Loop:
-        This function runs indefinitely and should be executed in a separate
-        process. It only exits when the process is terminated externally or
-        the queue receives a None sentinel value.
+        This function runs indefinitely and should be executed as an async task.
+        It only exits when cancelled or the queue receives a None sentinel value.
 
-    Thread Safety:
-        Designed for multiprocessing environments. Each worker operates in
-        isolation with its own temporary workspace and Calibre connection.
-        All inter-process communication occurs through thread-safe queues.
+    Async Safety:
+        Designed for asyncio environments. Each worker operates with its own 
+        temporary workspace and Calibre connection. All inter-task communication 
+        occurs through asyncio queues.
 
     Configuration Awareness:
         Respects all Calibre and FanFicFare configuration options including:
@@ -511,16 +509,17 @@ def url_worker(
         usage while maintaining reasonable responsiveness to new work.
     """
     while True:
-        # Check for available work, sleep briefly if queue is empty
-        if queue.empty():
-            sleep(5)
-            continue
-
-        # Retrieve next fanfiction to process
-        fanfic = queue.get()
-        # Skip None sentinel values used for graceful shutdown
-        if fanfic is None:
-            continue
+        try:
+            # Wait for work with timeout to allow cancellation
+            try:
+                fanfic = await asyncio.wait_for(queue.get(), timeout=5.0)
+            except asyncio.TimeoutError:
+                # No work available, continue to allow cancellation check
+                continue
+            
+            # Skip None sentinel values used for graceful shutdown
+            if fanfic is None:
+                break
 
         # Process fanfiction in isolated temporary workspace
         with system_utils.temporary_directory() as temp_dir:
@@ -568,14 +567,14 @@ def url_worker(
                 ff_logging.log_failure(
                     f"\t({site}) Failed to update {path_or_url}: {e}"
                 )
-                handle_failure(
+                await handle_failure(
                     fanfic, notification_info, waiting_queue, retry_config, cdb
                 )
                 continue
 
             # Parse FanFicFare output for permanent failure conditions
             if not regex_parsing.check_failure_regexes(output):
-                handle_failure(
+                await handle_failure(
                     fanfic, notification_info, waiting_queue, retry_config, cdb
                 )
                 continue
@@ -584,11 +583,11 @@ def url_worker(
             if regex_parsing.check_forceable_regexes(output):
                 # Set force behavior and re-queue for immediate retry
                 fanfic.behavior = "force"
-                queue.put(fanfic)
+                await queue.put(fanfic)
                 continue
 
             # Process successful download - integrate with Calibre library
-            process_fanfic_addition(
+            await process_fanfic_addition(
                 fanfic,
                 cdb,
                 temp_dir,
@@ -598,3 +597,12 @@ def url_worker(
                 notification_info,
                 retry_config,
             )
+        
+        except asyncio.CancelledError:
+            # Task is being cancelled, exit gracefully
+            ff_logging.log("URL worker cancelled, shutting down")
+            break
+        except Exception as e:
+            # Catch any unexpected errors to prevent task crash
+            ff_logging.log_failure(f"Unexpected error in url_worker: {e}")
+            await asyncio.sleep(5)  # Brief pause before continuing

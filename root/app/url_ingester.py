@@ -30,20 +30,20 @@ Email Processing Flow:
 Example:
     ```python
     from url_ingester import EmailInfo, email_watcher
-    import multiprocessing as mp
+    import asyncio
 
     # Configure email monitoring
     email_info = EmailInfo("config.toml")
 
     # Set up processing queues
     queues = {
-        "archiveofourown.org": mp.Queue(),
-        "fanfiction.net": mp.Queue(),
-        "other": mp.Queue()
+        "archiveofourown.org": asyncio.Queue(),
+        "fanfiction.net": asyncio.Queue(),
+        "other": asyncio.Queue()
     }
 
-    # Start monitoring (typically in a separate process)
-    email_watcher(email_info, notification_wrapper, queues)
+    # Start monitoring (typically as an async task)
+    await email_watcher(email_info, notification_wrapper, queues)
     ```
 
 Configuration:
@@ -61,13 +61,13 @@ Dependencies:
     - notification_wrapper: For sending notifications
     - config_models: For configuration management
 
-Thread Safety:
-    The email watcher is designed to run in a separate process via
-    multiprocessing. It communicates with other processes through
-    shared queues and is safe for concurrent operation.
+Async Safety:
+    The email watcher is designed to run as an async task via
+    asyncio. It communicates with other tasks through shared
+    asyncio queues and is safe for concurrent operation.
 """
 
-import multiprocessing as mp
+import asyncio
 import socket
 import time
 import logging
@@ -278,10 +278,10 @@ class EmailInfo:
         return urls
 
 
-def email_watcher(
+async def email_watcher(
     email_info: EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    processor_queues: dict[str, mp.Queue],
+    processor_queues: dict[str, asyncio.Queue],
     url_parsers: dict,
 ):
     """
@@ -297,12 +297,10 @@ def email_watcher(
                                credentials, server details, and polling settings.
         notification_info (notification_wrapper.NotificationWrapper): Notification
                                                                      system for sending alerts about new URLs.
-        processor_queues (dict[str, mp.Queue]): Dictionary mapping site identifiers
-                                               to processing queues for URL routing.
+        processor_queues (dict[str, asyncio.Queue]): Dictionary mapping site identifiers
+                                                     to processing queues for URL routing.
         url_parsers (dict): Dictionary of compiled regex patterns for site recognition.
                            Generated from FanFicFare adapters in the main process.
-        processor_queues (dict[str, mp.Queue]): Dictionary mapping fanfiction site
-                                               names to their dedicated processing queues.
 
     Processing Flow:
         1. Extract URLs from email using FanFicFare's geturls functionality
@@ -319,28 +317,28 @@ def email_watcher(
 
     Example:
         ```python
-        # Typically run in a separate process
+        # Typically run as an async task
         email_info = EmailInfo("config.toml")
         notification_wrapper = NotificationWrapper(config)
 
         queues = {
-            "archiveofourown.org": mp.Queue(),
-            "fanfiction.net": mp.Queue(),
-            "other": mp.Queue()
+            "archiveofourown.org": asyncio.Queue(),
+            "fanfiction.net": asyncio.Queue(),
+            "other": asyncio.Queue()
         }
 
-        # This runs indefinitely until process termination
-        email_watcher(email_info, notification_wrapper, queues)
+        # This runs indefinitely until task is cancelled
+        await email_watcher(email_info, notification_wrapper, queues)
         ```
 
     Infinite Loop:
-        This function runs indefinitely and should be executed in a separate
-        process. It only exits when the process is terminated externally.
+        This function runs indefinitely and should be executed as an async task.
+        It only exits when the task is cancelled.
 
-    Thread Safety:
-        This function is designed for multiprocessing environments. All
-        communication with other processes occurs through the provided
-        queue objects, which are thread/process-safe.
+    Async Safety:
+        This function is designed for asyncio environments. All
+        communication with other tasks occurs through the provided
+        queue objects, which are async-safe.
 
     Note:
         The sleep interval between email checks is configured via
@@ -348,33 +346,43 @@ def email_watcher(
         server load considerations.
     """
     while True:
-        # Extract URLs from the configured email account
-        urls = email_info.get_urls()
-        fics_to_add = set()
+        try:
+            # Extract URLs from the configured email account
+            urls = email_info.get_urls()
+            fics_to_add = set()
 
-        # Process each URL found in email messages
-        for url in urls:
-            # Parse URL to identify site and normalize format
-            fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
+            # Process each URL found in email messages
+            for url in urls:
+                # Parse URL to identify site and normalize format
+                fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
 
-            # Skip processing for disabled sites - notification only
-            if fanfic.site in email_info.disabled_sites:
-                notification_info.send_notification(
-                    "New Fanfiction Download", fanfic.url, fanfic.site
+                # Skip processing for disabled sites - notification only
+                if fanfic.site in email_info.disabled_sites:
+                    notification_info.send_notification(
+                        "New Fanfiction Download", fanfic.url, fanfic.site
+                    )
+                    continue
+
+                # Add to processing set for queue routing
+                fics_to_add.add(fanfic)
+
+            # Route each fanfiction to appropriate processing queue
+            for fic in fics_to_add:
+                ff_logging.log(
+                    f"Adding {fic.url} to the {fic.site} processor queue",
+                    "HEADER",
                 )
-                continue
+                # Route to site-specific queue (creates "other" queue for unknown sites)
+                await processor_queues[fic.site].put(fic)
 
-            # Add to processing set for queue routing
-            fics_to_add.add(fanfic)
+            # Wait before next email check cycle
+            await asyncio.sleep(email_info.sleep_time)
 
-        # Route each fanfiction to appropriate processing queue
-        for fic in fics_to_add:
-            ff_logging.log(
-                f"Adding {fic.url} to the {fic.site} processor queue",
-                "HEADER",
-            )
-            # Route to site-specific queue (creates "other" queue for unknown sites)
-            processor_queues[fic.site].put(fic)
-
-        # Wait before next email check cycle
-        time.sleep(email_info.sleep_time)
+        except asyncio.CancelledError:
+            # Task is being cancelled, exit gracefully
+            ff_logging.log("Email watcher cancelled, shutting down")
+            break
+        except Exception as e:
+            # Catch any unexpected errors to prevent task crash
+            ff_logging.log_failure(f"Unexpected error in email_watcher: {e}")
+            await asyncio.sleep(email_info.sleep_time)  # Brief pause before continuing
