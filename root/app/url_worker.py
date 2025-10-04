@@ -521,22 +521,22 @@ async def url_worker(
             if fanfic is None:
                 break
 
-        # Process fanfiction in isolated temporary workspace
-        with system_utils.temporary_directory() as temp_dir:
-            site = fanfic.site
-            ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
+            # Process fanfiction in isolated temporary workspace
+            with system_utils.temporary_directory() as temp_dir:
+                site = fanfic.site
+                ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
 
-            # Determine if this is an update (existing file) or new download (URL)
-            path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
+                # Determine if this is an update (existing file) or new download (URL)
+                path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
 
-            # Extract title from epub filename if we're updating an existing story
-            if path_or_url.endswith(".epub"):
-                extracted_title = extract_title_from_epub_path(path_or_url)
-                if (
-                    extracted_title != path_or_url
-                ):  # Only update if extraction succeeded
-                    fanfic.title = extracted_title
-                    ff_logging.log_debug(f"\t({site}) Extracted title: {fanfic.title}")
+                # Extract title from epub filename if we're updating an existing story
+                if path_or_url.endswith(".epub"):
+                    extracted_title = extract_title_from_epub_path(path_or_url)
+                    if (
+                        extracted_title != path_or_url
+                    ):  # Only update if extraction succeeded
+                        fanfic.title = extracted_title
+                        ff_logging.log_debug(f"\t({site}) Extracted title: {fanfic.title}")
 
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
