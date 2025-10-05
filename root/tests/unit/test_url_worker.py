@@ -1,7 +1,7 @@
+import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from parameterized import parameterized
-import multiprocessing as mp
 from subprocess import STDOUT, PIPE
 
 import url_worker
@@ -12,7 +12,7 @@ from notification_wrapper import NotificationWrapper
 from typing import NamedTuple, Optional
 
 
-class TestUrlWorker(unittest.TestCase):
+class TestUrlWorker(unittest.IsolatedAsyncioTestCase):
     class HandleFailureTestCase(NamedTuple):
         name: str
         retry_count: int  # The current repeats value
@@ -61,7 +61,7 @@ class TestUrlWorker(unittest.TestCase):
         ]
     )
     @patch("ff_logging.log_failure")
-    def test_handle_failure(
+    async def test_handle_failure(
         self,
         name,
         retry_count,
@@ -81,8 +81,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.repeats = retry_count  # Set the repeats to control decision
 
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_waiting_queue = MagicMock(spec=mp.Queue)
-        mock_waiting_queue.put = MagicMock()
+        mock_waiting_queue = AsyncMock(spec=asyncio.Queue)
 
         # Mock increment_repeat to simulate the actual increment behavior
         def simulate_increment():
@@ -98,7 +97,7 @@ class TestUrlWorker(unittest.TestCase):
         )
 
         # Execution
-        url_worker.handle_failure(
+        await url_worker.handle_failure(
             mock_fanfic,
             mock_notification_info,
             mock_waiting_queue,
@@ -169,7 +168,7 @@ class TestUrlWorker(unittest.TestCase):
         ]
     )
     @patch("ff_logging.log_failure")
-    def test_handle_failure_update_no_force(
+    async def test_handle_failure_update_no_force(
         self,
         name,
         behavior,
@@ -197,8 +196,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
 
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_waiting_queue = MagicMock(spec=mp.Queue)
-        mock_waiting_queue.put = MagicMock()
+        mock_waiting_queue = AsyncMock(spec=asyncio.Queue)
         mock_cdb = MagicMock(spec=CalibreInfo)
         mock_cdb.update_method = update_method
 
@@ -207,7 +205,7 @@ class TestUrlWorker(unittest.TestCase):
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
 
-        url_worker.handle_failure(
+        await url_worker.handle_failure(
             mock_fanfic,
             mock_notification_info,
             mock_waiting_queue,
@@ -230,7 +228,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_waiting_queue.put.assert_not_called()
 
     @patch("ff_logging.log_failure")
-    def test_handle_failure_with_none_cdb(self, mock_log_failure):
+    async def test_handle_failure_with_none_cdb(self, mock_log_failure):
         """Test handle_failure with cdb=None (should never send special notification)."""
         # Setup common mocks
         mock_fanfic = MagicMock(spec=FanficInfo)
@@ -246,8 +244,7 @@ class TestUrlWorker(unittest.TestCase):
 
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_waiting_queue = MagicMock(spec=mp.Queue)
-        mock_waiting_queue.put = MagicMock()
+        mock_waiting_queue = AsyncMock(spec=asyncio.Queue)
 
         # Create real retry config
         retry_config = config_models.RetryConfig(
@@ -255,7 +252,7 @@ class TestUrlWorker(unittest.TestCase):
         )
 
         # Test Case: Normal retry with force behavior but cdb=None -> should retry normally
-        url_worker.handle_failure(
+        await url_worker.handle_failure(
             mock_fanfic,
             mock_notification_info,
             mock_waiting_queue,
@@ -292,7 +289,7 @@ class TestUrlWorker(unittest.TestCase):
         ]
     )
     @patch("ff_logging.log_failure")
-    def test_handle_failure_edge_cases(
+    async def test_handle_failure_edge_cases(
         self,
         name,
         behavior,
@@ -316,7 +313,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
 
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_waiting_queue = MagicMock(spec=mp.Queue)
+        mock_waiting_queue = AsyncMock(spec=asyncio.Queue)
         mock_waiting_queue.put = MagicMock()
 
         # Create real retry config
@@ -324,7 +321,7 @@ class TestUrlWorker(unittest.TestCase):
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
 
-        url_worker.handle_failure(
+        await url_worker.handle_failure(
             mock_fanfic, mock_notification_info, mock_waiting_queue, retry_config
         )
 
@@ -357,7 +354,7 @@ class TestUrlWorker(unittest.TestCase):
     )
     @patch("system_utils.get_files")
     @patch("calibredb_utils.export_story")
-    def test_get_path_or_url(
+    async def test_get_path_or_url(
         self,
         fanfic_in_calibre,
         exported_files,
@@ -399,7 +396,7 @@ class TestUrlWorker(unittest.TestCase):
         ]
     )
     @patch("url_worker.check_output")
-    def test_execute_command(
+    async def test_execute_command(
         self,
         command,
         expected_output,
@@ -418,7 +415,7 @@ class TestUrlWorker(unittest.TestCase):
         )
 
     @patch("url_worker.check_output")
-    def test_execute_command_error_handling(self, mock_check_output):
+    async def test_execute_command_error_handling(self, mock_check_output):
         """Test execute_command error handling."""
         from subprocess import CalledProcessError
 
@@ -436,7 +433,7 @@ class TestUrlWorker(unittest.TestCase):
         )
 
     @patch("url_worker.check_output")
-    def test_execute_command_unicode_handling(self, mock_check_output):
+    async def test_execute_command_unicode_handling(self, mock_check_output):
         """Test execute_command with unicode output."""
         # Setup mock with unicode output
         unicode_output = "Test with ñ special characters 测试"
@@ -500,7 +497,7 @@ class TestUrlWorker(unittest.TestCase):
     @patch(
         "ff_logging.log_failure"
     )  # Keep patching log_failure for the specific log inside this function
-    def test_process_fanfic_addition(
+    async def test_process_fanfic_addition(
         self,
         calibre_id,
         get_id_from_calibredb_returns,
@@ -522,7 +519,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.title = "title"
         mock_cdb = MagicMock(spec=CalibreInfo)
         mock_notification_info = MagicMock(spec=NotificationWrapper)
-        mock_queue = MagicMock(spec=mp.Queue)
+        mock_queue = AsyncMock(spec=asyncio.Queue)
 
         # Execution
         url_worker.process_fanfic_addition(
@@ -584,7 +581,7 @@ class TestUrlWorker(unittest.TestCase):
                 mock_notification_info.send_notification.assert_not_called()
 
 
-class TestUrlWorkerMainLoop(unittest.TestCase):
+class TestUrlWorkerMainLoop(unittest.IsolatedAsyncioTestCase):
     """Test the main url_worker() function loop that processes fanfics from queue."""
 
     def setUp(self):
@@ -622,7 +619,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
     @patch("url_worker.construct_fanficfare_command")
     @patch("url_worker.ff_logging.log")
     @patch("url_worker.handle_failure")
-    def test_url_worker_force_update_no_force_exception(
+    async def test_url_worker_force_update_no_force_exception(
         self,
         mock_handle_failure,
         mock_log,
@@ -683,7 +680,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
     @patch("url_worker.construct_fanficfare_command")
     @patch("url_worker.ff_logging.log")
     @patch("url_worker.handle_failure")
-    def test_url_worker_execute_command_exception(
+    async def test_url_worker_execute_command_exception(
         self,
         mock_handle_failure,
         mock_log,
@@ -743,7 +740,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
     @patch("url_worker.regex_parsing.check_failure_regexes")
     @patch("url_worker.ff_logging.log")
     @patch("url_worker.handle_failure")
-    def test_url_worker_failure_regex_detection(
+    async def test_url_worker_failure_regex_detection(
         self,
         mock_handle_failure,
         mock_log,
@@ -800,7 +797,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
     @patch("url_worker.regex_parsing.check_failure_regexes")
     @patch("url_worker.regex_parsing.check_forceable_regexes")
     @patch("url_worker.ff_logging.log")
-    def test_url_worker_force_retry_logic(
+    async def test_url_worker_force_retry_logic(
         self,
         mock_log,
         mock_check_forceable,
@@ -854,7 +851,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
     @patch("url_worker.regex_parsing.check_failure_regexes")
     @patch("url_worker.regex_parsing.check_forceable_regexes")
     @patch("url_worker.ff_logging.log")
-    def test_url_worker_successful_processing(
+    async def test_url_worker_successful_processing(
         self,
         mock_log,
         mock_check_forceable,
@@ -1008,7 +1005,7 @@ class TestExtractTitleFromEpubPath(unittest.TestCase):
             ),
         ]
     )
-    def test_extract_title_from_epub_path(
+    async def test_extract_title_from_epub_path(
         self, name, input_path, expected_output, description
     ):
         """Test the extract_title_from_epub_path function with various inputs."""
@@ -1019,7 +1016,7 @@ class TestExtractTitleFromEpubPath(unittest.TestCase):
             f"Failed for {name}: {description}. Expected '{expected_output}', got '{result}'",
         )
 
-    def test_extract_title_error_handling(self):
+    async def test_extract_title_error_handling(self):
         """Test that the function handles unexpected errors gracefully."""
         # Test with a malformed path that could cause os.path.basename to fail
         # We'll patch os.path.basename to raise an exception
@@ -1043,7 +1040,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 
     @patch("url_worker.get_path_or_url")
     @patch("url_worker.ff_logging.log_debug")
-    def test_title_extraction_in_processing_flow(
+    async def test_title_extraction_in_processing_flow(
         self, mock_log_debug, mock_get_path_or_url
     ):
         """Test that title extraction works in the actual processing context."""
@@ -1063,7 +1060,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
         # Verify the title was updated correctly
         self.assertEqual(self.fanfic.title, "Test Story - Author Name")
 
-    def test_title_not_updated_for_url_input(self):
+    async def test_title_not_updated_for_url_input(self):
         """Test that title is not updated when path_or_url is a URL."""
         url = "https://royalroad.com/fiction/127120"
 
@@ -1105,7 +1102,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
         ]
     )
     @patch("url_worker.execute_command")
-    def test_get_fanficfare_version_success(
+    async def test_get_fanficfare_version_success(
         self, name, mock_output, expected_version, mock_execute
     ):
         """Test successful FanFicFare version extraction with various output formats."""
@@ -1133,7 +1130,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
         ]
     )
     @patch("url_worker.execute_command")
-    def test_get_fanficfare_version_errors(
+    async def test_get_fanficfare_version_errors(
         self, name, mock_exception, expected_message, mock_execute
     ):
         """Test error handling for various failure scenarios."""
@@ -1168,7 +1165,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
         ]
     )
     @patch("url_worker.execute_command")
-    def test_get_fanficfare_version_unexpected_format(
+    async def test_get_fanficfare_version_unexpected_format(
         self, name, mock_output, expected_result, mock_execute
     ):
         """Test handling of unexpected output formats."""

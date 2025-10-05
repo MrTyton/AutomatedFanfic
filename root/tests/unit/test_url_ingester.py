@@ -1,7 +1,7 @@
 from parameterized import parameterized
+import asyncio
 import unittest
-from unittest.mock import patch, MagicMock
-import multiprocessing as mp
+from unittest.mock import patch, MagicMock, AsyncMock
 import time
 import sys
 
@@ -13,7 +13,7 @@ from config_models import (
 )
 
 
-class TestUrlIngester(unittest.TestCase):
+class TestUrlIngester(unittest.IsolatedAsyncioTestCase):
     @parameterized.expand(
         [
             (
@@ -136,7 +136,7 @@ class TestUrlIngester(unittest.TestCase):
         )
 
 
-class TestEmailWatcher(unittest.TestCase):
+class TestEmailWatcher(unittest.IsolatedAsyncioTestCase):
     """Test the email_watcher main loop function."""
 
     def setUp(self):
@@ -148,9 +148,9 @@ class TestEmailWatcher(unittest.TestCase):
         self.mock_notification_info = MagicMock()
 
         self.processor_queues = {
-            "fanfiction": mp.Queue(),
-            "archiveofourown": mp.Queue(),
-            "other": mp.Queue(),
+            "fanfiction": asyncio.Queue(),
+            "archiveofourown": asyncio.Queue(),
+            "other": asyncio.Queue(),
         }
 
         # Mock URL parsers for testing
