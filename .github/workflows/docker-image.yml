@@ -57,12 +57,22 @@ jobs:
       fanficfare_version: ${{ steps.set_versions.outputs.fanficfare_version }}
       should_build: ${{ steps.should_build.outputs.build }}
     steps:
-      - name: Debug Event Info in Docker Image Workflow
+      - name: 🔍 DEBUG - Docker Workflow Called Successfully
         run: |
-          echo "Inside docker-image.yml (build_matrix job):"
+          echo "======================================================================"
+          echo "🎉 SUCCESS: docker-image.yml workflow is running!"
+          echo "======================================================================"
+          echo "Event details:"
           echo "  github.event_name: ${{ github.event_name }}"
           echo "  github.event.workflow_run.conclusion: ${{ github.event.workflow_run.conclusion }}"
           echo "  Platform: ${{ matrix.platform }}"
+          echo "  Runner: ${{ matrix.runner }}"
+          echo ""
+          echo "Input parameters:"
+          echo "  commit_sha: ${{ inputs.commit_sha || 'not provided' }}"
+          echo ""
+          echo "If you see this message, the Docker workflow trigger is working!"
+          echo "======================================================================"
 
       # Determine the commit SHA based on trigger type
       - name: Determine Commit SHA
