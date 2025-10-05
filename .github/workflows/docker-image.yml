@@ -167,6 +167,9 @@ jobs:
           elif [ "${{ github.event_name }}" == "workflow_call" ]; then
             SHOULD_BUILD="true"
             echo "  Decision: BUILD (called from update-dependencies)"
+          elif [ "${{ github.event_name }}" == "schedule" ]; then
+            SHOULD_BUILD="true"
+            echo "  Decision: BUILD (schedule event from update-dependencies)"
           elif [ "${{ github.event_name }}" == "workflow_run" ] && [ "${{ steps.check_file.outputs.changed }}" == "true" ]; then
             SHOULD_BUILD="true"
             echo "  Decision: BUILD (workflow_run with version file changes)"
