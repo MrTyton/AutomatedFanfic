@@ -57,8 +57,8 @@ jobs:
 
   # Build matrix for parallel architecture builds
   build_matrix:
-    # Run if dispatched OR if called OR if workflow_run succeeded (but we'll check for version changes later)
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
+    # Run if dispatched OR if called OR if workflow_run succeeded OR if scheduled (but we'll check for version changes later)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event_name == 'schedule' || github.event.workflow_run.conclusion == 'success'
     strategy:
       matrix:
         platform: [linux/amd64, linux/arm64]
