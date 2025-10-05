@@ -2,7 +2,7 @@ name: Update Dependencies and Run CI
 
 on:
   schedule:
-    - cron: "0 23 * * *" # Every day at 11pm UTC
+    - cron: "30 13 * * *" # Every day at 11pm UTC
   workflow_dispatch:
 
 permissions:
