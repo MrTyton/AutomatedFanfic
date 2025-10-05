@@ -1,6 +1,10 @@
 """
 Tests for ProcessManager functionality.
 
+**DEPRECATED**: This test module is deprecated and replaced by test_task_manager.py.
+The ProcessManager has been replaced by TaskManager in the asyncio migration.
+This file is kept for reference but tests may not pass with the new architecture.
+
 Comprehensive test suite covering process lifecycle, health monitoring,
 graceful shutdown, and error handling scenarios.
 """

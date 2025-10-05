@@ -1,6 +1,10 @@
 """
 Integration tests for signal handling and Docker shutdown scenarios.
 
+**DEPRECATED**: This test module is deprecated and replaced by test_async_signal_handling_integration.py.
+The ProcessManager has been replaced by TaskManager in the asyncio migration.
+This file is kept for reference but tests may not pass with the new architecture.
+
 These tests simulate the exact conditions that occur when Docker sends
 SIGTERM signals to the main process and validates that the improved
 signal handling prevents duplicate messages and ensures clean shutdown.

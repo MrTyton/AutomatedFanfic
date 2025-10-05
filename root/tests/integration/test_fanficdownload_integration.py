@@ -33,7 +33,7 @@ from config_models import (
     ProcessConfig,
     ConfigManager,
 )
-from process_manager import ProcessManager
+from process_manager import TaskManager
 
 
 class TestFanficdownloadIntegration(unittest.TestCase):
@@ -361,7 +361,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             max_workers=1,
         )
 
-        with ProcessManager(config=config) as process_manager:
+        with TaskManager(config=config) as process_manager:
             # Test process registration
             def dummy_worker():
                 time.sleep(0.1)
@@ -562,7 +562,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             max_workers=1,
         )
 
-        with ProcessManager(config=config) as process_manager:
+        with TaskManager(config=config) as process_manager:
             # Verify signal handlers are set up
             self.assertTrue(process_manager._signal_handlers_set)
 
@@ -617,7 +617,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             with patch("fanficdownload.ff_waiter.wait_processor", mock_worker):
                 with patch("fanficdownload.url_worker.url_worker", mock_worker):
                     with patch(
-                        "process_manager.ProcessManager.wait_for_all"
+                        "process_manager.TaskManager.wait_for_all"
                     ) as mock_wait:
                         mock_wait.return_value = True
 
@@ -693,7 +693,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
 
         # Test multiple process manager cycles
         for _ in range(3):
-            with ProcessManager(config=config) as process_manager:
+            with TaskManager(config=config) as process_manager:
 
                 def dummy_worker():
                     time.sleep(0.01)
