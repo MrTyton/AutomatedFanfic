@@ -9,7 +9,6 @@ Key Features:
     - TOML-based configuration loading with Pydantic validation
     - Support for both local Calibre libraries and remote Calibre servers
     - Secure credential management for server authentication
-    - Thread-safe configuration access via multiprocessing locks
     - Command-line argument formatting for Calibre operations
     - Path validation and library accessibility verification
 
@@ -17,8 +16,8 @@ Classes:
     CalibreInfo: Complete Calibre configuration management with validation
 
 The CalibreInfo class serves as the primary interface between the AutomatedFanfic
-multiprocessing system and Calibre library operations, ensuring proper authentication
-and configuration consistency across all worker processes.
+asyncio system and Calibre library operations, ensuring proper authentication
+and configuration consistency across all worker tasks.
 """
 
 import os
@@ -33,7 +32,7 @@ class CalibreInfo:
     This class handles loading Calibre configuration from TOML files, validating
     paths and credentials, and providing formatted command-line arguments for
     Calibre operations. It manages both library location and optional authentication
-    credentials, with thread-safe access through multiprocessing locks.
+    credentials.
 
     The class automatically validates configuration files, checks for required
     INI files (defaults.ini and personal.ini), and provides utilities for
@@ -46,21 +45,17 @@ class CalibreInfo:
         update_method (str): Method for updating stories ('update', 'force', etc.).
         default_ini (str): Path to defaults.ini file for FanFicFare configuration.
         personal_ini (str): Path to personal.ini file for FanFicFare configuration.
-        lock (multiprocessing.Lock): Thread-safe lock for concurrent access.
     """
 
-    def __init__(self, toml_path: str, manager):
+    def __init__(self, toml_path: str, manager=None):
         """Initializes the CalibreInfo object by loading and validating Calibre configuration.
 
         This constructor loads configuration from the specified TOML file, validates
         all required settings, and sets up INI file paths for FanFicFare integration.
-        It establishes a multiprocessing lock for thread-safe access and performs
-        comprehensive validation of the Calibre library path and authentication settings.
 
         Args:
             toml_path (str): Path to the TOML configuration file containing Calibre settings.
-            manager: A multiprocessing.Manager object used to create shared resources
-            like locks for concurrent access protection.
+            manager: Deprecated parameter kept for compatibility. No longer used in asyncio version.
 
         Raises:
             ValueError: If the configuration file cannot be loaded, is invalid, or if
@@ -88,7 +83,8 @@ class CalibreInfo:
         self.personal_ini = self._get_ini_file_from_config(
             config.calibre.personal_ini, "personal.ini"
         )
-        self.lock = manager.Lock()
+        # Lock no longer needed in asyncio architecture
+        # self.lock = manager.Lock() if manager else None
 
     def _get_ini_file_from_config(
         self, config_path: str | None, default_filename: str
