@@ -2,8 +2,8 @@
 # These are the core dependencies needed to run the application
 
 # Core notification and configuration libraries
-apprise==1.9.4
-pydantic==2.11.9
+apprise==1.9.5
+pydantic==2.11.10
 pydantic-settings==2.11.0
 
 # HTTP requests and web scraping
