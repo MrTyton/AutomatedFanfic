@@ -215,6 +215,7 @@ jobs:
 
       - name: Commit version bump
         if: steps.check-pr.outputs.skip != 'true' && steps.version-bump.outputs.version-changed == 'true'
+        id: commit-bump
         run: |
           # Configure git for commits
           git config --local user.email "action@github.com"
@@ -238,6 +239,64 @@ jobs:
 
           # Push the version bump to the PR branch
           git push origin HEAD
+
+          # Get the new commit SHA
+          NEW_SHA=$(git rev-parse HEAD)
+          echo "new_sha=$NEW_SHA" >> $GITHUB_OUTPUT
+
+      - name: Wait for CI checks on version bump commit
+        if: steps.check-pr.outputs.skip != 'true' && steps.version-bump.outputs.version-changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_SHA: ${{ steps.commit-bump.outputs.new_sha }}
+          REQUIRED_CHECKS: ${{ steps.determine-checks.outputs.checks }}
+        run: |
+          echo "Waiting for CI checks to complete on version bump commit: $PR_SHA"
+
+          # Convert comma-separated string back to array
+          IFS=',' read -ra checks_array <<< "$REQUIRED_CHECKS"
+
+          echo "Required checks: ${checks_array[*]}"
+
+          # Wait for all required checks to complete successfully
+          for check in "${checks_array[@]}"; do
+            echo "Waiting for check: $check"
+
+            # Wait up to 30 minutes for this check
+            timeout=1800
+            interval=30
+            elapsed=0
+
+            while [ $elapsed -lt $timeout ]; do
+              # Get the status of this specific check
+              status=$(gh api repos/${{ github.repository }}/commits/$PR_SHA/check-runs \
+                --jq ".check_runs[] | select(.name == \"$check\") | .status" 2>/dev/null || echo "")
+
+              conclusion=$(gh api repos/${{ github.repository }}/commits/$PR_SHA/check-runs \
+                --jq ".check_runs[] | select(.name == \"$check\") | .conclusion" 2>/dev/null || echo "")
+
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  echo "✅ Check '$check' completed successfully"
+                  break
+                else
+                  echo "❌ Check '$check' failed with conclusion: $conclusion"
+                  exit 1
+                fi
+              else
+                echo "⏳ Check '$check' is still running (status: $status)..."
+                sleep $interval
+                elapsed=$((elapsed + interval))
+              fi
+            done
+
+            if [ $elapsed -ge $timeout ]; then
+              echo "❌ Timeout waiting for check: $check"
+              exit 1
+            fi
+          done
+
+          echo "✅ All required CI checks passed on version bump commit!"
 
       - name: Enable auto-merge for Dependabot PRs
         if: steps.check-pr.outputs.skip != 'true'
