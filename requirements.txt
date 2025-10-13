@@ -3,7 +3,7 @@
 
 # Core notification and configuration libraries
 apprise==1.9.5
-pydantic==2.11.10
+pydantic==2.12.0
 pydantic-settings==2.11.0
 
 # HTTP requests and web scraping
@@ -26,9 +26,9 @@ webencodings==0.5.1
 
 # Network and security
 certifi==2024.12.14
-idna==3.10
+idna==3.11
 urllib3==2.5.0
-websocket-client==1.8.0
+websocket-client==1.9.0
 
 # Image processing (for cover images)
 pillow==11.3.0
