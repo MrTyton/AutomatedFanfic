@@ -282,18 +282,19 @@ jobs:
           push: true
           tags: ${{ env.PLATFORM_TAG }}
           # Optimized cache strategy for dependency-focused updates
-          # Order matters: most specific caches first, then fallbacks
+          # Order matters: stable layers FIRST (always reusable), then version-specific caches
+          # This ensures early layers (system-deps, user-setup, python-stable-deps) are always cached
           cache-from: |
-            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
-            type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
             type=gha,scope=buildkit-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }}
+            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=gha,scope=calibre-fallback-${{ steps.platform.outputs.arch }}
             type=gha,scope=fanficfare-fallback-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }}
           cache-to: |
             type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
             type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
