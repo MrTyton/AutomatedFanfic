@@ -245,7 +245,7 @@ jobs:
           echo "new_sha=$NEW_SHA" >> $GITHUB_OUTPUT
 
       - name: Wait for CI checks on version bump commit
-        if: steps.check-pr.outputs.skip != 'true' && steps.version-bump.outputs.version-changed == 'true'
+        if: steps.check-pr.outputs.skip != 'true' && steps.version-bump.outputs.version-changed == 'true' && steps.determine-checks.outputs.checks != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_SHA: ${{ steps.commit-bump.outputs.new_sha }}
@@ -297,6 +297,11 @@ jobs:
           done
 
           echo "✅ All required CI checks passed on version bump commit!"
+
+      - name: Skip CI checks on version bump notification
+        if: steps.check-pr.outputs.skip != 'true' && steps.version-bump.outputs.version-changed == 'true' && steps.determine-checks.outputs.checks == ''
+        run: |
+          echo "ℹ️  No CI checks required for version bump commit - proceeding with auto-merge"
 
       - name: Enable auto-merge for Dependabot PRs
         if: steps.check-pr.outputs.skip != 'true'
