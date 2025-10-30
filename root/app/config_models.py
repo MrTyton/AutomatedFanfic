@@ -203,6 +203,8 @@ class CalibreConfig(BaseModel):
         personal_ini (Optional[str]): Path to FanFicFare personal.ini configuration.
         update_method (Literal): Method for updating stories - 'update', 'update_always',
             'force', or 'update_no_force'.
+        metadata_preservation_mode (Literal): Strategy for preserving Calibre metadata
+            during story updates - 'remove_add' (default), 'preserve_metadata', or 'add_format'.
 
     Note:
         The path field accepts either local filesystem paths or HTTP(S) URLs for
@@ -224,6 +226,13 @@ class CalibreConfig(BaseModel):
     ] = Field(
         default="update",
         description="Fanficfare update method: 'update', 'update_always', 'force', or 'update_no_force'",
+    )
+    metadata_preservation_mode: Literal[
+        "remove_add", "preserve_metadata", "add_format"
+    ] = Field(
+        default="remove_add",
+        description="Metadata preservation strategy: 'remove_add' (current behavior), "
+        "'preserve_metadata' (export/restore custom fields), or 'add_format' (replace file only)",
     )
 
     @field_validator("path")

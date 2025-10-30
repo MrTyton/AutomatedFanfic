@@ -230,3 +230,276 @@ def add_story(
 
     # Execute the add command (no fanfic_info needed as we're adding, not updating)
     call_calibre_db(command, calibre_info, fanfic_info=None)
+
+
+def get_metadata(
+    fanfic_info: fanfic_info.FanficInfo, calibre_info: calibre_info.CalibreInfo
+) -> dict:
+    """Retrieves all metadata for a story from the Calibre database.
+
+    Executes calibredb list command to get comprehensive metadata for the story,
+    including both standard fields and custom columns. This data can be used to
+    preserve metadata during story updates.
+
+    Args:
+        fanfic_info (fanfic_info.FanficInfo): Object containing story's calibre_id.
+        calibre_info (calibre_info.CalibreInfo): Calibre library configuration.
+
+    Returns:
+        dict: Dictionary containing all metadata fields, or empty dict on failure.
+            Keys include standard fields (title, authors, tags, etc.) and custom
+            columns (prefixed with #).
+    """
+    from subprocess import check_output, CalledProcessError
+    import json
+
+    if not fanfic_info.calibre_id:
+        ff_logging.log_failure("\tCannot get metadata: story has no calibre_id")
+        return {}
+
+    try:
+        with calibre_info.lock:
+            # Use --for-machine flag to get JSON output with all metadata
+            output = check_output(
+                f'calibredb list --for-machine --fields=all {calibre_info} --search="id:{fanfic_info.calibre_id}"',
+                shell=True,
+                stderr=PIPE,
+                stdin=PIPE,
+            ).decode("utf-8")
+
+        # Parse JSON output
+        metadata_list = json.loads(output)
+        if metadata_list and len(metadata_list) > 0:
+            metadata = metadata_list[0]
+            ff_logging.log_debug(
+                f"\t({fanfic_info.site}) Retrieved metadata for ID {fanfic_info.calibre_id}: "
+                f"{len(metadata)} fields"
+            )
+            return metadata
+        else:
+            ff_logging.log_failure(
+                f"\tNo metadata found for ID {fanfic_info.calibre_id}"
+            )
+            return {}
+
+    except (CalledProcessError, json.JSONDecodeError, Exception) as e:
+        ff_logging.log_failure(
+            f"\tFailed to retrieve metadata for ID {fanfic_info.calibre_id}: {e}"
+        )
+        return {}
+
+
+def set_metadata_fields(
+    fanfic_info: fanfic_info.FanficInfo,
+    calibre_info: calibre_info.CalibreInfo,
+    metadata: dict,
+    fields_to_restore: Optional[list] = None,
+) -> None:
+    """Restores specific metadata fields to a story in the Calibre database.
+
+    Uses calibredb set_metadata to restore previously saved metadata fields,
+    particularly useful for preserving custom columns and user-added metadata
+    during story updates.
+
+    Args:
+        fanfic_info (fanfic_info.FanficInfo): Object containing story's calibre_id.
+        calibre_info (calibre_info.CalibreInfo): Calibre library configuration.
+        metadata (dict): Dictionary of metadata fields to restore.
+        fields_to_restore (list, optional): List of specific field names to restore.
+            If None, attempts to restore common custom fields.
+
+    Note:
+        Not all fields can be set via set_metadata. Standard fields like title,
+        authors are typically embedded in the EPUB. This focuses on custom columns.
+    """
+    from subprocess import check_output, CalledProcessError
+
+    if not fanfic_info.calibre_id:
+        ff_logging.log_failure("\tCannot set metadata: story has no calibre_id")
+        return
+
+    if not metadata:
+        ff_logging.log_debug("\tNo metadata to restore")
+        return
+
+    # Default to restoring custom columns (fields starting with #)
+    if fields_to_restore is None:
+        fields_to_restore = [k for k in metadata.keys() if k.startswith("#")]
+
+    if not fields_to_restore:
+        ff_logging.log_debug("\tNo custom fields found to restore")
+        return
+
+    ff_logging.log(
+        f"\t({fanfic_info.site}) Attempting to restore {len(fields_to_restore)} custom fields",
+        "OKBLUE",
+    )
+
+    # Restore each field individually
+    restored_count = 0
+    for field_name in fields_to_restore:
+        if field_name not in metadata:
+            continue
+
+        field_value = metadata[field_name]
+        if field_value is None or field_value == "":
+            continue  # Skip empty values
+
+        try:
+            with calibre_info.lock:
+                # Use set_custom to set custom column values
+                # Format: calibredb set_custom <id> <column> <value>
+                # Extract column name (remove # prefix)
+                column_name = field_name.lstrip("#")
+
+                # Convert value to string, handling lists/arrays
+                if isinstance(field_value, list):
+                    # For list fields, join with commas
+                    value_str = ",".join(str(v) for v in field_value)
+                else:
+                    value_str = str(field_value)
+
+                check_output(
+                    f'calibredb set_custom {fanfic_info.calibre_id} "{column_name}" "{value_str}" {calibre_info}',
+                    shell=True,
+                    stderr=PIPE,
+                    stdin=PIPE,
+                )
+
+                restored_count += 1
+                ff_logging.log_debug(f"\t  Restored {field_name} = {value_str[:50]}...")
+
+        except CalledProcessError as e:
+            ff_logging.log_failure(f"\t  Failed to restore field {field_name}: {e}")
+        except Exception as e:
+            ff_logging.log_failure(f"\t  Unexpected error restoring {field_name}: {e}")
+
+    ff_logging.log(
+        f"\t({fanfic_info.site}) Successfully restored {restored_count}/{len(fields_to_restore)} custom fields",
+        "OKGREEN",
+    )
+
+
+def log_metadata_comparison(
+    fanfic_info: fanfic_info.FanficInfo,
+    old_metadata: dict,
+    new_metadata: dict,
+) -> None:
+    """Logs a comparison of metadata before and after an update operation.
+
+    Provides detailed logging of metadata changes, showing which fields were
+    preserved, which changed, and which were lost. Useful for debugging
+    metadata preservation issues.
+
+    Args:
+        fanfic_info (fanfic_info.FanficInfo): Story information for logging context.
+        old_metadata (dict): Metadata before the update operation.
+        new_metadata (dict): Metadata after the update operation.
+    """
+    if not old_metadata and not new_metadata:
+        ff_logging.log_debug("\tNo metadata to compare")
+        return
+
+    ff_logging.log(f"\t({fanfic_info.site}) Metadata Comparison Report", "OKBLUE")
+
+    # Find custom fields (those starting with #)
+    old_custom = {k: v for k, v in old_metadata.items() if k.startswith("#")}
+    new_custom = {k: v for k, v in new_metadata.items() if k.startswith("#")}
+
+    # Check preserved fields
+    preserved = []
+    changed = []
+    lost = []
+
+    for field_name, old_value in old_custom.items():
+        if field_name in new_custom:
+            new_value = new_custom[field_name]
+            if old_value == new_value:
+                preserved.append(field_name)
+            else:
+                changed.append((field_name, str(old_value)[:30], str(new_value)[:30]))
+        else:
+            lost.append(field_name)
+
+    # Check new fields
+    new_fields = [k for k in new_custom.keys() if k not in old_custom]
+
+    # Log results
+    ff_logging.log(f"\t  Custom Fields Preserved: {len(preserved)}", "OKGREEN")
+    if preserved:
+        for field in preserved[:5]:  # Show first 5
+            ff_logging.log_debug(f"\t    ✓ {field}")
+        if len(preserved) > 5:
+            ff_logging.log_debug(f"\t    ... and {len(preserved) - 5} more")
+
+    if changed:
+        ff_logging.log(f"\t  Custom Fields Changed: {len(changed)}", "WARNING")
+        for field, old_val, new_val in changed[:5]:
+            ff_logging.log_debug(f"\t    ~ {field}: '{old_val}' → '{new_val}'")
+
+    if lost:
+        ff_logging.log(f"\t  Custom Fields Lost: {len(lost)}", "FAIL")
+        for field in lost[:10]:  # Show first 10 lost fields
+            ff_logging.log_debug(f"\t    ✗ {field}")
+        if len(lost) > 10:
+            ff_logging.log_debug(f"\t    ... and {len(lost) - 10} more")
+
+    if new_fields:
+        ff_logging.log_debug(f"\t  New Fields Added: {len(new_fields)}")
+
+
+def add_format_to_existing_story(
+    location: str,
+    fanfic_info: fanfic_info.FanficInfo,
+    calibre_info: calibre_info.CalibreInfo,
+) -> bool:
+    """Adds or replaces the EPUB format for an existing story in Calibre.
+
+    Uses calibredb add_format to update just the file without touching metadata.
+    This preserves all existing metadata and custom columns.
+
+    Args:
+        location (str): Directory containing the new EPUB file.
+        fanfic_info (fanfic_info.FanficInfo): Story information with calibre_id.
+        calibre_info (calibre_info.CalibreInfo): Calibre library configuration.
+
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    if not fanfic_info.calibre_id:
+        ff_logging.log_failure("\tCannot add format: story has no calibre_id")
+        return False
+
+    # Find EPUB file in location
+    epub_files = system_utils.get_files(
+        location, file_extension="epub", return_full_path=True
+    )
+
+    if not epub_files:
+        ff_logging.log_failure("No EPUB files found in the specified location.")
+        return False
+
+    file_to_add = epub_files[0]
+
+    ff_logging.log(
+        f"\t({fanfic_info.site}) Replacing EPUB format for ID {fanfic_info.calibre_id}",
+        "OKGREEN",
+    )
+
+    # Use add_format with --replace to update the file
+    command = (
+        f'add_format --replace {fanfic_info.calibre_id} "{file_to_add}" {calibre_info}'
+    )
+
+    try:
+        call_calibre_db(command, calibre_info, fanfic_info)
+        ff_logging.log(
+            f"\t({fanfic_info.site}) Successfully replaced EPUB format",
+            "OKGREEN",
+        )
+        return True
+    except Exception as e:
+        ff_logging.log_failure(
+            f"\t({fanfic_info.site}) Failed to replace EPUB format: {e}"
+        )
+        return False

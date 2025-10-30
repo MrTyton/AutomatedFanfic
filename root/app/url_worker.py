@@ -294,12 +294,12 @@ def process_fanfic_addition(
     Processes the addition of a fanfic to Calibre, updates the database, and sends
     a notification.
 
-    This function integrates a fanfic into the Calibre library. It checks if the
-    fanfic already exists in the library by its Calibre ID. If so, the existing
-    entry is removed for the updated version. The fanfic is added to Calibre from
-    a temporary directory. Upon successful addition, a notification is sent via
-    Pushbullet. If the process fails, the failure is logged, and the fanfic is
-    placed back into the waiting queue for another attempt.
+    This function integrates a fanfic into the Calibre library with support for
+    different metadata preservation strategies. It handles existing stories based
+    on the configured preservation mode:
+    - remove_add: Traditional remove and re-add (may lose custom metadata)
+    - preserve_metadata: Export custom metadata, remove, add, then restore metadata
+    - add_format: Replace EPUB file without touching database entry (preserves all metadata)
 
     Args:
         fanfic (fanfic_info.FanficInfo): The fanfic information object, containing
@@ -313,36 +313,165 @@ def process_fanfic_addition(
         waiting_queue (mp.Queue): The multiprocessing queue where fanfics are
             placed if they need to be reprocessed.
         notification_info (notification_wrapper.NotificationWrapper): The object for sending notifications.
+        retry_config (config_models.RetryConfig): Retry configuration for failure handling.
 
     Returns:
         None
     """
+    preservation_mode = cdb.metadata_preservation_mode
+    old_metadata = {}
+
+    # Handle existing story based on metadata preservation mode
     if fanfic.calibre_id:
-        # If the fanfic already has a Calibre ID, it means it's already in the Calibre database.
-        # Log the intention to remove the existing story from Calibre before updating it.
         ff_logging.log(
-            f"\t({site}) Going to remove story {fanfic.calibre_id} from Calibre.",
+            f"\t({site}) Story exists in Calibre (ID: {fanfic.calibre_id}). "
+            f"Using preservation mode: {preservation_mode}",
+            "OKBLUE",
+        )
+
+        if preservation_mode == "add_format":
+            # Mode 1: Replace EPUB file only - preserves ALL metadata
+            ff_logging.log(
+                f"\t({site}) Using add_format mode - replacing EPUB file only",
+                "OKGREEN",
+            )
+
+            # Get metadata before for comparison
+            old_metadata = calibredb_utils.get_metadata(fanfic, cdb)
+
+            # Replace the EPUB format without touching metadata
+            success = calibredb_utils.add_format_to_existing_story(
+                temp_dir, fanfic, cdb
+            )
+
+            if not success:
+                ff_logging.log_failure(
+                    f"\t({site}) Failed to replace format for {path_or_url}"
+                )
+                handle_failure(
+                    fanfic, notification_info, waiting_queue, retry_config, cdb
+                )
+                return
+
+            # Get metadata after to verify preservation
+            new_metadata = calibredb_utils.get_metadata(fanfic, cdb)
+            calibredb_utils.log_metadata_comparison(fanfic, old_metadata, new_metadata)
+
+        elif preservation_mode == "preserve_metadata":
+            # Mode 2: Export metadata, remove, add, restore - preserves custom columns
+            ff_logging.log(
+                f"\t({site}) Using preserve_metadata mode - will export and restore custom fields",
+                "OKGREEN",
+            )
+
+            # Export all metadata before removal
+            old_metadata = calibredb_utils.get_metadata(fanfic, cdb)
+            if old_metadata:
+                custom_fields = [k for k in old_metadata.keys() if k.startswith("#")]
+                ff_logging.log(
+                    f"\t({site}) Exported {len(custom_fields)} custom fields for preservation",
+                    "OKBLUE",
+                )
+
+            # Remove the existing story
+            ff_logging.log(
+                f"\t({site}) Removing story {fanfic.calibre_id} from Calibre",
+                "OKGREEN",
+            )
+            calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
+
+            # Add the updated story
+            calibredb_utils.add_story(
+                location=temp_dir, fanfic_info=fanfic, calibre_info=cdb
+            )
+
+            # Verify addition and get new ID
+            if not fanfic.get_id_from_calibredb(cdb):
+                ff_logging.log_failure(
+                    f"\t({site}) Failed to add {path_or_url} to Calibre"
+                )
+                handle_failure(
+                    fanfic, notification_info, waiting_queue, retry_config, cdb
+                )
+                return
+
+            # Restore custom metadata fields
+            if old_metadata:
+                ff_logging.log(
+                    f"\t({site}) Restoring custom metadata to new entry (ID: {fanfic.calibre_id})",
+                    "OKBLUE",
+                )
+                calibredb_utils.set_metadata_fields(fanfic, cdb, old_metadata)
+
+                # Get final metadata and compare
+                new_metadata = calibredb_utils.get_metadata(fanfic, cdb)
+                calibredb_utils.log_metadata_comparison(
+                    fanfic, old_metadata, new_metadata
+                )
+
+        else:  # "remove_add" - traditional behavior
+            # Mode 3: Remove and add without metadata preservation
+            ff_logging.log(
+                f"\t({site}) Using remove_add mode - custom metadata will NOT be preserved",
+                "WARNING",
+            )
+
+            # Get metadata before for logging comparison
+            old_metadata = calibredb_utils.get_metadata(fanfic, cdb)
+
+            # Remove the existing story
+            ff_logging.log(
+                f"\t({site}) Removing story {fanfic.calibre_id} from Calibre",
+                "OKGREEN",
+            )
+            calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
+
+            # Add the updated story
+            calibredb_utils.add_story(
+                location=temp_dir, fanfic_info=fanfic, calibre_info=cdb
+            )
+
+            # Verify addition
+            if not fanfic.get_id_from_calibredb(cdb):
+                ff_logging.log_failure(
+                    f"\t({site}) Failed to add {path_or_url} to Calibre"
+                )
+                handle_failure(
+                    fanfic, notification_info, waiting_queue, retry_config, cdb
+                )
+                return
+
+            # Log metadata comparison to show what was lost
+            new_metadata = calibredb_utils.get_metadata(fanfic, cdb)
+            if old_metadata or new_metadata:
+                ff_logging.log(
+                    f"\t({site}) Metadata comparison (remove_add mode):",
+                    "WARNING",
+                )
+                calibredb_utils.log_metadata_comparison(
+                    fanfic, old_metadata, new_metadata
+                )
+
+    else:
+        # New story - just add it
+        ff_logging.log(
+            f"\t({site}) New story - adding to Calibre",
             "OKGREEN",
         )
-        # Remove the existing story from Calibre using its Calibre ID.
-        calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
-    # Add the updated story to Calibre. This involves adding the story from the temporary directory
-    # where it was downloaded and processed.
-    calibredb_utils.add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
-
-    # After attempting to add the story to Calibre, check if the story's ID can be retrieved from Calibre.
-    # This serves as a verification step to ensure the story was successfully added.
-    if not fanfic.get_id_from_calibredb(cdb):
-        # If the story's ID cannot be retrieved, log the failure and handle it accordingly.
-        # This might involve sending a notification about the failure and possibly re-queuing the story for another attempt.
-        ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-        handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
-    else:
-        # If the story was successfully added to Calibre, send a notification about the new download.
-        # This notification includes the story's title and the site it was downloaded from.
-        notification_info.send_notification(
-            "New Fanfiction Download", fanfic.title or "Unknown Title", site
+        calibredb_utils.add_story(
+            location=temp_dir, fanfic_info=fanfic, calibre_info=cdb
         )
+
+        # Verify addition
+        if not fanfic.get_id_from_calibredb(cdb):
+            ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
+            handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
+            return
+
+    # Success - send notification
+    notification_info.send_notification(
+        "New Fanfiction Download", fanfic.title or "Unknown Title", site
+    )
 
 
 def construct_fanficfare_command(
