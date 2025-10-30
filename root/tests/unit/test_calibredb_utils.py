@@ -13,6 +13,10 @@ from calibredb_utils import (
     remove_story,
     add_story,
     get_calibre_version,
+    get_metadata,
+    set_metadata_fields,
+    log_metadata_comparison,
+    add_format_to_existing_story,
 )
 
 
@@ -323,6 +327,323 @@ class GetCalibreVersionTestCase(unittest.TestCase):
         result = get_calibre_version()
 
         self.assertEqual(result, expected_result)
+
+
+class GetMetadataTestCase(unittest.TestCase):
+    """Tests for the get_metadata function."""
+
+    @patch("subprocess.check_output")
+    def test_get_metadata_success(self, mock_check_output):
+        """Test successful metadata retrieval."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        # Mock JSON output from calibredb
+        mock_output = b"""[{
+            "id": 123,
+            "title": "Test Story",
+            "authors": ["Test Author"],
+            "#mytag": "custom value",
+            "#status": "Complete"
+        }]"""
+
+        mock_check_output.return_value = mock_output
+
+        result = get_metadata(mock_fanfic, mock_cdb)
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["id"], 123)
+        self.assertEqual(result["title"], "Test Story")
+        self.assertEqual(result["#mytag"], "custom value")
+        self.assertEqual(result["#status"], "Complete")
+
+    @patch("subprocess.check_output")
+    def test_get_metadata_no_calibre_id(self, mock_check_output):
+        """Test that function returns empty dict when no calibre_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = None
+
+        mock_cdb = MagicMock()
+
+        result = get_metadata(mock_fanfic, mock_cdb)
+
+        self.assertEqual(result, {})
+        mock_check_output.assert_not_called()
+
+    @patch("subprocess.check_output")
+    def test_get_metadata_empty_result(self, mock_check_output):
+        """Test handling of empty metadata list."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        mock_check_output.return_value = b"[]"
+
+        result = get_metadata(mock_fanfic, mock_cdb)
+
+        self.assertEqual(result, {})
+
+    @patch("subprocess.check_output")
+    def test_get_metadata_json_decode_error(self, mock_check_output):
+        """Test handling of invalid JSON."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        mock_check_output.return_value = b"invalid json{"
+
+        result = get_metadata(mock_fanfic, mock_cdb)
+
+        self.assertEqual(result, {})
+
+    @patch("subprocess.check_output")
+    def test_get_metadata_subprocess_error(self, mock_check_output):
+        """Test handling of subprocess errors."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        mock_check_output.side_effect = subprocess.CalledProcessError(1, "cmd")
+
+        result = get_metadata(mock_fanfic, mock_cdb)
+
+        self.assertEqual(result, {})
+
+
+class SetMetadataFieldsTestCase(unittest.TestCase):
+    """Tests for the set_metadata_fields function."""
+
+    @patch("subprocess.check_output")
+    def test_set_metadata_fields_success(self, mock_check_output):
+        """Test successful metadata field restoration."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        old_metadata = {
+            "id": 456,  # Old ID, should be different
+            "title": "Test Story",
+            "#mytag": "custom value",
+            "#status": "Complete",
+            "#rating": "5 stars",
+        }
+
+        set_metadata_fields(mock_fanfic, mock_cdb, old_metadata)
+
+        # Should be called 3 times, once for each custom field
+        self.assertEqual(mock_check_output.call_count, 3)
+
+    @patch("subprocess.check_output")
+    def test_set_metadata_fields_no_custom_fields(self, mock_check_output):
+        """Test with no custom fields to restore."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        old_metadata = {"id": 456, "title": "Test Story", "authors": ["Test Author"]}
+
+        set_metadata_fields(mock_fanfic, mock_cdb, old_metadata)
+
+        # Should not be called since there are no custom fields
+        mock_check_output.assert_not_called()
+
+    @patch("subprocess.check_output")
+    def test_set_metadata_fields_empty_metadata(self, mock_check_output):
+        """Test with empty metadata."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+
+        mock_cdb = MagicMock()
+
+        set_metadata_fields(mock_fanfic, mock_cdb, {})
+
+        mock_check_output.assert_not_called()
+
+    @patch("subprocess.check_output")
+    def test_set_metadata_fields_subprocess_error(self, mock_check_output):
+        """Test handling of subprocess errors."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        old_metadata = {"#mytag": "custom value"}
+
+        mock_check_output.side_effect = subprocess.CalledProcessError(1, "cmd")
+
+        # Should not raise exception, just log error
+        set_metadata_fields(mock_fanfic, mock_cdb, old_metadata)
+
+        # Should have attempted the call
+        self.assertEqual(mock_check_output.call_count, 1)
+
+
+class LogMetadataComparisonTestCase(unittest.TestCase):
+    """Tests for the log_metadata_comparison function."""
+
+    @patch("ff_logging.log_debug")
+    @patch("ff_logging.log")
+    def test_log_metadata_comparison_preserved_fields(self, mock_log, mock_log_debug):
+        """Test logging when custom fields are preserved."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "fanfiction.net"
+
+        old_metadata = {"#mytag": "custom value", "#status": "Complete"}
+
+        new_metadata = {"#mytag": "custom value", "#status": "Complete"}
+
+        log_metadata_comparison(mock_fanfic, old_metadata, new_metadata)
+
+        # Should log preserved fields count
+        calls = [str(call) for call in mock_log.call_args_list]
+        self.assertTrue(any("Preserved: 2" in call for call in calls))
+
+    @patch("ff_logging.log_debug")
+    @patch("ff_logging.log")
+    def test_log_metadata_comparison_changed_fields(self, mock_log, mock_log_debug):
+        """Test logging when fields change."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "fanfiction.net"
+
+        old_metadata = {"#mytag": "old value", "#status": "In Progress"}
+
+        new_metadata = {"#mytag": "new value", "#status": "Complete"}
+
+        log_metadata_comparison(mock_fanfic, old_metadata, new_metadata)
+
+        # Should log changed fields count
+        calls = [str(call) for call in mock_log.call_args_list]
+        self.assertTrue(any("Changed: 2" in call for call in calls))
+
+    @patch("ff_logging.log_debug")
+    @patch("ff_logging.log")
+    def test_log_metadata_comparison_lost_fields(self, mock_log, mock_log_debug):
+        """Test logging when fields are lost."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "fanfiction.net"
+
+        old_metadata = {"#mytag": "custom value", "#status": "Complete"}
+
+        new_metadata = {}
+
+        log_metadata_comparison(mock_fanfic, old_metadata, new_metadata)
+
+        # Should log lost fields count
+        calls = [str(call) for call in mock_log.call_args_list]
+        self.assertTrue(any("Lost: 2" in call for call in calls))
+
+    @patch("ff_logging.log_debug")
+    @patch("ff_logging.log")
+    def test_log_metadata_comparison_empty_metadata(self, mock_log, mock_log_debug):
+        """Test with both metadata dicts empty."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "fanfiction.net"
+
+        log_metadata_comparison(mock_fanfic, {}, {})
+
+        # Should call log_debug for "No metadata to compare"
+        self.assertGreater(mock_log_debug.call_count, 0)
+
+
+class AddFormatToExistingStoryTestCase(unittest.TestCase):
+    """Tests for the add_format_to_existing_story function."""
+
+    @patch("calibredb_utils.call_calibre_db")
+    @patch("system_utils.get_files")
+    def test_add_format_success(self, mock_get_files, mock_call_calibre_db):
+        """Test successful format addition."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        # Mock the get_files to return a fake EPUB file
+        mock_get_files.return_value = ["/fake/dir/story.epub"]
+
+        result = add_format_to_existing_story("/fake/dir", mock_fanfic, mock_cdb)
+
+        self.assertTrue(result)
+        mock_call_calibre_db.assert_called_once()
+
+        # Verify the command contains the right components
+        call_args = mock_call_calibre_db.call_args[0][0]
+        self.assertIn("add_format", call_args)
+        self.assertIn("--replace", call_args)
+        self.assertIn("123", str(call_args))
+
+    @patch("system_utils.get_files")
+    def test_add_format_no_calibre_id(self, mock_get_files):
+        """Test that function fails when no calibre_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = None
+
+        mock_cdb = MagicMock()
+
+        result = add_format_to_existing_story("/fake/dir", mock_fanfic, mock_cdb)
+
+        self.assertFalse(result)
+        mock_get_files.assert_not_called()
+
+    @patch("calibredb_utils.call_calibre_db")
+    @patch("system_utils.get_files")
+    def test_add_format_subprocess_error(self, mock_get_files, mock_call_calibre_db):
+        """Test handling of subprocess errors."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        # Mock the get_files to return a fake EPUB file
+        mock_get_files.return_value = ["/fake/dir/story.epub"]
+
+        # Mock the call to fail
+        mock_call_calibre_db.side_effect = Exception("Command failed")
+
+        result = add_format_to_existing_story("/fake/dir", mock_fanfic, mock_cdb)
+
+        self.assertFalse(result)
+
+    @patch("system_utils.get_files")
+    def test_add_format_no_epub_files(self, mock_get_files):
+        """Test handling when no EPUB files found."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        mock_cdb = MagicMock()
+        mock_cdb.lock = MagicMock()
+
+        # Mock get_files to return empty list
+        mock_get_files.return_value = []
+
+        result = add_format_to_existing_story("/fake/dir", mock_fanfic, mock_cdb)
+
+        self.assertFalse(result)
 
 
 if __name__ == "__main__":

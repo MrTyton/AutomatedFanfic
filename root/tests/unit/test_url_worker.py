@@ -497,6 +497,10 @@ class TestUrlWorker(unittest.TestCase):
     @patch("url_worker.handle_failure")  # Patch handle_failure directly
     @patch("calibredb_utils.add_story")
     @patch("calibredb_utils.remove_story")
+    @patch("calibredb_utils.get_metadata")
+    @patch("calibredb_utils.log_metadata_comparison")
+    @patch("calibredb_utils.set_metadata_fields")
+    @patch("calibredb_utils.add_format_to_existing_story")
     @patch(
         "ff_logging.log_failure"
     )  # Keep patching log_failure for the specific log inside this function
@@ -508,6 +512,10 @@ class TestUrlWorker(unittest.TestCase):
         expected_handle_failure_call,
         expected_success_notification_call,
         mock_log_failure,  # Keep this mock
+        mock_add_format_to_existing_story,
+        mock_set_metadata_fields,
+        mock_log_metadata_comparison,
+        mock_get_metadata,
         mock_remove_story,
         mock_add_story,
         mock_handle_failure,  # Add mock for handle_failure
@@ -521,8 +529,12 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.site = "site"
         mock_fanfic.title = "title"
         mock_cdb = MagicMock(spec=CalibreInfo)
+        mock_cdb.metadata_preservation_mode = "remove_add"  # Add the new attribute
         mock_notification_info = MagicMock(spec=NotificationWrapper)
         mock_queue = MagicMock(spec=mp.Queue)
+
+        # Configure new metadata functions
+        mock_get_metadata.return_value = {}  # Return empty dict for metadata
 
         # Execution
         url_worker.process_fanfic_addition(

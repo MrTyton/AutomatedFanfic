@@ -146,6 +146,7 @@ password=""
 default_ini=""
 personal_ini=""
 update_method="update"
+metadata_preservation_mode="remove_add"
 ```
 
 - `path`: This is the path to your Calibre database. It's the location where your Calibre library is stored on your system. This can be either a directory that contains the `calibre.db` file, or the URL/Port/Library marked down above, such as `https://192.168.1.1:9001/#Fanfiction` This is the only argument that is **required** in this section.
@@ -154,12 +155,30 @@ update_method="update"
 - `default_ini`: This is the path to the [default INI configuration file](https://github.com/JimmXinu/FanFicFare/blob/main/fanficfare/defaults.ini) for FanFicFare.
 - `personal_ini`: This is the path to your [personal INI configuration file](https://github.com/JimmXinu/FanFicFare/wiki/INI-File) for FanFicFare.
 - `update_method`: Controls how FanFicFare handles story updates. Valid options are described below.
+- `metadata_preservation_mode`: Controls how Calibre metadata is preserved during story updates. Valid options are described below.
 
 **Update Method Use Cases:**
 - Use `"update"` for normal operation with good performance and minimal server load
 - Use `"update_always"` if you want to ensure all stories are always refreshed regardless of apparent changes
 - Use `"force"` if you frequently encounter stories that need forced updates to work properly
 - Use `"update_no_force"` if you want to prevent any forced updates (useful for being gentler on target websites or avoiding potential issues with forced downloads)
+
+**Metadata Preservation Modes:**
+
+This setting controls how custom metadata (tags, reading progress, custom columns, etc.) is handled when updating existing stories in your Calibre library:
+
+- `"remove_add"` (default): Traditional behavior - removes the old entry and adds the updated story as new. **WARNING**: This will lose ALL custom metadata you've added manually in Calibre (custom columns, tags you added, reading progress, etc.). Only metadata embedded in the EPUB file by FanFicFare is preserved.
+
+- `"preserve_metadata"`: Exports all custom columns before updating, then restores them after adding the updated story. This preserves your custom fields but requires two database operations (remove/add). **Recommended if you use custom columns or manually add metadata.**
+
+- `"add_format"`: Replaces only the EPUB file without touching the database entry. This preserves **ALL** metadata perfectly because it updates the file in-place. This is the fastest and safest option for metadata preservation. **Recommended for most users.**
+
+**Which mode should you use?**
+- If you **don't** manually add tags, ratings, or use custom columns → Use `"remove_add"` (faster, simpler)
+- If you **do** add custom metadata and want maximum safety → Use `"add_format"` (preserves everything)
+- If `"add_format"` has issues with your setup → Use `"preserve_metadata"` (fallback option)
+
+**Note:** The `metadata_preservation_mode` only affects **updates to existing stories**. New stories being added for the first time are unaffected by this setting.
 
 **Dynamic Force Behavior:**
 The system can automatically trigger force updates in certain circumstances, regardless of your configured `update_method`:

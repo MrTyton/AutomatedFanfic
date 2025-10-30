@@ -44,6 +44,7 @@ class CalibreInfo:
         username (str): Optional username for Calibre server authentication.
         password (str): Optional password for Calibre server authentication.
         update_method (str): Method for updating stories ('update', 'force', etc.).
+        metadata_preservation_mode (str): Strategy for preserving metadata during updates.
         default_ini (str): Path to defaults.ini file for FanFicFare configuration.
         personal_ini (str): Path to personal.ini file for FanFicFare configuration.
         lock (multiprocessing.Lock): Thread-safe lock for concurrent access.
@@ -82,6 +83,7 @@ class CalibreInfo:
         self.username = config.calibre.username
         self.password = config.calibre.password
         self.update_method = config.calibre.update_method
+        self.metadata_preservation_mode = config.calibre.metadata_preservation_mode
         self.default_ini = self._get_ini_file_from_config(
             config.calibre.default_ini, "defaults.ini"
         )
