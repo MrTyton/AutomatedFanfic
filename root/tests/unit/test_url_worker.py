@@ -1291,5 +1291,214 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
             self.assertIn("FanFicFare output:", debug_call)
 
 
+class TestLogEpubMetadata(unittest.TestCase):
+    """Test suite for log_epub_metadata function."""
+
+    @patch("url_worker.ff_logging")
+    def test_valid_epub_with_metadata(self, mock_logging):
+        """Test logging metadata from a valid epub file."""
+        import tempfile
+        import zipfile
+        import os
+
+        # Create a temporary epub with metadata
+        with tempfile.NamedTemporaryFile(
+            mode="w+b", suffix=".epub", delete=False
+        ) as epub_file:
+            epub_path = epub_file.name
+
+            # Create a valid OPF content
+            opf_content = """<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:title>Test Story</dc:title>
+        <dc:creator>Test Author</dc:creator>
+        <dc:identifier scheme="URL">https://archiveofourown.org/works/123456</dc:identifier>
+        <dc:language>en</dc:language>
+    </metadata>
+</package>"""
+
+            # Create the epub zip file
+            with zipfile.ZipFile(epub_path, "w") as zf:
+                zf.writestr("content.opf", opf_content)
+
+        try:
+            # Call the function
+            url_worker.log_epub_metadata(epub_path, "ao3")
+
+            # Verify logging calls
+            calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+            # Should have logged the start
+            self.assertTrue(
+                any("Reading epub metadata from:" in call for call in calls)
+            )
+
+            # Should have logged metadata start/end markers
+            self.assertTrue(any("=== EPUB METADATA ===" in call for call in calls))
+            self.assertTrue(any("=== END METADATA ===" in call for call in calls))
+
+            # Should have logged the metadata elements
+            self.assertTrue(any("title: Test Story" in call for call in calls))
+            self.assertTrue(any("creator: Test Author" in call for call in calls))
+            self.assertTrue(
+                any(
+                    "identifier" in call
+                    and 'scheme="URL"' in call
+                    and "https://archiveofourown.org/works/123456" in call
+                    for call in calls
+                )
+            )
+
+        finally:
+            os.unlink(epub_path)
+
+    @patch("url_worker.ff_logging")
+    def test_epub_without_opf_file(self, mock_logging):
+        """Test handling epub without .opf file."""
+        import tempfile
+        import zipfile
+        import os
+
+        # Create an epub without .opf file
+        with tempfile.NamedTemporaryFile(
+            mode="w+b", suffix=".epub", delete=False
+        ) as epub_file:
+            epub_path = epub_file.name
+
+            with zipfile.ZipFile(epub_path, "w") as zf:
+                zf.writestr("random.txt", "No OPF here")
+
+        try:
+            url_worker.log_epub_metadata(epub_path, "ffn")
+
+            # Should log error about missing .opf file
+            calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+            self.assertTrue(any("Could not find .opf file" in call for call in calls))
+
+        finally:
+            os.unlink(epub_path)
+
+    @patch("url_worker.ff_logging")
+    def test_epub_with_malformed_opf(self, mock_logging):
+        """Test handling epub with malformed XML in .opf file."""
+        import tempfile
+        import zipfile
+        import os
+
+        # Create an epub with malformed OPF
+        with tempfile.NamedTemporaryFile(
+            mode="w+b", suffix=".epub", delete=False
+        ) as epub_file:
+            epub_path = epub_file.name
+
+            malformed_opf = "<not-valid-xml><unclosed-tag>"
+
+            with zipfile.ZipFile(epub_path, "w") as zf:
+                zf.writestr("content.opf", malformed_opf)
+
+        try:
+            url_worker.log_epub_metadata(epub_path, "sb")
+
+            # Should log error about parsing
+            calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+            self.assertTrue(
+                any("Error reading epub metadata:" in call for call in calls)
+            )
+
+        finally:
+            os.unlink(epub_path)
+
+    @patch("url_worker.ff_logging")
+    def test_epub_with_no_metadata_section(self, mock_logging):
+        """Test handling epub with valid OPF but no metadata section."""
+        import tempfile
+        import zipfile
+        import os
+
+        # Create an epub with OPF lacking metadata section
+        with tempfile.NamedTemporaryFile(
+            mode="w+b", suffix=".epub", delete=False
+        ) as epub_file:
+            epub_path = epub_file.name
+
+            opf_content = """<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+    <manifest>
+        <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    </manifest>
+</package>"""
+
+            with zipfile.ZipFile(epub_path, "w") as zf:
+                zf.writestr("content.opf", opf_content)
+
+        try:
+            url_worker.log_epub_metadata(epub_path, "wattpad")
+
+            # Should log that no metadata section was found
+            calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+            self.assertTrue(any("No metadata section found" in call for call in calls))
+
+        finally:
+            os.unlink(epub_path)
+
+    @patch("url_worker.ff_logging")
+    def test_nonexistent_epub_file(self, mock_logging):
+        """Test handling non-existent epub file."""
+        url_worker.log_epub_metadata("/nonexistent/file.epub", "test")
+
+        # Should log error
+        calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+        self.assertTrue(any("Error reading epub metadata:" in call for call in calls))
+
+    @patch("url_worker.ff_logging")
+    def test_epub_with_attributes_and_empty_values(self, mock_logging):
+        """Test logging metadata elements with attributes and empty text values."""
+        import tempfile
+        import zipfile
+        import os
+
+        # Create epub with metadata that has attributes but empty text
+        with tempfile.NamedTemporaryFile(
+            mode="w+b", suffix=".epub", delete=False
+        ) as epub_file:
+            epub_path = epub_file.name
+
+            opf_content = """<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:title>Story Title</dc:title>
+        <dc:identifier scheme="ISBN"></dc:identifier>
+        <meta name="calibre:series" content="Test Series"/>
+    </metadata>
+</package>"""
+
+            with zipfile.ZipFile(epub_path, "w") as zf:
+                zf.writestr("content.opf", opf_content)
+
+        try:
+            url_worker.log_epub_metadata(epub_path, "other")
+
+            calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+            # Should log identifier with scheme attribute even though text is empty
+            self.assertTrue(
+                any("identifier" in call and 'scheme="ISBN"' in call for call in calls)
+            )
+
+            # Should log meta with attributes
+            self.assertTrue(
+                any(
+                    "meta" in call
+                    and 'name="calibre:series"' in call
+                    and 'content="Test Series"' in call
+                    for call in calls
+                )
+            )
+
+        finally:
+            os.unlink(epub_path)
+
+
 if __name__ == "__main__":
     unittest.main()
