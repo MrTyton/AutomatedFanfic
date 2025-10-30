@@ -85,6 +85,8 @@ import notification_wrapper
 import regex_parsing
 import retry_types
 import system_utils
+import zipfile
+from xml.etree import ElementTree as ET
 
 
 def get_fanficfare_version() -> str:
@@ -264,6 +266,61 @@ def extract_title_from_epub_path(epub_path: str) -> str:
         pass
 
     return epub_path
+
+
+def log_epub_metadata(epub_path: str, site: str) -> None:
+    """
+    Read and log the metadata from an epub file to help diagnose FanFicFare issues.
+
+    This function extracts key metadata fields from the epub that FanFicFare uses
+    to determine the source URL and other story details. This is crucial for
+    debugging cases where FanFicFare can't find the source URL.
+
+    Args:
+        epub_path (str): Path to the epub file
+        site (str): Site identifier for logging context
+    """
+    try:
+        ff_logging.log_debug(f"\t({site}) Reading epub metadata from: {epub_path}")
+
+        with zipfile.ZipFile(epub_path, "r") as epub:
+            # Find the .opf file which contains all metadata
+            opf_path = next(
+                (name for name in epub.namelist() if name.endswith(".opf")), None
+            )
+
+            if not opf_path:
+                ff_logging.log_debug(f"\t({site}) Could not find .opf file in epub")
+                return
+
+            opf_content = epub.read(opf_path).decode("utf-8")
+            root = ET.fromstring(opf_content)
+
+            # Find metadata section (handle namespace)
+            metadata = root.find(".//{http://www.idpf.org/2007/opf}metadata")
+            if metadata is None:
+                ff_logging.log_debug(
+                    f"\t({site}) No metadata section found in .opf file"
+                )
+                return
+
+            ff_logging.log_debug(f"\t({site}) === EPUB METADATA ===")
+
+            # Log all metadata elements
+            for elem in metadata:
+                tag_name = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                text = elem.text or ""
+                attribs = " ".join([f'{k}="{v}"' for k, v in elem.attrib.items()])
+
+                if attribs:
+                    ff_logging.log_debug(f"\t({site})   {tag_name} [{attribs}]: {text}")
+                else:
+                    ff_logging.log_debug(f"\t({site})   {tag_name}: {text}")
+
+            ff_logging.log_debug(f"\t({site}) === END METADATA ===")
+
+    except Exception as e:
+        ff_logging.log_debug(f"\t({site}) Error reading epub metadata: {e}")
 
 
 def execute_command(command: str) -> str:
@@ -667,6 +724,9 @@ def url_worker(
                 ):  # Only update if extraction succeeded
                     fanfic.title = extracted_title
                     ff_logging.log_debug(f"\t({site}) Extracted title: {fanfic.title}")
+
+                # Log epub metadata to help diagnose FanFicFare issues
+                log_epub_metadata(path_or_url, site)
 
             ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
