@@ -404,6 +404,114 @@ jobs:
             $AMD64_TAG $ARM64_TAG
 
       # Updated step to generate filtered changelog including requirements.txt and excluding bot commits
+      # Check if dependency versions changed
+      - name: Check for dependency version changes
+        id: check_version_changes
+        env:
+          CURRENT_COMMIT_SHA: ${{ needs.build_matrix.outputs.commit_sha }}
+          CALIBRE_VERSION: ${{ env.CALIBRE_VERSION }}
+          FANFICFARE_VERSION: ${{ env.FANFICFARE_VERSION }}
+        run: |
+          echo "Checking for dependency version changes..."
+
+          # Get previous commit (parent of current)
+          PREVIOUS_COMMIT=$(git rev-parse ${CURRENT_COMMIT_SHA}~1 2>/dev/null || echo "")
+
+          if [ -z "$PREVIOUS_COMMIT" ]; then
+            echo "No previous commit found (initial commit?)"
+            echo "calibre_changed=false" >> $GITHUB_OUTPUT
+            echo "fanficfare_changed=false" >> $GITHUB_OUTPUT
+            echo "previous_calibre_version=" >> $GITHUB_OUTPUT
+            echo "previous_fanficfare_version=" >> $GITHUB_OUTPUT
+          else
+            echo "Previous commit: $PREVIOUS_COMMIT"
+
+            # Get previous Calibre version
+            PREVIOUS_CALIBRE=$(git show ${PREVIOUS_COMMIT}:release-versions/calibre.txt 2>/dev/null || echo "")
+            echo "Previous Calibre version: ${PREVIOUS_CALIBRE:-unknown}"
+            echo "Current Calibre version: $CALIBRE_VERSION"
+
+            # Get previous FanFicFare version
+            PREVIOUS_FANFICFARE=$(git show ${PREVIOUS_COMMIT}:release-versions/fanficfare.txt 2>/dev/null || echo "")
+            echo "Previous FanFicFare version: ${PREVIOUS_FANFICFARE:-unknown}"
+            echo "Current FanFicFare version: $FANFICFARE_VERSION"
+
+            # Check if versions changed
+            if [ -n "$PREVIOUS_CALIBRE" ] && [ "$PREVIOUS_CALIBRE" != "$CALIBRE_VERSION" ]; then
+              echo "calibre_changed=true" >> $GITHUB_OUTPUT
+              echo "Calibre version changed!"
+            else
+              echo "calibre_changed=false" >> $GITHUB_OUTPUT
+            fi
+
+            if [ -n "$PREVIOUS_FANFICFARE" ] && [ "$PREVIOUS_FANFICFARE" != "$FANFICFARE_VERSION" ]; then
+              echo "fanficfare_changed=true" >> $GITHUB_OUTPUT
+              echo "FanFicFare version changed!"
+            else
+              echo "fanficfare_changed=false" >> $GITHUB_OUTPUT
+            fi
+
+            echo "previous_calibre_version=$PREVIOUS_CALIBRE" >> $GITHUB_OUTPUT
+            echo "previous_fanficfare_version=$PREVIOUS_FANFICFARE" >> $GITHUB_OUTPUT
+          fi
+
+      # Fetch Calibre changelog summary if version changed
+      - name: Fetch Calibre Changelog Summary
+        id: fetch_calibre_notes
+        if: steps.check_version_changes.outputs.calibre_changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CALIBRE_VERSION: ${{ env.CALIBRE_VERSION }}
+        run: |
+          echo "Fetching Calibre changelog for version $CALIBRE_VERSION..."
+
+          # Fetch release info from Calibre's GitHub repository
+          RELEASE_URL="https://api.github.com/repos/kovidgoyal/calibre/releases/tags/v${CALIBRE_VERSION}"
+          RELEASE_INFO=$(curl -sSfL -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "$RELEASE_URL" 2>/dev/null || echo "")
+
+          if [ -n "$RELEASE_INFO" ]; then
+            # Extract just the release name/title (usually a summary)
+            RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name // empty' 2>/dev/null || echo "")
+
+            # Get the URL for full details
+            RELEASE_HTML_URL=$(echo "$RELEASE_INFO" | jq -r '.html_url // empty' 2>/dev/null || echo "")
+
+            if [ -n "$RELEASE_HTML_URL" ]; then
+              echo "changelog=[View changes](${RELEASE_HTML_URL})" >> $GITHUB_OUTPUT
+            else
+              echo "changelog=See https://github.com/kovidgoyal/calibre/releases/tag/v${CALIBRE_VERSION}" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Failed to fetch Calibre release info"
+            echo "changelog=See https://github.com/kovidgoyal/calibre/releases/tag/v${CALIBRE_VERSION}" >> $GITHUB_OUTPUT
+          fi
+
+      # Fetch FanFicFare changelog summary if version changed
+      - name: Fetch FanFicFare Changelog Summary
+        id: fetch_fff_notes
+        if: steps.check_version_changes.outputs.fanficfare_changed == 'true'
+        env:
+          FANFICFARE_VERSION: ${{ env.FANFICFARE_VERSION }}
+        run: |
+          echo "Fetching FanFicFare changelog for version $FANFICFARE_VERSION..."
+
+          # Try to fetch from GitHub releases first
+          RELEASE_URL="https://api.github.com/repos/JimmXinu/FanFicFare/releases/tags/$FANFICFARE_VERSION"
+          RELEASE_INFO=$(curl -sSfL -H "Accept: application/vnd.github.v3+json" "$RELEASE_URL" 2>/dev/null || echo "")
+
+          if [ -n "$RELEASE_INFO" ]; then
+            RELEASE_HTML_URL=$(echo "$RELEASE_INFO" | jq -r '.html_url // empty' 2>/dev/null || echo "")
+
+            if [ -n "$RELEASE_HTML_URL" ]; then
+              echo "changelog=[View changes](${RELEASE_HTML_URL})" >> $GITHUB_OUTPUT
+            else
+              echo "changelog=See https://github.com/JimmXinu/FanFicFare/releases/tag/$FANFICFARE_VERSION" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Fallback: provide link to release page
+            echo "changelog=See https://github.com/JimmXinu/FanFicFare/releases/tag/$FANFICFARE_VERSION" >> $GITHUB_OUTPUT
+          fi
+
       - name: Generate Changelog
         id: generate_changelog
         env:
@@ -468,8 +576,11 @@ jobs:
           body: |
             Automated release for version ${{ env.SPECIFIC_VERSION }}.
             Built from commit: ${{ needs.build_matrix.outputs.commit_sha }}
-            Includes Calibre version: ${{ env.CALIBRE_VERSION }}
-            Includes FanFicFare version: ${{ env.FANFICFARE_VERSION }}${{ steps.generate_changelog.outputs.changelog_body }}
+
+            ## Dependency Versions
+            - **Calibre**: ${{ env.CALIBRE_VERSION }}${{ steps.check_version_changes.outputs.calibre_changed == 'true' && format(' (updated from {0}) - {1}', steps.check_version_changes.outputs.previous_calibre_version, steps.fetch_calibre_notes.outputs.changelog) || '' }}
+            - **FanFicFare**: ${{ env.FANFICFARE_VERSION }}${{ steps.check_version_changes.outputs.fanficfare_changed == 'true' && format(' (updated from {0}) - {1}', steps.check_version_changes.outputs.previous_fanficfare_version, steps.fetch_fff_notes.outputs.changelog) || '' }}
+            ${{ steps.generate_changelog.outputs.changelog_body }}
 
           draft: false
           prerelease: false
