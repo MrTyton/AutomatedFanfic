@@ -73,7 +73,7 @@ Thread Safety:
 """
 
 import multiprocessing as mp
-from subprocess import check_output, PIPE, STDOUT
+from subprocess import CalledProcessError, check_output, PIPE, STDOUT
 from time import sleep
 
 import calibre_info
@@ -692,8 +692,29 @@ def url_worker(
                 # Execute FanFicFare download/update command
                 output = execute_command(command)
 
+            except CalledProcessError as e:
+                # Log execution failure with detailed output for debugging
+                ff_logging.log_failure(
+                    f"\t({site}) Failed to update {path_or_url}: {e}"
+                )
+
+                # In verbose mode, show the actual FanFicFare output for debugging
+                if e.output:
+                    error_output = (
+                        e.output.decode("utf-8")
+                        if isinstance(e.output, bytes)
+                        else str(e.output)
+                    )
+                    ff_logging.log_debug(
+                        f"\t({site}) FanFicFare output:\n{error_output}"
+                    )
+
+                handle_failure(
+                    fanfic, notification_info, waiting_queue, retry_config, cdb
+                )
+                continue
             except Exception as e:
-                # Log execution failure and route to failure handler
+                # Log other execution failures
                 ff_logging.log_failure(
                     f"\t({site}) Failed to update {path_or_url}: {e}"
                 )
