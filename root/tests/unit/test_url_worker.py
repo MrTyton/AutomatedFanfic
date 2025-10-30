@@ -1500,5 +1500,166 @@ class TestLogEpubMetadata(unittest.TestCase):
             os.unlink(epub_path)
 
 
+class TestConstructFanficfareCommand(unittest.TestCase):
+    """Test suite for construct_fanficfare_command function."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.calibre_info = MagicMock(spec=CalibreInfo)
+        self.calibre_info.update_method = "update"
+
+        self.fanfic = FanficInfo(
+            url="https://archiveofourown.org/works/123456", site="ao3"
+        )
+        self.path_or_url = "https://archiveofourown.org/works/123456"
+
+    def tearDown(self):
+        """Clean up after each test - ensure verbose is disabled."""
+        url_worker.ff_logging.verbose.value = False
+
+    def test_update_method_normal(self):
+        """Test command construction with 'update' method."""
+        self.calibre_info.update_method = "update"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("python -m fanficfare.cli", cmd)
+        self.assertIn("-u", cmd)
+        self.assertIn(self.path_or_url, cmd)
+        self.assertIn("--update-cover", cmd)
+        self.assertIn("--non-interactive", cmd)
+        self.assertNotIn("--debug", cmd)
+
+    def test_update_method_update_always(self):
+        """Test command construction with 'update_always' method."""
+        self.calibre_info.update_method = "update_always"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("-U", cmd)
+        self.assertNotIn("-u ", cmd)  # Space to avoid matching -U
+        self.assertNotIn("--force", cmd)
+        self.assertNotIn("--debug", cmd)
+
+    def test_update_method_force(self):
+        """Test command construction with 'force' method."""
+        self.calibre_info.update_method = "force"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("--force", cmd)
+        # Check that -u or -U flags are not present (as standalone flags)
+        self.assertNotRegex(cmd, r"\s-u\s")
+        self.assertNotIn("-U ", cmd)
+        self.assertNotIn("--debug", cmd)
+
+    def test_update_method_update_no_force(self):
+        """Test command construction with 'update_no_force' method."""
+        self.calibre_info.update_method = "update_no_force"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("-u", cmd)
+        self.assertNotIn("--force", cmd)
+        self.assertNotIn("-U", cmd)
+        self.assertNotIn("--debug", cmd)
+
+    def test_force_behavior_requested(self):
+        """Test command when fanfic explicitly requests force behavior."""
+        self.calibre_info.update_method = "update"
+        self.fanfic.behavior = "force"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("--force", cmd)
+        # Check that -u or -U flags are not present (as standalone flags)
+        self.assertNotRegex(cmd, r"\s-u\s")
+        self.assertNotIn("--debug", cmd)
+
+    def test_force_ignored_with_update_no_force(self):
+        """Test that force requests are ignored with update_no_force method."""
+        self.calibre_info.update_method = "update_no_force"
+        self.fanfic.behavior = "force"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn(
+            "-u ", cmd
+        )  # Check for -u with space to avoid matching --update-cover
+        self.assertNotIn("--force", cmd)
+        self.assertNotIn("--debug", cmd)
+
+    def test_verbose_enabled_adds_debug_flag(self):
+        """Test that --debug flag is added when verbose logging is enabled."""
+        url_worker.ff_logging.verbose.value = True
+        self.calibre_info.update_method = "update"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("--debug", cmd)
+        self.assertIn("-u", cmd)
+
+    def test_verbose_disabled_no_debug_flag(self):
+        """Test that --debug flag is NOT added when verbose logging is disabled."""
+        url_worker.ff_logging.verbose.value = False
+        self.calibre_info.update_method = "update"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertNotIn("--debug", cmd)
+
+    def test_verbose_with_force_method(self):
+        """Test --debug flag with force update method."""
+        url_worker.ff_logging.verbose.value = True
+        self.calibre_info.update_method = "force"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("--debug", cmd)
+        self.assertIn("--force", cmd)
+
+    def test_verbose_with_update_always(self):
+        """Test --debug flag with update_always method."""
+        url_worker.ff_logging.verbose.value = True
+        self.calibre_info.update_method = "update_always"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, self.path_or_url
+        )
+
+        self.assertIn("--debug", cmd)
+        self.assertIn("-U", cmd)
+
+    def test_epub_path_handling(self):
+        """Test command construction with epub file path instead of URL."""
+        epub_path = "/tmp/tmpxyz/Story Title - Author.epub"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, epub_path
+        )
+
+        self.assertIn(epub_path, cmd)
+        self.assertIn("-u", cmd)
+        self.assertNotIn("--debug", cmd)
+
+    def test_epub_path_with_verbose(self):
+        """Test epub path with verbose enabled."""
+        url_worker.ff_logging.verbose.value = True
+        epub_path = "/tmp/tmpxyz/Story Title - Author.epub"
+        cmd = url_worker.construct_fanficfare_command(
+            self.calibre_info, self.fanfic, epub_path
+        )
+
+        self.assertIn("--debug", cmd)
+        self.assertIn(epub_path, cmd)
+
+
 if __name__ == "__main__":
     unittest.main()

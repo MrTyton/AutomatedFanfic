@@ -565,6 +565,7 @@ def construct_fanficfare_command(
         - --force: Force update, bypasses most checks and restrictions
         - --update-cover: Updates book cover art
         - --non-interactive: Prevents interactive prompts
+        - --debug: Enable FanFicFare debug output (when verbose logging enabled)
 
     Example:
         ```python
@@ -576,6 +577,11 @@ def construct_fanficfare_command(
         fanfic.behavior = "force"
         cmd = construct_fanficfare_command(calibre_info, fanfic, url)
         # Returns: 'python -m fanficfare.cli --force "url" --update-cover --non-interactive'
+
+        # With verbose logging enabled
+        ff_logging.set_verbose(True)
+        cmd = construct_fanficfare_command(calibre_info, fanfic, url)
+        # Returns: 'python -m fanficfare.cli -u "url" --update-cover --non-interactive --debug'
         ```
 
     Configuration Conflicts:
@@ -586,6 +592,8 @@ def construct_fanficfare_command(
     Note:
         The constructed command includes --non-interactive to prevent FanFicFare
         from prompting for user input, which is essential for automated operation.
+        When verbose logging is enabled globally, --debug is added to get detailed
+        FanFicFare diagnostic output.
     """
     update_method = cdb.update_method
     command = "python -m fanficfare.cli"
@@ -609,6 +617,11 @@ def construct_fanficfare_command(
 
     # Add the target path/URL and standard options for automated operation
     command += f' "{path_or_url}" --update-cover --non-interactive'
+
+    # Add debug flag when verbose logging is enabled
+    if ff_logging.verbose.value:
+        command += " --debug"
+
     return command
 
 
