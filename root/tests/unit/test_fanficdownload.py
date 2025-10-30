@@ -98,7 +98,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         self.assertEqual(args.config, expected_config)
         self.assertEqual(args.verbose, expected_verbose)
 
-    @patch("fanficdownload.ProcessManager")
+    @patch("fanficdownload.TaskManager")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.url_ingester.EmailInfo")
     @patch("fanficdownload.ConfigManager.load_config")
@@ -300,7 +300,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         )
         mock_sys_exit.assert_called_once_with(1)
 
-    @patch("fanficdownload.ProcessManager")
+    @patch("fanficdownload.TaskManager")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.url_ingester.EmailInfo")
     @patch("fanficdownload.ConfigManager.load_config")
