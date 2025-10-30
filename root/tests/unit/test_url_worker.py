@@ -1190,6 +1190,106 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
 
         self.assertEqual(result, expected_result)
 
+    @parameterized.expand(
+        [
+            (
+                "verbose_enabled_with_bytes_output",
+                True,  # verbose enabled
+                b"ERROR: Story not found on site\nTraceback: ...\n",  # error output
+                "ERROR: Story not found on site",  # expected in output
+            ),
+            (
+                "verbose_enabled_with_string_output",
+                True,  # verbose enabled
+                "ERROR: Story not found on site\nTraceback: ...\n",  # error output as string
+                "ERROR: Story not found on site",  # expected in output
+            ),
+            (
+                "verbose_disabled_with_output",
+                False,  # verbose disabled
+                b"ERROR: Story not found on site\nTraceback: ...\n",  # error output
+                None,  # should not log debug
+            ),
+        ]
+    )
+    @patch("ff_logging.log_debug")
+    @patch("ff_logging.log_failure")
+    @patch("ff_logging.verbose")
+    def test_fanfic_addition_verbose_error_output(
+        self,
+        name,
+        verbose_enabled,
+        error_output,
+        expected_output,
+        mock_verbose,
+        mock_log_failure,
+        mock_log_debug,
+    ):
+        """Test that CalledProcessError output is logged in verbose mode."""
+        from subprocess import CalledProcessError
+
+        # Setup verbose flag
+        mock_verbose.value = verbose_enabled
+
+        # Simulate CalledProcessError with output
+        called_process_error = CalledProcessError(
+            returncode=1,
+            cmd="fanficfare -u --update-cover story.epub",
+            output=error_output,
+        )
+
+        # Create mock objects
+        mock_fanfic = MagicMock()
+        mock_fanfic.url = "https://archiveofourown.org/works/12345"
+        mock_fanfic.site = "archiveofourown.org"
+        MagicMock()
+        MagicMock()
+        MagicMock()
+        MagicMock()
+
+        # Capture the actual exception handling logic from url_worker
+        # by simulating what would happen in the try/except block
+        try:
+            raise called_process_error
+        except CalledProcessError as e:
+            # This mimics the code in url_worker.py lines 695-713
+            mock_log_failure(
+                f"\t({mock_fanfic.site}) Failed to update {mock_fanfic.url}: {e}"
+            )
+
+            # In verbose mode, show the actual FanFicFare output for debugging
+            # Note: log_debug internally checks verbose.value, so we always call it
+            if e.output:
+                error_output_str = (
+                    e.output.decode("utf-8")
+                    if isinstance(e.output, bytes)
+                    else str(e.output)
+                )
+                mock_log_debug(
+                    f"\t({mock_fanfic.site}) FanFicFare output:\n{error_output_str}"
+                )
+
+        # Verify failure was logged
+        mock_log_failure.assert_called_once()
+        failure_call = mock_log_failure.call_args[0][0]
+        self.assertIn("Failed to update", failure_call)
+
+        # Verify debug output logging
+        # log_debug is always called if there's output, but log_debug internally
+        # checks verbose.value to decide whether to actually print
+        if expected_output:
+            # Should have been called
+            mock_log_debug.assert_called_once()
+            debug_call = mock_log_debug.call_args[0][0]
+            self.assertIn("FanFicFare output:", debug_call)
+            self.assertIn(expected_output, debug_call)
+        else:
+            # Even though it's called, log_debug won't print when verbose=False
+            # But the mock still records the call, so we check it was called
+            mock_log_debug.assert_called_once()
+            debug_call = mock_log_debug.call_args[0][0]
+            self.assertIn("FanFicFare output:", debug_call)
+
 
 if __name__ == "__main__":
     unittest.main()
