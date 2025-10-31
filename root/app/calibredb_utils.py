@@ -176,6 +176,21 @@ def remove_story(
     call_calibre_db("remove", calibre_info, fanfic_info)
 
 
+def find_epub_in_directory(location: str) -> Optional[str]:
+    """Find the first EPUB file in the specified directory.
+
+    Args:
+        location (str): Directory path to search for EPUB files.
+
+    Returns:
+        Optional[str]: Full path to the first EPUB file found, or None if no EPUB files exist.
+    """
+    epub_files = system_utils.get_files(
+        location, file_extension="epub", return_full_path=True
+    )
+    return epub_files[0] if epub_files else None
+
+
 def add_story(
     *,
     location: str,
@@ -206,18 +221,13 @@ def add_story(
         The function handles the case where no EPUB files are found by logging
         an error and returning early, but does not raise exceptions.
     """
-    # Search for EPUB files in the specified location
-    epub_files = system_utils.get_files(
-        location, file_extension="epub", return_full_path=True
-    )
+    # Search for EPUB file in the specified location
+    file_to_add = find_epub_in_directory(location)
 
-    # Check if any EPUB files were found
-    if not epub_files:
+    # Check if any EPUB file was found
+    if not file_to_add:
         ff_logging.log_failure("No EPUB files found in the specified location.")
         return
-
-    # Use the first EPUB file found for addition
-    file_to_add = epub_files[0]
 
     # Extract and update the fanfic title from the filename for proper cataloging
     fanfic_info.title = regex_parsing.extract_filename(file_to_add)
@@ -297,20 +307,20 @@ def set_metadata_fields(
 ) -> None:
     """Restores specific metadata fields to a story in the Calibre database.
 
-    Uses calibredb set_metadata to restore previously saved metadata fields,
-    particularly useful for preserving custom columns and user-added metadata
-    during story updates.
+    Uses calibredb set_custom to restore previously saved metadata fields.
+    Only restores fields that start with '#' (custom columns) as standard fields
+    are typically embedded in the EPUB file itself.
 
     Args:
         fanfic_info (fanfic_info.FanficInfo): Object containing story's calibre_id.
         calibre_info (calibre_info.CalibreInfo): Calibre library configuration.
         metadata (dict): Dictionary of metadata fields to restore.
         fields_to_restore (list, optional): List of specific field names to restore.
-            If None, attempts to restore common custom fields.
+            If None, restores all fields starting with '#'.
 
     Note:
-        Not all fields can be set via set_metadata. Standard fields like title,
-        authors are typically embedded in the EPUB. This focuses on custom columns.
+        Standard fields like title, authors are typically embedded in the EPUB.
+        This function focuses on custom columns which are database-only fields.
     """
     from subprocess import check_output, CalledProcessError
 
@@ -322,17 +332,16 @@ def set_metadata_fields(
         ff_logging.log_debug("\tNo metadata to restore")
         return
 
-    # Default to restoring custom columns (fields starting with #)
+    # Default to restoring fields that start with '#' (custom columns)
     if fields_to_restore is None:
         fields_to_restore = [k for k in metadata.keys() if k.startswith("#")]
 
     if not fields_to_restore:
-        ff_logging.log_debug("\tNo custom fields found to restore")
+        ff_logging.log_debug("\tNo restorable fields found")
         return
 
-    ff_logging.log(
-        f"\t({fanfic_info.site}) Attempting to restore {len(fields_to_restore)} custom fields",
-        "OKBLUE",
+    ff_logging.log_debug(
+        f"\t({fanfic_info.site}) Attempting to restore {len(fields_to_restore)} metadata fields"
     )
 
     # Restore each field individually
@@ -374,9 +383,8 @@ def set_metadata_fields(
         except Exception as e:
             ff_logging.log_failure(f"\t  Unexpected error restoring {field_name}: {e}")
 
-    ff_logging.log(
-        f"\t({fanfic_info.site}) Successfully restored {restored_count}/{len(fields_to_restore)} custom fields",
-        "OKGREEN",
+    ff_logging.log_debug(
+        f"\t({fanfic_info.site}) Successfully restored {restored_count}/{len(fields_to_restore)} metadata fields"
     )
 
 
@@ -463,15 +471,11 @@ def add_format_to_existing_story(
         return False
 
     # Find EPUB file in location
-    epub_files = system_utils.get_files(
-        location, file_extension="epub", return_full_path=True
-    )
+    file_to_add = find_epub_in_directory(location)
 
-    if not epub_files:
+    if not file_to_add:
         ff_logging.log_failure("No EPUB files found in the specified location.")
         return False
-
-    file_to_add = epub_files[0]
 
     ff_logging.log(
         f"\t({fanfic_info.site}) Replacing EPUB format for ID {fanfic_info.calibre_id}",

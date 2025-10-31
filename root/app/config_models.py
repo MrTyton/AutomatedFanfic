@@ -37,6 +37,31 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import tomllib
 import ff_logging
+from enum import Enum
+
+
+class MetadataPreservationMode(str, Enum):
+    """Enumeration of metadata preservation strategies for Calibre updates.
+
+    This enum defines the available strategies for handling metadata when
+    updating stories in the Calibre library. Each mode offers different
+    tradeoffs between metadata preservation and update reliability.
+
+    Attributes:
+        REMOVE_ADD: Traditional remove and re-add behavior. May lose custom metadata
+            but is the most reliable update method. Use when metadata preservation
+            is not critical.
+        PRESERVE_METADATA: Export custom fields before removal, then restore after
+            re-adding. Preserves user-added custom columns while allowing full story
+            updates. Best balance of reliability and metadata preservation.
+        ADD_FORMAT: Replace only the EPUB file without touching database entry.
+            Preserves ALL metadata including custom fields, but may not update all
+            story metadata if significant changes occurred. Most conservative option.
+    """
+
+    REMOVE_ADD = "remove_add"
+    PRESERVE_METADATA = "preserve_metadata"
+    ADD_FORMAT = "add_format"
 
 
 class ConfigError(Exception):
@@ -227,10 +252,8 @@ class CalibreConfig(BaseModel):
         default="update",
         description="Fanficfare update method: 'update', 'update_always', 'force', or 'update_no_force'",
     )
-    metadata_preservation_mode: Literal[
-        "remove_add", "preserve_metadata", "add_format"
-    ] = Field(
-        default="remove_add",
+    metadata_preservation_mode: MetadataPreservationMode = Field(
+        default=MetadataPreservationMode.REMOVE_ADD,
         description="Metadata preservation strategy: 'remove_add' (current behavior), "
         "'preserve_metadata' (export/restore custom fields), or 'add_format' (replace file only)",
     )
