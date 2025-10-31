@@ -323,7 +323,7 @@ def set_metadata_fields(
         Standard fields like title, authors are typically embedded in the EPUB.
         This function focuses on custom columns which are database-only fields.
     """
-    from subprocess import check_output, CalledProcessError
+    from subprocess import CalledProcessError
 
     if not fanfic_info.calibre_id:
         ff_logging.log_failure("\tCannot set metadata: story has no calibre_id")
@@ -356,28 +356,24 @@ def set_metadata_fields(
             continue  # Skip empty values
 
         try:
-            with calibre_info.lock:
-                # Use set_custom to set custom column values
-                # Format: calibredb set_custom <id> <column> <value>
-                # Extract column name (remove # prefix)
-                column_name = field_name.lstrip("#")
+            # Use set_custom to set custom column values
+            # Format: calibredb set_custom <column> <value>
+            # Extract column name (remove # prefix)
+            column_name = field_name.lstrip("#")
 
-                # Convert value to string, handling lists/arrays
-                if isinstance(field_value, list):
-                    # For list fields, join with commas
-                    value_str = ",".join(str(v) for v in field_value)
-                else:
-                    value_str = str(field_value)
+            # Convert value to string, handling lists/arrays
+            if isinstance(field_value, list):
+                # For list fields, join with commas
+                value_str = ",".join(str(v) for v in field_value)
+            else:
+                value_str = str(field_value)
 
-                check_output(
-                    f'calibredb set_custom {fanfic_info.calibre_id} "{column_name}" "{value_str}" {calibre_info}',
-                    shell=True,
-                    stderr=PIPE,
-                    stdin=PIPE,
-                )
+            # Use call_calibre_db which properly handles library path and locking
+            command = f'set_custom "{column_name}" "{value_str}"'
+            call_calibre_db(command, calibre_info, fanfic_info)
 
-                restored_count += 1
-                ff_logging.log_debug(f"\t  Restored {field_name} = {value_str[:50]}...")
+            restored_count += 1
+            ff_logging.log_debug(f"\t  Restored {field_name} = {value_str[:50]}...")
 
         except CalledProcessError as e:
             ff_logging.log_failure(f"\t  Failed to restore field {field_name}: {e}")
