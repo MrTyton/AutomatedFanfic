@@ -236,7 +236,8 @@ def add_story(
     ff_logging.log(f"\t({fanfic_info.site}) Adding {file_to_add} to Calibre", "OKGREEN")
 
     # Construct the add command with the -d flag for duplicate detection
-    command = f'add -d {calibre_info} "{file_to_add}"'
+    # Note: calibre_info parameters are added by call_calibre_db
+    command = f'add -d "{file_to_add}"'
 
     # Execute the add command (no fanfic_info needed as we're adding, not updating)
     call_calibre_db(command, calibre_info, fanfic_info=None)
@@ -483,9 +484,8 @@ def add_format_to_existing_story(
     )
 
     # Use add_format with --replace to update the file
-    command = (
-        f'add_format --replace {fanfic_info.calibre_id} "{file_to_add}" {calibre_info}'
-    )
+    # Note: calibre_id and calibre_info parameters are added by call_calibre_db
+    command = f'add_format --replace "{file_to_add}"'
 
     try:
         call_calibre_db(command, calibre_info, fanfic_info)

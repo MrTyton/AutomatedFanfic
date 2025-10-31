@@ -165,7 +165,7 @@ class AddStoryTestCase(unittest.TestCase):
                 fanfic_info=MagicMock(),
                 calibre_info=MagicMock(return_value="mock_calibre_info"),
                 epub_files=["/fake/location/story.epub"],
-                expected_command='add -d {mock} "/fake/location/story.epub"',
+                expected_command='add -d "/fake/location/story.epub"',
                 should_fail=False,
             ),
             AddStoryParams(
@@ -220,7 +220,7 @@ class AddStoryTestCase(unittest.TestCase):
                 "OKGREEN",
             )
             mock_call_calibre_db.assert_called_once_with(
-                expected_command.format(mock=calibre_info),
+                expected_command,
                 calibre_info,
                 fanfic_info=None,
             )
@@ -594,10 +594,15 @@ class AddFormatToExistingStoryTestCase(unittest.TestCase):
         mock_call_calibre_db.assert_called_once()
 
         # Verify the command contains the right components
-        call_args = mock_call_calibre_db.call_args[0][0]
-        self.assertIn("add_format", call_args)
-        self.assertIn("--replace", call_args)
-        self.assertIn("123", str(call_args))
+        call_args = mock_call_calibre_db.call_args[0]
+        command = call_args[0]
+        calibre_info = call_args[1]
+        fanfic_info = call_args[2]
+
+        self.assertIn("add_format", command)
+        self.assertIn("--replace", command)
+        self.assertEqual(fanfic_info, mock_fanfic)
+        self.assertEqual(calibre_info, mock_cdb)
 
     @patch("system_utils.get_files")
     def test_add_format_no_calibre_id(self, mock_get_files):
