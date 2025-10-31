@@ -38,8 +38,7 @@ class TestConstructFanficfareCommand(unittest.TestCase):
         command = construct_fanficfare_command(
             self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
-        self.assertIn(" --force", command)
-        self.assertNotIn(" -u ", command)
+        self.assertIn(" -u --force", command)
         self.assertNotIn(" -U ", command)
 
     def test_fanfic_behavior_force_override(self):
@@ -48,8 +47,7 @@ class TestConstructFanficfareCommand(unittest.TestCase):
         command = construct_fanficfare_command(
             self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
-        self.assertIn(" --force", command)
-        self.assertNotIn(" -u ", command)
+        self.assertIn(" -u --force", command)
         self.assertNotIn(" -U ", command)
 
     def test_update_no_force_with_force_behavior(self):
@@ -101,7 +99,7 @@ class TestConstructFanficfareCommand(unittest.TestCase):
         command = construct_fanficfare_command(
             self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
-        self.assertIn(" --force", command)
+        self.assertIn(" -u --force", command)
 
     def test_empty_string_behavior(self):
         # Test empty string behavior (should be treated as no force)
@@ -131,9 +129,8 @@ class TestConstructFanficfareCommand(unittest.TestCase):
         command = construct_fanficfare_command(
             self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
-        self.assertIn(" --force", command)
+        self.assertIn(" -u --force", command)
         self.assertNotIn(" -U ", command)
-        self.assertNotIn(" -u ", command)
 
     def test_update_no_force_precedence_over_force_behavior(self):
         # Test that update_no_force method overrides force behavior

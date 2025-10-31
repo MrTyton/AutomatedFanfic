@@ -306,8 +306,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             self.assertNotIn(" --force", command)
             self.assertNotIn(" -u ", command)
         elif expected_behavior in ["force_update", "force_override"]:
-            self.assertIn(" --force", command)
-            self.assertNotIn(" -u ", command)
+            self.assertIn(" -u --force", command)
             self.assertNotIn(" -U ", command)
         elif expected_behavior in ["ignore_force", "ignore_force_behavior"]:
             self.assertIn(" -u ", command)
