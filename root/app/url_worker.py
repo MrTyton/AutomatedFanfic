@@ -667,7 +667,7 @@ def construct_fanficfare_command(
         # Force update requested
         fanfic.behavior = "force"
         cmd = construct_fanficfare_command(calibre_info, fanfic, url)
-        # Returns: 'python -m fanficfare.cli --force "url" --update-cover --non-interactive'
+        # Returns: 'python -m fanficfare.cli -u --force "url" --update-cover --non-interactive'
 
         # With verbose logging enabled
         ff_logging.set_verbose(True)
@@ -697,8 +697,8 @@ def construct_fanficfare_command(
         # Special case: ignore all force requests and always use normal update
         command += " -u"
     elif force_requested or update_method == "force":
-        # Use force flag when explicitly requested or configured
-        command += " --force"
+        # Use force flag WITH update flag (force is a modifier, not a replacement)
+        command += " -u --force"
     elif update_method == "update_always":
         # Always perform full refresh of all chapters
         command += " -U"

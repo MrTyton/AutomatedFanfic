@@ -1550,9 +1550,7 @@ class TestConstructFanficfareCommand(unittest.TestCase):
             self.calibre_info, self.fanfic, self.path_or_url
         )
 
-        self.assertIn("--force", cmd)
-        # Check that -u or -U flags are not present (as standalone flags)
-        self.assertNotRegex(cmd, r"\s-u\s")
+        self.assertIn("-u --force", cmd)
         self.assertNotIn("-U ", cmd)
         self.assertNotIn("--debug", cmd)
 
@@ -1576,9 +1574,7 @@ class TestConstructFanficfareCommand(unittest.TestCase):
             self.calibre_info, self.fanfic, self.path_or_url
         )
 
-        self.assertIn("--force", cmd)
-        # Check that -u or -U flags are not present (as standalone flags)
-        self.assertNotRegex(cmd, r"\s-u\s")
+        self.assertIn("-u --force", cmd)
         self.assertNotIn("--debug", cmd)
 
     def test_force_ignored_with_update_no_force(self):
