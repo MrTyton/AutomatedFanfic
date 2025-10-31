@@ -358,9 +358,6 @@ def set_metadata_fields(
         try:
             # Use set_custom to set custom column values
             # Format: calibredb set_custom <column> <value>
-            # Extract column name (remove # prefix)
-            column_name = field_name.lstrip("#")
-
             # Convert value to string, handling lists/arrays
             if isinstance(field_value, list):
                 # For list fields, join with commas
@@ -369,7 +366,7 @@ def set_metadata_fields(
                 value_str = str(field_value)
 
             # Use call_calibre_db which properly handles library path and locking
-            command = f'set_custom "{column_name}" "{value_str}"'
+            command = f'set_custom "{field_name}" "{value_str}"'
             call_calibre_db(command, calibre_info, fanfic_info)
 
             restored_count += 1
