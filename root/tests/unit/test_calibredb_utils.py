@@ -504,20 +504,21 @@ class LogMetadataComparisonTestCase(unittest.TestCase):
 
     @patch("ff_logging.log_debug")
     @patch("ff_logging.log")
-    def test_log_metadata_comparison_preserved_fields(self, mock_log, mock_log_debug):
-        """Test logging when custom fields are preserved."""
+    def test_log_metadata_comparison_no_changes(self, mock_log, mock_log_debug):
+        """Test logging when fields are unchanged."""
         mock_fanfic = MagicMock()
         mock_fanfic.site = "fanfiction.net"
 
         old_metadata = {"#mytag": "custom value", "#status": "Complete"}
-
         new_metadata = {"#mytag": "custom value", "#status": "Complete"}
 
         log_metadata_comparison(mock_fanfic, old_metadata, new_metadata)
 
-        # Should log preserved fields count
-        calls = [str(call) for call in mock_log.call_args_list]
-        self.assertTrue(any("Preserved: 2" in call for call in calls))
+        # Should log no changes detected (debug only)
+        calls = [str(call) for call in mock_log_debug.call_args_list]
+        self.assertTrue(any("No metadata changes detected" in call for call in calls))
+        # Should NOT use regular log
+        self.assertEqual(mock_log.call_count, 0)
 
     @patch("ff_logging.log_debug")
     @patch("ff_logging.log")
@@ -527,14 +528,15 @@ class LogMetadataComparisonTestCase(unittest.TestCase):
         mock_fanfic.site = "fanfiction.net"
 
         old_metadata = {"#mytag": "old value", "#status": "In Progress"}
-
         new_metadata = {"#mytag": "new value", "#status": "Complete"}
 
         log_metadata_comparison(mock_fanfic, old_metadata, new_metadata)
 
-        # Should log changed fields count
-        calls = [str(call) for call in mock_log.call_args_list]
-        self.assertTrue(any("Changed: 2" in call for call in calls))
+        # Should log changed fields count (debug only)
+        calls = [str(call) for call in mock_log_debug.call_args_list]
+        self.assertTrue(any("Fields Changed: 2" in call for call in calls))
+        # Should NOT use regular log
+        self.assertEqual(mock_log.call_count, 0)
 
     @patch("ff_logging.log_debug")
     @patch("ff_logging.log")
@@ -544,14 +546,15 @@ class LogMetadataComparisonTestCase(unittest.TestCase):
         mock_fanfic.site = "fanfiction.net"
 
         old_metadata = {"#mytag": "custom value", "#status": "Complete"}
-
         new_metadata = {}
 
         log_metadata_comparison(mock_fanfic, old_metadata, new_metadata)
 
-        # Should log lost fields count
-        calls = [str(call) for call in mock_log.call_args_list]
-        self.assertTrue(any("Lost: 2" in call for call in calls))
+        # Should log lost fields count (debug only)
+        calls = [str(call) for call in mock_log_debug.call_args_list]
+        self.assertTrue(any("Fields Lost: 2" in call for call in calls))
+        # Should NOT use regular log
+        self.assertEqual(mock_log.call_count, 0)
 
     @patch("ff_logging.log_debug")
     @patch("ff_logging.log")
@@ -564,6 +567,8 @@ class LogMetadataComparisonTestCase(unittest.TestCase):
 
         # Should call log_debug for "No metadata to compare"
         self.assertGreater(mock_log_debug.call_count, 0)
+        # Should NOT use regular log
+        self.assertEqual(mock_log.call_count, 0)
 
 
 class AddFormatToExistingStoryTestCase(unittest.TestCase):
@@ -644,6 +649,250 @@ class AddFormatToExistingStoryTestCase(unittest.TestCase):
         result = add_format_to_existing_story("/fake/dir", mock_fanfic, mock_cdb)
 
         self.assertFalse(result)
+
+
+class TestLogMetadataComparison(unittest.TestCase):
+    """Test suite for log_metadata_comparison function."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.fanfic = MagicMock()
+        self.fanfic.site = "ao3"
+
+    @patch("calibredb_utils.ff_logging")
+    def test_both_empty_metadata(self, mock_logging):
+        """Test comparison with both old and new metadata empty."""
+        log_metadata_comparison(self.fanfic, {}, {})
+
+        # Should log that there's no metadata to compare
+        calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+        self.assertTrue(any("No metadata to compare" in call for call in calls))
+
+    @patch("calibredb_utils.ff_logging")
+    def test_no_changes(self, mock_logging):
+        """Test when all fields are unchanged."""
+        old_meta = {
+            "title": "Test Story",
+            "authors": ["Author Name"],
+            "#custom1": "custom value",
+            "#rating": "Teen",
+        }
+        new_meta = {
+            "title": "Test Story",
+            "authors": ["Author Name"],
+            "#custom1": "custom value",
+            "#rating": "Teen",
+        }
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+        # Should report no changes (debug only)
+        self.assertTrue(
+            any("No metadata changes detected" in call for call in debug_calls)
+        )
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
+
+    @patch("calibredb_utils.ff_logging")
+    def test_fields_changed(self, mock_logging):
+        """Test when fields are changed."""
+        old_meta = {
+            "title": "Old Title",
+            "authors": ["Old Author"],
+            "#status": "In Progress",
+        }
+        new_meta = {
+            "title": "New Title",
+            "authors": ["New Author"],
+            "#status": "Complete",
+        }
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+        # Should report fields changed (debug only)
+        self.assertTrue(any("Fields Changed: 3" in call for call in debug_calls))
+
+        # Should show all changed fields
+        self.assertTrue(
+            any(
+                "title" in call and "Old Title" in call and "New Title" in call
+                for call in debug_calls
+            )
+        )
+        self.assertTrue(any("authors" in call for call in debug_calls))
+        self.assertTrue(
+            any(
+                "#status" in call and "In Progress" in call and "Complete" in call
+                for call in debug_calls
+            )
+        )
+
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
+
+    @patch("calibredb_utils.ff_logging")
+    def test_fields_lost(self, mock_logging):
+        """Test when fields are lost during update."""
+        old_meta = {
+            "title": "Story Title",
+            "#custom1": "value1",
+            "#custom2": "value2",
+            "series": "Series Name",
+        }
+        new_meta = {
+            "title": "Story Title",
+            "series": "Series Name",
+        }
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+        # Should report fields lost (debug only)
+        self.assertTrue(any("Fields Lost: 2" in call for call in debug_calls))
+
+        # Should show all lost fields
+        self.assertTrue(any("#custom1" in call for call in debug_calls))
+        self.assertTrue(any("#custom2" in call for call in debug_calls))
+
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
+
+    @patch("calibredb_utils.ff_logging")
+    def test_new_fields_added(self, mock_logging):
+        """Test when new fields are added."""
+        old_meta = {
+            "title": "Story Title",
+        }
+        new_meta = {
+            "title": "Story Title",
+            "#new_field": "new value",
+            "publisher": "FanFicFare",
+        }
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+        # Should report new fields added (debug only)
+        self.assertTrue(any("New Fields Added: 2" in call for call in debug_calls))
+
+        # Should show all new fields
+        self.assertTrue(any("#new_field" in call for call in debug_calls))
+        self.assertTrue(any("publisher" in call for call in debug_calls))
+
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
+
+    @patch("calibredb_utils.ff_logging")
+    def test_mixed_changes(self, mock_logging):
+        """Test with mix of changed, lost, and new fields."""
+        old_meta = {
+            "title": "Title",
+            "authors": ["Author"],
+            "#custom1": "value1",
+            "tags": ["tag1"],
+        }
+        new_meta = {
+            "title": "New Title",  # Changed
+            "authors": ["Author"],  # Same (not logged)
+            "#custom1": "new_value1",  # Changed
+            "publisher": "New Field",  # New
+            # tags lost
+        }
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+        # Should report all change types (debug only)
+        self.assertTrue(any("Fields Changed: 2" in call for call in debug_calls))
+        self.assertTrue(any("Fields Lost: 1" in call for call in debug_calls))
+        self.assertTrue(any("New Fields Added: 1" in call for call in debug_calls))
+
+        # Should NOT report preserved fields
+        self.assertFalse(
+            any("No metadata changes detected" in call for call in debug_calls)
+        )
+
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
+
+    @patch("calibredb_utils.ff_logging")
+    def test_many_changed_fields_all_shown(self, mock_logging):
+        """Test that all changed fields are shown without truncation."""
+        # Create many changed fields
+        old_meta = {f"field{i}": f"old{i}" for i in range(20)}
+        new_meta = {f"field{i}": f"new{i}" for i in range(20)}
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+        # Should show all 20 changes (debug only)
+        self.assertTrue(any("Fields Changed: 20" in call for call in debug_calls))
+
+        # Should NOT have truncation messages
+        self.assertFalse(any("and" in call and "more" in call for call in debug_calls))
+
+        # Verify all fields are present
+        for i in range(20):
+            self.assertTrue(any(f"field{i}" in call for call in debug_calls))
+
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
+
+    @patch("calibredb_utils.ff_logging")
+    def test_many_lost_fields_all_shown(self, mock_logging):
+        """Test that all lost fields are shown without truncation."""
+        # Create many lost fields
+        old_meta = {f"#field{i}": f"value{i}" for i in range(15)}
+        new_meta = {}
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+        # Should show all 15 lost fields (debug only)
+        self.assertTrue(any("Fields Lost: 15" in call for call in debug_calls))
+
+        # Should NOT have truncation messages
+        self.assertFalse(any("and" in call and "more" in call for call in debug_calls))
+
+        # Verify all fields are present
+        for i in range(15):
+            self.assertTrue(any(f"#field{i}" in call for call in debug_calls))
+
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
+
+    @patch("calibredb_utils.ff_logging")
+    def test_value_truncation(self, mock_logging):
+        """Test that long values are truncated to 50 characters."""
+        old_meta = {
+            "description": "A" * 100,
+        }
+        new_meta = {
+            "description": "B" * 100,
+        }
+
+        log_metadata_comparison(self.fanfic, old_meta, new_meta)
+
+        debug_calls = [str(call) for call in mock_logging.log_debug.call_args_list]
+
+        # Should truncate to 50 characters
+        truncated_old = "A" * 50
+        truncated_new = "B" * 50
+
+        self.assertTrue(
+            any(truncated_old in call and truncated_new in call for call in debug_calls)
+        )
+
+        # Should NOT use regular log
+        self.assertEqual(mock_logging.log.call_count, 0)
 
 
 if __name__ == "__main__":
