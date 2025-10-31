@@ -363,10 +363,7 @@ def _handle_add_format_mode(
     Returns:
         bool: True if successful, False if failed (caller should return)
     """
-    ff_logging.log(
-        f"\t({site}) Using add_format mode - replacing EPUB file only",
-        "OKGREEN",
-    )
+    ff_logging.log_debug(f"\t({site}) Using add_format mode - replacing EPUB file only")
 
     # Get metadata before for comparison
     old_metadata = calibredb_utils.get_metadata(fanfic, cdb)
@@ -410,9 +407,8 @@ def _handle_preserve_metadata_mode(
     Returns:
         bool: True if successful, False if failed (caller should return)
     """
-    ff_logging.log(
-        f"\t({site}) Using preserve_metadata mode - will export and restore metadata fields",
-        "OKGREEN",
+    ff_logging.log_debug(
+        f"\t({site}) Using preserve_metadata mode - will export and restore metadata fields"
     )
 
     # Export all metadata before removal
@@ -478,9 +474,8 @@ def _handle_remove_add_mode(
     Returns:
         bool: True if successful, False if failed (caller should return)
     """
-    ff_logging.log(
-        f"\t({site}) Using remove_add mode - custom metadata will NOT be preserved",
-        "WARNING",
+    ff_logging.log_debug(
+        f"\t({site}) Using remove_add mode - custom metadata will NOT be preserved"
     )
 
     # Get metadata before for logging comparison
@@ -502,13 +497,10 @@ def _handle_remove_add_mode(
         handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
         return False
 
-    # Log metadata comparison to show what was lost
+    # Log metadata comparison to show what was lost (debug only)
     new_metadata = calibredb_utils.get_metadata(fanfic, cdb)
     if old_metadata or new_metadata:
-        ff_logging.log(
-            f"\t({site}) Metadata comparison (remove_add mode):",
-            "WARNING",
-        )
+        ff_logging.log_debug(f"\t({site}) Metadata comparison (remove_add mode):")
         calibredb_utils.log_metadata_comparison(fanfic, old_metadata, new_metadata)
 
     return True
@@ -564,10 +556,10 @@ def process_fanfic_addition(
         )
 
         ff_logging.log(
-            f"\t({site}) Story exists in Calibre (ID: {fanfic.calibre_id}). "
-            f"Using preservation mode: {mode_value}",
+            f"\t({site}) Story exists in Calibre (ID: {fanfic.calibre_id})",
             "OKBLUE",
         )
+        ff_logging.log_debug(f"\t  Using preservation mode: {mode_value}")
 
         # Dispatch to appropriate handler based on preservation mode
         # Support both enum values and legacy strings for backward compatibility

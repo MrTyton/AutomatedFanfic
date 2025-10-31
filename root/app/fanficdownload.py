@@ -164,6 +164,14 @@ def main() -> None:
         )
         ff_logging.log(f"  Update Method: {config.calibre.update_method}")
 
+        # Log metadata preservation mode
+        mode_value = (
+            config.calibre.metadata_preservation_mode.value
+            if hasattr(config.calibre.metadata_preservation_mode, "value")
+            else config.calibre.metadata_preservation_mode
+        )
+        ff_logging.log(f"  Metadata Preservation Mode: {mode_value}")
+
         # Log Pushbullet Configuration - Mobile notification settings
         pb_status = "Enabled" if config.pushbullet.enabled else "Disabled"
         ff_logging.log(f"  Pushbullet Notifications: {pb_status}")
