@@ -171,7 +171,7 @@ This setting controls how custom metadata (tags, reading progress, custom column
 
 - `"preserve_metadata"`: Exports all custom columns before updating, then restores them after adding the updated story. This preserves your custom fields but requires two database operations (remove/add). **Recommended if you use custom columns or manually add metadata.**
 
-- `"add_format"`: Replaces only the EPUB file without touching the database entry. This preserves **ALL** metadata perfectly because it updates the file in-place. This is the fastest and safest option for metadata preservation. **Recommended for most users.**
+- `"add_format"`: Replaces only the EPUB file without touching the database entry. This preserves **ALL** metadata perfectly because it updates the file in-place. This is the fastest and safest option for metadata preservation.
 
 **Which mode should you use?**
 - If you **don't** manually add tags, ratings, or use custom columns → Use `"remove_add"` (faster, simpler)
