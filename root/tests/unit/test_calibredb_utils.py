@@ -426,8 +426,8 @@ class GetMetadataTestCase(unittest.TestCase):
 class SetMetadataFieldsTestCase(unittest.TestCase):
     """Tests for the set_metadata_fields function."""
 
-    @patch("subprocess.check_output")
-    def test_set_metadata_fields_success(self, mock_check_output):
+    @patch("calibredb_utils.call_calibre_db")
+    def test_set_metadata_fields_success(self, mock_call_calibre_db):
         """Test successful metadata field restoration."""
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
@@ -447,10 +447,16 @@ class SetMetadataFieldsTestCase(unittest.TestCase):
         set_metadata_fields(mock_fanfic, mock_cdb, old_metadata)
 
         # Should be called 3 times, once for each custom field
-        self.assertEqual(mock_check_output.call_count, 3)
+        self.assertEqual(mock_call_calibre_db.call_count, 3)
 
-    @patch("subprocess.check_output")
-    def test_set_metadata_fields_no_custom_fields(self, mock_check_output):
+        # Verify the commands are properly formatted
+        calls = mock_call_calibre_db.call_args_list
+        for call in calls:
+            command = call[0][0]
+            self.assertTrue(command.startswith("set_custom "))
+
+    @patch("calibredb_utils.call_calibre_db")
+    def test_set_metadata_fields_no_custom_fields(self, mock_call_calibre_db):
         """Test with no custom fields to restore."""
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
@@ -464,10 +470,10 @@ class SetMetadataFieldsTestCase(unittest.TestCase):
         set_metadata_fields(mock_fanfic, mock_cdb, old_metadata)
 
         # Should not be called since there are no custom fields
-        mock_check_output.assert_not_called()
+        mock_call_calibre_db.assert_not_called()
 
-    @patch("subprocess.check_output")
-    def test_set_metadata_fields_empty_metadata(self, mock_check_output):
+    @patch("calibredb_utils.call_calibre_db")
+    def test_set_metadata_fields_empty_metadata(self, mock_call_calibre_db):
         """Test with empty metadata."""
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
@@ -476,10 +482,10 @@ class SetMetadataFieldsTestCase(unittest.TestCase):
 
         set_metadata_fields(mock_fanfic, mock_cdb, {})
 
-        mock_check_output.assert_not_called()
+        mock_call_calibre_db.assert_not_called()
 
-    @patch("subprocess.check_output")
-    def test_set_metadata_fields_subprocess_error(self, mock_check_output):
+    @patch("calibredb_utils.call_calibre_db")
+    def test_set_metadata_fields_subprocess_error(self, mock_call_calibre_db):
         """Test handling of subprocess errors."""
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
@@ -490,13 +496,13 @@ class SetMetadataFieldsTestCase(unittest.TestCase):
 
         old_metadata = {"#mytag": "custom value"}
 
-        mock_check_output.side_effect = subprocess.CalledProcessError(1, "cmd")
+        mock_call_calibre_db.side_effect = subprocess.CalledProcessError(1, "cmd")
 
         # Should not raise exception, just log error
         set_metadata_fields(mock_fanfic, mock_cdb, old_metadata)
 
         # Should have attempted the call
-        self.assertEqual(mock_check_output.call_count, 1)
+        self.assertEqual(mock_call_calibre_db.call_count, 1)
 
 
 class LogMetadataComparisonTestCase(unittest.TestCase):
