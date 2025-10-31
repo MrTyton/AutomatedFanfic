@@ -388,8 +388,8 @@ def log_metadata_comparison(
     """Logs a comparison of metadata before and after an update operation.
 
     Provides detailed logging of metadata changes, showing which fields were
-    preserved, which changed, and which were lost. Useful for debugging
-    metadata preservation issues.
+    changed, lost, or added. Preserved fields are not logged to reduce noise.
+    All output is debug-only to avoid cluttering normal logs.
 
     Args:
         fanfic_info (fanfic_info.FanficInfo): Story information for logging context.
@@ -400,52 +400,44 @@ def log_metadata_comparison(
         ff_logging.log_debug("\tNo metadata to compare")
         return
 
-    ff_logging.log(f"\t({fanfic_info.site}) Metadata Comparison Report", "OKBLUE")
+    ff_logging.log_debug(f"\t({fanfic_info.site}) Metadata Comparison Report")
 
-    # Find custom fields (those starting with #)
-    old_custom = {k: v for k, v in old_metadata.items() if k.startswith("#")}
-    new_custom = {k: v for k, v in new_metadata.items() if k.startswith("#")}
-
-    # Check preserved fields
-    preserved = []
+    # Find changed, lost, and new fields
     changed = []
     lost = []
 
-    for field_name, old_value in old_custom.items():
-        if field_name in new_custom:
-            new_value = new_custom[field_name]
-            if old_value == new_value:
-                preserved.append(field_name)
-            else:
-                changed.append((field_name, str(old_value)[:30], str(new_value)[:30]))
+    for field_name, old_value in old_metadata.items():
+        if field_name in new_metadata:
+            new_value = new_metadata[field_name]
+            if old_value != new_value:
+                changed.append((field_name, str(old_value)[:50], str(new_value)[:50]))
         else:
             lost.append(field_name)
 
-    # Check new fields
-    new_fields = [k for k in new_custom.keys() if k not in old_custom]
+    # Check new fields that weren't in old metadata
+    new_fields = [k for k in new_metadata.keys() if k not in old_metadata]
 
-    # Log results
-    ff_logging.log(f"\t  Custom Fields Preserved: {len(preserved)}", "OKGREEN")
-    if preserved:
-        for field in preserved[:5]:  # Show first 5
-            ff_logging.log_debug(f"\t    ✓ {field}")
-        if len(preserved) > 5:
-            ff_logging.log_debug(f"\t    ... and {len(preserved) - 5} more")
-
+    # Log changed fields
     if changed:
-        ff_logging.log(f"\t  Custom Fields Changed: {len(changed)}", "WARNING")
-        for field, old_val, new_val in changed[:5]:
+        ff_logging.log_debug(f"\t  Fields Changed: {len(changed)}")
+        for field, old_val, new_val in changed:
             ff_logging.log_debug(f"\t    ~ {field}: '{old_val}' → '{new_val}'")
 
+    # Log lost fields
     if lost:
-        ff_logging.log(f"\t  Custom Fields Lost: {len(lost)}", "FAIL")
-        for field in lost[:10]:  # Show first 10 lost fields
+        ff_logging.log_debug(f"\t  Fields Lost: {len(lost)}")
+        for field in lost:
             ff_logging.log_debug(f"\t    ✗ {field}")
-        if len(lost) > 10:
-            ff_logging.log_debug(f"\t    ... and {len(lost) - 10} more")
 
+    # Log new fields
     if new_fields:
         ff_logging.log_debug(f"\t  New Fields Added: {len(new_fields)}")
+        for field in new_fields:
+            ff_logging.log_debug(f"\t    + {field}")
+
+    # If nothing changed, say so
+    if not changed and not lost and not new_fields:
+        ff_logging.log_debug("\t  No metadata changes detected")
 
 
 def add_format_to_existing_story(
