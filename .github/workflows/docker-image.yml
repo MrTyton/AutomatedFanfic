@@ -460,31 +460,11 @@ jobs:
         id: fetch_calibre_notes
         if: steps.check_version_changes.outputs.calibre_changed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CALIBRE_VERSION: ${{ env.CALIBRE_VERSION }}
         run: |
-          echo "Fetching Calibre changelog for version $CALIBRE_VERSION..."
-
-          # Fetch release info from Calibre's GitHub repository
-          RELEASE_URL="https://api.github.com/repos/kovidgoyal/calibre/releases/tags/v${CALIBRE_VERSION}"
-          RELEASE_INFO=$(curl -sSfL -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "$RELEASE_URL" 2>/dev/null || echo "")
-
-          if [ -n "$RELEASE_INFO" ]; then
-            # Extract just the release name/title (usually a summary)
-            RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name // empty' 2>/dev/null || echo "")
-
-            # Get the URL for full details
-            RELEASE_HTML_URL=$(echo "$RELEASE_INFO" | jq -r '.html_url // empty' 2>/dev/null || echo "")
-
-            if [ -n "$RELEASE_HTML_URL" ]; then
-              echo "changelog=[View changes](${RELEASE_HTML_URL})" >> $GITHUB_OUTPUT
-            else
-              echo "changelog=See https://github.com/kovidgoyal/calibre/releases/tag/v${CALIBRE_VERSION}" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "Failed to fetch Calibre release info"
-            echo "changelog=See https://github.com/kovidgoyal/calibre/releases/tag/v${CALIBRE_VERSION}" >> $GITHUB_OUTPUT
-          fi
+          echo "Calibre updated to version $CALIBRE_VERSION"
+          # Just report the version change without creating links
+          echo "changelog=Updated to version ${CALIBRE_VERSION}" >> $GITHUB_OUTPUT
 
       # Fetch FanFicFare changelog summary if version changed
       - name: Fetch FanFicFare Changelog Summary
@@ -493,24 +473,9 @@ jobs:
         env:
           FANFICFARE_VERSION: ${{ env.FANFICFARE_VERSION }}
         run: |
-          echo "Fetching FanFicFare changelog for version $FANFICFARE_VERSION..."
-
-          # Try to fetch from GitHub releases first
-          RELEASE_URL="https://api.github.com/repos/JimmXinu/FanFicFare/releases/tags/$FANFICFARE_VERSION"
-          RELEASE_INFO=$(curl -sSfL -H "Accept: application/vnd.github.v3+json" "$RELEASE_URL" 2>/dev/null || echo "")
-
-          if [ -n "$RELEASE_INFO" ]; then
-            RELEASE_HTML_URL=$(echo "$RELEASE_INFO" | jq -r '.html_url // empty' 2>/dev/null || echo "")
-
-            if [ -n "$RELEASE_HTML_URL" ]; then
-              echo "changelog=[View changes](${RELEASE_HTML_URL})" >> $GITHUB_OUTPUT
-            else
-              echo "changelog=See https://github.com/JimmXinu/FanFicFare/releases/tag/$FANFICFARE_VERSION" >> $GITHUB_OUTPUT
-            fi
-          else
-            # Fallback: provide link to release page
-            echo "changelog=See https://github.com/JimmXinu/FanFicFare/releases/tag/$FANFICFARE_VERSION" >> $GITHUB_OUTPUT
-          fi
+          echo "FanFicFare updated to version $FANFICFARE_VERSION"
+          # Just report the version change without creating links
+          echo "changelog=Updated to version ${FANFICFARE_VERSION}" >> $GITHUB_OUTPUT
 
       - name: Generate Changelog
         id: generate_changelog
@@ -578,8 +543,8 @@ jobs:
             Built from commit: ${{ needs.build_matrix.outputs.commit_sha }}
 
             ## Dependency Versions
-            - **Calibre**: ${{ env.CALIBRE_VERSION }}${{ steps.check_version_changes.outputs.calibre_changed == 'true' && format(' (updated from {0}) - {1}', steps.check_version_changes.outputs.previous_calibre_version, steps.fetch_calibre_notes.outputs.changelog) || '' }}
-            - **FanFicFare**: ${{ env.FANFICFARE_VERSION }}${{ steps.check_version_changes.outputs.fanficfare_changed == 'true' && format(' (updated from {0}) - {1}', steps.check_version_changes.outputs.previous_fanficfare_version, steps.fetch_fff_notes.outputs.changelog) || '' }}
+            - **Calibre**: ${{ env.CALIBRE_VERSION }}${{ steps.check_version_changes.outputs.calibre_changed == 'true' && format(' (updated from {0})', steps.check_version_changes.outputs.previous_calibre_version) || '' }}
+            - **FanFicFare**: ${{ env.FANFICFARE_VERSION }}${{ steps.check_version_changes.outputs.fanficfare_changed == 'true' && format(' (updated from {0})', steps.check_version_changes.outputs.previous_fanficfare_version) || '' }}
             ${{ steps.generate_changelog.outputs.changelog_body }}
 
           draft: false
