@@ -46,7 +46,7 @@ from config_models import ConfigManager, ConfigError, ConfigValidationError
 from process_manager import ProcessManager
 
 # Define the application version
-__version__ = "1.20.0"
+__version__ = "1.21.0"
 
 
 def parse_arguments() -> argparse.Namespace:
