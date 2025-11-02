@@ -3,26 +3,26 @@ name: Cache Cleanup
 on:
   schedule:
     # Run weekly on Sundays at 3 AM UTC
-    - cron: '0 3 * * 0'
+    - cron: "0 3 * * 0"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Perform a dry run (show what would be deleted without actually deleting)'
+        description: "Perform a dry run (show what would be deleted without actually deleting)"
         required: false
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'true'
-          - 'false'
+          - "true"
+          - "false"
       keep_versions:
-        description: 'Number of recent versions to keep (default: 5)'
+        description: "Number of recent versions to keep (default: 5)"
         required: false
-        default: '5'
+        default: "5"
         type: string
 
 permissions:
-  actions: write  # Required to delete GitHub Actions cache
-  contents: read  # Required to read repository content
+  actions: write # Required to delete GitHub Actions cache
+  contents: read # Required to read repository content
 
 env:
   IMAGE_REPO: mrtyton
@@ -139,12 +139,14 @@ jobs:
           CURRENT_VERSION: ${{ steps.versions.outputs.current_version }}
           KEEP_VERSIONS: ${{ steps.versions.outputs.keep_versions }}
         run: |
-          echo "📋 Fetching Docker Hub tags..."
+          echo "📋 Fetching and processing Docker Hub tags..."
 
-          # Get all tags from Docker Hub with pagination
-          ALL_TAGS=""
+          # Process tags page by page to avoid "Argument list too long" error
           PAGE=1
+          TOTAL_TAGS_PROCESSED=0
+
           while true; do
+            echo "Fetching page $PAGE..."
             TAGS_RESPONSE=$(curl -s -H "Authorization: JWT $DOCKER_TOKEN" \
               "https://hub.docker.com/v2/repositories/${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}/tags/?page_size=100&page=$PAGE")
 
@@ -156,29 +158,15 @@ jobs:
             # Check if we have results
             RESULTS_COUNT=$(echo "$TAGS_RESPONSE" | jq -r '.results | length')
             if [ "$RESULTS_COUNT" -eq 0 ]; then
+              echo "No more tags on page $PAGE"
               break
             fi
 
-            # Append results to our collection
-            if [ -z "$ALL_TAGS" ]; then
-              ALL_TAGS="$TAGS_RESPONSE"
-            else
-              ALL_TAGS=$(echo "$ALL_TAGS" | jq --argjson new_results "$(echo "$TAGS_RESPONSE" | jq '.results')" '.results += $new_results')
-            fi
+            echo "Processing $RESULTS_COUNT tags from page $PAGE..."
+            TOTAL_TAGS_PROCESSED=$((TOTAL_TAGS_PROCESSED + RESULTS_COUNT))
 
-            # Check if there's a next page
-            NEXT_PAGE=$(echo "$TAGS_RESPONSE" | jq -r '.next // empty')
-            if [ -z "$NEXT_PAGE" ] || [ "$NEXT_PAGE" = "null" ]; then
-              break
-            fi
-
-            PAGE=$((PAGE + 1))
-          done
-
-          echo "Found $(echo "$ALL_TAGS" | jq -r '.results | length') total tags"
-
-          # Parse tags and identify what to keep vs delete
-          echo "$ALL_TAGS" | jq -r '.results[] | "\(.name) \(.last_updated)"' | while read -r tag_name last_updated; do
+          # Parse tags from this page and identify what to keep vs delete
+          echo "$TAGS_RESPONSE" | jq -r '.results[] | "\(.name) \(.last_updated)"' | while read -r tag_name last_updated; do
 
             # Always preserve the latest tag
             if [ "$tag_name" = "latest" ]; then
@@ -262,6 +250,18 @@ jobs:
               fi
             fi
           done
+
+            # Check if there's a next page
+            NEXT_PAGE=$(echo "$TAGS_RESPONSE" | jq -r '.next // empty')
+            if [ -z "$NEXT_PAGE" ] || [ "$NEXT_PAGE" = "null" ]; then
+              echo "No more pages to process"
+              break
+            fi
+
+            PAGE=$((PAGE + 1))
+          done
+
+          echo "Total tags processed: $TOTAL_TAGS_PROCESSED"
 
           # Show summary
           if [ "$DRY_RUN" = "true" ]; then
