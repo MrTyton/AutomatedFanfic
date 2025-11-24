@@ -1,5 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
+import multiprocessing as mp
+from typing import cast, Dict
 from url_ingester import email_watcher, EmailInfo
 from url_worker import url_worker
 from fanfic_info import FanficInfo
@@ -15,7 +17,9 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.email_info = MagicMock(spec=EmailInfo)
         self.email_info.disabled_sites = []
         self.email_info.sleep_time = 0.1
-        self.processor_queues = {"fanfiction": MagicMock(), "other": MagicMock()}
+        self.processor_queues = cast(
+            Dict[str, mp.Queue], {"fanfiction": MagicMock(), "other": MagicMock()}
+        )
         self.url_parsers = {}
 
     @patch("url_ingester.time.sleep")
@@ -45,7 +49,9 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         # Verify
         self.assertIn(url, self.active_urls)
-        self.processor_queues["fanfiction"].put.assert_called_with(fanfic)
+        cast(MagicMock, self.processor_queues["fanfiction"].put).assert_called_with(
+            fanfic
+        )
 
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -73,7 +79,7 @@ class TestDuplicatePrevention(unittest.TestCase):
             pass
 
         # Verify
-        self.processor_queues["fanfiction"].put.assert_not_called()
+        cast(MagicMock, self.processor_queues["fanfiction"].put).assert_not_called()
         # Should log a warning
         mock_log.assert_any_call(
             f"Skipping {url} - already in queue or processing", "WARNING"
