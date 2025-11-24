@@ -120,7 +120,7 @@ jobs:
 
       # Checkout the specific commit determined above
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.get_sha.outputs.commit_sha }}
           fetch-depth: 0
@@ -335,7 +335,7 @@ jobs:
     if: always() && needs.build_matrix.result == 'success' && needs.build_matrix.outputs.should_build == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.build_matrix.outputs.commit_sha }}
           fetch-depth: 0
