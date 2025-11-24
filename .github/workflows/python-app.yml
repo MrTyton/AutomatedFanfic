@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         # Checkout the specific SHA if triggered by workflow_call, otherwise default behavior
         ref: ${{ github.event_name == 'workflow_call' && inputs.commit_sha || github.ref }}
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         # Checkout the specific SHA if triggered by workflow_call, otherwise default behavior
         ref: ${{ github.event_name == 'workflow_call' && inputs.commit_sha || github.ref }}
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         # Checkout the specific SHA if triggered by workflow_call, otherwise default behavior
         ref: ${{ github.event_name == 'workflow_call' && inputs.commit_sha || github.ref }}
