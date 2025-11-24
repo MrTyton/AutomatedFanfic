@@ -722,6 +722,7 @@ def url_worker(
     notification_info: notification_wrapper.NotificationWrapper,
     waiting_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
+    active_urls: dict | None = None,
 ) -> None:
     """
     Main worker function for processing fanfiction downloads in a dedicated process.
@@ -813,102 +814,124 @@ def url_worker(
             continue
 
         # Process fanfiction in isolated temporary workspace
-        with system_utils.temporary_directory() as temp_dir:
-            site = fanfic.site
-            ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
+        should_remove_from_active = True
+        site = fanfic.site
+        path_or_url = fanfic.url
+        try:
+            with system_utils.temporary_directory() as temp_dir:
+                ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
 
-            # Determine if this is an update (existing file) or new download (URL)
-            path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
+                # Determine if this is an update (existing file) or new download (URL)
+                path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
 
-            # Extract title from epub filename if we're updating an existing story
-            if path_or_url.endswith(".epub"):
-                extracted_title = extract_title_from_epub_path(path_or_url)
-                if (
-                    extracted_title != path_or_url
-                ):  # Only update if extraction succeeded
-                    fanfic.title = extracted_title
-                    ff_logging.log_debug(f"\t({site}) Extracted title: {fanfic.title}")
+                # Extract title from epub filename if we're updating an existing story
+                if path_or_url.endswith(".epub"):
+                    extracted_title = extract_title_from_epub_path(path_or_url)
+                    if (
+                        extracted_title != path_or_url
+                    ):  # Only update if extraction succeeded
+                        fanfic.title = extracted_title
+                        ff_logging.log_debug(
+                            f"\t({site}) Extracted title: {fanfic.title}"
+                        )
 
-                # Log epub metadata to help diagnose FanFicFare issues
-                log_epub_metadata(path_or_url, site)
+                    # Log epub metadata to help diagnose FanFicFare issues
+                    log_epub_metadata(path_or_url, site)
 
-            ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
+                ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
-            # Build FanFicFare command based on configuration and fanfic state
-            base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
-            # Execute command in temporary directory context
-            command = f"cd {temp_dir} && {base_command}"
+                # Build FanFicFare command based on configuration and fanfic state
+                base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
+                # Execute command in temporary directory context
+                command = f"cd {temp_dir} && {base_command}"
 
-            try:
-                # Handle special case: force requested but update_no_force configured
-                if (
-                    fanfic.behavior == "force"
-                    and cdb.update_method == "update_no_force"
-                ):
-                    # Force failure to trigger special notification via failure handler
-                    raise Exception(
-                        "Force update requested but update method is 'update_no_force'"
+                try:
+                    # Handle special case: force requested but update_no_force configured
+                    if (
+                        fanfic.behavior == "force"
+                        and cdb.update_method == "update_no_force"
+                    ):
+                        # Force failure to trigger special notification via failure handler
+                        raise Exception(
+                            "Force update requested but update method is 'update_no_force'"
+                        )
+
+                    # Set up temporary workspace with configuration files
+                    system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
+
+                    # Execute FanFicFare download/update command
+                    output = execute_command(command)
+
+                except CalledProcessError as e:
+                    # Log execution failure with detailed output for debugging
+                    ff_logging.log_failure(
+                        f"\t({site}) Failed to update {path_or_url}: {e}"
                     )
 
-                # Set up temporary workspace with configuration files
-                system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
+                    # In verbose mode, show the actual FanFicFare output for debugging
+                    if e.output:
+                        error_output = (
+                            e.output.decode("utf-8")
+                            if isinstance(e.output, bytes)
+                            else str(e.output)
+                        )
+                        ff_logging.log_debug(
+                            f"\t({site}) FanFicFare output:\n{error_output}"
+                        )
 
-                # Execute FanFicFare download/update command
-                output = execute_command(command)
-
-            except CalledProcessError as e:
-                # Log execution failure with detailed output for debugging
-                ff_logging.log_failure(
-                    f"\t({site}) Failed to update {path_or_url}: {e}"
-                )
-
-                # In verbose mode, show the actual FanFicFare output for debugging
-                if e.output:
-                    error_output = (
-                        e.output.decode("utf-8")
-                        if isinstance(e.output, bytes)
-                        else str(e.output)
+                    handle_failure(
+                        fanfic, notification_info, waiting_queue, retry_config, cdb
                     )
-                    ff_logging.log_debug(
-                        f"\t({site}) FanFicFare output:\n{error_output}"
+                    continue
+                except Exception as e:
+                    # Log other execution failures
+                    ff_logging.log_failure(
+                        f"\t({site}) Failed to update {path_or_url}: {e}"
                     )
+                    handle_failure(
+                        fanfic, notification_info, waiting_queue, retry_config, cdb
+                    )
+                    continue
 
-                handle_failure(
-                    fanfic, notification_info, waiting_queue, retry_config, cdb
-                )
-                continue
-            except Exception as e:
-                # Log other execution failures
-                ff_logging.log_failure(
-                    f"\t({site}) Failed to update {path_or_url}: {e}"
-                )
-                handle_failure(
-                    fanfic, notification_info, waiting_queue, retry_config, cdb
-                )
-                continue
+                # Parse FanFicFare output for permanent failure conditions
+                if not regex_parsing.check_failure_regexes(output):
+                    handle_failure(
+                        fanfic, notification_info, waiting_queue, retry_config, cdb
+                    )
+                    continue
 
-            # Parse FanFicFare output for permanent failure conditions
-            if not regex_parsing.check_failure_regexes(output):
-                handle_failure(
-                    fanfic, notification_info, waiting_queue, retry_config, cdb
+                # Check for conditions that can be resolved with force retry
+                if regex_parsing.check_forceable_regexes(output):
+                    # Set force behavior and re-queue for immediate retry
+                    fanfic.behavior = "force"
+                    queue.put(fanfic)
+                    should_remove_from_active = False
+                    continue
+
+                # Process successful download - integrate with Calibre library
+                process_fanfic_addition(
+                    fanfic,
+                    cdb,
+                    temp_dir,
+                    site,
+                    path_or_url,
+                    waiting_queue,
+                    notification_info,
+                    retry_config,
                 )
-                continue
-
-            # Check for conditions that can be resolved with force retry
-            if regex_parsing.check_forceable_regexes(output):
-                # Set force behavior and re-queue for immediate retry
-                fanfic.behavior = "force"
-                queue.put(fanfic)
-                continue
-
-            # Process successful download - integrate with Calibre library
-            process_fanfic_addition(
-                fanfic,
-                cdb,
-                temp_dir,
-                site,
-                path_or_url,
-                waiting_queue,
-                notification_info,
-                retry_config,
-            )
+        finally:
+            # Cleanup active_urls
+            if active_urls is not None and should_remove_from_active:
+                # Check if it was retried (sent to waiting queue)
+                if hasattr(fanfic, "retry_decision") and fanfic.retry_decision:
+                    if (
+                        fanfic.retry_decision.action
+                        != retry_types.FailureAction.ABANDON
+                    ):
+                        # It's in waiting queue, keep it in active_urls
+                        pass
+                    else:
+                        active_urls.pop(fanfic.url, None)
+                else:
+                    # Success or unhandled error (unlikely)
+                    active_urls.pop(fanfic.url, None)

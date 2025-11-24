@@ -283,6 +283,7 @@ def email_watcher(
     notification_info: notification_wrapper.NotificationWrapper,
     processor_queues: dict[str, mp.Queue],
     url_parsers: dict,
+    active_urls: dict | None = None,
 ):
     """
     Continuously monitor email for fanfiction URLs and route to processing queues.
@@ -301,15 +302,16 @@ def email_watcher(
                                                to processing queues for URL routing.
         url_parsers (dict): Dictionary of compiled regex patterns for site recognition.
                            Generated from FanFicFare adapters in the main process.
-        processor_queues (dict[str, mp.Queue]): Dictionary mapping fanfiction site
-                                               names to their dedicated processing queues.
+        active_urls (dict, optional): Shared dictionary tracking URLs currently in
+                                     queues or being processed to prevent duplicates.
 
     Processing Flow:
         1. Extract URLs from email using FanFicFare's geturls functionality
         2. Parse each URL to identify the source fanfiction site
         3. Handle special cases (e.g., FFNet disable notifications)
-        4. Route URLs to appropriate site-specific processing queues
-        5. Sleep until next polling cycle
+        4. Check for duplicates in active_urls
+        5. Route URLs to appropriate site-specific processing queues
+        6. Sleep until next polling cycle
 
     Special Handling:
         - Disabled Sites: URLs from sites listed in disabled_sites only send
@@ -364,8 +366,20 @@ def email_watcher(
                 )
                 continue
 
+            # Check if URL is already active
+            if active_urls is not None and fanfic.url in active_urls:
+                ff_logging.log(
+                    f"Skipping {fanfic.url} - already in queue or processing",
+                    "WARNING",
+                )
+                continue
+
             # Add to processing set for queue routing
             fics_to_add.add(fanfic)
+
+            # Mark as active
+            if active_urls is not None:
+                active_urls[fanfic.url] = True
 
         # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:

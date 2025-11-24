@@ -219,6 +219,8 @@ def main() -> None:
             queues = {site: manager.Queue() for site in url_parsers.keys()}
             # Separate queue for delayed retry processing (Hail-Mary protocol)
             waiting_queue = manager.Queue()
+            # Shared dictionary to track active URLs and prevent duplicates
+            active_urls = manager.dict()
             # Initialize Calibre database interface with multiprocessing support
             cdb_info = calibre_info.CalibreInfo(args.config, manager)
             cdb_info.check_installed()
@@ -227,7 +229,7 @@ def main() -> None:
             process_manager.register_process(
                 "email_watcher",
                 url_ingester.email_watcher,
-                args=(email_info, notification_info, queues, url_parsers),
+                args=(email_info, notification_info, queues, url_parsers, active_urls),
             )
 
             # Register waiting watcher process for retry handling
@@ -248,6 +250,7 @@ def main() -> None:
                         notification_info,
                         waiting_queue,
                         config.retry,
+                        active_urls,
                     ),
                 )
 
