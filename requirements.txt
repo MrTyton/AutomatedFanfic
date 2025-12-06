@@ -27,7 +27,7 @@ webencodings==0.5.1
 # Network and security
 certifi==2024.12.14
 idna==3.11
-urllib3==2.5.0
+urllib3==2.6.0
 websocket-client==1.9.0
 
 # Image processing (for cover images)
