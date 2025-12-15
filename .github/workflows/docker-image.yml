@@ -323,7 +323,7 @@ jobs:
 
       - name: Upload platform digest
         if: steps.should_build.outputs.build == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: digest-${{ steps.platform.outputs.arch }}
           path: /tmp/digests/${{ steps.platform.outputs.arch }}
