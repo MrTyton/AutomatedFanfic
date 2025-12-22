@@ -17,7 +17,7 @@ pushbullet.py==0.12.0
 beautifulsoup4==4.14.3
 html2text==2024.2.26
 html5lib==1.1
-soupsieve==2.8
+soupsieve==2.8.1
 
 # Text encoding and character detection
 chardet==5.2.0
