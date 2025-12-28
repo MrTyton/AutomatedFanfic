@@ -358,7 +358,7 @@ def generate_FanficInfo_from_url(url: str, url_parsers: dict) -> fanfic_info.Fan
 
             if captured_group is not None:
                 # Special handling for fanfiction.net: ensure chapter number exists
-                if site == "fanfiction" and captured_group:
+                if site == "fanfiction":
                     # Check if the captured group has a chapter number (/s/ID/CHAPTER)
                     if not re.search(r'/s/\d+/\d+', captured_group):
                         # No chapter number, add /1/ as default
@@ -366,7 +366,7 @@ def generate_FanficInfo_from_url(url: str, url_parsers: dict) -> fanfic_info.Fan
                     elif not captured_group.endswith('/'):
                         # Has chapter but no trailing slash, add it for consistency
                         captured_group = captured_group + '/'
-                
+
                 # Reconstruct URL using site's prefix and captured story ID
                 url = prefix + captured_group
             else:
