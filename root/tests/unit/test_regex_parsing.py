@@ -239,6 +239,7 @@ class TestRegexParsing(unittest.TestCase):
 
     class FanfictionNetChapterTestCase(NamedTuple):
         """Test case for fanfiction.net chapter number handling."""
+
         input_url: str
         expected_url: str
         description: str
@@ -284,22 +285,30 @@ class TestRegexParsing(unittest.TestCase):
             ),
         ]
     )
-    def test_fanfiction_net_chapter_handling(self, input_url, expected_url, description):
+    def test_fanfiction_net_chapter_handling(
+        self, input_url, expected_url, description
+    ):
         """Test that fanfiction.net URLs always have chapter numbers."""
         fanfic = regex_parsing.generate_FanficInfo_from_url(input_url, self.url_parsers)
 
         # Check that site is correctly identified
-        self.assertEqual(fanfic.site, "fanfiction",
-                        f"Site should be 'fanfiction' for {description}")
+        self.assertEqual(
+            fanfic.site, "fanfiction", f"Site should be 'fanfiction' for {description}"
+        )
 
         # Check that URL matches expected format
-        self.assertEqual(fanfic.url, expected_url,
-                        f"URL mismatch for {description}: expected {expected_url}, got {fanfic.url}")
+        self.assertEqual(
+            fanfic.url,
+            expected_url,
+            f"URL mismatch for {description}: expected {expected_url}, got {fanfic.url}",
+        )
 
         # Verify that the URL contains a chapter number (format: /s/ID/CHAPTER/)
-        chapter_pattern = r'/s/\d+/\d+/'
-        self.assertIsNotNone(re.search(chapter_pattern, fanfic.url),
-                            f"URL should contain chapter number pattern for {description}: {fanfic.url}")
+        chapter_pattern = r"/s/\d+/\d+/"
+        self.assertIsNotNone(
+            re.search(chapter_pattern, fanfic.url),
+            f"URL should contain chapter number pattern for {description}: {fanfic.url}",
+        )
 
 
 if __name__ == "__main__":
