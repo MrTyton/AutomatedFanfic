@@ -61,19 +61,19 @@ class TestAutoUrlParsers(unittest.TestCase):
             URLPatternTestCase(
                 input_url="https://www.fanfiction.net/s/12345678/1/Story-Title",
                 expected_site="fanfiction",
-                expected_captured_url="www.fanfiction.net/s/12345678",
+                expected_captured_url="www.fanfiction.net/s/12345678/1/",
                 description="Fanfiction.net with www and chapter",
             ),
             URLPatternTestCase(
                 input_url="http://fanfiction.net/s/12345678",
                 expected_site="fanfiction",
-                expected_captured_url="www.fanfiction.net/s/12345678",
-                description="Fanfiction.net without www",
+                expected_captured_url="www.fanfiction.net/s/12345678/1/",
+                description="Fanfiction.net without www (adds default chapter /1/)",
             ),
             URLPatternTestCase(
                 input_url="https://www.fanfiction.net/s/9876543/7/Another-Story-Name",
                 expected_site="fanfiction",
-                expected_captured_url="www.fanfiction.net/s/9876543",
+                expected_captured_url="www.fanfiction.net/s/9876543/7/",
                 description="Fanfiction.net with different story ID and chapter",
             ),
             # Archive of Our Own (AO3) tests
@@ -521,8 +521,8 @@ class TestAutoUrlParsers(unittest.TestCase):
                     "https://fanfiction.net/s/12345/",
                     "http://www.fanfiction.net/s/12345/1/",
                 ],
-                expected_base="www.fanfiction.net/s/12345",
-                description="Fanfiction.net variations should normalize consistently",
+                expected_base="www.fanfiction.net/s/12345/1/",
+                description="Fanfiction.net variations should normalize consistently with chapter",
             ),
             URLNormalizationTestCase(
                 input_urls=[

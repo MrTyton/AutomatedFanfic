@@ -168,12 +168,12 @@ class TestRegexParsing(unittest.TestCase):
             # Fanfiction.net tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://www.fanfiction.net/s/12345678/1/Story-Title",
-                expected_url="www.fanfiction.net/s/12345678",
+                expected_url="https://www.fanfiction.net/s/12345678/1/",
                 expected_site="fanfiction",
             ),
             CheckGenerateFanficInfoTestCase(
                 input_url="http://fanfiction.net/s/12345678",
-                expected_url="www.fanfiction.net/s/12345678",
+                expected_url="https://www.fanfiction.net/s/12345678/1/",
                 expected_site="fanfiction",
             ),
             # Archive of Our Own (AO3) tests
@@ -236,6 +236,70 @@ class TestRegexParsing(unittest.TestCase):
         self.assertIsInstance(fanfic, fanfic_info.FanficInfo)
         self.assertEqual(fanfic.url, expected_url)
         self.assertEqual(fanfic.site, expected_site)
+
+    class FanfictionNetChapterTestCase(NamedTuple):
+        """Test case for fanfiction.net chapter number handling."""
+        input_url: str
+        expected_url: str
+        description: str
+
+    @parameterized.expand(
+        [
+            # URLs without chapter numbers should get /1/ added
+            FanfictionNetChapterTestCase(
+                input_url="https://www.fanfiction.net/s/14534655",
+                expected_url="https://www.fanfiction.net/s/14534655/1/",
+                description="URL without chapter should get /1/ added",
+            ),
+            FanfictionNetChapterTestCase(
+                input_url="https://www.fanfiction.net/s/14534655/",
+                expected_url="https://www.fanfiction.net/s/14534655/1/",
+                description="URL with trailing slash should get /1/ added",
+            ),
+            FanfictionNetChapterTestCase(
+                input_url="http://fanfiction.net/s/12345678",
+                expected_url="https://www.fanfiction.net/s/12345678/1/",
+                description="URL without www should get /1/ added and protocol normalized",
+            ),
+            # URLs with chapter numbers should be preserved
+            FanfictionNetChapterTestCase(
+                input_url="https://www.fanfiction.net/s/14534655/1/",
+                expected_url="https://www.fanfiction.net/s/14534655/1/",
+                description="URL with /1/ should be preserved",
+            ),
+            FanfictionNetChapterTestCase(
+                input_url="https://www.fanfiction.net/s/14534655/23/",
+                expected_url="https://www.fanfiction.net/s/14534655/23/",
+                description="URL with /23/ should be preserved",
+            ),
+            FanfictionNetChapterTestCase(
+                input_url="https://www.fanfiction.net/s/14534655/23/Story-Title",
+                expected_url="https://www.fanfiction.net/s/14534655/23/",
+                description="URL with chapter and title should preserve chapter, strip title",
+            ),
+            FanfictionNetChapterTestCase(
+                input_url="http://fanfiction.net/s/9876543/7",
+                expected_url="https://www.fanfiction.net/s/9876543/7/",
+                description="URL with chapter but no trailing slash should add slash",
+            ),
+        ]
+    )
+    def test_fanfiction_net_chapter_handling(self, input_url, expected_url, description):
+        """Test that fanfiction.net URLs always have chapter numbers."""
+        fanfic = regex_parsing.generate_FanficInfo_from_url(input_url, self.url_parsers)
+
+        # Check that site is correctly identified
+        self.assertEqual(fanfic.site, "fanfiction",
+                        f"Site should be 'fanfiction' for {description}")
+
+        # Check that URL matches expected format
+        self.assertEqual(fanfic.url, expected_url,
+                        f"URL mismatch for {description}: expected {expected_url}, got {fanfic.url}")
+
+        # Verify that the URL contains a chapter number (format: /s/ID/CHAPTER/)
+        chapter_pattern = r'/s/\d+/\d+/'
+        self.assertIsNotNone(re.search(chapter_pattern, fanfic.url),
+                            f"URL should contain chapter number pattern for {description}: {fanfic.url}")
 
 
 if __name__ == "__main__":

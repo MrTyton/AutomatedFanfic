@@ -178,18 +178,19 @@ def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> Tuple[st
 
     # Apply site-specific rules for capture groups and URL prefixes
     if is_fanfiction_net:
-        # Special case: FanFiction.Net always gets www. prefix and captures path only
-        # Create pattern for URLs with/without chapter info
+        # Special case: FanFiction.Net requires chapter numbers in URLs
+        # Valid: www.fanfiction.net/s/12345/1/ or www.fanfiction.net/s/12345/23/
+        # Invalid: www.fanfiction.net/s/12345
         domain_pattern = f"(?:www\\.)?{re.escape(clean_domain)}"
 
-        # Pattern that captures /s/ID/ for URLs with chapter info
-        pattern_with_chapter = f"https?://{domain_pattern}(/s/\\d+)/\\d+.*"
-        # Pattern that captures /s/ID for URLs without chapter info
+        # Pattern that captures /s/ID/CHAPTER/ for URLs with chapter info
+        pattern_with_chapter = f"https?://{domain_pattern}(/s/\\d+/\\d+/?).*"
+        # Pattern that captures /s/ID for URLs without chapter (will add /1/ later)
         pattern_without_chapter = f"https?://{domain_pattern}(/s/\\d+)/?$"
 
         # Combine both patterns for comprehensive matching
         pattern = f"(?:{pattern_with_chapter}|{pattern_without_chapter})"
-        prefix = f"www.{clean_domain}"
+        prefix = f"https://www.{clean_domain}"
     elif is_forum_site:
         # Forum sites: capture domain + essential path, strip trailing content
         domain_pattern = re.escape(domain)
