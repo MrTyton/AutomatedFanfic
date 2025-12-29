@@ -40,4 +40,4 @@ Brotli==1.2.0
 # Date/time handling and utilities
 python-dateutil==2.9.0.post0
 six==1.17.0
-pyparsing==3.2.5
+pyparsing==3.3.1
