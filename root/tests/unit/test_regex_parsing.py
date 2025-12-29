@@ -168,12 +168,12 @@ class TestRegexParsing(unittest.TestCase):
             # Fanfiction.net tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://www.fanfiction.net/s/12345678/1/Story-Title",
-                expected_url="https://www.fanfiction.net/s/12345678/1/",
+                expected_url="www.fanfiction.net/s/12345678/1/",
                 expected_site="fanfiction",
             ),
             CheckGenerateFanficInfoTestCase(
                 input_url="http://fanfiction.net/s/12345678",
-                expected_url="https://www.fanfiction.net/s/12345678/1/",
+                expected_url="www.fanfiction.net/s/12345678/1/",
                 expected_site="fanfiction",
             ),
             # Archive of Our Own (AO3) tests
@@ -249,38 +249,38 @@ class TestRegexParsing(unittest.TestCase):
             # URLs without chapter numbers should get /1/ added
             FanfictionNetChapterTestCase(
                 input_url="https://www.fanfiction.net/s/14534655",
-                expected_url="https://www.fanfiction.net/s/14534655/1/",
+                expected_url="www.fanfiction.net/s/14534655/1/",
                 description="URL without chapter should get /1/ added",
             ),
             FanfictionNetChapterTestCase(
                 input_url="https://www.fanfiction.net/s/14534655/",
-                expected_url="https://www.fanfiction.net/s/14534655/1/",
+                expected_url="www.fanfiction.net/s/14534655/1/",
                 description="URL with trailing slash should get /1/ added",
             ),
             FanfictionNetChapterTestCase(
                 input_url="http://fanfiction.net/s/12345678",
-                expected_url="https://www.fanfiction.net/s/12345678/1/",
+                expected_url="www.fanfiction.net/s/12345678/1/",
                 description="URL without www should get /1/ added and protocol normalized",
             ),
             # URLs with chapter numbers should be preserved
             FanfictionNetChapterTestCase(
                 input_url="https://www.fanfiction.net/s/14534655/1/",
-                expected_url="https://www.fanfiction.net/s/14534655/1/",
+                expected_url="www.fanfiction.net/s/14534655/1/",
                 description="URL with /1/ should be preserved",
             ),
             FanfictionNetChapterTestCase(
                 input_url="https://www.fanfiction.net/s/14534655/23/",
-                expected_url="https://www.fanfiction.net/s/14534655/23/",
+                expected_url="www.fanfiction.net/s/14534655/23/",
                 description="URL with /23/ should be preserved",
             ),
             FanfictionNetChapterTestCase(
                 input_url="https://www.fanfiction.net/s/14534655/23/Story-Title",
-                expected_url="https://www.fanfiction.net/s/14534655/23/",
+                expected_url="www.fanfiction.net/s/14534655/23/",
                 description="URL with chapter and title should preserve chapter, strip title",
             ),
             FanfictionNetChapterTestCase(
                 input_url="http://fanfiction.net/s/9876543/7",
-                expected_url="https://www.fanfiction.net/s/9876543/7/",
+                expected_url="www.fanfiction.net/s/9876543/7/",
                 description="URL with chapter but no trailing slash should add slash",
             ),
         ]

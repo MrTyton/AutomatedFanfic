@@ -190,7 +190,7 @@ def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> Tuple[st
 
         # Combine both patterns for comprehensive matching
         pattern = f"(?:{pattern_with_chapter}|{pattern_without_chapter})"
-        prefix = f"https://www.{clean_domain}"
+        prefix = f"www.{clean_domain}"
     elif is_forum_site:
         # Forum sites: capture domain + essential path, strip trailing content
         domain_pattern = re.escape(domain)
