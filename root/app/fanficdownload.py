@@ -120,14 +120,14 @@ def main() -> None:
     ff_logging.log(f"Using configuration file: {args.config}")
 
     # Log external tool versions
-    calibre_version = calibredb_utils.get_calibre_version()
+    calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
     fanficfare_version = url_worker.get_fanficfare_version()
     ff_logging.log(f"Calibre version: {calibre_version}")
     ff_logging.log(f"FanFicFare version: {fanficfare_version}")
 
-    # Load and validate configuration using the new system
+    # Load and validate configuration
     try:
-        # Load TOML configuration with comprehensive validation
+        # Load TOML configuration
         config = ConfigManager.load_config(args.config)
     except ConfigError as e:
         ff_logging.log_failure(f"Configuration error: {e}")
@@ -225,6 +225,9 @@ def main() -> None:
             cdb_info = calibre_info.CalibreInfo(args.config, manager)
             cdb_info.check_installed()
 
+            # Create shared CalibreDBClient
+            calibre_client = calibredb_utils.CalibreDBClient(cdb_info)
+
             # Register email watcher process for URL ingestion
             process_manager.register_process(
                 "email_watcher",
@@ -246,7 +249,7 @@ def main() -> None:
                     url_worker.url_worker,
                     args=(
                         queues[site],
-                        cdb_info,
+                        calibre_client,
                         notification_info,
                         waiting_queue,
                         config.retry,

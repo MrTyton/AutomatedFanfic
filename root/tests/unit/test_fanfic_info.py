@@ -1,8 +1,6 @@
 import unittest
-from unittest.mock import Mock, patch, MagicMock
 
 from fanfic_info import FanficInfo
-from subprocess import CalledProcessError
 from typing import NamedTuple, Any  # Added NamedTuple and Any
 from parameterized import parameterized  # Added parameterized
 
@@ -41,55 +39,6 @@ class TestFanficInfo(unittest.TestCase):
         self.fanfic_info.repeats = None
         self.fanfic_info.increment_repeat()
         self.assertIsNone(self.fanfic_info.repeats)
-
-    @patch("fanfic_info.check_output")
-    @patch("fanfic_info.ff_logging.log")
-    def test_get_id_from_calibredb_success(self, mock_ff_logger, mock_check_output):
-        """Test successfully finding the ID in Calibre."""
-        mock_check_output.return_value = b" 1234 \n"  # Simulate Calibre output
-        calibre_information = Mock()
-        calibre_information.lock = MagicMock()
-        calibre_information.__str__ = Mock(return_value="--with-library test_library")
-
-        result = self.fanfic_info.get_id_from_calibredb(calibre_information)
-
-        self.assertTrue(result)
-        self.assertEqual(self.fanfic_info.calibre_id, "1234")
-        mock_check_output.assert_called_once_with(
-            'calibredb search "Identifiers:https://www.fanfiction.net/s/1234" --with-library test_library',
-            shell=True,
-            stderr=-2,  # STDOUT
-            stdin=-1,  # PIPE
-        )
-        mock_ff_logger.assert_called_once_with(
-            "\t(ffnet) Story is in Calibre with Story ID: 1234",
-            "OKBLUE",
-        )
-
-    @patch("fanfic_info.check_output")
-    @patch("fanfic_info.ff_logging.log")
-    def test_get_id_from_calibredb_not_found(self, mock_ff_logger, mock_check_output):
-        """Test when the story is not found in Calibre."""
-        mock_check_output.side_effect = CalledProcessError(1, "cmd", output=b"")
-        calibre_information = Mock()
-        calibre_information.lock = MagicMock()
-        calibre_information.__str__ = Mock(return_value="--with-library test_library")
-        # Reset calibre_id to simulate not finding it initially
-        self.fanfic_info.calibre_id = None
-
-        result = self.fanfic_info.get_id_from_calibredb(calibre_information)
-
-        self.assertFalse(result)
-        self.assertIsNone(self.fanfic_info.calibre_id)  # Should remain None
-        mock_check_output.assert_called_once_with(
-            'calibredb search "Identifiers:https://www.fanfiction.net/s/1234" --with-library test_library',
-            shell=True,
-            stderr=-2,  # STDOUT
-            stdin=-1,  # PIPE
-        )
-        mock_ff_logger.assert_called_once_with(
-            "\t(ffnet) Story not in Calibre", "WARNING"
-        )
 
     # --- Equality Tests ---
     class CheckEqualityTestCase(NamedTuple):

@@ -194,43 +194,32 @@ def handle_failure(
     )
 
     # Send to waiting queue with decision information attached
-    # Note: We could attach the decision to the fanfic object if needed
+    # Note: Decision could be attached to the fanfic object if needed
     waiting_queue.put(fanfic)
 
 
 def get_path_or_url(
     ff_info: fanfic_info.FanficInfo,
-    cdb_info: calibre_info.CalibreInfo,
+    calibre_client: calibredb_utils.CalibreDBClient,
     location: str = "",
 ) -> str:
     """
     Retrieves the path of an exported story from the Calibre library or the story's
     URL if not in Calibre.
 
-    This function checks if the specified fanfic exists in the Calibre library. If
-    it does, the function exports the story to a given location and returns the
-    path to the exported file. If the story is not found in the Calibre library,
-    the function returns the URL of the story instead.
-
     Args:
-        ff_info (fanfic_info.FanficInfo): The fanfic information object containing
-            details about the fanfic.
-        cdb_info (calibre_info.CalibreInfo): The Calibre database information
-            object for accessing the library.
-        location (str, optional): The directory path where the story should be
-            exported. Defaults to an empty string, which means the current
-            directory.
+        ff_info (fanfic_info.FanficInfo): The fanfic information object.
+        calibre_client (calibredb_utils.CalibreDBClient): The Calibre DB client.
+        location (str, optional): The directory path to export to.
 
     Returns:
         str: The path to the exported story file if it exists in Calibre, or the
             URL of the story otherwise.
     """
     # Check if the story exists in the Calibre library by attempting to retrieve its ID
-    if ff_info.get_id_from_calibredb(cdb_info):
-        # Export the story to the specified location and return the path to the exported file
-        calibredb_utils.export_story(
-            fanfic_info=ff_info, location=location, calibre_info=cdb_info
-        )
+    if calibre_client.get_story_id(ff_info):
+        # Export the story to the specified location
+        calibre_client.export_story(fanfic=ff_info, location=location)
         # Assuming export_story function successfully exports the story, retrieve and return the path to the exported file
         exported_files = system_utils.get_files(
             location, file_extension=".epub", return_full_path=True
@@ -239,6 +228,7 @@ def get_path_or_url(
         if exported_files:
             # Return the first file path found
             return exported_files[0]
+
     # If the story does not exist in the Calibre library or no files were exported, return the URL of the story
     return ff_info.url
 
@@ -283,6 +273,9 @@ def log_epub_metadata(epub_path: str, site: str) -> None:
         epub_path (str): Path to the epub file
         site (str): Site identifier for logging context
     """
+    if not ff_logging.verbose.value:
+        return
+
     try:
         ff_logging.log_debug(f"\t({site}) Reading epub metadata from: {epub_path}")
 
@@ -326,23 +319,29 @@ def log_epub_metadata(epub_path: str, site: str) -> None:
         ff_logging.log_debug(f"\t({site}) Error reading epub metadata: {e}")
 
 
-def execute_command(command: str) -> str:
+def execute_command(command: str, cwd: str | None = None) -> str:
     """
     Executes a shell command and returns its output.
 
     Args:
         command (str): The command to execute.
+        cwd (str, optional): The directory to execute the command in.
 
     Returns:
         str: The output of the command.
     """
-    ff_logging.log_debug(f"\tExecuting command: {command}")
-    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
+    debug_msg = f"\tExecuting command: {command}"
+    if cwd:
+        debug_msg += f" (in {cwd})"
+    ff_logging.log_debug(debug_msg)
+    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE, cwd=cwd).decode(
+        "utf-8"
+    )
 
 
 def process_fanfic_addition(
     fanfic: fanfic_info.FanficInfo,
-    cdb: calibre_info.CalibreInfo,
+    calibre_client: calibredb_utils.CalibreDBClient,
     temp_dir: str,
     site: str,
     path_or_url: str,
@@ -351,52 +350,32 @@ def process_fanfic_addition(
     retry_config: config_models.RetryConfig,
 ) -> None:
     """
-    Processes the addition of a fanfic to Calibre, updates the database, and sends
-    a notification.
-
-    This function integrates a fanfic into the Calibre library with support for
-    different metadata preservation strategies. It handles existing stories based
-    on the configured preservation mode:
-    - remove_add: Traditional remove and re-add (may lose custom metadata)
-    - preserve_metadata: Export custom metadata, remove, add, then restore metadata
-    - add_format: Replace EPUB file without touching database entry (preserves all metadata)
+    Integrate downloaded fanfic with Calibre library.
 
     Args:
-        fanfic (fanfic_info.FanficInfo): The fanfic information object, containing
-            details like the URL and site.
-        cdb (calibre_info.CalibreInfo): The Calibre database information object,
-            used for adding or removing fanfics.
-        temp_dir (str): The path to the temporary directory where the fanfic is
-            downloaded.
-        site (str): The name of the site from which the fanfic is being updated.
-        path_or_url (str): The path or URL to the fanfic that is being updated.
-        waiting_queue (mp.Queue): The multiprocessing queue where fanfics are
-            placed if they need to be reprocessed.
-        notification_info (notification_wrapper.NotificationWrapper): The object for sending notifications.
-        retry_config (config_models.RetryConfig): Retry configuration for failure handling.
-
-    Returns:
-        None
+        fanfic: Fanfiction info
+        calibre_client: CalibreDB client
+        temp_dir: Temporary directory path
+        site: Site identifier
+        path_or_url: Path or URL being processed
+        waiting_queue: Retry queue
+        notification_info: Notification wrapper
+        retry_config: Retry configuration
     """
-    preservation_mode = cdb.metadata_preservation_mode
-
-    # Handle existing story based on metadata preservation mode
-    if fanfic.calibre_id:
-        # Get the mode value for logging (handle both enum and string)
-        mode_value = (
-            preservation_mode.value
-            if isinstance(preservation_mode, MetadataPreservationMode)
-            else preservation_mode
-        )
-
+    # Check if story exists in Calibre (update) or is new
+    if calibre_client.get_story_id(fanfic):
         ff_logging.log(
-            f"\t({site}) Story exists in Calibre (ID: {fanfic.calibre_id})",
+            f"\t({site}) Fanfic is in Calibre with Story ID: {fanfic.calibre_id}",
             "OKBLUE",
         )
-        ff_logging.log_debug(f"\t  Using preservation mode: {mode_value}")
+
+        # It's an update - check preservation mode
+        preservation_mode = calibre_client.cdb_info.metadata_preservation_mode
+        ff_logging.log_debug(
+            f"\t({site}) Metadata preservation mode: {preservation_mode}"
+        )
 
         # Dispatch to appropriate handler based on preservation mode
-        # Support both enum values and legacy strings for backward compatibility
         if preservation_mode in (
             MetadataPreservationMode.ADD_FORMAT,
             "add_format",
@@ -412,7 +391,7 @@ def process_fanfic_addition(
 
         success = strategy.execute(
             fanfic,
-            cdb,
+            calibre_client,
             temp_dir,
             site,
             path_or_url,
@@ -423,20 +402,26 @@ def process_fanfic_addition(
         )
 
         if not success:
-            return  # Strategy already called handle_failure
+            return
 
     else:
         # New story - just add it
-        ff_logging.log(f"\t({site}) New story - adding to Calibre", "OKGREEN")
-        calibredb_utils.add_story(
-            location=temp_dir, fanfic_info=fanfic, calibre_info=cdb
-        )
+        calibre_client.add_story(location=temp_dir, fanfic=fanfic)
 
         # Verify addition
-        if not fanfic.get_id_from_calibredb(cdb):
+        if not calibre_client.get_story_id(fanfic):
             ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-            handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
+            handle_failure(
+                fanfic,
+                notification_info,
+                waiting_queue,
+                retry_config,
+                calibre_client.cdb_info,
+            )
             return
+
+    # If we got here, everything succeeded
+    ff_logging.log(f"\t({site}) Successfully processed {fanfic.title}", "OKGREEN")
 
     # Success - send notification
     notification_info.send_notification(
@@ -540,7 +525,7 @@ def construct_fanficfare_command(
 
 def url_worker(
     queue: mp.Queue,
-    cdb: calibre_info.CalibreInfo,
+    calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
     waiting_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
@@ -557,8 +542,8 @@ def url_worker(
     Args:
         queue (mp.Queue): Input queue containing FanficInfo objects to process.
                          Worker continuously monitors this queue for new work.
-        cdb (calibre_info.CalibreInfo): Calibre library configuration and connection
-                                       information for story management.
+        calibre_client (calibredb_utils.CalibreDBClient): CalibreDB client instance
+                                                         containing library connection.
         notification_info (notification_wrapper.NotificationWrapper): Notification
                                                                      system for sending success/failure alerts.
         waiting_queue (mp.Queue): Queue for stories that need to be retried later
@@ -623,6 +608,9 @@ def url_worker(
         Workers sleep for 5 seconds when the queue is empty to reduce CPU
         usage while maintaining reasonable responsiveness to new work.
     """
+    cdb = calibre_client.cdb_info
+    ff_logging.log(f"Starting URL Worker for site: {cdb.library_path}", "HEADER")
+
     while True:
         # Check for available work, sleep briefly if queue is empty
         if queue.empty():
@@ -644,7 +632,7 @@ def url_worker(
                 ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
 
                 # Determine if this is an update (existing file) or new download (URL)
-                path_or_url = get_path_or_url(fanfic, cdb, temp_dir)
+                path_or_url = get_path_or_url(fanfic, calibre_client, temp_dir)
 
                 # Extract title from epub filename if we're updating an existing story
                 if path_or_url.endswith(".epub"):
@@ -664,8 +652,6 @@ def url_worker(
 
                 # Build FanFicFare command based on configuration and fanfic state
                 base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
-                # Execute command in temporary directory context
-                command = f"cd {temp_dir} && {base_command}"
 
                 try:
                     # Handle special case: force requested but update_no_force configured
@@ -682,7 +668,7 @@ def url_worker(
                     system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
 
                     # Execute FanFicFare download/update command
-                    output = execute_command(command)
+                    output = execute_command(base_command, cwd=temp_dir)
 
                 except CalledProcessError as e:
                     # Log execution failure with detailed output for debugging
@@ -731,9 +717,10 @@ def url_worker(
                     continue
 
                 # Process successful download - integrate with Calibre library
+
                 process_fanfic_addition(
                     fanfic,
-                    cdb,
+                    calibre_client,  # Passed instead of cdb
                     temp_dir,
                     site,
                     path_or_url,
