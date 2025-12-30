@@ -89,6 +89,8 @@ import system_utils
 import zipfile
 from xml.etree import ElementTree as ET
 
+import update_strategies
+
 
 def get_fanficfare_version() -> str:
     """Get the FanFicFare version by running python -m fanficfare.cli --version.
@@ -338,174 +340,6 @@ def execute_command(command: str) -> str:
     return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE).decode("utf-8")
 
 
-def _handle_add_format_mode(
-    fanfic: fanfic_info.FanficInfo,
-    cdb: calibre_info.CalibreInfo,
-    temp_dir: str,
-    site: str,
-    path_or_url: str,
-    waiting_queue: mp.Queue,
-    notification_info: notification_wrapper.NotificationWrapper,
-    retry_config: config_models.RetryConfig,
-) -> bool:
-    """Handle ADD_FORMAT preservation mode - replace EPUB file only.
-
-    Args:
-        fanfic: Fanfiction information object
-        cdb: Calibre database configuration
-        temp_dir: Temporary directory with downloaded story
-        site: Site identifier for logging
-        path_or_url: Path or URL being processed
-        waiting_queue: Queue for retry handling
-        notification_info: Notification system
-        retry_config: Retry configuration
-
-    Returns:
-        bool: True if successful, False if failed (caller should return)
-    """
-    ff_logging.log_debug(f"\t({site}) Using add_format mode - replacing EPUB file only")
-
-    # Get metadata before for comparison
-    old_metadata = calibredb_utils.get_metadata(fanfic, cdb)
-
-    # Replace the EPUB format without touching metadata
-    success = calibredb_utils.add_format_to_existing_story(temp_dir, fanfic, cdb)
-
-    if not success:
-        ff_logging.log_failure(f"\t({site}) Failed to replace format for {path_or_url}")
-        handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
-        return False
-
-    # Get metadata after to verify preservation
-    new_metadata = calibredb_utils.get_metadata(fanfic, cdb)
-    calibredb_utils.log_metadata_comparison(fanfic, old_metadata, new_metadata)
-    return True
-
-
-def _handle_preserve_metadata_mode(
-    fanfic: fanfic_info.FanficInfo,
-    cdb: calibre_info.CalibreInfo,
-    temp_dir: str,
-    site: str,
-    path_or_url: str,
-    waiting_queue: mp.Queue,
-    notification_info: notification_wrapper.NotificationWrapper,
-    retry_config: config_models.RetryConfig,
-) -> bool:
-    """Handle PRESERVE_METADATA mode - export, remove, add, restore.
-
-    Args:
-        fanfic: Fanfiction information object
-        cdb: Calibre database configuration
-        temp_dir: Temporary directory with downloaded story
-        site: Site identifier for logging
-        path_or_url: Path or URL being processed
-        waiting_queue: Queue for retry handling
-        notification_info: Notification system
-        retry_config: Retry configuration
-
-    Returns:
-        bool: True if successful, False if failed (caller should return)
-    """
-    ff_logging.log_debug(
-        f"\t({site}) Using preserve_metadata mode - will export and restore metadata fields"
-    )
-
-    # Export all metadata before removal
-    old_metadata = calibredb_utils.get_metadata(fanfic, cdb)
-    if old_metadata:
-        restorable_fields = [k for k in old_metadata.keys() if k.startswith("#")]
-        ff_logging.log_debug(
-            f"\t({site}) Exported {len(restorable_fields)} restorable metadata fields"
-        )
-
-    # Remove the existing story
-    ff_logging.log(
-        f"\t({site}) Removing story {fanfic.calibre_id} from Calibre",
-        "OKGREEN",
-    )
-    calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
-
-    # Add the updated story
-    calibredb_utils.add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
-
-    # Verify addition and get new ID
-    if not fanfic.get_id_from_calibredb(cdb):
-        ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-        handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
-        return False
-
-    # Restore custom metadata fields
-    if old_metadata:
-        ff_logging.log_debug(
-            f"\t({site}) Restoring metadata to new entry (ID: {fanfic.calibre_id})"
-        )
-        calibredb_utils.set_metadata_fields(fanfic, cdb, old_metadata)
-
-        # Get final metadata and compare
-        new_metadata = calibredb_utils.get_metadata(fanfic, cdb)
-        calibredb_utils.log_metadata_comparison(fanfic, old_metadata, new_metadata)
-
-    return True
-
-
-def _handle_remove_add_mode(
-    fanfic: fanfic_info.FanficInfo,
-    cdb: calibre_info.CalibreInfo,
-    temp_dir: str,
-    site: str,
-    path_or_url: str,
-    waiting_queue: mp.Queue,
-    notification_info: notification_wrapper.NotificationWrapper,
-    retry_config: config_models.RetryConfig,
-) -> bool:
-    """Handle REMOVE_ADD mode - traditional remove and re-add.
-
-    Args:
-        fanfic: Fanfiction information object
-        cdb: Calibre database configuration
-        temp_dir: Temporary directory with downloaded story
-        site: Site identifier for logging
-        path_or_url: Path or URL being processed
-        waiting_queue: Queue for retry handling
-        notification_info: Notification system
-        retry_config: Retry configuration
-
-    Returns:
-        bool: True if successful, False if failed (caller should return)
-    """
-    ff_logging.log_debug(
-        f"\t({site}) Using remove_add mode - custom metadata will NOT be preserved"
-    )
-
-    # Get metadata before for logging comparison
-    old_metadata = calibredb_utils.get_metadata(fanfic, cdb)
-
-    # Remove the existing story
-    ff_logging.log(
-        f"\t({site}) Removing story {fanfic.calibre_id} from Calibre",
-        "OKGREEN",
-    )
-    calibredb_utils.remove_story(fanfic_info=fanfic, calibre_info=cdb)
-
-    # Add the updated story
-    calibredb_utils.add_story(location=temp_dir, fanfic_info=fanfic, calibre_info=cdb)
-
-    # Verify addition
-    if not fanfic.get_id_from_calibredb(cdb):
-        ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
-        handle_failure(fanfic, notification_info, waiting_queue, retry_config, cdb)
-        return False
-
-    # Log metadata comparison to show what was lost (debug only)
-    new_metadata = calibredb_utils.get_metadata(fanfic, cdb)
-    if old_metadata or new_metadata:
-        ff_logging.log_debug(f"\t({site}) Metadata comparison (remove_add mode):")
-        calibredb_utils.log_metadata_comparison(fanfic, old_metadata, new_metadata)
-
-    return True
-
-
 def process_fanfic_addition(
     fanfic: fanfic_info.FanficInfo,
     cdb: calibre_info.CalibreInfo,
@@ -563,45 +397,33 @@ def process_fanfic_addition(
 
         # Dispatch to appropriate handler based on preservation mode
         # Support both enum values and legacy strings for backward compatibility
-        if preservation_mode in (MetadataPreservationMode.ADD_FORMAT, "add_format"):
-            success = _handle_add_format_mode(
-                fanfic,
-                cdb,
-                temp_dir,
-                site,
-                path_or_url,
-                waiting_queue,
-                notification_info,
-                retry_config,
-            )
+        if preservation_mode in (
+            MetadataPreservationMode.ADD_FORMAT,
+            "add_format",
+        ):
+            strategy = update_strategies.AddFormatStrategy()
         elif preservation_mode in (
             MetadataPreservationMode.PRESERVE_METADATA,
             "preserve_metadata",
         ):
-            success = _handle_preserve_metadata_mode(
-                fanfic,
-                cdb,
-                temp_dir,
-                site,
-                path_or_url,
-                waiting_queue,
-                notification_info,
-                retry_config,
-            )
+            strategy = update_strategies.PreserveMetadataStrategy()
         else:  # MetadataPreservationMode.REMOVE_ADD or "remove_add"
-            success = _handle_remove_add_mode(
-                fanfic,
-                cdb,
-                temp_dir,
-                site,
-                path_or_url,
-                waiting_queue,
-                notification_info,
-                retry_config,
-            )
+            strategy = update_strategies.RemoveAddStrategy()
+
+        success = strategy.execute(
+            fanfic,
+            cdb,
+            temp_dir,
+            site,
+            path_or_url,
+            waiting_queue,
+            notification_info,
+            retry_config,
+            failure_handler=handle_failure,
+        )
 
         if not success:
-            return  # Handler already called handle_failure
+            return  # Strategy already called handle_failure
 
     else:
         # New story - just add it
