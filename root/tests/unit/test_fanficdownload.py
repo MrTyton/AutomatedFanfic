@@ -105,8 +105,15 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")
     @patch("fanficdownload.parse_arguments")
+    @patch(
+        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        return_value="5.0.0",
+    )
+    @patch("fanficdownload.calibredb_utils.CalibreDBClient")
     def test_main_successful_startup(
         self,
+        mock_calibre_client,
+        mock_get_calibre_version,
         mock_parse_args,
         mock_log,
         mock_set_verbose,
@@ -187,8 +194,13 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
     @patch("sys.exit")
+    @patch(
+        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        return_value="5.0.0",
+    )
     def test_main_config_error(
         self,
+        mock_get_calibre_version,
         mock_sys_exit,
         mock_parse_args,
         mock_log_failure,
@@ -227,8 +239,13 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
     @patch("sys.exit")
+    @patch(
+        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        return_value="5.0.0",
+    )
     def test_main_config_validation_error(
         self,
+        mock_get_calibre_version,
         mock_sys_exit,
         mock_parse_args,
         mock_log_failure,
@@ -267,8 +284,13 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
     @patch("sys.exit")
+    @patch(
+        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        return_value="5.0.0",
+    )
     def test_main_unexpected_error(
         self,
+        mock_get_calibre_version,
         mock_sys_exit,
         mock_parse_args,
         mock_log_failure,
@@ -307,8 +329,15 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")
     @patch("fanficdownload.parse_arguments")
+    @patch(
+        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        return_value="5.0.0",
+    )
+    @patch("fanficdownload.calibredb_utils.CalibreDBClient")
     def test_main_keyboard_interrupt_handling(
         self,
+        mock_calibre_client,
+        mock_get_calibre_version,
         mock_parse_args,
         mock_log,
         mock_set_verbose,

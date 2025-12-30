@@ -20,11 +20,8 @@ processes in the multiprocessing architecture, maintaining all necessary state
 for fanfiction download, update, retry, and Calibre integration workflows.
 """
 
-from subprocess import CalledProcessError, check_output, PIPE, STDOUT
 from typing import Optional
 
-import calibre_info
-import ff_logging
 import retry_types
 
 
@@ -119,63 +116,6 @@ class FanficInfo:
         if self.repeats is not None:
             # Safely increment the retry counter
             self.repeats += 1
-
-    def get_id_from_calibredb(
-        self, calibre_information: calibre_info.CalibreInfo
-    ) -> bool:
-        """Searches for the story in the Calibre database and retrieves its ID.
-
-        Performs a database search using the story's URL as an identifier to
-        determine if the story already exists in the Calibre library. If found,
-        the calibre_id attribute is updated with the database ID for future
-        operations like updates or exports.
-
-        This method uses thread-safe database access through the calibre_information
-        lock to prevent concurrent database modifications that could cause
-        corruption or inconsistent results.
-
-        Args:
-            calibre_information (calibre_info.CalibreInfo): Configuration object
-                containing Calibre database connection details, authentication
-                credentials, and the thread safety lock.
-
-        Returns:
-            bool: True if the story was found in the Calibre database and
-                calibre_id was successfully set, False if the story is not
-                in the database or the search failed.
-
-        Note:
-            The search uses the story URL as a unique identifier in Calibre's
-            Identifiers field. This assumes that URLs are used as the primary
-            identification method for fanfiction stories in the library.
-
-        Raises:
-            This method catches CalledProcessError internally and returns False
-            rather than propagating exceptions, ensuring robust error handling
-            in the calling code.
-        """
-        try:
-            # Acquire database lock to ensure thread-safe access
-            with calibre_information.lock:
-                # Execute calibredb search using URL as identifier
-                story_id = check_output(
-                    f'calibredb search "Identifiers:{self.url}" {calibre_information}',
-                    shell=True,
-                    stderr=STDOUT,
-                    stdin=PIPE,
-                ).decode("utf-8")
-
-            # Clean and store the retrieved database ID
-            self.calibre_id = story_id.strip()
-            ff_logging.log(
-                f"\t({self.site}) Story is in Calibre with Story ID: {self.calibre_id}",
-                "OKBLUE",
-            )
-            return True
-        except CalledProcessError:
-            # Handle case where story is not found in database
-            ff_logging.log(f"\t({self.site}) Story not in Calibre", "WARNING")
-            return False
 
     def __eq__(self, other: object) -> bool:
         """Determines equality between FanficInfo instances based on key identifiers.
