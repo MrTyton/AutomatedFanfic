@@ -47,7 +47,7 @@ import os
 import shutil
 from tempfile import mkdtemp
 
-import calibre_info
+from calibre_integration import calibre_info
 
 
 @contextmanager

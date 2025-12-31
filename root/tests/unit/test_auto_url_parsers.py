@@ -5,9 +5,9 @@ from typing import NamedTuple
 from parameterized import parameterized
 import fanficfare.adapters as adapters
 
-import auto_url_parsers
+from parsers import auto_url_parsers
 import fanfic_info
-import regex_parsing
+from parsers import regex_parsing
 
 
 class TestAutoUrlParsers(unittest.TestCase):
@@ -162,7 +162,7 @@ class TestAutoUrlParsers(unittest.TestCase):
     ):
         """Test that URL patterns correctly match and capture URLs using the actual regex_parsing function."""
         # Use the actual regex_parsing function which includes special handling
-        from regex_parsing import generate_FanficInfo_from_url
+        from parsers.regex_parsing import generate_FanficInfo_from_url
 
         fanfic_info = generate_FanficInfo_from_url(input_url, self.url_parsers)
 
@@ -707,7 +707,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
         with patch("fanficfare.adapters.getSiteExamples", return_value=mock_examples):
             # Mock _generate_pattern_and_prefix to return invalid regex
             with patch(
-                "auto_url_parsers._generate_pattern_and_prefix",
+                "parsers.auto_url_parsers._generate_pattern_and_prefix",
                 return_value=("*invalid_regex[", "example.com"),
             ):
                 # Capture print output to verify warning message
@@ -727,7 +727,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
 
     def test_path_pattern_edge_cases(self):
         """Test edge cases in path pattern generation."""
-        from auto_url_parsers import _generate_pattern_and_prefix
+        from parsers.auto_url_parsers import _generate_pattern_and_prefix
 
         # Test forum sites with /threads/ path (line 156)
         domain = "forums.example.com"
@@ -757,7 +757,10 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
 
         # Test the main module execution by running it directly
         script_path = (
-            Path(__file__).parent.parent.parent / "app" / "auto_url_parsers.py"
+            Path(__file__).parent.parent.parent
+            / "app"
+            / "parsers"
+            / "auto_url_parsers.py"
         )
         result = subprocess.run(
             [sys.executable, str(script_path)],
@@ -781,7 +784,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
     def test_main_module_direct_execution(self):
         """Test direct execution of main module code path."""
         from unittest.mock import patch
-        import auto_url_parsers
+        from parsers import auto_url_parsers
 
         # Test that the main execution code would work by simulating it
         # Since reloading with patched __name__ is unreliable, we'll test the logic directly

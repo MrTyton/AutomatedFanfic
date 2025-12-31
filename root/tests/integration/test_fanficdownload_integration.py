@@ -22,11 +22,11 @@ from typing import Dict, Any
 import fanficdownload
 from workers import handlers as worker_handlers
 from workers import command as worker_command
-import regex_parsing
+from parsers import regex_parsing
 import fanfic_info
-import calibre_info
-import notification_wrapper
-import auto_url_parsers
+from calibre_integration import calibre_info
+from notifications import notification_wrapper
+from parsers import auto_url_parsers
 from config_models import (
     AppConfig,
     EmailConfig,

@@ -5,8 +5,8 @@ from parameterized import parameterized
 from typing import NamedTuple, Optional
 
 import fanfic_info
-import calibre_info
-from calibredb_utils import CalibreDBClient
+from calibre_integration import calibre_info
+from calibre_integration.calibredb_utils import CalibreDBClient
 
 
 class TestCalibreDBClient(unittest.TestCase):
@@ -44,9 +44,9 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
         ]
     )
-    @patch("calibredb_utils.call", return_value=None)
-    @patch("calibredb_utils.ff_logging.log_failure")
-    @patch("calibredb_utils.ff_logging.log_debug")
+    @patch("calibre_integration.calibredb_utils.call", return_value=None)
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_debug")
     def test_execute_command(
         self,
         command,
@@ -148,13 +148,13 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
         ]
     )
-    @patch("calibredb_utils.system_utils.get_files")
+    @patch("calibre_integration.calibredb_utils.system_utils.get_files")
     @patch(
-        "calibredb_utils.regex_parsing.extract_filename",
+        "calibre_integration.calibredb_utils.regex_parsing.extract_filename",
         return_value="Story Title",
     )
-    @patch("calibredb_utils.ff_logging.log_failure")
-    @patch("calibredb_utils.ff_logging.log")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log")
     def test_add_story(
         self,
         location,
@@ -213,7 +213,7 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
         ]
     )
-    @patch("calibredb_utils.check_output")
+    @patch("calibre_integration.calibredb_utils.check_output")
     def test_get_calibre_version_success(
         self, name, mock_output, expected_version, mock_check_output
     ):
@@ -244,7 +244,7 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
         ]
     )
-    @patch("calibredb_utils.check_output")
+    @patch("calibre_integration.calibredb_utils.check_output")
     def test_get_calibre_version_errors(
         self, name, mock_exception, expected_message, mock_check_output
     ):
@@ -272,7 +272,7 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
         ]
     )
-    @patch("calibredb_utils.check_output")
+    @patch("calibre_integration.calibredb_utils.check_output")
     def test_get_calibre_version_unexpected_format(
         self, name, mock_output, expected_result, mock_check_output
     ):
@@ -281,7 +281,7 @@ class TestCalibreDBClient(unittest.TestCase):
         result = self.client.get_calibre_version()
         self.assertEqual(result, expected_result)
 
-    @patch("calibredb_utils.check_output")
+    @patch("calibre_integration.calibredb_utils.check_output")
     def test_get_metadata_success(self, mock_check_output):
         """Test successful metadata retrieval."""
         mock_fanfic = MagicMock()
@@ -395,8 +395,8 @@ class TestCalibreDBClient(unittest.TestCase):
             self.client.set_metadata_fields(mock_fanfic, {})
             mock_execute.assert_not_called()
 
-    @patch("calibredb_utils.ff_logging.log_debug")
-    @patch("calibredb_utils.ff_logging.log")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_debug")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log")
     def test_log_metadata_comparison_no_changes(self, mock_log, mock_log_debug):
         """Test logging when fields are unchanged."""
         mock_fanfic = MagicMock()
@@ -412,8 +412,8 @@ class TestCalibreDBClient(unittest.TestCase):
         )
         self.assertEqual(mock_log.call_count, 0)
 
-    @patch("calibredb_utils.ff_logging.log_debug")
-    @patch("calibredb_utils.ff_logging.log")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_debug")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log")
     def test_log_metadata_comparison_changed_fields(self, mock_log, mock_log_debug):
         """Test logging when fields change."""
         mock_fanfic = MagicMock()
@@ -435,8 +435,8 @@ class TestCalibreDBClient(unittest.TestCase):
         )
         self.assertEqual(mock_log.call_count, 0)
 
-    @patch("calibredb_utils.ff_logging.log_debug")
-    @patch("calibredb_utils.ff_logging.log")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_debug")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log")
     def test_log_metadata_comparison_fields_lost(self, mock_log, mock_log_debug):
         """Test logging when fields are lost."""
         mock_fanfic = MagicMock()
@@ -453,8 +453,8 @@ class TestCalibreDBClient(unittest.TestCase):
         )
         self.assertEqual(mock_log.call_count, 0)
 
-    @patch("calibredb_utils.ff_logging.log_debug")
-    @patch("calibredb_utils.ff_logging.log")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_debug")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log")
     def test_log_metadata_comparison_empty(self, mock_log, mock_log_debug):
         """Test logging when both metadata dicts are empty."""
         mock_fanfic = MagicMock()

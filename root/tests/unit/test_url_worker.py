@@ -11,9 +11,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "app"))  # noqa: E4
 from workers import pipeline, handlers, command, common  # noqa: E402
 import config_models  # noqa: E402
 from fanfic_info import FanficInfo  # noqa: E402
-from calibre_info import CalibreInfo  # noqa: E402
-from notification_wrapper import NotificationWrapper  # noqa: E402
-import calibredb_utils  # noqa: E402
+from calibre_integration.calibre_info import CalibreInfo  # noqa: E402
+from notifications.notification_wrapper import NotificationWrapper  # noqa: E402
+from calibre_integration import calibredb_utils  # noqa: E402
 from typing import NamedTuple, Optional  # noqa: E402
 import ff_logging  # noqa: E402
 

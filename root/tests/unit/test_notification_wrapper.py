@@ -4,9 +4,9 @@ from unittest.mock import call, MagicMock, patch
 
 from parameterized import parameterized
 
-import notification_base
+from notifications import notification_base
 
-from notification_wrapper import NotificationWrapper
+from notifications.notification_wrapper import NotificationWrapper
 
 
 class TestNotificationWrapper(unittest.TestCase):
@@ -29,9 +29,9 @@ class TestNotificationWrapper(unittest.TestCase):
             ([True, False, True], "title4", "body4", "site4", 2),
         ]
     )
-    @patch("notification_wrapper.ThreadPoolExecutor")
-    @patch("notification_wrapper.AppriseNotification")
-    @patch("notification_wrapper.ff_logging")
+    @patch("notifications.notification_wrapper.ThreadPoolExecutor")
+    @patch("notifications.notification_wrapper.AppriseNotification")
+    @patch("notifications.notification_wrapper.ff_logging")
     def test_send_notification(
         self,
         workers,

@@ -6,7 +6,7 @@ import sys
 import shlex
 import subprocess
 import ff_logging
-import calibre_info
+from calibre_integration import calibre_info
 import fanfic_info
 
 

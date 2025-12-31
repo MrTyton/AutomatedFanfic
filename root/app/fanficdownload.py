@@ -35,12 +35,12 @@ import multiprocessing as mp
 import sys
 import ff_logging  # Custom logging module for formatted logging
 
-import auto_url_parsers
-import calibre_info
-import calibredb_utils
+from parsers import auto_url_parsers
+from calibre_integration import calibre_info
+from calibre_integration import calibredb_utils
 import coordinator
 import ff_waiter
-import notification_wrapper
+from notifications import notification_wrapper
 import url_ingester
 from workers import pipeline as url_worker
 from config_models import ConfigManager, ConfigError, ConfigValidationError

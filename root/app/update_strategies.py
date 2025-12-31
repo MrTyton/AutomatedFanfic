@@ -10,11 +10,11 @@ from abc import ABC, abstractmethod
 import multiprocessing as mp
 from typing import Callable
 
-import calibredb_utils
+from calibre_integration import calibredb_utils
 import config_models
 import fanfic_info
 import ff_logging
-import notification_wrapper
+from notifications import notification_wrapper
 
 
 class UpdateStrategy(ABC):
