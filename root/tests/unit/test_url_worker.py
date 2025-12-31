@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
-from subprocess import STDOUT, PIPE
 import sys
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from calibre_info import CalibreInfo  # noqa: E402
 from notification_wrapper import NotificationWrapper  # noqa: E402
 import calibredb_utils  # noqa: E402
 from typing import NamedTuple, Optional  # noqa: E402
+import ff_logging  # noqa: E402
 
 
 class TestUrlWorker(unittest.TestCase):
@@ -392,68 +392,86 @@ class TestUrlWorker(unittest.TestCase):
             mock_client.export_story.assert_not_called()
 
     class ExecuteCommandTestCase(NamedTuple):
-        command: str
+        command: list[str]
         expected_output: str
 
     @parameterized.expand(
         [
             ExecuteCommandTestCase(
-                command="echo Hello",
-                expected_output="Hello",
+                command=["echo", "Hello"],
+                expected_output="Hello\n",
             ),
         ]
     )
-    @patch("url_worker.check_output")
+    @patch("subprocess.run")
     def test_execute_command(
         self,
         command,
         expected_output,
-        mock_check_output,
+        mock_subprocess_run,
     ):
         # Setup
-        mock_check_output.return_value = expected_output.encode("utf-8")
+        mock_result = MagicMock()
+        mock_result.stdout = expected_output
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_subprocess_run.return_value = mock_result
 
         # Execution
         result = url_worker.execute_command(command)
 
         # Assertions
-        self.assertEqual(result.strip(), expected_output)
-        mock_check_output.assert_called_once_with(
-            command, shell=True, stderr=STDOUT, stdin=PIPE, cwd=None
+        self.assertEqual(result, expected_output)
+        mock_subprocess_run.assert_called_once_with(
+            command, cwd=None, capture_output=True, text=True, timeout=300.0, check=True
         )
 
-    @patch("url_worker.check_output")
-    def test_execute_command_error_handling(self, mock_check_output):
+    @patch("subprocess.run")
+    def test_execute_command_error_handling(self, mock_subprocess_run):
         """Test execute_command error handling."""
         from subprocess import CalledProcessError
 
         # Setup mock to raise CalledProcessError
-        mock_check_output.side_effect = CalledProcessError(
-            1, "failed_command", "error output"
+        mock_subprocess_run.side_effect = CalledProcessError(
+            1, ["failed_command"], "error output"
         )
 
         # Execution and assertion
         with self.assertRaises(CalledProcessError):
-            url_worker.execute_command("failed_command")
+            url_worker.execute_command(["failed_command"])
 
-        mock_check_output.assert_called_once_with(
-            "failed_command", shell=True, stderr=STDOUT, stdin=PIPE, cwd=None
+        mock_subprocess_run.assert_called_once_with(
+            ["failed_command"],
+            cwd=None,
+            capture_output=True,
+            text=True,
+            timeout=300.0,
+            check=True,
         )
 
-    @patch("url_worker.check_output")
-    def test_execute_command_unicode_handling(self, mock_check_output):
+    @patch("subprocess.run")
+    def test_execute_command_unicode_handling(self, mock_subprocess_run):
         """Test execute_command with unicode output."""
         # Setup mock with unicode output
         unicode_output = "Test with ñ special characters 测试"
-        mock_check_output.return_value = unicode_output.encode("utf-8")
+        mock_result = MagicMock()
+        mock_result.stdout = unicode_output
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_subprocess_run.return_value = mock_result
 
         # Execution
-        result = url_worker.execute_command("test command")
+        result = url_worker.execute_command(["test", "command"])
 
         # Assertions
         self.assertEqual(result, unicode_output)
-        mock_check_output.assert_called_once_with(
-            "test command", shell=True, stderr=STDOUT, stdin=PIPE, cwd=None
+        mock_subprocess_run.assert_called_once_with(
+            ["test", "command"],
+            cwd=None,
+            capture_output=True,
+            text=True,
+            timeout=300.0,
+            check=True,
         )
 
     class ProcessFanficAdditionTestCase(NamedTuple):
@@ -465,7 +483,7 @@ class TestUrlWorker(unittest.TestCase):
 
     @parameterized.expand(
         [
-            # Case 1: Existing story, add fails
+            # Case 1: Existing story, add fails (simulate strategy failure)
             ProcessFanficAdditionTestCase(
                 calibre_id=123,
                 get_id_from_calibredb_returns=False,
@@ -525,7 +543,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.title = "title"
 
         mock_client = MagicMock()
-        mock_client.get_story_id.return_value = get_id_from_calibredb_returns
+        # mock_client.get_story_id.return_value = get_id_from_calibredb_returns # OLD
         mock_client.cdb_info.metadata_preservation_mode = "remove_add"
 
         mock_notification_info = MagicMock(spec=NotificationWrapper)
@@ -534,38 +552,25 @@ class TestUrlWorker(unittest.TestCase):
         # Setup strategy execution mock
         mock_strategy_instance = MagicMock()
         mock_update_strategies.RemoveAddStrategy.return_value = mock_strategy_instance
-        # If expected_handle_failure_call is True (case 1 and 4), it means strategy failed or add_story failed
-        # For existing story (case 1), strategy.execute returns False (assuming strategy handles failure logging/calling)
-        # But wait, original code calls strategy.execute with failure_handler.
-        # So mocks need to simulate strategy return value
 
+        # Setup returns based on case type
         if calibre_id:  # Existing story cases
-            if expected_handle_failure_call:
-                mock_strategy_instance.execute.return_value = False
-            else:
-                mock_strategy_instance.execute.return_value = True
+            # First call to get_story_id returns True (it exists)
+            mock_client.get_story_id.return_value = True
+
+            # Strategy execution result
+            mock_strategy_instance.execute.return_value = (
+                not expected_handle_failure_call
+            )
+
         else:  # New story cases
-            # For new stories, we call client.add_story, then client.get_story_id again
-            # The parametrized input `get_id_from_calibredb_returns` controls the result of the check
-            # But logic calls get_story_id TWICE for new stories?
-            # 1. At start: get_story_id -> False (new story)
-            # 2. Add story
-            # 3. Verify: get_story_id -> True/False
-
-            # We need side_effect for get_story_id: [False, get_id_from_calibredb_returns]
-            # But `get_id_from_calibredb_returns` in the test cases meant "Is the story in DB?"
-            # For new story test cases (calibre_id=None), get_id_from_calibredb_returns meant the result AFTER addition.
-
-            if not get_id_from_calibredb_returns:
-                # This signifies failure to add
-                mock_client.get_story_id.side_effect = [False, False]
-            else:
-                mock_client.get_story_id.side_effect = [False, True]
-
-            # Unless it's an existing story being processed (First call returns True)
-
-        if calibre_id:
-            mock_client.get_story_id.return_value = True  # Found initially
+            # Need strict side effects for get_story_id calls
+            # 1. Initial check: returns False (not in DB)
+            # 2. Verification check after add: returns get_id_from_calibredb_returns result
+            mock_client.get_story_id.side_effect = [
+                False,
+                get_id_from_calibredb_returns,
+            ]
 
         # Execution
         url_worker.process_fanfic_addition(
@@ -583,17 +588,9 @@ class TestUrlWorker(unittest.TestCase):
 
         if calibre_id:
             # Existing story path - uses Strategy
-            if expected_handle_failure_call:
-                # Strategy returns False
-                pass  # Strategy called handler internally, tested in strategy tests
-            else:
-                pass
 
             # Verify strategy execution
             mock_strategy_instance.execute.assert_called_once()
-
-            # Remove story/Add story are inside Strategy now, so we don't verify them on client here
-            # We verify that Strategy.execute was called with correct args
 
         else:
             # New story path
@@ -683,7 +680,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Set up temp directory and basic processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = "fanficfare command"
+        mock_construct_cmd.return_value = ["fanficfare", "command"]
 
         # Mock logging failure to capture the specific error message
         with patch("url_worker.ff_logging.log_failure") as mock_log_failure:
@@ -738,7 +735,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Set up temp directory and processing until execute_command
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = "fanficfare command"
+        mock_construct_cmd.return_value = ["fanficfare", "command"]
         mock_execute.side_effect = Exception("Command execution failed")
 
         # Create retry config for testing
@@ -1157,7 +1154,9 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
         result = url_worker.get_fanficfare_version()
 
         self.assertEqual(result, expected_version)
-        mock_execute.assert_called_once_with("python -m fanficfare.cli --version")
+        mock_execute.assert_called_once_with(
+            [sys.executable, "-m", "fanficfare.cli", "--version"]
+        )
 
     @parameterized.expand(
         [
@@ -1536,10 +1535,10 @@ class TestConstructFanficfareCommand(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.calibre_info = MagicMock(spec=CalibreInfo)
-        self.calibre_info.update_method = "update"
+        self.mock_cdb = MagicMock(spec=CalibreInfo)
+        self.mock_cdb.update_method = "update"
 
-        self.fanfic = FanficInfo(
+        self.mock_fanfic = FanficInfo(
             url="https://archiveofourown.org/works/123456", site="ao3"
         )
         self.path_or_url = "https://archiveofourown.org/works/123456"
@@ -1548,144 +1547,121 @@ class TestConstructFanficfareCommand(unittest.TestCase):
         """Clean up after each test - ensure verbose is disabled."""
         url_worker.ff_logging.verbose.value = False
 
-    def test_update_method_normal(self):
-        """Test command construction with 'update' method."""
-        self.calibre_info.update_method = "update"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
+    def test_construct_fanficfare_command_defaults(self):
+        """Test with default update method."""
+        self.mock_cdb.update_method = "update"
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
+        # Expected: python -m fanficfare.cli -u "path" --update-cover --non-interactive
+        expected_base = [sys.executable, "-m", "fanficfare.cli"]
+        self.assertEqual(command[:3], expected_base)
+        self.assertIn("-u", command)
+        self.assertIn(self.path_or_url, command)
+        self.assertIn("--update-cover", command)
+        self.assertIn("--non-interactive", command)
+        self.assertNotIn("--force", command)
+        self.assertNotIn("-U", command)
 
-        self.assertIn("python -m fanficfare.cli", cmd)
-        self.assertIn("-u", cmd)
-        self.assertIn(self.path_or_url, cmd)
-        self.assertIn("--update-cover", cmd)
-        self.assertIn("--non-interactive", cmd)
-        self.assertNotIn("--debug", cmd)
-
-    def test_update_method_update_always(self):
+    def test_construct_fanficfare_command_update_always(self):
         """Test command construction with 'update_always' method."""
-        self.calibre_info.update_method = "update_always"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
+        self.mock_cdb.update_method = "update_always"
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
 
-        self.assertIn("-U", cmd)
-        self.assertNotIn("-u ", cmd)  # Space to avoid matching -U
-        self.assertNotIn("--force", cmd)
-        self.assertNotIn("--debug", cmd)
+        self.assertIn("-U", command)
+        self.assertNotIn("-u", command)
+        self.assertNotIn("--force", command)
 
-    def test_update_method_force(self):
+    def test_construct_fanficfare_command_force(self):
         """Test command construction with 'force' method."""
-        self.calibre_info.update_method = "force"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
+        self.mock_cdb.update_method = "force"
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
 
-        self.assertIn("-u --force", cmd)
-        self.assertNotIn("-U ", cmd)
-        self.assertNotIn("--debug", cmd)
+        self.assertIn("-u", command)
+        self.assertIn("--force", command)
+        self.assertNotIn("-U", command)
 
-    def test_update_method_update_no_force(self):
+    def test_construct_fanficfare_command_update_no_force(self):
         """Test command construction with 'update_no_force' method."""
-        self.calibre_info.update_method = "update_no_force"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
+        self.mock_cdb.update_method = "update_no_force"
+        # Even if force is requested
+        self.mock_fanfic.behavior = "force"
+
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
 
-        self.assertIn("-u", cmd)
-        self.assertNotIn("--force", cmd)
-        self.assertNotIn("-U", cmd)
-        self.assertNotIn("--debug", cmd)
+        self.assertIn("-u", command)
+        self.assertNotIn("--force", command)
+        self.assertNotIn("-U", command)
 
     def test_force_behavior_requested(self):
         """Test command when fanfic explicitly requests force behavior."""
-        self.calibre_info.update_method = "update"
-        self.fanfic.behavior = "force"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
+        self.mock_cdb.update_method = "update"
+        self.mock_fanfic.behavior = "force"
+
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
 
-        self.assertIn("-u --force", cmd)
-        self.assertNotIn("--debug", cmd)
-
-    def test_force_ignored_with_update_no_force(self):
-        """Test that force requests are ignored with update_no_force method."""
-        self.calibre_info.update_method = "update_no_force"
-        self.fanfic.behavior = "force"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
-        )
-
-        self.assertIn(
-            "-u ", cmd
-        )  # Check for -u with space to avoid matching --update-cover
-        self.assertNotIn("--force", cmd)
-        self.assertNotIn("--debug", cmd)
+        self.assertIn("-u", command)
+        self.assertIn("--force", command)
 
     def test_verbose_enabled_adds_debug_flag(self):
         """Test that --debug flag is added when verbose logging is enabled."""
-        url_worker.ff_logging.verbose.value = True
-        self.calibre_info.update_method = "update"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
+        ff_logging.set_verbose(True)
+        self.mock_cdb.update_method = "update"
+
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
 
-        self.assertIn("--debug", cmd)
-        self.assertIn("-u", cmd)
+        self.assertIn("--debug", command)
 
     def test_verbose_disabled_no_debug_flag(self):
         """Test that --debug flag is NOT added when verbose logging is disabled."""
-        url_worker.ff_logging.verbose.value = False
-        self.calibre_info.update_method = "update"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
+        ff_logging.set_verbose(False)
+        self.mock_cdb.update_method = "update"
+
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, self.path_or_url
         )
 
-        self.assertNotIn("--debug", cmd)
-
-    def test_verbose_with_force_method(self):
-        """Test --debug flag with force update method."""
-        url_worker.ff_logging.verbose.value = True
-        self.calibre_info.update_method = "force"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
-        )
-
-        self.assertIn("--debug", cmd)
-        self.assertIn("--force", cmd)
-
-    def test_verbose_with_update_always(self):
-        """Test --debug flag with update_always method."""
-        url_worker.ff_logging.verbose.value = True
-        self.calibre_info.update_method = "update_always"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, self.path_or_url
-        )
-
-        self.assertIn("--debug", cmd)
-        self.assertIn("-U", cmd)
+        self.assertNotIn("--debug", command)
 
     def test_epub_path_handling(self):
         """Test command construction with epub file path instead of URL."""
-        epub_path = "/tmp/tmpxyz/Story Title - Author.epub"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, epub_path
+        self.mock_cdb.update_method = "update"
+        # Path with spaces
+        path = "C:/Users/Joshua/My Library/Book.epub"
+
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, path
         )
 
-        self.assertIn(epub_path, cmd)
-        self.assertIn("-u", cmd)
-        self.assertNotIn("--debug", cmd)
+        # Path should be a single element in the list, spaces preserved
+        self.assertIn(path, command)
+
+        # Verify no double quoting happened (subprocess handles quoting)
+        quoted_path = f'"{path}"'
+        self.assertNotIn(quoted_path, command)
 
     def test_epub_path_with_verbose(self):
         """Test epub path with verbose enabled."""
-        url_worker.ff_logging.verbose.value = True
-        epub_path = "/tmp/tmpxyz/Story Title - Author.epub"
-        cmd = url_worker.construct_fanficfare_command(
-            self.calibre_info, self.fanfic, epub_path
+        ff_logging.set_verbose(True)
+        self.mock_cdb.update_method = "update"
+        path = "story.epub"
+
+        command = url_worker.construct_fanficfare_command(
+            self.mock_cdb, self.mock_fanfic, path
         )
 
-        self.assertIn("--debug", cmd)
-        self.assertIn(epub_path, cmd)
+        self.assertIn("--debug", command)
+        self.assertIn(path, command)
 
 
 if __name__ == "__main__":

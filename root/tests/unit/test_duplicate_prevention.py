@@ -85,12 +85,10 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("url_worker.construct_fanficfare_command")
     @patch("url_worker.execute_command")
     @patch("url_worker.process_fanfic_addition")
-    @patch("url_worker.sleep")
     @patch("url_worker.ff_logging")
     def test_url_worker_removes_from_active_urls_on_success(
         self,
         mock_logging,
-        mock_sleep,
         mock_process,
         mock_exec,
         mock_construct,
@@ -110,7 +108,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         # Mocks for successful execution
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-        mock_construct.return_value = "fanficfare -u " + url
+        mock_construct.return_value = ["fanficfare", "-u", url]
         mock_exec.return_value = "Download successful"
 
         cdb = MagicMock()
@@ -139,14 +137,12 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("url_worker.system_utils.temporary_directory")
     @patch("url_worker.get_path_or_url")
     @patch("url_worker.handle_failure")
-    @patch("url_worker.sleep")
     @patch("url_worker.ff_logging")
     @patch("url_worker.execute_command")
     def test_url_worker_keeps_active_on_retry(
         self,
         mock_exec,
         mock_logging,
-        mock_sleep,
         mock_handle_failure,
         mock_get_path,
         mock_temp_dir,
@@ -200,14 +196,12 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("url_worker.system_utils.temporary_directory")
     @patch("url_worker.get_path_or_url")
     @patch("url_worker.handle_failure")
-    @patch("url_worker.sleep")
     @patch("url_worker.ff_logging")
     @patch("url_worker.execute_command")
     def test_url_worker_removes_active_on_abandon(
         self,
         mock_exec,
         mock_logging,
-        mock_sleep,
         mock_handle_failure,
         mock_get_path,
         mock_temp_dir,

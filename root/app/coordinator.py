@@ -11,7 +11,7 @@ and concurrency control for the worker pool. It ensures that:
 import multiprocessing as mp
 import collections
 from typing import Dict, Set, Optional
-import time
+from queue import Empty
 import ff_logging
 from fanfic_info import FanficInfo
 
@@ -43,43 +43,50 @@ class Coordinator:
 
         while self.running:
             # Process incoming events (tasks or signals)
-            self._process_ingress()
-
-            # Use a short sleep to prevent tight loop if queue is empty
-            if self.ingress_queue.empty():
-                time.sleep(0.1)
-
-    def _process_ingress(self):
-        """Drain ingress queue and handle tasks/signals."""
-        while not self.ingress_queue.empty():
+            # Use a timeout to prevent busy waiting while keeping the loop responsive
+            # and allowing for periodic tasks or shutdown checks if needed.
+            # 1.0s timeout is a good balance between responsiveness and efficiency.
             try:
-                item = self.ingress_queue.get_nowait()
-                if item is None:
-                    # Poison pill received
-                    ff_logging.log("Coordinator received shutdown signal", "WARNING")
-                    self.running = False
-                    return
-
-                # Check if it's a Signal or a Task
-                if (
-                    isinstance(item, tuple)
-                    and len(item) == 3
-                    and item[0] == "WORKER_IDLE"
-                ):
-                    # Signal: ('WORKER_IDLE', worker_id, finished_site)
-                    _, worker_id, finished_site = item
-                    self._handle_worker_idle(worker_id, finished_site)
-                elif type(item).__name__ == "FanficInfo":
-                    # Task: FanficInfo object
-                    self._handle_new_task(item)
-                else:
-                    ff_logging.log_failure(
-                        f"Coordinator: Received invalid item type {type(item)}"
-                    )
-
+                # Wait for next item or timeout
+                # This blocks efficiently without consuming CPU
+                self._process_single_ingress_item(timeout=1.0)
             except Exception as e:
-                ff_logging.log_failure(f"Coordinator: Error processing ingress: {e}")
-                break
+                ff_logging.log_failure(f"Coordinator: Error in main loop: {e}")
+
+    def _process_single_ingress_item(self, timeout: float):
+        """
+        Wait for and handle a single item from the ingress queue.
+
+        Args:
+            timeout (float): Max seconds to wait for an item.
+        """
+        try:
+            item = self.ingress_queue.get(timeout=timeout)
+
+            if item is None:
+                # Poison pill received
+                ff_logging.log("Coordinator received shutdown signal", "WARNING")
+                self.running = False
+                return
+
+            # Check if it's a Signal or a Task
+            if isinstance(item, tuple) and len(item) == 3 and item[0] == "WORKER_IDLE":
+                # Signal: ('WORKER_IDLE', worker_id, finished_site)
+                _, worker_id, finished_site = item
+                self._handle_worker_idle(worker_id, finished_site)
+            elif type(item).__name__ == "FanficInfo":
+                # Task: FanficInfo object
+                self._handle_new_task(item)
+            else:
+                ff_logging.log_failure(
+                    f"Coordinator: Received invalid item type {type(item)}"
+                )
+
+        except Empty:
+            # Timeout reached, just return so main loop can check running state
+            pass
+        except Exception as e:
+            ff_logging.log_failure(f"Coordinator: Error processing ingress: {e}")
 
     def _handle_new_task(self, task: FanficInfo):
         """Route new task to appropriate worker or backlog."""

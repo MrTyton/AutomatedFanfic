@@ -25,7 +25,7 @@ class TestCoordinator(unittest.TestCase):
         self.ingress_queue.put(fic2)
 
         # Process first item
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         # Determine who got site1
         worker_id = self.coordinator.assignments.get("site1")
@@ -36,7 +36,7 @@ class TestCoordinator(unittest.TestCase):
         self.assertEqual(task1, fic1)
 
         # Process second item (should be direct push)
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         # Verify second task is in SAME queue
         task2 = self.worker_queues[worker_id].get()
@@ -51,12 +51,12 @@ class TestCoordinator(unittest.TestCase):
         fic2 = FanficInfo(url="http://site2.com/1", site="site2")
 
         self.ingress_queue.put(fic1)
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         worker1 = self.coordinator.assignments["site1"]
 
         self.ingress_queue.put(fic2)
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         worker2 = self.coordinator.assignments["site2"]
 
@@ -71,13 +71,13 @@ class TestCoordinator(unittest.TestCase):
         """Test that WORKER_IDLE signal releases the site assignment."""
         fic1 = FanficInfo(url="http://site1.com/1", site="site1")
         self.ingress_queue.put(fic1)
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         worker_id = self.coordinator.assignments["site1"]
 
         # Simulate worker idle signal
         self.ingress_queue.put(("WORKER_IDLE", worker_id, "site1"))
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         # Verify lock released
         self.assertNotIn("site1", self.coordinator.assignments)
@@ -100,14 +100,14 @@ class TestCoordinator(unittest.TestCase):
         # 2. Add task for site3 (goes to backlog)
         fic3 = FanficInfo(url="http://site3.com/1", site="site3")
         self.ingress_queue.put(fic3)
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         self.assertIn("site3", self.coordinator.backlog)
         self.assertEqual(self.coordinator.backlog["site3"][0], fic3)
 
         # 3. Worker 0 signals idle (finished site1)
         self.ingress_queue.put(("WORKER_IDLE", workers[0], "site1"))
-        self.coordinator._process_ingress()
+        self.coordinator._process_single_ingress_item(timeout=0.1)
 
         # 4. Verify Worker 0 is assigned site3
         self.assertEqual(self.coordinator.assignments.get("site3"), workers[0])

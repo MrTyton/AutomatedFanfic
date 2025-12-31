@@ -73,8 +73,11 @@ Thread Safety:
 """
 
 import multiprocessing as mp
+import re
+import sys
 from queue import Empty
-from subprocess import CalledProcessError, check_output, PIPE, STDOUT
+import subprocess
+from subprocess import CalledProcessError
 
 import calibre_info
 import calibredb_utils
@@ -99,15 +102,13 @@ def get_fanficfare_version() -> str:
         str: FanFicFare version string or error message if unavailable.
     """
     try:
-        command = "python -m fanficfare.cli --version"
+        command = [sys.executable, "-m", "fanficfare.cli", "--version"]
         output = execute_command(command)
 
         # Output format is typically "Version: X.X.X"
         output = output.strip()
 
         # Extract just the version number if possible
-        import re
-
         version_match = re.search(r"Version:\s*(\d+\.\d+\.\d+)", output)
         if version_match:
             return version_match.group(1)
@@ -319,24 +320,59 @@ def log_epub_metadata(epub_path: str, site: str) -> None:
         ff_logging.log_debug(f"\t({site}) Error reading epub metadata: {e}")
 
 
-def execute_command(command: str, cwd: str | None = None) -> str:
+def execute_command(
+    command: list[str] | str, cwd: str | None = None, timeout: float = 300.0
+) -> str:
     """
     Executes a shell command and returns its output.
 
     Args:
-        command (str): The command to execute.
+        command (list[str] | str): The command to execute. Should be a list of arguments.
         cwd (str, optional): The directory to execute the command in.
+        timeout (float): Timeout in seconds. Defaults to 5 minutes.
 
     Returns:
         str: The output of the command.
+
+    Raises:
+        subprocess.TimeoutExpired: If the command times out.
+        subprocess.CalledProcessError: If the command fails.
     """
-    debug_msg = f"\tExecuting command: {command}"
+    # Convert string to list if needed (legacy support, though we should move to lists everywhere)
+    if isinstance(command, str):
+        # Basic splitting, not robust for quoted args
+        import shlex
+
+        cmd_list = shlex.split(command)
+    else:
+        cmd_list = command
+
+    debug_msg = f"\tExecuting command: {cmd_list}"
     if cwd:
         debug_msg += f" (in {cwd})"
     ff_logging.log_debug(debug_msg)
-    return check_output(command, shell=True, stderr=STDOUT, stdin=PIPE, cwd=cwd).decode(
-        "utf-8"
+
+    # Use subprocess.run for safer and more robust execution
+    # shell=False is safer and less error-prone with list args
+    # capture_output=True captures stdout/stderr
+    # text=True decodes output to string automatically
+    result = subprocess.run(
+        cmd_list,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=True,  # Raises CalledProcessError on non-zero exit code
     )
+
+    # helper for compatibility with old check_output return style (just stdout usually)
+    # merged stdout/stderr was common with check_output(stderr=STDOUT)
+    # here we join them if both exist, or just return stdout
+    output = result.stdout
+    if result.stderr:
+        output += "\nSTDERR:\n" + result.stderr
+
+    return output
 
 
 def process_fanfic_addition(
@@ -433,13 +469,12 @@ def construct_fanficfare_command(
     cdb: calibre_info.CalibreInfo,
     fanfic: fanfic_info.FanficInfo,
     path_or_url: str,
-) -> str:
+) -> list[str]:
     """
     Construct the appropriate FanFicFare CLI command based on configuration and fanfic state.
 
-    This function builds the FanFicFare command string dynamically based on the
+    This function builds the FanFicFare command list dynamically based on the
     Calibre configuration's update method and the fanfiction's requested behavior.
-    It handles various update strategies and configuration conflicts.
 
     Args:
         cdb (calibre_info.CalibreInfo): Calibre configuration containing the update_method
@@ -449,52 +484,15 @@ def construct_fanficfare_command(
         path_or_url (str): The file path or URL that FanFicFare should process.
 
     Returns:
-        str: Complete FanFicFare command string ready for execution.
-
-    Update Method Behavior:
-        - "update": Uses -u flag, respects force requests
-        - "update_always": Always uses -U flag for full refresh
-        - "force": Always uses --force flag
-        - "update_no_force": Uses -u flag, IGNORES all force requests
-
-    Command Flags:
-        - -u: Normal update, only downloads new chapters
-        - -U: Update always, re-downloads all chapters
-        - --force: Force update, bypasses most checks and restrictions
-        - --update-cover: Updates book cover art
-        - --non-interactive: Prevents interactive prompts
-        - --debug: Enable FanFicFare debug output (when verbose logging enabled)
-
-    Example:
-        ```python
-        # Normal update
-        cmd = construct_fanficfare_command(calibre_info, fanfic, "story.epub")
-        # Returns: 'python -m fanficfare.cli -u "story.epub" --update-cover --non-interactive'
-
-        # Force update requested
-        fanfic.behavior = "force"
-        cmd = construct_fanficfare_command(calibre_info, fanfic, url)
-        # Returns: 'python -m fanficfare.cli -u --force "url" --update-cover --non-interactive'
-
-        # With verbose logging enabled
-        ff_logging.set_verbose(True)
-        cmd = construct_fanficfare_command(calibre_info, fanfic, url)
-        # Returns: 'python -m fanficfare.cli -u "url" --update-cover --non-interactive --debug'
-        ```
-
-    Configuration Conflicts:
-        When update_method is "update_no_force", any force requests are ignored
-        and a normal update (-u) is performed instead. This allows administrators
-        to disable force updates globally while maintaining normal update functionality.
-
-    Note:
-        The constructed command includes --non-interactive to prevent FanFicFare
-        from prompting for user input, which is essential for automated operation.
-        When verbose logging is enabled globally, --debug is added to get detailed
-        FanFicFare diagnostic output.
+        list[str]: Complete FanFicFare command arguments ready for execution.
     """
     update_method = cdb.update_method
-    command = "python -m fanficfare.cli"
+
+    # Base command structure
+    # We use sys.executable to ensure we use the same python interpreter
+    import sys
+
+    command = [sys.executable, "-m", "fanficfare.cli"]
 
     # Check if fanfiction specifically requests force behavior
     force_requested = fanfic.behavior == "force"
@@ -502,23 +500,25 @@ def construct_fanficfare_command(
     # Determine appropriate update flag based on configuration and request
     if update_method == "update_no_force":
         # Special case: ignore all force requests and always use normal update
-        command += " -u"
+        command.append("-u")
     elif force_requested or update_method == "force":
         # Use force flag WITH update flag (force is a modifier, not a replacement)
-        command += " -u --force"
+        command.extend(["-u", "--force"])
     elif update_method == "update_always":
         # Always perform full refresh of all chapters
-        command += " -U"
+        command.append("-U")
     else:  # Default to 'update' behavior
         # Normal update - only download new chapters
-        command += " -u"
+        command.append("-u")
 
     # Add the target path/URL and standard options for automated operation
-    command += f' "{path_or_url}" --update-cover --non-interactive'
+    # Note: path_or_url is added as a separate argument, so spaces are handled automatically
+    command.append(path_or_url)
+    command.extend(["--update-cover", "--non-interactive"])
 
     # Add debug flag when verbose logging is enabled
     if ff_logging.verbose.value:
-        command += " --debug"
+        command.append("--debug")
 
     return command
 
@@ -548,13 +548,13 @@ def url_worker(
         worker_id (str): Unique identifier for this worker process.
         active_urls (dict, optional): Shared dictionary tracking active URLs.
     """
-    cdb = calibre_client.cdb_info
     ff_logging.log(f"Starting Worker {worker_id}", "HEADER")
 
     # Track the last site processed to unlock it in the next request
     last_finished_site = None
 
     while True:
+        fanfic = None
         try:
             # Try to get work immediately
             fanfic = queue.get_nowait()
@@ -565,9 +565,13 @@ def url_worker(
             try:
                 fanfic = queue.get()  # Blocking wait
             except Exception as e:
-                ff_logging.log_failure(
-                    f"Worker {worker_id} error waiting for new work: {e}"
-                )
+                # Handle possible shutdown or close
+                if isinstance(e, ValueError):  # Queue closed
+                    ff_logging.log(f"Worker {worker_id} queue closed", "WARNING")
+                else:
+                    ff_logging.log_failure(
+                        f"Worker {worker_id} error waiting for new work: {e}"
+                    )
                 break
         except Exception as e:
             ff_logging.log_failure(f"Worker {worker_id} error getting from queue: {e}")
@@ -580,126 +584,160 @@ def url_worker(
 
         # We have a valid task
         should_remove_from_active = True
-        site = fanfic.site
-        path_or_url = fanfic.url
 
-        # Mark site as current context for this worker (though we rely on coordinator for locking)
+        # Process the task
         try:
-            with system_utils.temporary_directory() as temp_dir:
-                ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
-
-                # Determine if this is an update (existing file) or new download (URL)
-                path_or_url = get_path_or_url(fanfic, calibre_client, temp_dir)
-
-                # Extract title from epub filename if we're updating an existing story
-                if path_or_url.endswith(".epub"):
-                    extracted_title = extract_title_from_epub_path(path_or_url)
-                    if (
-                        extracted_title != path_or_url
-                    ):  # Only update if extraction succeeded
-                        fanfic.title = extracted_title
-                        ff_logging.log_debug(
-                            f"\t({site}) Extracted title from filename: {fanfic.title}"
-                        )
-                        # Also attempt to read full metadata for debugging
-                        log_epub_metadata(path_or_url, site)
-
-                ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
-
-                # Build FanFicFare command based on configuration and fanfic state
-                base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
-
-                try:
-                    # Handle special case: force requested but update_no_force configured
-                    if (
-                        fanfic.behavior == "force"
-                        and cdb.update_method == "update_no_force"
-                    ):
-                        # Force failure to trigger special notification via failure handler
-                        raise Exception(
-                            "Force update requested but update method is 'update_no_force'"
-                        )
-
-                    # Set up temporary workspace with configuration files
-                    system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
-
-                    # Execute FanFicFare download/update command
-                    output = execute_command(base_command, cwd=temp_dir)
-
-                except CalledProcessError as e:
-                    # Log execution failure with detailed output for debugging
-                    ff_logging.log_failure(
-                        f"\t({site}) Failed to update {path_or_url}: {e}"
-                    )
-
-                    # In verbose mode, show the actual FanFicFare output for debugging
-                    if e.output:
-                        error_output = (
-                            e.output.decode("utf-8")
-                            if isinstance(e.output, bytes)
-                            else str(e.output)
-                        )
-                        ff_logging.log_debug(
-                            f"\t({site}) FanFicFare output:\n{error_output}"
-                        )
-
-                    handle_failure(
-                        fanfic, notification_info, ingress_queue, retry_config, cdb
-                    )
-                    continue
-                except Exception as e:
-                    # Log other execution failures
-                    ff_logging.log_failure(
-                        f"\t({site}) Failed to update {path_or_url}: {e}"
-                    )
-                    handle_failure(
-                        fanfic, notification_info, ingress_queue, retry_config, cdb
-                    )
-                    continue
-
-                # Parse FanFicFare output for permanent failure conditions
-                if not regex_parsing.check_failure_regexes(output):
-                    handle_failure(
-                        fanfic, notification_info, ingress_queue, retry_config, cdb
-                    )
-                    continue
-
-                # Check for conditions that can be resolved with force retry
-                if regex_parsing.check_forceable_regexes(output):
-                    # Set force behavior and re-queue for immediate retry
-                    fanfic.behavior = "force"
-                    ingress_queue.put(fanfic)
-                    should_remove_from_active = False
-                    continue
-
-                # Process successful download - integrate with Calibre library
-
-                process_fanfic_addition(
-                    fanfic,
-                    calibre_client,  # Passed instead of cdb
-                    temp_dir,
-                    site,
-                    path_or_url,
-                    ingress_queue,
-                    notification_info,
-                    retry_config,
-                )
+            should_remove_from_active = _process_task(
+                fanfic,
+                calibre_client,
+                notification_info,
+                ingress_queue,
+                retry_config,
+                worker_id,
+            )
+        except Exception as e:
+            # Final safety catch for unhandled errors during processing
+            ff_logging.log_failure(
+                f"Worker {worker_id} unhandled error processing {fanfic.url}: {e}"
+            )
         finally:
             # Mark this site as finished for the next request
-            last_finished_site = site
+            last_finished_site = fanfic.site
 
             # Cleanup active_urls
             if active_urls is not None and should_remove_from_active:
-                # Check if it was retried (sent to waiting queue)
-                if hasattr(fanfic, "retry_decision") and fanfic.retry_decision:
-                    if (
-                        fanfic.retry_decision.action
-                        != retry_types.FailureAction.ABANDON
-                    ):
-                        # It's in waiting queue, keep it in active_urls
-                        pass
-                    else:
-                        active_urls.pop(fanfic.url, None)
-                else:
-                    # Success or unhandled error (unlikely)
-                    active_urls.pop(fanfic.url, None)
+                active_urls.pop(fanfic.url, None)
+
+
+def _process_task(
+    fanfic: fanfic_info.FanficInfo,
+    calibre_client: calibredb_utils.CalibreDBClient,
+    notification_info: notification_wrapper.NotificationWrapper,
+    ingress_queue: mp.Queue,
+    retry_config: config_models.RetryConfig,
+    worker_id: str,
+) -> bool:
+    """
+    Process a single fanfiction task.
+
+    Returns:
+        bool: True if the URL should be removed from active_urls, False otherwise.
+    """
+    cdb = calibre_client.cdb_info
+    site = fanfic.site
+
+    # Check if it was retried (sent to waiting queue) in a previous attempt
+    # This logic was in the finally block of the original function, but we need
+    # to return the removal status
+
+    with system_utils.temporary_directory() as temp_dir:
+        ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
+
+        # Determine if this is an update (existing file) or new download (URL)
+        path_or_url = get_path_or_url(fanfic, calibre_client, temp_dir)
+
+        # Extract title from epub filename if we're updating an existing story
+        if path_or_url.endswith(".epub"):
+            extracted_title = extract_title_from_epub_path(path_or_url)
+            if extracted_title != path_or_url:  # Only update if extraction succeeded
+                fanfic.title = extracted_title
+                ff_logging.log_debug(
+                    f"\t({site}) Extracted title from filename: {fanfic.title}"
+                )
+                # Also attempt to read full metadata for debugging
+                log_epub_metadata(path_or_url, site)
+
+        ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
+
+        # Build FanFicFare command based on configuration and fanfic state
+        base_command = construct_fanficfare_command(cdb, fanfic, path_or_url)
+
+        try:
+            # Handle special case: force requested but update_no_force configured
+            if fanfic.behavior == "force" and cdb.update_method == "update_no_force":
+                # Force failure to trigger special notification via failure handler
+                raise Exception(
+                    "Force update requested but update method is 'update_no_force'"
+                )
+
+            # Set up temporary workspace with configuration files
+            system_utils.copy_configs_to_temp_dir(cdb, temp_dir)
+
+            # Execute FanFicFare download/update command
+            output = execute_command(base_command, cwd=temp_dir)
+
+        except (CalledProcessError, subprocess.TimeoutExpired) as e:
+            # Log execution failure with detailed output for debugging
+            error_msg = str(e)
+            if isinstance(e, subprocess.TimeoutExpired):
+                error_msg = f"Command timed out after {e.timeout}s"
+
+            ff_logging.log_failure(
+                f"\t({site}) Failed to update {path_or_url}: {error_msg}"
+            )
+
+            # In verbose mode, show the actual FanFicFare output for debugging
+            # For CalledProcessError, output is in e.stdout/stderr (if captured) or e.output
+            if hasattr(e, "output") and e.output:
+                # Check if output is bytes or str (subprocess.run with text=True returns str)
+                error_output = e.output
+                if isinstance(error_output, bytes):
+                    error_output = error_output.decode("utf-8", errors="replace")
+
+                ff_logging.log_debug(f"\t({site}) FanFicFare output:\n{error_output}")
+
+            # Additional stderr check for subprocess.run
+            if hasattr(e, "stderr") and e.stderr:
+                error_stderr = e.stderr
+                if isinstance(error_stderr, bytes):
+                    error_stderr = error_stderr.decode("utf-8", errors="replace")
+                ff_logging.log_debug(f"\t({site}) FanFicFare STDERR:\n{error_stderr}")
+
+            handle_failure(fanfic, notification_info, ingress_queue, retry_config, cdb)
+            return check_active_removal(fanfic)
+
+        except Exception as e:
+            # Log other execution failures
+            ff_logging.log_failure(f"\t({site}) Failed to update {path_or_url}: {e}")
+            handle_failure(fanfic, notification_info, ingress_queue, retry_config, cdb)
+            return check_active_removal(fanfic)
+
+        # Parse FanFicFare output for permanent failure conditions
+        if not regex_parsing.check_failure_regexes(output):
+            handle_failure(fanfic, notification_info, ingress_queue, retry_config, cdb)
+            return check_active_removal(fanfic)
+
+        # Check for conditions that can be resolved with force retry
+        if regex_parsing.check_forceable_regexes(output):
+            # Set force behavior and re-queue for immediate retry
+            fanfic.behavior = "force"
+            ingress_queue.put(fanfic)
+            return False  # Don't remove from active urls as we are re-queueing
+
+        # Process successful download - integrate with Calibre library
+
+        process_fanfic_addition(
+            fanfic,
+            calibre_client,  # Passed instead of cdb
+            temp_dir,
+            site,
+            path_or_url,
+            ingress_queue,
+            notification_info,
+            retry_config,
+        )
+
+        return True  # Success, remove from active
+
+
+def check_active_removal(fanfic: fanfic_info.FanficInfo) -> bool:
+    """
+    Helper to determine if a failed fanfic should be removed from active_urls.
+    Returns True if it should be removed (abandoned or finished),
+    False if it's waiting for retry (Hail Mary/Retry).
+    """
+    if hasattr(fanfic, "retry_decision") and fanfic.retry_decision:
+        if fanfic.retry_decision.action != retry_types.FailureAction.ABANDON:
+            # It's in waiting queue, keep it in active_urls
+            return False
+    return True
