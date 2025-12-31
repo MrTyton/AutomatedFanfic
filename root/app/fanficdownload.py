@@ -38,6 +38,7 @@ import ff_logging  # Custom logging module for formatted logging
 import auto_url_parsers
 import calibre_info
 import calibredb_utils
+import coordinator
 import ff_waiter
 import notification_wrapper
 import url_ingester
@@ -215,10 +216,20 @@ def main() -> None:
                 f"Generated {len(url_parsers)} URL parsers for site recognition"
             )
 
-            # Create site-specific queues for URL processing parallelization
-            queues = {site: manager.Queue() for site in url_parsers.keys()}
+            # --- Coordinator Pattern Setup ---
+
+            # 1. Ingress Queue: All new/retried tasks go here
+            ingress_queue = manager.Queue()
+
+            # 2. Worker Queues: Coordinator assigns work to specific workers here
+            worker_queues = {}
+            for i in range(config.max_workers):
+                worker_id = f"worker_{i}"
+                worker_queues[worker_id] = manager.Queue()
+
             # Separate queue for delayed retry processing (Hail-Mary protocol)
             waiting_queue = manager.Queue()
+
             # Shared dictionary to track active URLs and prevent duplicates
             active_urls = manager.dict()
             # Initialize Calibre database interface with multiprocessing support
@@ -232,27 +243,42 @@ def main() -> None:
             process_manager.register_process(
                 "email_watcher",
                 url_ingester.email_watcher,
-                args=(email_info, notification_info, queues, url_parsers, active_urls),
+                args=(
+                    email_info,
+                    notification_info,
+                    ingress_queue,
+                    url_parsers,
+                    active_urls,
+                ),
             )
 
             # Register waiting watcher process for retry handling
             process_manager.register_process(
                 "waiting_watcher",
                 ff_waiter.wait_processor,
-                args=(queues, waiting_queue),
+                args=(ingress_queue, waiting_queue),
             )
 
-            # Register URL worker processes for each supported fanfiction site
-            for site in queues.keys():
+            # Register Coordinator Process
+            process_manager.register_process(
+                "coordinator",
+                coordinator.start_coordinator,
+                args=(ingress_queue, worker_queues),
+            )
+
+            # Register Generic Worker Processes
+            for i in range(config.max_workers):
+                worker_id = f"worker_{i}"
                 process_manager.register_process(
-                    f"worker_{site}",
+                    worker_id,
                     url_worker.url_worker,
                     args=(
-                        queues[site],
+                        worker_queues[worker_id],
                         calibre_client,
                         notification_info,
-                        waiting_queue,
+                        ingress_queue,  # retry_queue -> ingress_queue
                         config.retry,
+                        worker_id,
                         active_urls,
                     ),
                 )

@@ -281,7 +281,7 @@ class EmailInfo:
 def email_watcher(
     email_info: EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    processor_queues: dict[str, mp.Queue],
+    ingress_queue: mp.Queue,
     url_parsers: dict,
     active_urls: dict | None = None,
 ):
@@ -298,8 +298,7 @@ def email_watcher(
                                credentials, server details, and polling settings.
         notification_info (notification_wrapper.NotificationWrapper): Notification
                                                                      system for sending alerts about new URLs.
-        processor_queues (dict[str, mp.Queue]): Dictionary mapping site identifiers
-                                               to processing queues for URL routing.
+        ingress_queue (mp.Queue): Queue for all new fanfiction tasks.
         url_parsers (dict): Dictionary of compiled regex patterns for site recognition.
                            Generated from FanFicFare adapters in the main process.
         active_urls (dict, optional): Shared dictionary tracking URLs currently in
@@ -325,14 +324,10 @@ def email_watcher(
         email_info = EmailInfo("config.toml")
         notification_wrapper = NotificationWrapper(config)
 
-        queues = {
-            "archiveofourown.org": mp.Queue(),
-            "fanfiction.net": mp.Queue(),
-            "other": mp.Queue()
-        }
+        ingress_queue = mp.Queue()
 
         # This runs indefinitely until process termination
-        email_watcher(email_info, notification_wrapper, queues)
+        email_watcher(email_info, notification_wrapper, ingress_queue)
         ```
 
     Infinite Loop:
@@ -384,11 +379,11 @@ def email_watcher(
         # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:
             ff_logging.log(
-                f"Adding {fic.url} to the {fic.site} processor queue",
+                f"Adding {fic.url} to the ingestion queue (Site: {fic.site})",
                 "HEADER",
             )
-            # Route to site-specific queue (creates "other" queue for unknown sites)
-            processor_queues[fic.site].put(fic)
+            # Route to ingress queue
+            ingress_queue.put(fic)
 
         # Wait before next email check cycle
         time.sleep(email_info.sleep_time)
