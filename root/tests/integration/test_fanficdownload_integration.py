@@ -306,21 +306,23 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         )
 
         # Validate expected behaviors
+        # Validate expected behaviors
         if expected_behavior == "normal_update":
-            self.assertIn(" -u ", command)
-            self.assertNotIn(" --force", command)
-            self.assertNotIn(" -U ", command)
+            self.assertIn("-u", command)
+            self.assertNotIn("--force", command)
+            self.assertNotIn("-U", command)
         elif expected_behavior == "force_update_always":
-            self.assertIn(" -U ", command)
-            self.assertNotIn(" --force", command)
-            self.assertNotIn(" -u ", command)
+            self.assertIn("-U", command)
+            self.assertNotIn("--force", command)
+            self.assertNotIn("-u", command)
         elif expected_behavior in ["force_update", "force_override"]:
-            self.assertIn(" -u --force", command)
-            self.assertNotIn(" -U ", command)
+            self.assertIn("-u", command)
+            self.assertIn("--force", command)
+            self.assertNotIn("-U", command)
         elif expected_behavior in ["ignore_force", "ignore_force_behavior"]:
-            self.assertIn(" -u ", command)
-            self.assertNotIn(" --force", command)
-            self.assertNotIn(" -U ", command)
+            self.assertIn("-u", command)
+            self.assertNotIn("--force", command)
+            self.assertNotIn("-U", command)
 
     # Process Management Integration Tests
     @parameterized.expand(
