@@ -292,6 +292,25 @@ class TestProcessManager(unittest.TestCase):
             self.assertEqual(process_info.state, ProcessState.STOPPED)
             self.assertFalse(process_info.is_alive())
 
+    def test_stop_all_parallel_timing(self):
+        """Test that stopping multiple processes happens in parallel."""
+        # Register 3 processes that each take 1 second to sleep
+        # If sequential: ~3 seconds
+        # If parallel: ~1 second (plus minimal overhead)
+        workers = ["p1", "p2", "p3"]
+        for w in workers:
+            self.manager.register_process(w, dummy_worker_function, (1.0,))
+
+        self.manager.start_all()
+
+        start_time = time.time()
+        self.manager.stop_all(timeout=5.0)
+        duration = time.time() - start_time
+
+        # Should be much faster than sequential (3s)
+        # Using 2.0s as a safe upper bound allowance for overhead
+        self.assertLess(duration, 2.0, "Shutdown took too long, arguably sequential")
+
     def test_get_status(self):
         """Test getting process status information."""
         self.manager.register_process("test", dummy_worker_function, (0.5,))
