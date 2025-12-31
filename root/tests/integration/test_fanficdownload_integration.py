@@ -34,7 +34,7 @@ from config_models import (
     ProcessConfig,
     ConfigManager,
 )
-from process_manager import ProcessManager
+from process_management import ProcessManager
 
 
 # Helper functions for multiprocessing tests (must be top-level for Windows pickle compatibility)
@@ -625,7 +625,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             with patch("fanficdownload.ff_waiter.wait_processor", _global_mock_worker):
                 with patch("fanficdownload.url_worker.url_worker", _global_mock_worker):
                     with patch(
-                        "process_manager.ProcessManager.wait_for_all"
+                        "process_management.ProcessManager.wait_for_all"
                     ) as mock_wait:
                         mock_wait.return_value = True
 
