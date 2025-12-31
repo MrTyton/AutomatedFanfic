@@ -4,11 +4,11 @@ Common utility functions for worker modules.
 
 import zipfile
 from xml.etree import ElementTree as ET
-import ff_logging
-import fanfic_info
+from utils import ff_logging
+from models import fanfic_info
 from calibre_integration import calibredb_utils
 
-import system_utils
+from utils import system_utils
 
 
 def get_path_or_url(

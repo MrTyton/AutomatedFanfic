@@ -23,8 +23,9 @@ and configuration consistency across all worker processes.
 
 import os
 from subprocess import call
-import ff_logging  # Custom logging module for failure logging
-from config_models import ConfigManager, ConfigError, ConfigValidationError
+import shutil
+from utils import ff_logging  # Custom logging module for failure logging
+from models.config_models import ConfigManager, ConfigError, ConfigValidationError
 
 
 class CalibreInfo:
@@ -208,3 +209,31 @@ class CalibreInfo:
 
         # Join all parts into a single command-line string
         return " ".join(parts)
+
+    def copy_configs_to_temp_dir(self, temp_dir: str) -> None:
+        """
+        Copy Calibre configuration files to a temporary directory.
+
+        This method safely copies Calibre's default and personal configuration
+        files to a temporary directory, typically for use in isolated FanFicFare
+        operations. Only existing configuration files are copied.
+
+        Args:
+            temp_dir (str): Destination directory path where configuration files
+                           should be copied. Must be a valid, writable directory.
+
+        File Mapping:
+            - self.default_ini -> {temp_dir}/defaults.ini
+            - self.personal_ini -> {temp_dir}/personal.ini
+
+        Raises:
+            OSError: If temp_dir is not writable or source files cannot be read.
+            shutil.SameFileError: If source and destination are the same file.
+        """
+        # Copy default configuration if it exists
+        if self.default_ini and os.path.isfile(self.default_ini):
+            shutil.copyfile(self.default_ini, os.path.join(temp_dir, "defaults.ini"))
+
+        # Copy personal configuration if it exists
+        if self.personal_ini and os.path.isfile(self.personal_ini):
+            shutil.copyfile(self.personal_ini, os.path.join(temp_dir, "personal.ini"))

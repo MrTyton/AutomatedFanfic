@@ -32,7 +32,7 @@ from . import notification_base
 from typing import List
 from concurrent.futures import ThreadPoolExecutor
 from .apprise_notification import AppriseNotification
-import ff_logging
+from utils import ff_logging
 
 
 class NotificationWrapper:

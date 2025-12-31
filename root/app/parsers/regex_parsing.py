@@ -60,8 +60,8 @@ Note:
 
 import os
 import re
-import fanfic_info
-import ff_logging
+from models import fanfic_info
+from utils import ff_logging
 
 # Note: url_parsers is now passed as a parameter to avoid loading
 # FanFicFare adapters in every worker process

@@ -22,7 +22,7 @@ for fanfiction download, update, retry, and Calibre integration workflows.
 
 from typing import Optional
 
-import retry_types
+from models import retry_types
 
 
 class FanficInfo:

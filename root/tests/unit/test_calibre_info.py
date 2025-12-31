@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 
 from calibre_integration.calibre_info import CalibreInfo
-from config_models import (
+from models.config_models import (
     AppConfig,
     EmailConfig,
     CalibreConfig,
@@ -36,7 +36,7 @@ class TestCalibreInfo(unittest.TestCase):
             ),
         ]
     )
-    @patch("config_models.ConfigManager.load_config")
+    @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
     @patch("os.path.isfile")
     def test_calibre_info_init_success(
@@ -82,7 +82,7 @@ class TestCalibreInfo(unittest.TestCase):
             ("none_path_validation", None),  # Test Pydantic validation behavior
         ]
     )
-    @patch("config_models.ConfigManager.load_config")
+    @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
     def test_calibre_info_init_missing_path(
         self, name, path, mock_manager, mock_load_config
@@ -143,7 +143,7 @@ class TestCalibreInfo(unittest.TestCase):
             ),
         ]
     )
-    @patch("config_models.ConfigManager.load_config")
+    @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
     @patch("os.path.isfile")
     def test_str_representation(

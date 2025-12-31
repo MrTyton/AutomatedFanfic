@@ -33,17 +33,17 @@ Repository: https://github.com/MrTyton/AutomatedFanfic
 import argparse
 import multiprocessing as mp
 import sys
-import ff_logging  # Custom logging module for formatted logging
+from utils import ff_logging  # Custom logging module for formatted logging
 
 from parsers import auto_url_parsers
 from calibre_integration import calibre_info
 from calibre_integration import calibredb_utils
-import coordinator
-import ff_waiter
+from services import coordinator
+from services import ff_waiter
 from notifications import notification_wrapper
-import url_ingester
+from services import url_ingester
 from workers import pipeline as url_worker
-from config_models import ConfigManager, ConfigError, ConfigValidationError
+from models.config_models import ConfigManager, ConfigError, ConfigValidationError
 from process_management import ProcessManager
 
 # Define the application version

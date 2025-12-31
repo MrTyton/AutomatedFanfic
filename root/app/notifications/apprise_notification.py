@@ -27,7 +27,7 @@ Example:
 """
 
 import apprise
-import ff_logging
+from utils import ff_logging
 from . import notification_base
 import requests
 

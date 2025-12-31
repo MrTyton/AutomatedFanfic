@@ -6,9 +6,9 @@ from unittest.mock import patch, call
 
 from parameterized import parameterized
 
-import fanfic_info
-import ff_waiter
-import retry_types
+from models import fanfic_info
+from services import ff_waiter
+from models import retry_types
 
 
 class TestProcessFanfic(unittest.TestCase):
@@ -46,7 +46,7 @@ class TestProcessFanfic(unittest.TestCase):
             ),
         ]
     )
-    @patch("ff_waiter.ff_logging.log")
+    @patch("services.ff_waiter.ff_logging.log")
     @patch("threading.Timer")
     def test_process_fanfic_with_decisions(
         self,
@@ -86,7 +86,7 @@ class TestProcessFanfic(unittest.TestCase):
         )
         mock_timer.return_value.start.assert_called_once()
 
-    @patch("ff_waiter.ff_logging.log")
+    @patch("services.ff_waiter.ff_logging.log")
     @patch("threading.Timer")
     def test_process_fanfic_with_no_decision(self, mock_timer, mock_log):
         """Test that process_fanfic handles missing retry decision with fallback."""
@@ -108,7 +108,7 @@ class TestProcessFanfic(unittest.TestCase):
             300, ff_waiter.insert_after_time, args=(ingress_queue, fanfic)
         )
 
-    @patch("ff_waiter.ff_logging.log")
+    @patch("services.ff_waiter.ff_logging.log")
     def test_process_fanfic_abandon_action(self, mock_log):
         """Test that ABANDON action is handled correctly (should not schedule timer)."""
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
@@ -172,8 +172,8 @@ class TestInsertAfterTime(unittest.TestCase):
 class TestWaitProcessor(unittest.TestCase):
     """Test the wait_processor function."""
 
-    @patch("ff_waiter.process_fanfic")
-    @patch("ff_waiter.sleep")
+    @patch("services.ff_waiter.process_fanfic")
+    @patch("services.ff_waiter.sleep")
     def test_wait_processor_processes_fanfics(self, mock_sleep, mock_process_fanfic):
         """Test that wait_processor processes fanfics from the waiting queue."""
         waiting_queue = mp.Queue()
@@ -193,8 +193,8 @@ class TestWaitProcessor(unittest.TestCase):
         # Verify sleep was called
         mock_sleep.assert_called_with(5)
 
-    @patch("ff_waiter.process_fanfic")
-    @patch("ff_waiter.sleep")
+    @patch("services.ff_waiter.process_fanfic")
+    @patch("services.ff_waiter.sleep")
     def test_wait_processor_poison_pill_shutdown(self, mock_sleep, mock_process_fanfic):
         """Test that wait_processor stops when receiving None (poison pill)."""
         waiting_queue = mp.Queue()
@@ -212,8 +212,8 @@ class TestWaitProcessor(unittest.TestCase):
         # Verify sleep was never called (no processing iteration)
         mock_sleep.assert_not_called()
 
-    @patch("ff_waiter.process_fanfic")
-    @patch("ff_waiter.sleep")
+    @patch("services.ff_waiter.process_fanfic")
+    @patch("services.ff_waiter.sleep")
     def test_wait_processor_multiple_fanfics(self, mock_sleep, mock_process_fanfic):
         """Test that wait_processor handles multiple fanfics before shutdown."""
         waiting_queue = mp.Queue()

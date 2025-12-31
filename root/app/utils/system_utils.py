@@ -47,7 +47,8 @@ import os
 import shutil
 from tempfile import mkdtemp
 
-from calibre_integration import calibre_info
+# Removed top-level import to avoid circular dependency with models.config_models
+# from calibre_integration import calibre_info
 
 
 @contextmanager
@@ -162,7 +163,7 @@ def get_files(directory_path, file_extension=None, return_full_path=False):
     return files
 
 
-def copy_configs_to_temp_dir(cdb: calibre_info.CalibreInfo, temp_dir: str) -> None:
+def copy_configs_to_temp_dir(cdb, temp_dir: str) -> None:
     """
     Copy Calibre configuration files to a temporary directory.
 

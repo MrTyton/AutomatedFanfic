@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 from typing import NamedTuple, Optional
 
-import fanfic_info
+from models import fanfic_info
 from calibre_integration import calibre_info
 from calibre_integration.calibredb_utils import CalibreDBClient
 
@@ -465,7 +465,7 @@ class TestCalibreDBClient(unittest.TestCase):
         # Implementation returns early if both empty
         mock_log_debug.assert_not_called()
 
-    @patch("system_utils.get_files")
+    @patch("utils.system_utils.get_files")
     def test_add_format_success(self, mock_get_files):
         """Test successful format addition."""
         mock_fanfic = MagicMock()
@@ -487,7 +487,7 @@ class TestCalibreDBClient(unittest.TestCase):
             # fanfic object is passed as second arg
             self.assertEqual(call_args[0][1], mock_fanfic)
 
-    @patch("system_utils.get_files")
+    @patch("utils.system_utils.get_files")
     def test_add_format_no_calibre_id(self, mock_get_files):
         """Test that function fails when no calibre_id."""
         mock_fanfic = MagicMock()
@@ -498,7 +498,7 @@ class TestCalibreDBClient(unittest.TestCase):
         self.assertFalse(result)
         mock_get_files.assert_not_called()
 
-    @patch("system_utils.get_files")
+    @patch("utils.system_utils.get_files")
     def test_add_format_subprocess_error(self, mock_get_files):
         """Test handling of subprocess errors in add_format."""
         mock_fanfic = MagicMock()
@@ -511,7 +511,7 @@ class TestCalibreDBClient(unittest.TestCase):
             result = self.client.add_format_to_existing_story("/fake/dir", mock_fanfic)
             self.assertFalse(result)
 
-    @patch("system_utils.get_files")
+    @patch("utils.system_utils.get_files")
     def test_add_format_no_epub_files(self, mock_get_files):
         """Test handling when no EPUB files found."""
         mock_fanfic = MagicMock()

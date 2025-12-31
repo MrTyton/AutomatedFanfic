@@ -10,10 +10,10 @@ from abc import ABC, abstractmethod
 import multiprocessing as mp
 from typing import Callable
 
-from calibre_integration import calibredb_utils
-import config_models
-import fanfic_info
-import ff_logging
+from . import calibredb_utils
+from models import config_models
+from models import fanfic_info
+from utils import ff_logging
 from notifications import notification_wrapper
 
 
@@ -209,5 +209,40 @@ class RemoveAddStrategy(UpdateStrategy):
         if old_metadata or new_metadata:
             ff_logging.log_debug(f"\t({site}) Metadata comparison (remove_add mode):")
             calibre_client.log_metadata_comparison(fanfic, old_metadata, new_metadata)
+
+        return True
+
+
+class AddNewStoryStrategy(UpdateStrategy):
+    """Strategy for adding a completely new story to Calibre."""
+
+    def execute(
+        self,
+        fanfic: fanfic_info.FanficInfo,
+        calibre_client: calibredb_utils.CalibreDBClient,
+        temp_dir: str,
+        site: str,
+        path_or_url: str,
+        waiting_queue: mp.Queue,
+        notification_info: notification_wrapper.NotificationWrapper,
+        retry_config: config_models.RetryConfig,
+        failure_handler: Callable,
+    ) -> bool:
+        ff_logging.log_debug(f"\t({site}) Using add_new_story mode")
+
+        # Add the new story
+        calibre_client.add_story(location=temp_dir, fanfic=fanfic)
+
+        # Verify addition and get new ID
+        if not calibre_client.get_story_id(fanfic):
+            ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
+            failure_handler(
+                fanfic,
+                notification_info,
+                waiting_queue,
+                retry_config,
+                calibre_client.cdb_info,
+            )
+            return False
 
         return True

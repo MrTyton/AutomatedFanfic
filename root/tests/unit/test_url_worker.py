@@ -3,19 +3,16 @@ from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
 import sys
-from pathlib import Path
 
-# Add app directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "app"))  # noqa: E402
 
 from workers import pipeline, handlers, command, common  # noqa: E402
-import config_models  # noqa: E402
-from fanfic_info import FanficInfo  # noqa: E402
+from models import config_models  # noqa: E402
+from models.fanfic_info import FanficInfo  # noqa: E402
 from calibre_integration.calibre_info import CalibreInfo  # noqa: E402
 from notifications.notification_wrapper import NotificationWrapper  # noqa: E402
 from calibre_integration import calibredb_utils  # noqa: E402
 from typing import NamedTuple, Optional  # noqa: E402
-import ff_logging  # noqa: E402
+from utils import ff_logging  # noqa: E402
 
 
 class TestUrlWorker(unittest.TestCase):
@@ -66,7 +63,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("ff_logging.log_failure")
+    @patch("utils.ff_logging.log_failure")
     def test_handle_failure(
         self,
         name,
@@ -174,7 +171,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("ff_logging.log_failure")
+    @patch("utils.ff_logging.log_failure")
     def test_handle_failure_update_no_force(
         self,
         name,
@@ -235,7 +232,7 @@ class TestUrlWorker(unittest.TestCase):
 
         mock_waiting_queue.put.assert_not_called()
 
-    @patch("ff_logging.log_failure")
+    @patch("utils.ff_logging.log_failure")
     def test_handle_failure_with_none_cdb(self, mock_log_failure):
         """Test handle_failure with cdb=None (should never send special notification)."""
         # Setup common mocks
@@ -297,7 +294,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("ff_logging.log_failure")
+    @patch("utils.ff_logging.log_failure")
     def test_handle_failure_edge_cases(
         self,
         name,
@@ -361,7 +358,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("system_utils.get_files")
+    @patch("utils.system_utils.get_files")
     def test_get_path_or_url(
         self,
         fanfic_in_calibre,
@@ -520,7 +517,7 @@ class TestUrlWorker(unittest.TestCase):
         "workers.handlers.update_strategies"
     )  # Patch strategies to avoid actual execution
     @patch(
-        "ff_logging.log_failure"
+        "utils.ff_logging.log_failure"
     )  # Keep patching log_failure for the specific log inside this function
     def test_process_fanfic_addition(
         self,
@@ -601,22 +598,12 @@ class TestUrlWorker(unittest.TestCase):
         else:
             # New story path
             # Instead of mock_client.add_story, we check if AddNewStoryStrategy was used
-            mock_strategy_instance.execute.assert_called_once_with(
-                "path_or_url",  # first arg of AddNewStoryStrategy.execute
-                mock_fanfic,
-                "/fake/temp/dir",
-            )
-            # Argument order for execute: (path, fanfic, temp_dir) in handlers.py call
-
-            # The test code in handlers.py calls:
-            # strategy.execute(path_or_url, fanfic, temp_dir)
-
-            # Corrections:
             mock_strategy_instance.execute.assert_called_once()
-            args = mock_strategy_instance.execute.call_args
-            self.assertEqual(args[0][0], "path_or_url")
-            self.assertEqual(args[0][1], mock_fanfic)
-            self.assertEqual(args[0][2], "/fake/temp/dir")
+            args, kwargs = mock_strategy_instance.execute.call_args
+            self.assertEqual(kwargs["path_or_url"], "path_or_url")
+            self.assertEqual(kwargs["fanfic"], mock_fanfic)
+            self.assertEqual(kwargs["temp_dir"], "/fake/temp/dir")
+            self.assertEqual(kwargs["calibre_client"], mock_client)
 
             if expected_handle_failure_call:
                 # Log failure call is inside strategy or handlers?
@@ -689,7 +676,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_construct_cmd.return_value = ["fanficfare", "command"]
 
         # Mock logging failure to capture the specific error message
-        with patch("workers.pipeline.ff_logging.log_failure") as mock_log_failure:
+        with patch("utils.ff_logging.log_failure") as mock_log_failure:
             # Run worker - checks it exits cleanly after KeyboardInterrupt
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
@@ -715,7 +702,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             )
 
     @patch("workers.command.execute_command")
-    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.command.construct_fanficfare_command")
@@ -728,7 +714,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
-        mock_copy_configs,
         mock_execute,
     ):
         """Test exception handling when execute_command fails."""
@@ -748,7 +733,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         )
 
         # Mock logging failure to capture the specific error message
-        with patch("workers.pipeline.ff_logging.log_failure") as mock_log_failure:
+        with patch("utils.ff_logging.log_failure") as mock_log_failure:
             # Run worker - checks it exits cleanly after KeyboardInterrupt
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
@@ -775,7 +760,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             )
 
     @patch("workers.command.execute_command")
-    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.command.construct_fanficfare_command")
@@ -790,7 +774,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
-        mock_copy_configs,
         mock_execute,
     ):
         """Test failure detection via regex parsing."""
@@ -832,7 +815,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         )
 
     @patch("workers.command.execute_command")
-    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.command.construct_fanficfare_command")
@@ -847,7 +829,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
-        mock_copy_configs,
         mock_execute,
     ):
         """Test force retry logic when forceable conditions are detected."""
@@ -887,7 +868,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
     @patch("workers.handlers.process_fanfic_addition")
     @patch("workers.command.execute_command")
-    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.command.construct_fanficfare_command")
@@ -902,7 +882,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
-        mock_copy_configs,
         mock_execute,
         mock_process_addition,
     ):
@@ -1232,9 +1211,9 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
             ),
         ]
     )
-    @patch("ff_logging.log_debug")
-    @patch("ff_logging.log_failure")
-    @patch("ff_logging.verbose")
+    @patch("utils.ff_logging.log_debug")
+    @patch("utils.ff_logging.log_failure")
+    @patch("utils.ff_logging.verbose")
     def test_fanfic_addition_verbose_error_output(
         self,
         name,

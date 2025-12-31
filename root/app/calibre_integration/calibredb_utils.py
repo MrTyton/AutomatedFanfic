@@ -12,10 +12,10 @@ from subprocess import check_output, call, PIPE, DEVNULL
 from typing import Optional, List, Any, Dict
 
 from . import calibre_info
-import fanfic_info
-import ff_logging
+from models import fanfic_info
+from utils import ff_logging
 from parsers import regex_parsing
-import system_utils
+from utils import system_utils
 
 
 class CalibreDBClient:
