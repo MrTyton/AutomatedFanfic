@@ -6,10 +6,10 @@ import multiprocessing as mp
 
 import config_models
 import retry_types
-import calibre_info
+from calibre_integration import calibre_info
 import fanfic_info
-import notification_wrapper
-import calibredb_utils
+from notifications import notification_wrapper
+from calibre_integration import calibredb_utils
 import ff_logging
 import update_strategies
 

@@ -28,10 +28,10 @@ Example:
     >>> wrapper.send_notification("New Chapter", "Story updated", "ao3")
 """
 
-import notification_base
+from . import notification_base
 from typing import List
 from concurrent.futures import ThreadPoolExecutor
-from apprise_notification import AppriseNotification
+from .apprise_notification import AppriseNotification
 import ff_logging
 
 

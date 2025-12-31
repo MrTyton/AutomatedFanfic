@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 from parameterized import parameterized
 
-import auto_url_parsers
+from parsers import auto_url_parsers
 import fanfic_info
-import regex_parsing
+from parsers import regex_parsing
 
 
 class TestRegexParsing(unittest.TestCase):
@@ -68,7 +68,7 @@ class TestRegexParsing(unittest.TestCase):
             ),
         ]
     )
-    @patch("regex_parsing.ff_logging.log_failure")
+    @patch("parsers.regex_parsing.ff_logging.log_failure")
     def test_check_regexes(
         self,
         test_output,
@@ -113,7 +113,7 @@ class TestRegexParsing(unittest.TestCase):
             ),
         ]
     )
-    @patch("regex_parsing.ff_logging.log_failure")
+    @patch("parsers.regex_parsing.ff_logging.log_failure")
     def test_check_failure_regexes(
         self, input, expected, log_message, mock_log_failure
     ):
@@ -148,7 +148,7 @@ class TestRegexParsing(unittest.TestCase):
             ),
         ]
     )
-    @patch("regex_parsing.ff_logging.log_failure")
+    @patch("parsers.regex_parsing.ff_logging.log_failure")
     def test_check_forceable_regexes(
         self, input, expected, log_message, mock_log_failure
     ):

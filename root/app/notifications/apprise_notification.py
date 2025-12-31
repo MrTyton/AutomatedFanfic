@@ -28,7 +28,7 @@ Example:
 
 import apprise
 import ff_logging
-import notification_base
+from . import notification_base
 import requests
 
 

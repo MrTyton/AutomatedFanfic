@@ -4,7 +4,7 @@ import unittest
 from pydantic import ValidationError
 
 
-from calibre_info import CalibreInfo
+from calibre_integration.calibre_info import CalibreInfo
 from config_models import (
     AppConfig,
     EmailConfig,
@@ -114,7 +114,7 @@ class TestCalibreInfo(unittest.TestCase):
             ("failure_case", 1, False),
         ]
     )
-    @patch("calibre_info.call")
+    @patch("calibre_integration.calibre_info.call")
     def test_check_installed(self, name, return_code, expected_result, mock_call):
         if name == "success_case":
             mock_call.return_value = return_code

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 
-from apprise_notification import AppriseNotification
+from notifications.apprise_notification import AppriseNotification
 from parameterized import parameterized
 from config_models import (
     AppConfig,
@@ -24,7 +24,7 @@ class TestAppriseNotification(unittest.TestCase):
             ),
         ]
     )
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_initialization_reads_urls(
         self, name, input_urls, expected_urls, mock_load_config, MockGlobalApprise
@@ -58,7 +58,7 @@ class TestAppriseNotification(unittest.TestCase):
             ("empty_urls", AppriseConfig(urls=[]), PushbulletConfig()),
         ]
     )
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_initialization_missing_apprise_section(
         self,
@@ -87,7 +87,7 @@ class TestAppriseNotification(unittest.TestCase):
         self.assertFalse(notifier.enabled)
         mock_apprise_obj.add.assert_not_called()
 
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_initialization_missing_urls_key(self, mock_load_config, MockGlobalApprise):
         # Setup mock config with empty apprise
@@ -107,7 +107,7 @@ class TestAppriseNotification(unittest.TestCase):
         self.assertFalse(notifier.enabled)
         mock_apprise_obj.add.assert_not_called()
 
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_initialization_empty_urls_list(self, mock_load_config, MockGlobalApprise):
         # Setup mock config with empty URLs
@@ -135,9 +135,9 @@ class TestAppriseNotification(unittest.TestCase):
             ("different_token", True, "different_token", "", "pbul://different_token"),
         ]
     )
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
-    @patch("apprise_notification.ff_logging")
+    @patch("notifications.apprise_notification.ff_logging")
     def test_init_auto_adds_pushbullet_url(
         self,
         name,
@@ -178,7 +178,7 @@ class TestAppriseNotification(unittest.TestCase):
             ("empty_token", False, "", ""),
         ]
     )
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_init_pushbullet_disabled_scenarios(
         self, name, enabled, token, device, mock_load_config, MockGlobalApprise
@@ -220,9 +220,9 @@ class TestAppriseNotification(unittest.TestCase):
             ("empty_body", None, "Title Only", "", "EmptySite"),
         ]
     )
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
-    @patch("apprise_notification.ff_logging")
+    @patch("notifications.apprise_notification.ff_logging")
     def test_send_notification_success(
         self,
         name,
@@ -257,9 +257,9 @@ class TestAppriseNotification(unittest.TestCase):
         mock_apprise_obj_instance.add.assert_called_once_with("url1")  # From init
         mock_apprise_obj_instance.notify.assert_called_once_with(body=body, title=title)
 
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
-    @patch("apprise_notification.ff_logging")
+    @patch("notifications.apprise_notification.ff_logging")
     def test_send_notification_failure(
         self, mock_ff_logging, mock_load_config, MockAppriseClass
     ):
@@ -282,7 +282,7 @@ class TestAppriseNotification(unittest.TestCase):
         notifier = AppriseNotification("dummy_path.toml")
         self.assertTrue(notifier.enabled)
 
-        with patch("notification_base.time.sleep", return_value=None):
+        with patch("notifications.notification_base.time.sleep", return_value=None):
             result = notifier.send_notification("Test Title", "Test Body", "TestSite")
 
         self.assertFalse(result)
@@ -293,7 +293,7 @@ class TestAppriseNotification(unittest.TestCase):
         )
         self.assertEqual(mock_ff_logging.log_failure.call_count, 3)
 
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_send_notification_not_enabled(self, mock_load_config, MockGlobalApprise):
         # Setup mock config with no apprise or pushbullet
@@ -308,14 +308,14 @@ class TestAppriseNotification(unittest.TestCase):
         mock_apprise_obj = MockGlobalApprise.return_value
         mock_apprise_obj.urls.return_value = []  # No URLs successfully added
 
-        with patch("notification_base.time.sleep", return_value=None):
+        with patch("notifications.notification_base.time.sleep", return_value=None):
             notifier = AppriseNotification("dummy_path.toml")
             self.assertFalse(notifier.enabled)
             result = notifier.send_notification("Test Title", "Test Body", "TestSite")
             self.assertFalse(result)
             mock_apprise_obj.notify.assert_not_called()
 
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_get_service_name(self, mock_load_config, MockGlobalApprise):
         # Setup minimal mock config
@@ -334,7 +334,7 @@ class TestAppriseNotification(unittest.TestCase):
 class TestAppriseNotificationFailures(unittest.TestCase):
     """Test failure scenarios and error handling in AppriseNotification."""
 
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_config_none_initialization(self, mock_load_config, MockGlobalApprise):
         """Test initialization when config loading returns None."""
@@ -352,9 +352,9 @@ class TestAppriseNotificationFailures(unittest.TestCase):
         mock_apprise_obj = MockGlobalApprise.return_value
         mock_apprise_obj.add.assert_not_called()
 
-    @patch("apprise_notification.ff_logging.log_debug")
-    @patch("apprise_notification.requests.get")
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.ff_logging.log_debug")
+    @patch("notifications.apprise_notification.requests.get")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_pushbullet_device_not_found(
         self, mock_load_config, MockGlobalApprise, mock_requests_get, mock_log_debug
@@ -400,9 +400,9 @@ class TestAppriseNotificationFailures(unittest.TestCase):
         # Should continue with basic URL since device not found
         self.assertTrue(notifier.enabled)
 
-    @patch("apprise_notification.ff_logging.log_failure")
-    @patch("apprise_notification.requests.get")
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.ff_logging.log_failure")
+    @patch("notifications.apprise_notification.requests.get")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_apprise_configuration_exception(
         self, mock_load_config, MockGlobalApprise, mock_requests_get, mock_log_failure
@@ -439,8 +439,8 @@ class TestAppriseNotificationFailures(unittest.TestCase):
         # Should still be enabled because we have valid URLs
         self.assertTrue(notifier.enabled)
 
-    @patch("apprise_notification.ff_logging.log_failure")
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.ff_logging.log_failure")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_apprise_url_add_failure(
         self, mock_load_config, MockGlobalApprise, mock_log_failure
@@ -483,8 +483,8 @@ class TestAppriseNotificationFailures(unittest.TestCase):
         # Should still be enabled because one URL was successful
         self.assertTrue(notifier.enabled)
 
-    @patch("apprise_notification.ff_logging.log_failure")
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.ff_logging.log_failure")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_no_valid_urls_after_processing(
         self, mock_load_config, MockGlobalApprise, mock_log_failure
@@ -515,8 +515,8 @@ class TestAppriseNotificationFailures(unittest.TestCase):
         # Should be disabled
         self.assertFalse(notifier.enabled)
 
-    @patch("apprise_notification.ff_logging.log")
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.ff_logging.log")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_no_urls_configured(self, mock_load_config, MockGlobalApprise, mock_log):
         """Test when no URLs are configured at all (line 255)."""
@@ -546,9 +546,9 @@ class TestAppriseNotificationFailures(unittest.TestCase):
 class TestAppriseNotificationAdditionalCoverage(unittest.TestCase):
     """Additional tests for edge cases to achieve complete coverage."""
 
-    @patch("apprise_notification.ff_logging.log_debug")
-    @patch("apprise_notification.requests.get")
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.ff_logging.log_debug")
+    @patch("notifications.apprise_notification.requests.get")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_pushbullet_device_found_success(
         self, mock_load_config, MockGlobalApprise, mock_requests_get, mock_log_debug
@@ -595,8 +595,8 @@ class TestAppriseNotificationAdditionalCoverage(unittest.TestCase):
         mock_log_debug.assert_any_call("Found device ID: device2")
         self.assertTrue(notifier.enabled)
 
-    @patch("apprise_notification.ff_logging.log_debug")
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.ff_logging.log_debug")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_pushbullet_url_already_present(
         self, mock_load_config, MockGlobalApprise, mock_log_debug
@@ -626,7 +626,7 @@ class TestAppriseNotificationAdditionalCoverage(unittest.TestCase):
         )
         self.assertTrue(notifier.enabled)
 
-    @patch("apprise_notification.apprise.Apprise")
+    @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("config_models.ConfigManager.load_config")
     def test_is_enabled_method_coverage(self, mock_load_config, MockGlobalApprise):
         """Test is_enabled() method for line coverage (line 255)."""

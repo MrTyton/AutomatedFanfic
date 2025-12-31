@@ -6,7 +6,7 @@ import zipfile
 from xml.etree import ElementTree as ET
 import ff_logging
 import fanfic_info
-import calibredb_utils
+from calibre_integration import calibredb_utils
 
 import system_utils
 

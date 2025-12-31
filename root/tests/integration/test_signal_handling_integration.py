@@ -21,7 +21,7 @@ from config_models import (
     AppriseConfig,
     ProcessConfig,
 )
-from process_manager import ProcessManager
+from process_management import ProcessManager
 
 
 def long_running_worker(duration=10):

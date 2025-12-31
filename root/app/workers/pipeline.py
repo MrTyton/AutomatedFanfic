@@ -7,12 +7,12 @@ import subprocess
 import time
 
 import ff_logging
-import calibredb_utils
+from calibre_integration import calibredb_utils
 import config_models
-import notification_wrapper
+from notifications import notification_wrapper
 import system_utils
 import fanfic_info
-import regex_parsing
+from parsers import regex_parsing
 
 # Import from sibling modules
 from . import common

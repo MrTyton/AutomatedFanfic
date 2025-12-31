@@ -74,8 +74,8 @@ import logging
 from contextlib import contextmanager
 from fanficfare import geturls
 import ff_logging
-import regex_parsing
-import notification_wrapper
+from parsers import regex_parsing
+from notifications import notification_wrapper
 from config_models import EmailConfig
 
 
