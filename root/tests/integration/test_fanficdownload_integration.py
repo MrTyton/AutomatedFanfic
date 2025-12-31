@@ -36,6 +36,15 @@ from config_models import (
 from process_manager import ProcessManager
 
 
+# Helper functions for multiprocessing tests (must be top-level for Windows pickle compatibility)
+def _global_dummy_worker(*args, **kwargs):
+    time.sleep(0.1)
+
+
+def _global_mock_worker(*args, **kwargs):
+    time.sleep(0.05)
+
+
 class TestFanficdownloadIntegration(unittest.TestCase):
     """Comprehensive integration tests for AutomatedFanfic."""
 
@@ -362,10 +371,10 @@ class TestFanficdownloadIntegration(unittest.TestCase):
 
         with ProcessManager(config=config) as process_manager:
             # Test process registration
-            def dummy_worker():
-                time.sleep(0.1)
-
-            process_manager.register_process("test_worker", dummy_worker, args=())
+            # Test process registration
+            process_manager.register_process(
+                "test_worker", _global_dummy_worker, args=()
+            )
 
             # Test process startup
             process_manager.start_all()
@@ -609,12 +618,9 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_calibre.return_value = mock_calibre_instance
 
         # Mock worker functions to be fast and simple
-        def mock_worker(*args):
-            time.sleep(0.05)  # Brief simulation
-
-        with patch("fanficdownload.url_ingester.email_watcher", mock_worker):
-            with patch("fanficdownload.ff_waiter.wait_processor", mock_worker):
-                with patch("fanficdownload.url_worker.url_worker", mock_worker):
+        with patch("fanficdownload.url_ingester.email_watcher", _global_mock_worker):
+            with patch("fanficdownload.ff_waiter.wait_processor", _global_mock_worker):
+                with patch("fanficdownload.url_worker.url_worker", _global_mock_worker):
                     with patch(
                         "process_manager.ProcessManager.wait_for_all"
                     ) as mock_wait:
@@ -693,11 +699,9 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         # Test multiple process manager cycles
         for _ in range(3):
             with ProcessManager(config=config) as process_manager:
-
-                def dummy_worker():
-                    time.sleep(0.01)
-
-                process_manager.register_process("test_worker", dummy_worker, args=())
+                process_manager.register_process(
+                    "test_worker", _global_dummy_worker, args=()
+                )
                 process_manager.start_all()
 
                 # Verify processes are running

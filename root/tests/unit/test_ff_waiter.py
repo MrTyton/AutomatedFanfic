@@ -68,10 +68,9 @@ class TestProcessFanfic(unittest.TestCase):
             notification_message="",
         )
 
-        queue = mp.Queue()
-        processor_queues = {"site": queue}
+        ingress_queue = mp.Queue()
 
-        ff_waiter.process_fanfic(fanfic, processor_queues)
+        ff_waiter.process_fanfic(fanfic, ingress_queue)
 
         # Verify the logging contains expected pattern
         mock_log.assert_called_once()
@@ -81,7 +80,9 @@ class TestProcessFanfic(unittest.TestCase):
 
         # Verify the timer was called with the correct delay
         mock_timer.assert_called_once_with(
-            expected_delay_seconds, ff_waiter.insert_after_time, args=(queue, fanfic)
+            expected_delay_seconds,
+            ff_waiter.insert_after_time,
+            args=(ingress_queue, fanfic),
         )
         mock_timer.return_value.start.assert_called_once()
 
@@ -92,10 +93,9 @@ class TestProcessFanfic(unittest.TestCase):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
         # No retry_decision set (None)
 
-        queue = mp.Queue()
-        processor_queues = {"site": queue}
+        ingress_queue = mp.Queue()
 
-        ff_waiter.process_fanfic(fanfic, processor_queues)
+        ff_waiter.process_fanfic(fanfic, ingress_queue)
 
         # Should log warning about missing decision and retry details
         self.assertEqual(mock_log.call_count, 2)
@@ -105,7 +105,7 @@ class TestProcessFanfic(unittest.TestCase):
 
         # Should use default 5 minute delay
         mock_timer.assert_called_once_with(
-            300, ff_waiter.insert_after_time, args=(queue, fanfic)
+            300, ff_waiter.insert_after_time, args=(ingress_queue, fanfic)
         )
 
     @patch("ff_waiter.ff_logging.log")
@@ -119,10 +119,10 @@ class TestProcessFanfic(unittest.TestCase):
             notification_message="",
         )
 
-        processor_queues = {"site": mp.Queue()}
+        ingress_queue = mp.Queue()
 
         with patch("threading.Timer") as mock_timer:
-            ff_waiter.process_fanfic(fanfic, processor_queues)
+            ff_waiter.process_fanfic(fanfic, ingress_queue)
 
             # Should log error and not start timer
             mock_log.assert_called_once()
@@ -177,7 +177,7 @@ class TestWaitProcessor(unittest.TestCase):
     def test_wait_processor_processes_fanfics(self, mock_sleep, mock_process_fanfic):
         """Test that wait_processor processes fanfics from the waiting queue."""
         waiting_queue = mp.Queue()
-        processor_queues = {"test_site": mp.Queue()}
+        ingress_queue = mp.Queue()
 
         # Add a fanfic and then poison pill to stop the loop
         fanfic = fanfic_info.FanficInfo(site="test_site", url="test_url")
@@ -185,10 +185,10 @@ class TestWaitProcessor(unittest.TestCase):
         waiting_queue.put(None)  # Poison pill to stop processing
 
         # Run the processor
-        ff_waiter.wait_processor(processor_queues, waiting_queue)
+        ff_waiter.wait_processor(ingress_queue, waiting_queue)
 
         # Verify process_fanfic was called with the correct arguments
-        mock_process_fanfic.assert_called_once_with(fanfic, processor_queues)
+        mock_process_fanfic.assert_called_once_with(fanfic, ingress_queue)
 
         # Verify sleep was called
         mock_sleep.assert_called_with(5)
@@ -198,13 +198,13 @@ class TestWaitProcessor(unittest.TestCase):
     def test_wait_processor_poison_pill_shutdown(self, mock_sleep, mock_process_fanfic):
         """Test that wait_processor stops when receiving None (poison pill)."""
         waiting_queue = mp.Queue()
-        processor_queues = {"test_site": mp.Queue()}
+        ingress_queue = mp.Queue()
 
         # Add only poison pill - should stop immediately
         waiting_queue.put(None)
 
         # Run the processor
-        ff_waiter.wait_processor(processor_queues, waiting_queue)
+        ff_waiter.wait_processor(ingress_queue, waiting_queue)
 
         # Verify process_fanfic was never called
         mock_process_fanfic.assert_not_called()
@@ -217,7 +217,7 @@ class TestWaitProcessor(unittest.TestCase):
     def test_wait_processor_multiple_fanfics(self, mock_sleep, mock_process_fanfic):
         """Test that wait_processor handles multiple fanfics before shutdown."""
         waiting_queue = mp.Queue()
-        processor_queues = {"site1": mp.Queue(), "site2": mp.Queue()}
+        ingress_queue = mp.Queue()
 
         # Add multiple fanfics and then poison pill
         fanfic1 = fanfic_info.FanficInfo(site="site1", url="url1")
@@ -230,13 +230,13 @@ class TestWaitProcessor(unittest.TestCase):
         waiting_queue.put(None)  # Poison pill
 
         # Run the processor
-        ff_waiter.wait_processor(processor_queues, waiting_queue)
+        ff_waiter.wait_processor(ingress_queue, waiting_queue)
 
         # Verify process_fanfic was called for each fanfic
         expected_calls = [
-            call(fanfic1, processor_queues),
-            call(fanfic2, processor_queues),
-            call(fanfic3, processor_queues),
+            call(fanfic1, ingress_queue),
+            call(fanfic2, ingress_queue),
+            call(fanfic3, ingress_queue),
         ]
         mock_process_fanfic.assert_has_calls(expected_calls)
 

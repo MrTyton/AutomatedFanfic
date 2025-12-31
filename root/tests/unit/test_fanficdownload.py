@@ -181,7 +181,11 @@ class TestFanficDownloadMain(unittest.TestCase):
                     mock_cdb.check_installed.assert_called_once()
 
                     # Verify process registration calls
-                    self.assertEqual(mock_pm_instance.register_process.call_count, 4)
+                    # 1 email_watcher
+                    # 1 waiting_watcher
+                    # 1 coordinator
+                    # 4 workers (max_workers=4)
+                    self.assertEqual(mock_pm_instance.register_process.call_count, 7)
 
                     # Verify process manager lifecycle
                     mock_pm_instance.start_all.assert_called_once()

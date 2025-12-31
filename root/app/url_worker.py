@@ -73,8 +73,8 @@ Thread Safety:
 """
 
 import multiprocessing as mp
+from queue import Empty
 from subprocess import CalledProcessError, check_output, PIPE, STDOUT
-from time import sleep
 
 import calibre_info
 import calibredb_utils
@@ -527,106 +527,63 @@ def url_worker(
     queue: mp.Queue,
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
-    waiting_queue: mp.Queue,
+    ingress_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
+    worker_id: str,
     active_urls: dict | None = None,
 ) -> None:
     """
     Main worker function for processing fanfiction downloads in a dedicated process.
 
-    This function implements the core download worker loop that processes FanficInfo
-    objects from a queue, downloads or updates stories using FanFicFare, integrates
-    them with Calibre libraries, and handles comprehensive error recovery with
-    retry logic.
+    This function implements the consumers worker loop that requests tasks from
+    the central coordinator, downloads/updates stories using FanFicFare, and
+    handling Calibre integration.
 
     Args:
-        queue (mp.Queue): Input queue containing FanficInfo objects to process.
-                         Worker continuously monitors this queue for new work.
-        calibre_client (calibredb_utils.CalibreDBClient): CalibreDB client instance
-                                                         containing library connection.
-        notification_info (notification_wrapper.NotificationWrapper): Notification
-                                                                     system for sending success/failure alerts.
-        waiting_queue (mp.Queue): Queue for stories that need to be retried later
-                                 due to failures or timing issues.
-        retry_config (config_models.RetryConfig): Retry configuration settings
-                                                 loaded from the main process to avoid redundant config parsing.
-
-    Processing Flow:
-        1. Monitor queue for new FanficInfo objects
-        2. Determine if story exists in Calibre (update vs. new download)
-        3. Create temporary workspace with configuration files
-        4. Execute FanFicFare command with appropriate flags
-        5. Parse output for success/failure/retry conditions
-        6. Integrate successful downloads with Calibre library
-        7. Handle failures with sophisticated retry logic
-        8. Send appropriate notifications for completion status
-
-    Error Handling:
-        - Command execution failures: Logged and sent to failure handler
-        - Regex parsing: Detects permanent vs. retryable failures
-        - Force retry detection: Automatically retries with --force when appropriate
-        - Calibre integration: Verifies successful addition to library
-
-    Temporary Directory Management:
-        Each processing attempt uses an isolated temporary directory that includes:
-        - Downloaded story files from FanFicFare
-        - Calibre configuration files (defaults.ini, personal.ini)
-        - Automatic cleanup regardless of success/failure
-
-    Example Usage:
-        ```python
-        # Typically run in separate process via ProcessManager
-        import multiprocessing as mp
-
-        work_queue = mp.Queue()
-        retry_queue = mp.Queue()
-        calibre_config = CalibreInfo("/path/to/library")
-        notifier = NotificationWrapper(config)
-
-        # This runs indefinitely until process termination
-        url_worker(work_queue, calibre_config, notifier, retry_queue)
-        ```
-
-    Infinite Loop:
-        This function runs indefinitely and should be executed in a separate
-        process. It only exits when the process is terminated externally or
-        the queue receives a None sentinel value.
-
-    Thread Safety:
-        Designed for multiprocessing environments. Each worker operates in
-        isolation with its own temporary workspace and Calibre connection.
-        All inter-process communication occurs through thread-safe queues.
-
-    Configuration Awareness:
-        Respects all Calibre and FanFicFare configuration options including:
-        - update_method settings (update, update_always, force, update_no_force)
-        - Calibre library paths (local or server-based)
-        - Force request handling and conflicts
-        - Notification preferences
-
-    Note:
-        Workers sleep for 5 seconds when the queue is empty to reduce CPU
-        usage while maintaining reasonable responsiveness to new work.
+        queue (mp.Queue): Worker-specific input queue to receive tasks from Coordinator.
+        calibre_client (calibredb_utils.CalibreDBClient): CalibreDB client instance.
+        notification_info (notification_wrapper.NotificationWrapper): Notification system.
+        ingress_queue (mp.Queue): Ingress queue to send retries back to Coordinator.
+        retry_config (config_models.RetryConfig): Retry settings.
+        worker_id (str): Unique identifier for this worker process.
+        active_urls (dict, optional): Shared dictionary tracking active URLs.
     """
     cdb = calibre_client.cdb_info
-    ff_logging.log(f"Starting URL Worker for site: {cdb.library_path}", "HEADER")
+    ff_logging.log(f"Starting Worker {worker_id}", "HEADER")
+
+    # Track the last site processed to unlock it in the next request
+    last_finished_site = None
 
     while True:
-        # Check for available work, sleep briefly if queue is empty
-        if queue.empty():
-            sleep(5)
-            continue
+        try:
+            # Try to get work immediately
+            fanfic = queue.get_nowait()
+        except Empty:
+            # Queue is empty: Signal IDLE and block for new work
+            ingress_queue.put(("WORKER_IDLE", worker_id, last_finished_site))
+            last_finished_site = None  # Reset after sending signal
+            try:
+                fanfic = queue.get()  # Blocking wait
+            except Exception as e:
+                ff_logging.log_failure(
+                    f"Worker {worker_id} error waiting for new work: {e}"
+                )
+                break
+        except Exception as e:
+            ff_logging.log_failure(f"Worker {worker_id} error getting from queue: {e}")
+            break
 
-        # Retrieve next fanfiction to process
-        fanfic = queue.get()
-        # Skip None sentinel values used for graceful shutdown
+        # Check for shutdown signal
         if fanfic is None:
-            continue
+            ff_logging.log(f"Worker {worker_id} received shutdown signal", "HEADER")
+            break
 
-        # Process fanfiction in isolated temporary workspace
+        # We have a valid task
         should_remove_from_active = True
         site = fanfic.site
         path_or_url = fanfic.url
+
+        # Mark site as current context for this worker (though we rely on coordinator for locking)
         try:
             with system_utils.temporary_directory() as temp_dir:
                 ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
@@ -642,11 +599,10 @@ def url_worker(
                     ):  # Only update if extraction succeeded
                         fanfic.title = extracted_title
                         ff_logging.log_debug(
-                            f"\t({site}) Extracted title: {fanfic.title}"
+                            f"\t({site}) Extracted title from filename: {fanfic.title}"
                         )
-
-                    # Log epub metadata to help diagnose FanFicFare issues
-                    log_epub_metadata(path_or_url, site)
+                        # Also attempt to read full metadata for debugging
+                        log_epub_metadata(path_or_url, site)
 
                 ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
 
@@ -688,7 +644,7 @@ def url_worker(
                         )
 
                     handle_failure(
-                        fanfic, notification_info, waiting_queue, retry_config, cdb
+                        fanfic, notification_info, ingress_queue, retry_config, cdb
                     )
                     continue
                 except Exception as e:
@@ -697,14 +653,14 @@ def url_worker(
                         f"\t({site}) Failed to update {path_or_url}: {e}"
                     )
                     handle_failure(
-                        fanfic, notification_info, waiting_queue, retry_config, cdb
+                        fanfic, notification_info, ingress_queue, retry_config, cdb
                     )
                     continue
 
                 # Parse FanFicFare output for permanent failure conditions
                 if not regex_parsing.check_failure_regexes(output):
                     handle_failure(
-                        fanfic, notification_info, waiting_queue, retry_config, cdb
+                        fanfic, notification_info, ingress_queue, retry_config, cdb
                     )
                     continue
 
@@ -712,7 +668,7 @@ def url_worker(
                 if regex_parsing.check_forceable_regexes(output):
                     # Set force behavior and re-queue for immediate retry
                     fanfic.behavior = "force"
-                    queue.put(fanfic)
+                    ingress_queue.put(fanfic)
                     should_remove_from_active = False
                     continue
 
@@ -724,11 +680,14 @@ def url_worker(
                     temp_dir,
                     site,
                     path_or_url,
-                    waiting_queue,
+                    ingress_queue,
                     notification_info,
                     retry_config,
                 )
         finally:
+            # Mark this site as finished for the next request
+            last_finished_site = site
+
             # Cleanup active_urls
             if active_urls is not None and should_remove_from_active:
                 # Check if it was retried (sent to waiting queue)

@@ -3,14 +3,19 @@ from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
 from subprocess import STDOUT, PIPE
+import sys
+from pathlib import Path
 
-import url_worker
-import config_models
-from fanfic_info import FanficInfo
-from calibre_info import CalibreInfo
-from notification_wrapper import NotificationWrapper
-import calibredb_utils
-from typing import NamedTuple, Optional
+# Add app directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "app"))
+
+import url_worker  # noqa: E402
+import config_models  # noqa: E402
+from fanfic_info import FanficInfo  # noqa: E402
+from calibre_info import CalibreInfo  # noqa: E402
+from notification_wrapper import NotificationWrapper  # noqa: E402
+import calibredb_utils  # noqa: E402
+from typing import NamedTuple, Optional  # noqa: E402
 
 
 class TestUrlWorker(unittest.TestCase):
@@ -666,7 +671,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
-        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(
+        self.mock_queue.get_nowait.side_effect = self.create_queue_get_side_effect(
             self.test_fanfic
         )
 
@@ -690,6 +695,8 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_notification_info,
                     self.mock_waiting_queue,
                     retry_config,
+                    "worker_id",
+                    None,  # active_urls
                 )
 
             # Verify that exception was triggered and failure handler called
@@ -724,7 +731,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         """Test exception handling when execute_command fails."""
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
-        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(
+        self.mock_queue.get_nowait.side_effect = self.create_queue_get_side_effect(
             self.test_fanfic
         )
 
@@ -749,6 +756,8 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_notification_info,
                     self.mock_waiting_queue,
                     retry_config,
+                    "worker_id",
+                    None,  # active_urls
                 )
 
             # Verify that exception was caught and failure handler called
@@ -785,7 +794,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         """Test failure detection via regex parsing."""
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
-        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(
+        self.mock_queue.get_nowait.side_effect = self.create_queue_get_side_effect(
             self.test_fanfic
         )
 
@@ -809,6 +818,8 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_notification_info,
                 self.mock_waiting_queue,
                 retry_config,
+                "worker_id",
+                None,  # active_urls
             )
 
         # Verify failure handler was called due to regex detection
@@ -842,7 +853,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         """Test force retry logic when forceable conditions are detected."""
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
-        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(
+        self.mock_queue.get_nowait.side_effect = self.create_queue_get_side_effect(
             self.test_fanfic
         )
 
@@ -867,11 +878,13 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_notification_info,
                 self.mock_waiting_queue,
                 retry_config,
+                "worker_id",
+                None,  # active_urls
             )
 
         # Verify fanfic was re-queued with force behavior
         self.assertEqual(self.test_fanfic.behavior, "force")
-        self.mock_queue.put.assert_called_once_with(self.test_fanfic)
+        self.mock_waiting_queue.put.assert_called_once_with(self.test_fanfic)
 
     @patch("url_worker.process_fanfic_addition")
     @patch("url_worker.execute_command")
@@ -897,7 +910,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         """Test successful processing path through url_worker."""
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
-        self.mock_queue.get.side_effect = self.create_queue_get_side_effect(
+        self.mock_queue.get_nowait.side_effect = self.create_queue_get_side_effect(
             self.test_fanfic
         )
 
@@ -922,6 +935,8 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_notification_info,
                 self.mock_waiting_queue,
                 retry_config,
+                "worker_id",
+                None,  # active_urls
             )
 
         # Verify successful processing

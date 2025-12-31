@@ -3,7 +3,6 @@ import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
 import time
-import sys
 
 
 from url_ingester import EmailInfo, email_watcher
@@ -147,11 +146,7 @@ class TestEmailWatcher(unittest.TestCase):
 
         self.mock_notification_info = MagicMock()
 
-        self.processor_queues = {
-            "fanfiction": mp.Queue(),
-            "archiveofourown": mp.Queue(),
-            "other": mp.Queue(),
-        }
+        self.ingress_queue = mp.Queue()
 
         # Mock URL parsers for testing
         self.mock_url_parsers = {
@@ -160,63 +155,35 @@ class TestEmailWatcher(unittest.TestCase):
             "other": (MagicMock(), ""),
         }
 
-    def assert_queue_has_item(self, queue_name, expected_fanfic=None, timeout=1.0):
-        """Assert that a queue has an item, with retry logic for race conditions.
+    def assert_ingress_has_item(self, expected_fanfic=None, timeout=1.0):
+        """Assert that ingress queue has an item, with retry logic for race conditions.
 
         Args:
-            queue_name (str): Name of the queue to check
             expected_fanfic (FanficInfo, optional): Expected fanfic object to compare
             timeout (float): Maximum time to wait for queue to have items
 
         Returns:
             FanficInfo: The retrieved fanfic object
         """
-        queue = self.processor_queues[queue_name]
+        queue = self.ingress_queue
         start_time = time.time()
 
-        # Add debug information for CI debugging
-        print(f"\n[DEBUG] Checking {queue_name} queue:")
-        print(f"[DEBUG] Python version: {sys.version}")
-        print(f"[DEBUG] Multiprocessing start method: {mp.get_start_method()}")
-        print(f"[DEBUG] Platform: {sys.platform}")
-
         while time.time() - start_time < timeout:
-            queue_empty = queue.empty()
-            print(
-                f"[DEBUG] Queue empty check #{int((time.time() - start_time) * 1000)}ms: {queue_empty}"
-            )
-
-            if not queue_empty:
+            if not queue.empty():
                 try:
                     retrieved_fanfic = queue.get_nowait()
-                    print(
-                        f"[DEBUG] Successfully retrieved fanfic: {retrieved_fanfic.site}"
-                    )
-
                     if expected_fanfic is not None:
                         self.assertEqual(
                             retrieved_fanfic,
                             expected_fanfic,
                             "Retrieved fanfic should equal expected fanfic",
                         )
-
                     return retrieved_fanfic
-                except Exception as e:
-                    print(f"[DEBUG] Error during get_nowait: {e}")
-
-            # Small delay before retry
+                except Exception:
+                    pass
             time.sleep(0.001)
 
-        # Final failure with comprehensive debug info
-        print(f"[DEBUG] FINAL FAILURE: Queue '{queue_name}' is empty after {timeout}s")
-        print("[DEBUG] All queue states:")
-        for name, q in self.processor_queues.items():
-            print(f"[DEBUG]   {name}: empty={q.empty()}")
-
-        self.fail(
-            f"Queue '{queue_name}' was empty after {timeout}s timeout. "
-            f"This indicates a race condition or timing issue."
-        )
+        self.fail(f"Ingress queue was empty after {timeout}s timeout.")
 
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -242,7 +209,7 @@ class TestEmailWatcher(unittest.TestCase):
             email_watcher(
                 self.mock_email_info,
                 self.mock_notification_info,
-                self.processor_queues,
+                self.ingress_queue,
                 self.mock_url_parsers,
             )
 
@@ -253,12 +220,12 @@ class TestEmailWatcher(unittest.TestCase):
 
         # Verify logging
         mock_log.assert_called_once_with(
-            f"Adding {mock_fanfic.url} to the {mock_fanfic.site} processor queue",
+            f"Adding {mock_fanfic.url} to the ingestion queue (Site: {mock_fanfic.site})",
             "HEADER",
         )
 
-        # Verify fanfic was added to correct queue (with race condition handling)
-        self.assert_queue_has_item("fanfiction", mock_fanfic)
+        # Verify fanfic was added to ingress queue
+        self.assert_ingress_has_item(mock_fanfic)
 
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -284,7 +251,7 @@ class TestEmailWatcher(unittest.TestCase):
             email_watcher(
                 self.mock_email_info,
                 self.mock_notification_info,
-                self.processor_queues,
+                self.ingress_queue,
                 self.mock_url_parsers,
             )
 
@@ -293,9 +260,8 @@ class TestEmailWatcher(unittest.TestCase):
             "New Fanfiction Download", mock_fanfic.url, mock_fanfic.site
         )
 
-        # Verify fanfic was NOT added to any queue (all queues should be empty)
-        for queue in self.processor_queues.values():
-            self.assertTrue(queue.empty())
+        # Verify fanfic was NOT added to ingress queue
+        self.assertTrue(self.ingress_queue.empty())
 
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -333,19 +299,16 @@ class TestEmailWatcher(unittest.TestCase):
             email_watcher(
                 self.mock_email_info,
                 self.mock_notification_info,
-                self.processor_queues,
+                self.ingress_queue,
                 self.mock_url_parsers,
             )
 
-        # Verify each fanfic was added to the correct queue (with race condition handling)
-        ffnet_fanfic = self.assert_queue_has_item("fanfiction")
-        self.assertEqual(ffnet_fanfic.site, "fanfiction")
+        # Verify each fanfic was added to the ingress queue (order may vary)
+        captured_sites = set()
+        for _ in range(3):
+            captured_sites.add(self.assert_ingress_has_item().site)
 
-        ao3_fanfic = self.assert_queue_has_item("archiveofourown")
-        self.assertEqual(ao3_fanfic.site, "archiveofourown")
-
-        other_fanfic = self.assert_queue_has_item("other")
-        self.assertEqual(other_fanfic.site, "other")
+        self.assertEqual(captured_sites, {"fanfiction", "archiveofourown", "other"})
 
         # Verify logging happened for each fanfic
         self.assertEqual(mock_log.call_count, 3)
@@ -364,13 +327,12 @@ class TestEmailWatcher(unittest.TestCase):
             email_watcher(
                 self.mock_email_info,
                 self.mock_notification_info,
-                self.processor_queues,
+                self.ingress_queue,
                 self.mock_url_parsers,
             )
 
-        # Verify all queues remain empty
-        for queue in self.processor_queues.values():
-            self.assertTrue(queue.empty())
+        # Verify ingress queue remain empty
+        self.assertTrue(self.ingress_queue.empty())
 
         # Verify no notifications were sent
         self.mock_notification_info.send_notification.assert_not_called()
@@ -390,7 +352,7 @@ class TestEmailWatcher(unittest.TestCase):
             email_watcher(
                 self.mock_email_info,
                 self.mock_notification_info,
-                self.processor_queues,
+                self.ingress_queue,
                 self.mock_url_parsers,
             )
 

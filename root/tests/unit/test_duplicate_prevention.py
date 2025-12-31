@@ -1,7 +1,5 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import multiprocessing as mp
-from typing import cast, Dict
 from url_ingester import email_watcher, EmailInfo
 from url_worker import url_worker
 from fanfic_info import FanficInfo
@@ -17,9 +15,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.email_info = MagicMock(spec=EmailInfo)
         self.email_info.disabled_sites = []
         self.email_info.sleep_time = 0.1
-        self.processor_queues = cast(
-            Dict[str, mp.Queue], {"fanfiction": MagicMock(), "other": MagicMock()}
-        )
+        self.ingress_queue = MagicMock()
         self.url_parsers = {}
 
     @patch("url_ingester.time.sleep")
@@ -40,7 +36,7 @@ class TestDuplicatePrevention(unittest.TestCase):
             email_watcher(
                 self.email_info,
                 self.notification_info,
-                self.processor_queues,
+                self.ingress_queue,
                 self.url_parsers,
                 self.active_urls,
             )
@@ -49,9 +45,7 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         # Verify
         self.assertIn(url, self.active_urls)
-        cast(MagicMock, self.processor_queues["fanfiction"].put).assert_called_with(
-            fanfic
-        )
+        self.ingress_queue.put.assert_called_with(fanfic)
 
     @patch("url_ingester.time.sleep")
     @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -71,7 +65,7 @@ class TestDuplicatePrevention(unittest.TestCase):
             email_watcher(
                 self.email_info,
                 self.notification_info,
-                self.processor_queues,
+                self.ingress_queue,
                 self.url_parsers,
                 self.active_urls,
             )
@@ -79,7 +73,7 @@ class TestDuplicatePrevention(unittest.TestCase):
             pass
 
         # Verify
-        cast(MagicMock, self.processor_queues["fanfiction"].put).assert_not_called()
+        self.ingress_queue.put.assert_not_called()
         # Should log a warning
         mock_log.assert_any_call(
             f"Skipping {url} - already in queue or processing", "WARNING"
@@ -110,7 +104,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.active_urls[url] = True
 
         # Queue returns fanfic then raises KeyboardInterrupt to exit loop
-        self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
+        self.queue.get_nowait.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
         # Mocks for successful execution
@@ -132,6 +126,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.notification_info,
                 waiting_queue,
                 retry_config,
+                "test_worker",
                 self.active_urls,
             )
         except KeyboardInterrupt:
@@ -162,7 +157,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         fanfic = FanficInfo(site="fanfiction", url=url)
         self.active_urls[url] = True
 
-        self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
+        self.queue.get_nowait.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
         # Mocks
@@ -192,6 +187,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.notification_info,
                 waiting_queue,
                 retry_config,
+                "test_worker",
                 self.active_urls,
             )
         except KeyboardInterrupt:
@@ -222,7 +218,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         fanfic = FanficInfo(site="fanfiction", url=url)
         self.active_urls[url] = True
 
-        self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
+        self.queue.get_nowait.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
         # Mocks
@@ -252,6 +248,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.notification_info,
                 waiting_queue,
                 retry_config,
+                "test_worker",
                 self.active_urls,
             )
         except KeyboardInterrupt:

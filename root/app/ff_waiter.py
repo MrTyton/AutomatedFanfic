@@ -67,7 +67,7 @@ def insert_after_time(queue: mp.Queue, fanfic: fanfic_info.FanficInfo) -> None:
 
 def process_fanfic(
     fanfic: fanfic_info.FanficInfo,
-    processor_queues: dict[str, mp.Queue],
+    ingress_queue: mp.Queue,
 ) -> None:
     """Processes a failed fanfiction by scheduling delayed retry via timer.
 
@@ -83,8 +83,7 @@ def process_fanfic(
         fanfic (fanfic_info.FanficInfo): The fanfiction metadata object containing
                                         URL, site information, current retry state,
                                         and the pre-calculated retry decision.
-        processor_queues (dict[str, mp.Queue]): Dictionary mapping site names to
-                                                their corresponding processing queues.
+        ingress_queue (mp.Queue): The queue to insert the fanfiction into after delay.
 
     Note:
         This function starts a daemon timer thread that will execute independently.
@@ -132,16 +131,13 @@ def process_fanfic(
 
     # Convert delay to seconds and schedule timer
     delay_seconds = int(decision.delay_minutes * 60)
-    target_queue = processor_queues[fanfic.site]
     timer = threading.Timer(
-        delay_seconds, insert_after_time, args=(target_queue, fanfic)
+        delay_seconds, insert_after_time, args=(ingress_queue, fanfic)
     )
     timer.start()
 
 
-def wait_processor(
-    processor_queues: dict[str, mp.Queue], waiting_queue: mp.Queue
-) -> None:
+def wait_processor(ingress_queue: mp.Queue, waiting_queue: mp.Queue) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 
     Continuously monitors the waiting queue for failed fanfiction entries that
@@ -152,13 +148,10 @@ def wait_processor(
     This function runs in a dedicated process and processes entries from the
     waiting queue in a continuous loop. Each failed fanfiction is processed
     via process_fanfic() which uses the pre-calculated retry decision to
-    schedule timer-based requeuing back to site-specific processing queues.
+    schedule timer-based requeuing back to the ingress queue.
 
     Args:
-        processor_queues (dict[str, mp.Queue]): Dictionary mapping fanfiction
-                                               site names (e.g., "archiveofourown.org")
-                                               to their corresponding multiprocessing
-                                               queues for site-specific processing.
+        ingress_queue (mp.Queue): The single ingress queue for all tasks.
         waiting_queue (mp.Queue): The shared multiprocessing queue containing
                                  failed fanfiction entries awaiting delayed retry.
                                  Supports poison pill (None) shutdown pattern.
@@ -175,8 +168,7 @@ def wait_processor(
 
     Example:
         >>> # Typically called by ProcessManager in separate process
-        >>> site_queues = {"archiveofourown.org": queue1, "fanfiction.net": queue2}
-        >>> wait_processor(site_queues, waiting_queue)
+        >>> wait_processor(ingress_queue, waiting_queue)
     """
     while True:
         # Block waiting for next failed fanfiction entry from waiting queue
@@ -187,7 +179,7 @@ def wait_processor(
             break
 
         # Schedule delayed retry processing for the failed fanfiction
-        process_fanfic(fanfic, processor_queues)
+        process_fanfic(fanfic, ingress_queue)
 
         # Brief sleep to prevent busy-waiting and reduce CPU usage
         sleep(5)  # Sleep for 5 seconds between processing iterations

@@ -753,10 +753,14 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
         import subprocess
         import sys
         import os
+        from pathlib import Path
 
         # Test the main module execution by running it directly
+        script_path = (
+            Path(__file__).parent.parent.parent / "app" / "auto_url_parsers.py"
+        )
         result = subprocess.run(
-            [sys.executable, "root/app/auto_url_parsers.py"],
+            [sys.executable, str(script_path)],
             capture_output=True,
             text=True,
             cwd=os.getcwd(),
