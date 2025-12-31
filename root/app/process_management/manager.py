@@ -261,28 +261,68 @@ class ProcessManager:
 
     def stop_all(self, timeout: Optional[float] = None) -> bool:
         """
-        Stop all processes gracefully.
+        Stop all processes gracefully with parallel shutdown.
         """
         self._shutdown_event.set()
 
-        # Stop monitoring
+        # Stop monitoring thread first
         if self._monitor_thread:
             self._monitor_thread.join(timeout=5)
             self._monitor_thread = None
 
-        # Stop pool if exists
+        # Stop worker pool if exists
         if self.pool:
             try:
                 self.pool.terminate()
-                self.pool.join()  # Pool.join() doesn't take timeout
+                self.pool.join()
                 self.pool = None
             except Exception as e:
                 ff_logging.log_failure(f"Error stopping pool: {e}")
 
-        # Stop individual processes
+        # Use configured timeout if none provided
+        timeout = timeout or self.process_config.shutdown_timeout
+        start_time = time.time()
+
+        # Phase 1: Signal all processes to terminate (Parallel Shutdown)
+        processes_to_stop = []
+        for name, process_info in self.processes.items():
+            if process_info.is_alive() and process_info.process:
+                try:
+                    ff_logging.log_debug(f"Sending SIGTERM to process: {name}")
+                    process_info.process.terminate()
+                    process_info.state = ProcessState.STOPPING
+                    processes_to_stop.append((name, process_info))
+                except Exception as e:
+                    ff_logging.log_failure(f"Error terminating process '{name}': {e}")
+            elif not process_info.is_alive():
+                process_info.state = ProcessState.STOPPED
+
+        # Phase 2: Wait for all processes to exit within timeout
+        while processes_to_stop and (time.time() - start_time < timeout):
+            still_running = []
+            for name, process_info in processes_to_stop:
+                if process_info.process.is_alive():
+                    still_running.append((name, process_info))
+                else:
+                    process_info.state = ProcessState.STOPPED
+                    ff_logging.log_debug(f"Process stopped gracefully: {name}")
+
+            processes_to_stop = still_running
+            if processes_to_stop:
+                time.sleep(0.1)
+
+        # Phase 3: Force kill any remaining processes
         success = True
-        for name in self.processes:
-            if not self.stop_process(name, timeout):
+        for name, process_info in processes_to_stop:
+            ff_logging.log_failure(f"Process '{name}' timed out, force killing")
+            try:
+                if process_info.process.is_alive():
+                    process_info.process.kill()
+                    process_info.process.join(1)  # Brief wait for kill
+                process_info.state = ProcessState.FAILED
+                success = False
+            except Exception as e:
+                ff_logging.log_failure(f"Error force killing '{name}': {e}")
                 success = False
 
         return success
