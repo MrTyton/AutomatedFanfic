@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from url_ingester import email_watcher, EmailInfo
-from url_worker import url_worker
+from workers.pipeline import url_worker
 from fanfic_info import FanficInfo
 from config_models import RetryConfig
 import retry_types
@@ -79,13 +79,13 @@ class TestDuplicatePrevention(unittest.TestCase):
             f"Skipping {url} - already in queue or processing", "WARNING"
         )
 
-    @patch("url_worker.system_utils.copy_configs_to_temp_dir")
-    @patch("url_worker.system_utils.temporary_directory")
-    @patch("url_worker.get_path_or_url")
-    @patch("url_worker.construct_fanficfare_command")
-    @patch("url_worker.execute_command")
-    @patch("url_worker.process_fanfic_addition")
-    @patch("url_worker.ff_logging")
+    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    @patch("workers.command.construct_fanficfare_command")
+    @patch("workers.command.execute_command")
+    @patch("workers.handlers.process_fanfic_addition")
+    @patch("workers.pipeline.ff_logging")
     def test_url_worker_removes_from_active_urls_on_success(
         self,
         mock_logging,
@@ -102,7 +102,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.active_urls[url] = True
 
         # Queue returns fanfic then raises KeyboardInterrupt to exit loop
-        self.queue.get_nowait.side_effect = [fanfic, KeyboardInterrupt]
+        self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
         # Mocks for successful execution
@@ -133,12 +133,12 @@ class TestDuplicatePrevention(unittest.TestCase):
         # Verify
         self.assertNotIn(url, self.active_urls)
 
-    @patch("url_worker.system_utils.copy_configs_to_temp_dir")
-    @patch("url_worker.system_utils.temporary_directory")
-    @patch("url_worker.get_path_or_url")
-    @patch("url_worker.handle_failure")
-    @patch("url_worker.ff_logging")
-    @patch("url_worker.execute_command")
+    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    @patch("workers.handlers.handle_failure")
+    @patch("workers.pipeline.ff_logging")
+    @patch("workers.command.execute_command")
     def test_url_worker_keeps_active_on_retry(
         self,
         mock_exec,
@@ -153,7 +153,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         fanfic = FanficInfo(site="fanfiction", url=url)
         self.active_urls[url] = True
 
-        self.queue.get_nowait.side_effect = [fanfic, KeyboardInterrupt]
+        self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
         # Mocks
@@ -192,12 +192,12 @@ class TestDuplicatePrevention(unittest.TestCase):
         # Verify
         self.assertIn(url, self.active_urls)
 
-    @patch("url_worker.system_utils.copy_configs_to_temp_dir")
-    @patch("url_worker.system_utils.temporary_directory")
-    @patch("url_worker.get_path_or_url")
-    @patch("url_worker.handle_failure")
-    @patch("url_worker.ff_logging")
-    @patch("url_worker.execute_command")
+    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    @patch("workers.handlers.handle_failure")
+    @patch("workers.pipeline.ff_logging")
+    @patch("workers.command.execute_command")
     def test_url_worker_removes_active_on_abandon(
         self,
         mock_exec,
@@ -212,7 +212,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         fanfic = FanficInfo(site="fanfiction", url=url)
         self.active_urls[url] = True
 
-        self.queue.get_nowait.side_effect = [fanfic, KeyboardInterrupt]
+        self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
         # Mocks

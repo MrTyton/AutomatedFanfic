@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 
-from url_worker import construct_fanficfare_command
+from workers.command import construct_fanficfare_command
 from calibre_info import CalibreInfo
 from fanfic_info import FanficInfo
 

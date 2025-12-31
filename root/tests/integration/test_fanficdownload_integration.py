@@ -20,7 +20,8 @@ from parameterized import parameterized
 from typing import Dict, Any
 
 import fanficdownload
-import url_worker
+from workers import handlers as worker_handlers
+from workers import command as worker_command
 import regex_parsing
 import fanfic_info
 import calibre_info
@@ -301,7 +302,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_fanfic.url = "http://test.site/story/123"
 
         # Test command construction
-        command = url_worker.construct_fanficfare_command(
+        command = worker_command.construct_fanficfare_command(
             mock_cdb, mock_fanfic, "http://test.site/story/123"
         )
 
@@ -534,8 +535,8 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         )
 
         # Test failure handling
-        with patch("url_worker.ff_logging") as mock_logging:
-            url_worker.handle_failure(
+        with patch("workers.handlers.ff_logging") as mock_logging:
+            worker_handlers.handle_failure(
                 mock_fanfic, mock_notification, mock_queue, retry_config, mock_cdb
             )
 
