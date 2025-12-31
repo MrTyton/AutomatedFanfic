@@ -455,6 +455,13 @@ class RetryConfig(BaseModel):
         description="Maximum number of normal retry attempts before Hail-Mary",
     )
 
+    max_normal_retries: int = Field(
+        default=11,
+        ge=1,
+        le=50,
+        description="Maximum number of normal retry attempts before Hail-Mary",
+    )
+
     @property
     def hail_mary_wait_minutes(self) -> float:
         """Convert Hail-Mary wait time from hours to minutes for internal use."""

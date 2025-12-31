@@ -42,7 +42,7 @@ import coordinator
 import ff_waiter
 import notification_wrapper
 import url_ingester
-import url_worker
+from workers import pipeline as url_worker
 from config_models import ConfigManager, ConfigError, ConfigValidationError
 from process_manager import ProcessManager
 
@@ -122,7 +122,7 @@ def main() -> None:
 
     # Log external tool versions
     calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
-    fanficfare_version = url_worker.get_fanficfare_version()
+    fanficfare_version = url_worker.command.get_fanficfare_version()
     ff_logging.log(f"Calibre version: {calibre_version}")
     ff_logging.log(f"FanFicFare version: {fanficfare_version}")
 

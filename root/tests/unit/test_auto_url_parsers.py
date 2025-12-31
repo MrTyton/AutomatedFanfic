@@ -73,8 +73,8 @@ class TestAutoUrlParsers(unittest.TestCase):
             URLPatternTestCase(
                 input_url="https://www.fanfiction.net/s/9876543/7/Another-Story-Name",
                 expected_site="fanfiction",
-                expected_captured_url="www.fanfiction.net/s/9876543/7/",
-                description="Fanfiction.net with different story ID and chapter",
+                expected_captured_url="www.fanfiction.net/s/9876543/1/",
+                description="Fanfiction.net with different story ID and chapter (normalized to /1/)",
             ),
             # Archive of Our Own (AO3) tests
             URLPatternTestCase(

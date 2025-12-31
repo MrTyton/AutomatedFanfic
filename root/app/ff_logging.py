@@ -106,6 +106,15 @@ def set_verbose(value: bool) -> None:
     verbose.value = value
 
 
+def is_verbose() -> bool:
+    """Returns the current state of the global verbose logging flag.
+
+    Returns:
+        bool: True if verbose debug logging is enabled, False otherwise.
+    """
+    return bool(verbose.value)
+
+
 def log(msg: str, color: str = "") -> None:
     """Logs a timestamped message to console with optional color formatting.
 

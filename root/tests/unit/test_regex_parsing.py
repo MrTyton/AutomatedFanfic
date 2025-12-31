@@ -270,18 +270,18 @@ class TestRegexParsing(unittest.TestCase):
             ),
             FanfictionNetChapterTestCase(
                 input_url="https://www.fanfiction.net/s/14534655/23/",
-                expected_url="www.fanfiction.net/s/14534655/23/",
-                description="URL with /23/ should be preserved",
+                expected_url="www.fanfiction.net/s/14534655/1/",
+                description="URL with /23/ should be normalized to /1/",
             ),
             FanfictionNetChapterTestCase(
                 input_url="https://www.fanfiction.net/s/14534655/23/Story-Title",
-                expected_url="www.fanfiction.net/s/14534655/23/",
-                description="URL with chapter and title should preserve chapter, strip title",
+                expected_url="www.fanfiction.net/s/14534655/1/",
+                description="URL with chapter and title should normalize to /1/",
             ),
             FanfictionNetChapterTestCase(
                 input_url="http://fanfiction.net/s/9876543/7",
-                expected_url="www.fanfiction.net/s/9876543/7/",
-                description="URL with chapter but no trailing slash should add slash",
+                expected_url="www.fanfiction.net/s/9876543/1/",
+                description="URL with chapter but no trailing slash should normalize to /1/",
             ),
         ]
     )
