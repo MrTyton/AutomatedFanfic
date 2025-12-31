@@ -44,7 +44,7 @@ import notification_wrapper
 import url_ingester
 from workers import pipeline as url_worker
 from config_models import ConfigManager, ConfigError, ConfigValidationError
-from process_manager import ProcessManager
+from process_management import ProcessManager
 
 # Define the application version
 __version__ = "1.24.1"

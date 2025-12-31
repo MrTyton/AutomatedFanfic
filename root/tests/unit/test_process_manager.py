@@ -23,7 +23,7 @@ from config_models import (
     CalibreConfig,
     ConfigManager,
 )
-from process_manager import ProcessManager, ProcessState, ProcessInfo
+from process_management import ProcessManager, ProcessState, ProcessInfo
 
 
 def dummy_worker_function(duration=1):
