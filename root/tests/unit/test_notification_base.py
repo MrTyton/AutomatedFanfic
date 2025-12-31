@@ -7,7 +7,7 @@ from notifications.notification_base import (
     kSleepTime,
     kMaxAttempts,
 )
-from config_models import (
+from models.config_models import (
     AppConfig,
     EmailConfig,
     CalibreConfig,
@@ -28,7 +28,8 @@ class TestNotificationBase(unittest.TestCase):
 
         # Patch ConfigManager.load_config to return our mock config
         patcher_config = patch(
-            "config_models.ConfigManager.load_config", return_value=self.mock_config
+            "models.config_models.ConfigManager.load_config",
+            return_value=self.mock_config,
         )
         self.mock_load_config = patcher_config.start()
         self.addCleanup(patcher_config.stop)

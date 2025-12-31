@@ -7,16 +7,16 @@ configuration loading, process management initialization, and shutdown handling.
 
 import unittest
 from unittest.mock import MagicMock, patch
-import sys
-from pathlib import Path
 from typing import NamedTuple
 from parameterized import parameterized
 
-# Add the app directory to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "app"))
 
 import fanficdownload  # noqa: E402
-from config_models import AppConfig, ConfigError, ConfigValidationError  # noqa: E402
+from models.config_models import (
+    AppConfig,
+    ConfigError,
+    ConfigValidationError,
+)  # noqa: E402
 
 
 class TestFanficDownloadMain(unittest.TestCase):

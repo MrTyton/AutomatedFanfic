@@ -4,14 +4,14 @@ Failure and success handling logic for worker processes.
 
 import multiprocessing as mp
 
-import config_models
-import retry_types
+from models import config_models
+from models import retry_types
 from calibre_integration import calibre_info
-import fanfic_info
+from models import fanfic_info
 from notifications import notification_wrapper
 from calibre_integration import calibredb_utils
-import ff_logging
-import update_strategies
+from utils import ff_logging
+from calibre_integration import update_strategies
 
 
 def handle_failure(
@@ -127,29 +127,39 @@ def process_fanfic_addition(
         retry_config: Retry configuration
     """
     try:
-        # Determine strategy
-        story_id = calibre_client.get_story_id(fanfic.url)
+        # Determine if the story exists in Calibre
+        story_id = calibre_client.get_story_id(fanfic)
 
         if story_id:
-            # Existing story
-            strategy = update_strategies.RemoveAddStrategy(calibre_client, ff_logging)
-            success = strategy.execute(story_id, path_or_url, fanfic, temp_dir)
+            # Existing story - use metadata preservation mode from config
+            mode = calibre_client.cdb_info.metadata_preservation_mode
+
+            if mode == config_models.MetadataPreservationMode.ADD_FORMAT:
+                strategy = update_strategies.AddFormatStrategy()
+            elif mode == config_models.MetadataPreservationMode.PRESERVE_METADATA:
+                strategy = update_strategies.PreserveMetadataStrategy()
+            else:
+                strategy = update_strategies.RemoveAddStrategy()
         else:
             # New story
-            strategy = update_strategies.AddNewStoryStrategy(calibre_client, ff_logging)
-            success = strategy.execute(path_or_url, fanfic, temp_dir)
+            strategy = update_strategies.AddNewStoryStrategy()
+
+        # Execute the chosen strategy
+        success = strategy.execute(
+            fanfic=fanfic,
+            calibre_client=calibre_client,
+            temp_dir=temp_dir,
+            site=site,
+            path_or_url=path_or_url,
+            waiting_queue=waiting_queue,
+            notification_info=notification_info,
+            retry_config=retry_config,
+            failure_handler=handle_failure,
+        )
 
         if success:
             ff_logging.log(f"({site}) Successfully processed {fanfic.title}")
-        else:
-            # Strategy failed
-            handle_failure(
-                fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-            )
+        # Note: Failures are handled within the strategy.execute calls via failure_handler
 
     except Exception as e:
         ff_logging.log_failure(f"Error processing additions to Calibre: {e}")

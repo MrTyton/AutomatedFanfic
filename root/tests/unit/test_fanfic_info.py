@@ -1,6 +1,6 @@
 import unittest
 
-from fanfic_info import FanficInfo
+from models.fanfic_info import FanficInfo
 from typing import NamedTuple, Any  # Added NamedTuple and Any
 from parameterized import parameterized  # Added parameterized
 

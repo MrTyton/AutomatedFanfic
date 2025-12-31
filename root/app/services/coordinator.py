@@ -12,8 +12,8 @@ import multiprocessing as mp
 import collections
 from typing import Dict, Set, Optional
 from queue import Empty
-import ff_logging
-from fanfic_info import FanficInfo
+from utils import ff_logging
+from models.fanfic_info import FanficInfo
 
 
 class Coordinator:

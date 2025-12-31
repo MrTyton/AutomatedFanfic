@@ -16,16 +16,10 @@ Then send SIGTERM to the process (e.g., via Docker stop, kill, or Ctrl+C)
 and observe the output.
 """
 
-import sys
 import os
 import time
 
-# Add the app directory to the path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-app_dir = os.path.join(os.path.dirname(current_dir), "app")
-sys.path.insert(0, app_dir)
-
-from config_models import (  # noqa: E402
+from models.config_models import (  # noqa: E402
     AppConfig,
     ProcessConfig,
     EmailConfig,
@@ -33,7 +27,7 @@ from config_models import (  # noqa: E402
     PushbulletConfig,
     AppriseConfig,
 )
-from process_manager import ProcessManager  # noqa: E402
+from process_management import ProcessManager  # noqa: E402
 
 
 def simple_worker(worker_id, duration=60):

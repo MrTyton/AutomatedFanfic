@@ -13,7 +13,7 @@ import signal
 import threading
 from unittest.mock import patch
 
-from config_models import (
+from models.config_models import (
     AppConfig,
     EmailConfig,
     CalibreConfig,
@@ -130,7 +130,7 @@ class TestSignalHandlingIntegration(unittest.TestCase):
         for stop_event in stop_events:
             stop_event.set()
 
-    @patch("ff_logging.log")
+    @patch("utils.ff_logging.log")
     def test_no_duplicate_signal_messages(self, mock_log):
         """Test that multiple SIGTERM signals don't create duplicate log messages."""
         self.manager.setup_signal_handlers()
@@ -217,7 +217,7 @@ class TestSignalHandlingIntegration(unittest.TestCase):
         """Test that context manager works correctly with signal handling."""
         stop_event = mp.Event()
 
-        with patch("ff_logging.log"):
+        with patch("utils.ff_logging.log"):
             # Use context manager (simulating fanficdownload.py)
             with ProcessManager(config=self.config) as manager:
                 # Register some processes

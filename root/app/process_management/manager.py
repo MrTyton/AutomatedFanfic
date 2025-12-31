@@ -11,8 +11,8 @@ import threading
 import time
 from typing import Any, Callable, Dict, Optional, Tuple
 
-import ff_logging
-from config_models import AppConfig, ProcessConfig
+from utils import ff_logging
+from models.config_models import AppConfig, ProcessConfig
 from .state import ProcessInfo, ProcessState
 
 
@@ -280,7 +280,11 @@ class ProcessManager:
                 ff_logging.log_failure(f"Error stopping pool: {e}")
 
         # Use configured timeout if none provided
-        timeout = timeout or self.process_config.shutdown_timeout
+        timeout = (
+            timeout if timeout is not None else self.process_config.shutdown_timeout
+        )
+        if timeout is None:
+            timeout = 30.0  # Fallback default if config is missing
         start_time = time.time()
 
         # Phase 1: Signal all processes to terminate (Parallel Shutdown)

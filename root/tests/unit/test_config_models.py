@@ -5,7 +5,7 @@ from parameterized import parameterized
 import tempfile
 import os
 
-from config_models import (
+from models.config_models import (
     ConfigManager,
     EmailConfig,
     CalibreConfig,

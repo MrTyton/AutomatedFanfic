@@ -6,7 +6,7 @@ from unittest.mock import patch
 from freezegun import freeze_time
 from parameterized import parameterized
 
-import ff_logging
+from utils import ff_logging
 
 
 class TestLogFunction(unittest.TestCase):

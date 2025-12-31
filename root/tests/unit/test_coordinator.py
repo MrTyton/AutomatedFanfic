@@ -1,13 +1,9 @@
 import unittest
 import multiprocessing as mp
-import sys
-from pathlib import Path
 
-# Add app directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "app"))
 
-from coordinator import Coordinator  # noqa: E402
-from fanfic_info import FanficInfo  # noqa: E402
+from services.coordinator import Coordinator  # noqa: E402
+from models.fanfic_info import FanficInfo  # noqa: E402
 
 
 class TestCoordinator(unittest.TestCase):

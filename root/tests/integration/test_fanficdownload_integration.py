@@ -23,16 +23,17 @@ import fanficdownload
 from workers import handlers as worker_handlers
 from workers import command as worker_command
 from parsers import regex_parsing
-import fanfic_info
+from models import fanfic_info
 from calibre_integration import calibre_info
 from notifications import notification_wrapper
 from parsers import auto_url_parsers
-from config_models import (
+from models.config_models import (
     AppConfig,
     EmailConfig,
     CalibreConfig,
     ProcessConfig,
     ConfigManager,
+    RetryConfig,
 )
 from process_management import ProcessManager
 
@@ -528,9 +529,8 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             mock_cdb.update_method = config_data["update_method"]
 
         # Create retry config for the new architecture
-        import config_models
 
-        retry_config = config_models.RetryConfig(
+        retry_config = RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
 

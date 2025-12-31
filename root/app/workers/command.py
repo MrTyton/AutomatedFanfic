@@ -5,9 +5,9 @@ Command execution logic for FanFicFare integration.
 import sys
 import shlex
 import subprocess
-import ff_logging
+from utils import ff_logging
 from calibre_integration import calibre_info
-import fanfic_info
+from models import fanfic_info
 
 
 def get_fanficfare_version() -> str:

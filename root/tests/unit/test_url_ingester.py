@@ -5,9 +5,9 @@ import multiprocessing as mp
 import time
 
 
-from url_ingester import EmailInfo, email_watcher
-from fanfic_info import FanficInfo
-from config_models import (
+from services.url_ingester import EmailInfo, email_watcher
+from models.fanfic_info import FanficInfo
+from models.config_models import (
     EmailConfig,
 )
 
@@ -88,7 +88,7 @@ class TestUrlIngester(unittest.TestCase):
             ("empty_urls", []),
         ]
     )
-    @patch("url_ingester.geturls.get_urls_from_imap")
+    @patch("services.url_ingester.geturls.get_urls_from_imap")
     def test_email_info_get_urls(self, name, expected_urls, mock_get_urls_from_imap):
         # Create EmailConfig directly
         email_config = EmailConfig(
@@ -108,7 +108,7 @@ class TestUrlIngester(unittest.TestCase):
         self.assertEqual(result, expected_urls)
         mock_get_urls_from_imap.assert_called_once()
 
-    @patch("url_ingester.geturls.get_urls_from_imap")
+    @patch("services.url_ingester.geturls.get_urls_from_imap")
     def test_email_info_get_urls_exception_handling(self, mock_get_urls_from_imap):
         """Test that get_urls handles exceptions gracefully."""
         # Create EmailConfig directly
@@ -125,7 +125,7 @@ class TestUrlIngester(unittest.TestCase):
 
         email_info = EmailInfo(email_config)
 
-        with patch("url_ingester.ff_logging.log_failure") as mock_log_failure:
+        with patch("services.url_ingester.ff_logging.log_failure") as mock_log_failure:
             result = email_info.get_urls()
 
         # Should return empty set on exception
@@ -185,9 +185,9 @@ class TestEmailWatcher(unittest.TestCase):
 
         self.fail(f"Ingress queue was empty after {timeout}s timeout.")
 
-    @patch("url_ingester.time.sleep")
-    @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("url_ingester.ff_logging.log")
+    @patch("services.url_ingester.time.sleep")
+    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.url_ingester.ff_logging.log")
     def test_email_watcher_processes_urls(
         self, mock_log, mock_generate_fanfic, mock_sleep
     ):
@@ -227,8 +227,8 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify fanfic was added to ingress queue
         self.assert_ingress_has_item(mock_fanfic)
 
-    @patch("url_ingester.time.sleep")
-    @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.url_ingester.time.sleep")
+    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
     def test_email_watcher_disabled_sites_notification_only(
         self, mock_generate_fanfic, mock_sleep
     ):
@@ -263,9 +263,9 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify fanfic was NOT added to ingress queue
         self.assertTrue(self.ingress_queue.empty())
 
-    @patch("url_ingester.time.sleep")
-    @patch("url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("url_ingester.ff_logging.log")
+    @patch("services.url_ingester.time.sleep")
+    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.url_ingester.ff_logging.log")
     def test_email_watcher_multiple_sites(
         self, mock_log, mock_generate_fanfic, mock_sleep
     ):
@@ -313,7 +313,7 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify logging happened for each fanfic
         self.assertEqual(mock_log.call_count, 3)
 
-    @patch("url_ingester.time.sleep")
+    @patch("services.url_ingester.time.sleep")
     def test_email_watcher_empty_urls_cycle(self, mock_sleep):
         """Test that email_watcher handles empty URL responses gracefully."""
         # Setup mock to return empty URLs then stop
@@ -337,7 +337,7 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify no notifications were sent
         self.mock_notification_info.send_notification.assert_not_called()
 
-    @patch("url_ingester.time.sleep")
+    @patch("services.url_ingester.time.sleep")
     def test_email_watcher_sleep_timing(self, mock_sleep):
         """Test that email_watcher sleeps for the correct duration."""
         custom_sleep_time = 42

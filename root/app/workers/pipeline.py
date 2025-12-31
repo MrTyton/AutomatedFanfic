@@ -6,12 +6,12 @@ import multiprocessing as mp
 import subprocess
 import time
 
-import ff_logging
+from utils import ff_logging
 from calibre_integration import calibredb_utils
-import config_models
+from models import config_models
 from notifications import notification_wrapper
-import system_utils
-import fanfic_info
+from utils import system_utils
+from models import fanfic_info
 from parsers import regex_parsing
 
 # Import from sibling modules
@@ -85,7 +85,7 @@ def _process_task(
                 )
 
             # Set up temporary workspace with configuration files
-            system_utils.copy_configs_to_temp_dir(calibre_client.cdb_info, temp_dir)
+            calibre_client.cdb_info.copy_configs_to_temp_dir(temp_dir)
 
             # Run command in temp_dir
             output = command.execute_command(cmd_args, cwd=temp_dir)

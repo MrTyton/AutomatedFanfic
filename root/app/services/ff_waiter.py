@@ -32,9 +32,9 @@ import multiprocessing as mp
 import threading
 from time import sleep
 
-import fanfic_info
-import ff_logging
-import retry_types
+from models import fanfic_info
+from utils import ff_logging
+from models import retry_types
 
 
 def insert_after_time(queue: mp.Queue, fanfic: fanfic_info.FanficInfo) -> None:

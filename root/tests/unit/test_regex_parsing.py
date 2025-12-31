@@ -7,7 +7,7 @@ from unittest.mock import patch
 from parameterized import parameterized
 
 from parsers import auto_url_parsers
-import fanfic_info
+from models import fanfic_info
 from parsers import regex_parsing
 
 

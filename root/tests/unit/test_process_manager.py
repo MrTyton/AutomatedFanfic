@@ -16,7 +16,7 @@ import pytest
 from parameterized import parameterized
 
 # Add the app directory to the path so we can import our modules
-from config_models import (
+from models.config_models import (
     AppConfig,
     ProcessConfig,
     EmailConfig,
@@ -150,7 +150,7 @@ class TestProcessManager(unittest.TestCase):
         self.manager.register_process("test", dummy_worker_function)
 
         # Attempt to register again - should fail
-        with patch("ff_logging.log_failure") as mock_log:
+        with patch("utils.ff_logging.log_failure") as mock_log:
             self.manager.register_process("test", dummy_worker_function)
             mock_log.assert_called_once()
 
@@ -182,7 +182,7 @@ class TestProcessManager(unittest.TestCase):
         self.manager.start_process("test")
 
         # Try to start again
-        with patch("ff_logging.log_failure") as mock_log:
+        with patch("utils.ff_logging.log_failure") as mock_log:
             result = self.manager.start_process("test")
             self.assertFalse(result)
             mock_log.assert_called_once()
@@ -651,8 +651,8 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
         shutdown_thread.join()
         self.manager.stop_all()
 
-    @patch("ff_logging.log")
-    @patch("ff_logging.log_debug")
+    @patch("utils.ff_logging.log")
+    @patch("utils.ff_logging.log_debug")
     def test_signal_handler_logging_messages(self, mock_log_debug, mock_log):
         """Test that signal handler logs appropriate messages."""
         self.manager.setup_signal_handlers()

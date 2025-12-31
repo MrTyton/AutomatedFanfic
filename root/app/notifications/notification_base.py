@@ -39,8 +39,8 @@ Example:
 
 import time
 from typing import Callable, Any
-from config_models import ConfigManager, ConfigError, ConfigValidationError
-import ff_logging
+from models.config_models import ConfigManager, ConfigError, ConfigValidationError
+from utils import ff_logging
 
 # Base sleep time in seconds for retry delays between notification attempts
 kSleepTime = 10
