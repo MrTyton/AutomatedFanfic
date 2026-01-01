@@ -39,7 +39,7 @@ class Coordinator:
 
     def run(self):
         """Main coordinator loop."""
-        ff_logging.log("Coordinator started", "HEADER")
+        ff_logging.log_debug("Coordinator started")
 
         while self.running:
             # Process incoming events (tasks or signals)

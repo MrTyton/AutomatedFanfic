@@ -196,9 +196,19 @@ def register_processes(
 ) -> None:
     """Registers all worker processes with the ProcessManager."""
     # --- Coordinator Pattern Setup ---
+    # Calculate actual worker pool size by subtracting overhead processes
+    # Overhead: Main(1) + SyncManager(1) + Coordinator(1) + Email(1) + Waiter(1) + ResourceTracker(1) = 6
+    overhead_count = 6
+    worker_pool_size = max(1, config.max_workers - overhead_count)
+
+    ff_logging.log(
+        f"Spawning {worker_pool_size} worker processes ({overhead_count} support processes) "
+        f"to match max_workers={config.max_workers}"
+    )
+
     ingress_queue = manager.Queue()
     worker_queues = {}
-    for i in range(config.max_workers):
+    for i in range(worker_pool_size):
         worker_id = f"worker_{i}"
         worker_queues[worker_id] = manager.Queue()
 
@@ -243,7 +253,7 @@ def register_processes(
     )
 
     # Register Workers
-    for i in range(config.max_workers):
+    for i in range(worker_pool_size):
         worker_id = f"worker_{i}"
         process_manager.register_process(
             worker_id,

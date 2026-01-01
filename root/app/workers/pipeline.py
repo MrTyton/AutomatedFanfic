@@ -173,7 +173,7 @@ def url_worker(
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
 
-    ff_logging.log(f"Starting Worker {worker_id}", "HEADER")
+    ff_logging.log_debug(f"Starting Worker {worker_id}")
 
     # Track last site to release lock
     last_finished_site = None

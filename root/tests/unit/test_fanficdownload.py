@@ -184,8 +184,8 @@ class TestFanficDownloadMain(unittest.TestCase):
                     # 1 email_watcher
                     # 1 waiting_watcher
                     # 1 coordinator
-                    # 4 workers (max_workers=4)
-                    self.assertEqual(mock_pm_instance.register_process.call_count, 7)
+                    # 1 worker (max_workers=4 - 6 overhead = min 1)
+                    self.assertEqual(mock_pm_instance.register_process.call_count, 4)
 
                     # Verify process manager lifecycle
                     mock_pm_instance.start_all.assert_called_once()
