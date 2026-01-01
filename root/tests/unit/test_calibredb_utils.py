@@ -180,8 +180,7 @@ class TestCalibreDBClient(unittest.TestCase):
                 mock_execute.assert_not_called()
             else:
                 mock_log.assert_called_once_with(
-                    f"\t({fanfic.site}) Adding {epub_files[0]} to Calibre",
-                    "OKGREEN",
+                    f"\t({fanfic.site}) Adding {epub_files[0]} to Calibre"
                 )
                 mock_execute.assert_called_once_with(
                     expected_command,

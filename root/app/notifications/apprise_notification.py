@@ -226,13 +226,13 @@ class AppriseNotification(notification_base.NotificationBase):
         # Attempt to send notification to all configured targets
         if self.apobj.notify(body=body, title=title):
             ff_logging.log(
-                f"({site}) Apprise notification for '{title}':'{body}' sent successfully "
+                f"\t({site}) Apprise notification for '{title}':'{body}' sent successfully "
                 f"to {target_count} {'target' if target_count == 1 else 'targets'}"
             )
             return True
         else:
             ff_logging.log_failure(
-                f"({site}) Failed to send Apprise notification to {target_count} target(s)."
+                f"\t({site}) Failed to send Apprise notification to {target_count} target(s)."
             )
             return False
 

@@ -163,11 +163,22 @@ class NotificationWrapper:
             worker for worker in self.notification_workers if worker.enabled
         ]
 
+        # Capture current thread color to propagate to worker threads
+        current_color = getattr(ff_logging._thread_local, "color", None)
+
+        def _send_with_color(worker, title, body, site, color):
+            """Helper to propagate thread color context to worker thread."""
+            if color:
+                ff_logging.set_thread_color(color)
+            return worker.send_notification(title, body, site)
+
         # Send notifications concurrently using thread pool for performance
         with ThreadPoolExecutor() as executor:
             # Submit notification tasks for all enabled workers
             futures = [
-                executor.submit(worker.send_notification, title, body, site)
+                executor.submit(
+                    _send_with_color, worker, title, body, site, current_color
+                )
                 for worker in enabled_workers
             ]
 

@@ -9,10 +9,9 @@ import multiprocessing as mp
 
 class TestHandlersNotification(unittest.TestCase):
     def setUp(self):
-        self.mock_fanfic = MagicMock(spec=fanfic_info.FanficInfo)
-        self.mock_fanfic.title = "Test Story"
-        self.mock_fanfic.url = "http://example.com/story"
-        self.mock_fanfic.site = "site"
+        self.mock_fanfic = fanfic_info.FanficInfo(
+            url="http://example.com/story", site="site", title="Test Story"
+        )
 
         self.mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
         self.mock_client.cdb_info = MagicMock()

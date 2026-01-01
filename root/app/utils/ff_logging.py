@@ -32,33 +32,14 @@ Example:
 import ctypes
 import datetime
 from multiprocessing import Value
+import threading
+
+# Thread-local storage for worker-specific logging context
+_thread_local = threading.local()
 
 
 class bcolors:
-    """Terminal ANSI color codes for colored console output.
-
-    Provides standardized color constants for different logging levels and text
-    formatting options. These codes work with most modern terminals that support
-    ANSI escape sequences for colored text display.
-
-    The class serves as a namespace for color constants used throughout the
-    logging system to provide visual distinction between different log message
-    types and severity levels.
-
-    Attributes:
-        HEADER (str): Purple color code for header messages.
-        OKBLUE (str): Blue color code for informational messages.
-        OKGREEN (str): Green color code for success messages.
-        WARNING (str): Yellow color code for warning messages.
-        FAIL (str): Red color code for error/failure messages.
-        ENDC (str): Reset code to end color formatting.
-        BOLD (str): Bold text formatting code.
-        UNDERLINE (str): Underline text formatting code.
-
-    Example:
-        >>> print(f"{bcolors.FAIL}Error message{bcolors.ENDC}")
-        >>> print(f"{bcolors.OKGREEN}Success message{bcolors.ENDC}")
-    """
+    """Terminal ANSI color codes for colored console output."""
 
     HEADER = "\033[95m"  # Purple color for headers
     OKBLUE = "\033[94m"  # Blue color for informational messages
@@ -87,61 +68,85 @@ verbose = Value(ctypes.c_bool, False)
 
 
 def set_verbose(value: bool) -> None:
-    """Sets the global verbose logging flag for debug output control.
-
-    Updates the shared multiprocessing-safe verbose flag that controls whether
-    debug messages are displayed. This setting affects all processes in the
-    multiprocessing application and persists until explicitly changed.
-
-    Args:
-        value (bool): True to enable verbose debug logging, False to disable.
-                     When True, log_debug() calls will output messages.
-                     When False, log_debug() calls are silently ignored.
-
-    Example:
-        >>> set_verbose(True)   # Enable debug logging
-        >>> set_verbose(False)  # Disable debug logging
-    """
-    # Update the shared multiprocessing value atomically
+    """Sets the global verbose logging flag for debug output control."""
     verbose.value = value
 
 
 def is_verbose() -> bool:
-    """Returns the current state of the global verbose logging flag.
-
-    Returns:
-        bool: True if verbose debug logging is enabled, False otherwise.
-    """
+    """Returns the current state of the global verbose logging flag."""
     return bool(verbose.value)
 
 
-def log(msg: str, color: str = "") -> None:
-    """Logs a timestamped message to console with optional color formatting.
-
-    Core logging function that outputs messages with standardized timestamp
-    formatting and optional ANSI color codes. All messages are prefixed with
-    a bold timestamp in "YYYY-MM-DD HH:MM:SS AM/PM" format followed by the
-    colored message content.
+def set_thread_color(ansi_code: str) -> None:
+    """Sets the color for the current thread's log output.
 
     Args:
-        msg (str): The message content to log to console output.
-        color (str, optional): Color name from color_map for message formatting.
-                              Valid values: "HEADER", "OKBLUE", "OKGREEN",
-                              "WARNING", "FAIL", "BOLD", "UNDERLINE".
-                              Defaults to "" which results in bold text.
-
-    Note:
-        This function directly outputs to stdout and is thread-safe for
-        multiprocessing environments. Invalid color names default to bold
-        formatting without raising exceptions.
-
-    Example:
-        >>> log("Application started")  # Bold text
-        >>> log("Success!", "OKGREEN")  # Green text
-        >>> log("Warning!", "WARNING")  # Yellow text
+        ansi_code: The ANSI escape sequence to use as the default color
+                  for logs from this thread.
     """
-    # Map color name to ANSI code, defaulting to bold for unknown colors
-    using_col = color_map.get(color, bcolors.BOLD)
+    _thread_local.color = ansi_code
+
+
+def get_color_for_worker(index: int) -> str:
+    """Generates a unique ANSI 256-color code for a worker index.
+
+    Uses a stride-based algorithm to assign distinct colors to sequential
+    worker IDs, avoiding hard-to-read dark colors and reserved system colors
+    (Yellow, Magenta, Cyan).
+    """
+    # ANSI 256 equivalent codes to avoid (Visually similar to system colors)
+    # 226-231 (Yellows), 200-201 (Magentas), 50-51 (Cyans), 46 (Green)
+    # Also avoiding 196 (Red - confusing with failure)
+    excluded_colors = {
+        226,
+        227,
+        228,
+        229,
+        230,
+        231,  # Yellows
+        200,
+        201,
+        13,  # Magentas
+        50,
+        51,
+        14,  # Cyans
+        46,
+        82,
+        118,  # Bright Greens
+        196,
+        160,  # Bright Reds
+    }
+
+    # Use ANSI 256 colors.
+    # Skip first 20 (standard/too dark) and last few (grays)
+    # Range 20-231.
+    color_idx = 20 + ((index * 47) % 210)
+
+    # If we hit an excluded color, shift until we find a safe one
+    while color_idx in excluded_colors:
+        color_idx = (color_idx + 1) % 232  # Wrap around
+        if color_idx < 20:  # Skip standard low range
+            color_idx = 20
+
+    return f"\033[38;5;{color_idx}m"
+
+
+def log(msg: str, color: str = "") -> None:
+    """Logs a timestamped message to console with optional color formatting."""
+
+    # Determine color:
+    # 1. Explicit argument mapped name (e.g. "FAIL")
+    # 2. Explicit argument raw ANSI code (if not in map)
+    # 3. Thread-local default color
+    # 4. Default BOLD
+
+    using_col = bcolors.BOLD
+
+    if color:
+        using_col = color_map.get(color, color)
+    elif hasattr(_thread_local, "color"):
+        using_col = _thread_local.color
+
     # Generate current timestamp in standardized format
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
     # Output formatted message with timestamp and color codes
@@ -197,5 +202,5 @@ def log_debug(msg: str) -> None:
     """
     # Only log debug messages when verbose mode is globally enabled
     if verbose.value:
-        # Use the core log function with OKBLUE color for blue debug formatting
-        log(msg, "OKBLUE")
+        # Use the core log function without explicit color to allow thread-local color
+        log(msg)

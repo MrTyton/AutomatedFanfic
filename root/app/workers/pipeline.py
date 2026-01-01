@@ -38,10 +38,11 @@ def _process_task(
 
     # Create temporary directory for processing
     with system_utils.temporary_directory() as temp_dir:
-        ff_logging.log(f"({site}) Processing {fanfic.url}", "HEADER")
+        ff_logging.log_debug(f"({site}) Using temp directory: '{temp_dir}'")
+        ff_logging.log(f"({site}) Processing {fanfic.url}")
 
         # 1. Determine target path or URL
-        path_or_url = common.get_path_or_url(fanfic, calibre_client)
+        path_or_url = common.get_path_or_url(fanfic, calibre_client, location=temp_dir)
 
         # Extract title from epub filename if we're updating an existing story
         if path_or_url.endswith(".epub"):
@@ -57,7 +58,8 @@ def _process_task(
                 common.log_epub_metadata(path_or_url, site)
 
         # 2. Construct FanFicFare command
-        ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
+        action = "Downloading" if path_or_url == fanfic.url else "Updating"
+        ff_logging.log(f"\t({site}) {action} {path_or_url}")
         try:
             cmd_args = command.construct_fanficfare_command(
                 calibre_client.cdb_info, fanfic, path_or_url
@@ -173,6 +175,16 @@ def url_worker(
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
 
+    # Set unique color used for all logs in this thread
+    try:
+        # Extract ID number from "worker_12" -> 12
+        w_index = int(worker_id.split("_")[-1])
+    except (ValueError, IndexError):
+        w_index = 0
+
+    worker_color = ff_logging.get_color_for_worker(w_index)
+    ff_logging.set_thread_color(worker_color)
+
     ff_logging.log_debug(f"Starting Worker {worker_id}")
 
     # Track last site to release lock
@@ -233,6 +245,14 @@ def url_worker(
             except Exception as e:
                 ff_logging.log_failure(
                     f"Worker {worker_id} crashed on task {fanfic.url}: {e}"
+                )
+                # Ensure we retry even on deep crashes
+                handlers.handle_failure(
+                    fanfic,
+                    notification_info,
+                    waiting_queue,
+                    retry_config,
+                    calibre_client.cdb_info,
                 )
             finally:
                 last_finished_site = fanfic.site

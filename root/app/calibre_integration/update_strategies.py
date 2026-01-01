@@ -125,10 +125,7 @@ class PreserveMetadataStrategy(UpdateStrategy):
             )
 
         # Remove the existing story
-        ff_logging.log(
-            f"\t({site}) Removing story {fanfic.calibre_id} from Calibre",
-            "OKGREEN",
-        )
+        ff_logging.log(f"\t({site}) Removing story {fanfic.calibre_id} from Calibre")
         calibre_client.remove_story(fanfic)
 
         # Add the updated story
@@ -183,10 +180,7 @@ class RemoveAddStrategy(UpdateStrategy):
         old_metadata = calibre_client.get_metadata(fanfic)
 
         # Remove the existing story
-        ff_logging.log(
-            f"\t({site}) Removing story {fanfic.calibre_id} from Calibre",
-            "OKGREEN",
-        )
+        ff_logging.log(f"\t({site}) Removing story {fanfic.calibre_id} from Calibre")
         calibre_client.remove_story(fanfic)
 
         # Add the updated story

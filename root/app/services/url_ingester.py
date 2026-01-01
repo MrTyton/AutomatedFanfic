@@ -269,8 +269,11 @@ class EmailInfo:
         with set_timeout(55), suppress_logging():
             try:
                 # Extract URLs using FanFicFare's IMAP functionality
-                urls = geturls.get_urls_from_imap(
-                    self.server, self.email, self.password, self.mailbox
+                # Wrap in set() to ensure deduplication if found in both text/html parts
+                urls = set(
+                    geturls.get_urls_from_imap(
+                        self.server, self.email, self.password, self.mailbox
+                    )
                 )
             except Exception as e:
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
@@ -347,16 +350,25 @@ def email_watcher(
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+    ff_logging.set_thread_color("\033[93m")  # Yellow
 
     while True:
         # Extract URLs from the configured email account
         urls = email_info.get_urls()
         fics_to_add = set()
 
+        # Track usage within this batch to prevent duplicate logs for same-normalized URLs
+        processed_in_batch = set()
+
         # Process each URL found in email messages
         for url in urls:
             # Parse URL to identify site and normalize format
             fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
+
+            # Silent partial dedup: if we already processed this normalized URL in this batch, skip it
+            if fanfic.url in processed_in_batch:
+                continue
+            processed_in_batch.add(fanfic.url)
 
             # Skip processing for disabled sites - notification only
             if fanfic.site in email_info.disabled_sites:
@@ -383,8 +395,7 @@ def email_watcher(
         # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:
             ff_logging.log(
-                f"Adding {fic.url} to the ingestion queue (Site: {fic.site})",
-                "HEADER",
+                f"Adding {fic.url} to the ingestion queue (Site: {fic.site})"
             )
             # Route to ingress queue
             ingress_queue.put(fic)

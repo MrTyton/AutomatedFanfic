@@ -95,9 +95,17 @@ class Coordinator:
         # 1. If site is already assigned to a worker, push directly
         if site in self.assignments:
             worker_id = self.assignments[site]
-            self.worker_queues[worker_id].put(task)
+            queue = self.worker_queues[worker_id]
+            queue.put(task)
+
+            try:
+                q_size = queue.qsize()
+                pos_str = f"Queue Pos: {q_size}"
+            except NotImplementedError:
+                pos_str = "Queue Pos: Unknown"
+
             ff_logging.log_debug(
-                f"Coordinator: Direct push {task.url} to {worker_id} (Site: {site})"
+                f"Coordinator: Active assignment push: {task.url} to {worker_id} (Site: {site}, {pos_str})"
             )
             return
 
@@ -157,17 +165,35 @@ class Coordinator:
 
                 # Drain ENTIRE backlog for this site to the worker
                 queue = self.worker_queues[worker_id]
-                count = 0
+                tasks_pushed = []
                 while self.backlog[candidate_site]:
                     task = self.backlog[candidate_site].popleft()
                     queue.put(task)
-                    count += 1
+                    tasks_pushed.append(task)
+
+                # Get final queue size to calculate positions
+                try:
+                    final_q_size = queue.qsize()
+                    # Start position is (final_size - count + 1)
+                    start_pos = final_q_size - len(tasks_pushed) + 1
+                except NotImplementedError:
+                    final_q_size = "Unknown"
+                    start_pos = None
 
                 # Cleanup empty backlog entry
                 del self.backlog[candidate_site]
+
+                # Detailed logging of what was pushed
                 ff_logging.log_debug(
-                    f"Coordinator: Pushed {count} tasks for {candidate_site} to {worker_id}"
+                    f"Coordinator: Initial assignment push: Pushed {len(tasks_pushed)} tasks for {candidate_site} to {worker_id}:"
                 )
+                for i, task in enumerate(tasks_pushed):
+                    pos_info = (
+                        f"Pos: {start_pos + i}"
+                        if start_pos is not None
+                        else "Pos: Unknown"
+                    )
+                    ff_logging.log_debug(f"  - {task.url} ({pos_info})")
 
             else:
                 # No eligible work found within backlog
@@ -182,6 +208,7 @@ def start_coordinator(
     """Entry point for the coordinator process."""
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+    ff_logging.set_thread_color("\033[95m")  # Magenta
 
     coordinator = Coordinator(ingress_queue, worker_queues)
     try:

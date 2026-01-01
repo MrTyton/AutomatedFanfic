@@ -1,6 +1,6 @@
 from typing import NamedTuple
 import unittest
-from unittest.mock import call, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from parameterized import parameterized
 
@@ -65,16 +65,42 @@ class TestNotificationWrapper(unittest.TestCase):
 
         # Assertion: Check that the correct number of calls were made
         self.assertEqual(mock_executor_instance.submit.call_count, expected_calls)
+
+        # Get all calls to submit
+        submit_calls = mock_executor_instance.submit.call_args_list
+
         for mock_worker in mock_workers:
             if mock_worker.enabled:
-                mock_executor_instance.submit.assert_any_call(
-                    mock_worker.send_notification, title, body, site
+                # Find the call corresponding to this worker
+                found_call = False
+                for call_args in submit_calls:
+                    # call_args is (args, kwargs)
+                    # args[0] is the wrapper function
+                    # args[1] is the worker
+                    # args[2] is title, args[3] is body, args[4] is site
+                    args, _ = call_args
+                    if (
+                        len(args) >= 5
+                        and args[1] == mock_worker
+                        and args[2] == title
+                        and args[3] == body
+                        and args[4] == site
+                    ):
+                        found_call = True
+                        break
+                self.assertTrue(
+                    found_call,
+                    f"Submit not called for enabled worker with args {title}, {body}, {site}",
                 )
             else:
-                self.assertNotIn(
-                    call(mock_worker.send_notification, title, body, site),
-                    mock_executor_instance.submit.call_args_list,
-                )
+                # Validate worker was NOT called
+                found_call = False
+                for call_args in submit_calls:
+                    args, _ = call_args
+                    if len(args) > 1 and args[1] == mock_worker:
+                        found_call = True
+                        break
+                self.assertFalse(found_call, "Submit called for disabled worker")
 
 
 if __name__ == "__main__":

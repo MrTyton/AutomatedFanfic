@@ -43,7 +43,7 @@ from services import coordinator
 from services import ff_waiter
 from notifications import notification_wrapper
 from services import url_ingester
-from workers import pipeline as url_worker
+from workers import pipeline as url_worker, pool_runner
 from models import config_models
 from models.config_models import ConfigError, ConfigValidationError
 from process_management import ProcessManager
@@ -195,14 +195,16 @@ def register_processes(
     url_parsers: dict,
 ) -> None:
     """Registers all worker processes with the ProcessManager."""
-    # --- Coordinator Pattern Setup ---
-    # Calculate actual worker pool size by subtracting overhead processes
+    # Register Worker Pool (Single Process with Threads)
+    # We use all available slots for threads as they are lightweight, but we respect the
+    # max_workers limit as a "System Process Limit" since each thread spawns a subprocess.
     # Overhead: Main(1) + SyncManager(1) + Coordinator(1) + Email(1) + Waiter(1) + ResourceTracker(1) = 6
     overhead_count = 6
     worker_pool_size = max(1, config.max_workers - overhead_count)
 
     ff_logging.log(
-        f"Spawning {worker_pool_size} worker processes ({overhead_count} support processes) "
+        f"Spawning 1 Worker Pool Process with {worker_pool_size} threads "
+        f"(reserved {overhead_count} slots for support processes) "
         f"to match max_workers={config.max_workers}"
     )
 
@@ -252,23 +254,20 @@ def register_processes(
         args=(ingress_queue, worker_queues, args.verbose),
     )
 
-    # Register Workers
-    for i in range(worker_pool_size):
-        worker_id = f"worker_{i}"
-        process_manager.register_process(
-            worker_id,
-            url_worker.url_worker,
-            args=(
-                worker_queues[worker_id],
-                calibre_client,
-                notification_info,
-                ingress_queue,
-                config.retry,
-                worker_id,
-                active_urls,
-                args.verbose,
-            ),
-        )
+    # Register the single pool process that hosts all worker threads
+    process_manager.register_process(
+        "worker_pool",
+        pool_runner.run_worker_pool,
+        args=(
+            worker_queues,
+            calibre_client,
+            notification_info,
+            ingress_queue,
+            config.retry,
+            active_urls,
+            args.verbose,
+        ),
+    )
 
 
 def main() -> None:
