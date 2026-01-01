@@ -105,7 +105,7 @@ class TestUrlIngester(unittest.TestCase):
         email_info = EmailInfo(email_config)
         result = email_info.get_urls()
 
-        self.assertEqual(result, expected_urls)
+        self.assertEqual(result, set(expected_urls))
         mock_get_urls_from_imap.assert_called_once()
 
     @patch("services.url_ingester.geturls.get_urls_from_imap")
@@ -219,9 +219,9 @@ class TestEmailWatcher(unittest.TestCase):
         )
 
         # Verify logging
+        # Verify logging
         mock_log.assert_called_once_with(
-            f"Adding {mock_fanfic.url} to the ingestion queue (Site: {mock_fanfic.site})",
-            "HEADER",
+            f"Adding {mock_fanfic.url} to the ingestion queue (Site: {mock_fanfic.site})"
         )
 
         # Verify fanfic was added to ingress queue

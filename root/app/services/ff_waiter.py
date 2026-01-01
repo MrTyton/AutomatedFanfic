@@ -176,6 +176,7 @@ def wait_processor(
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+    ff_logging.set_thread_color("\033[96m")  # Bright Cyan
 
     while True:
         # Block waiting for next failed fanfiction entry from waiting queue

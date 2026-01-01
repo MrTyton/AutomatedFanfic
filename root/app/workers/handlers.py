@@ -159,7 +159,12 @@ def process_fanfic_addition(
         )
 
         if success:
-            ff_logging.log(f"({site}) Successfully processed {fanfic.title}")
+            # Retrieve the new/current Story ID to confirm
+            # Redundant call removed - strategy updates fanfic.calibre_id
+            if fanfic.calibre_id:
+                ff_logging.log(f"\t({site}) Story ID: {fanfic.calibre_id}")
+
+            ff_logging.log(f"\t({site}) Successfully processed {fanfic.title}")
 
             ff_logging.log_debug(
                 f"\t({site}) Sending success notification for {fanfic.title}"

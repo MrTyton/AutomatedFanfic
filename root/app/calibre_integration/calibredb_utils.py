@@ -163,9 +163,11 @@ class CalibreDBClient:
                 fanfic.calibre_id = ids[0]
                 return fanfic.calibre_id
 
+            ff_logging.log(f"\t({fanfic.site}) Story not in Calibre")
             return None
 
         except Exception as e:
+            ff_logging.log(f"\t({fanfic.site}) Story not in Calibre")
             ff_logging.log_debug(f"\tError checking story ID: {e}")
             return None
 
@@ -182,7 +184,7 @@ class CalibreDBClient:
             return
 
         fanfic.title = regex_parsing.extract_filename(file_to_add)
-        ff_logging.log(f"\t({fanfic.site}) Adding {file_to_add} to Calibre", "OKGREEN")
+        ff_logging.log(f"\t({fanfic.site}) Adding {file_to_add} to Calibre")
 
         # -d checks for duplicates (though we rely on our own checks too)
         self._execute_command(f'add -d "{file_to_add}"', fanfic)
@@ -235,8 +237,7 @@ class CalibreDBClient:
             return False
 
         ff_logging.log(
-            f"\t({fanfic.site}) Replacing EPUB format for ID {fanfic.calibre_id}",
-            "OKGREEN",
+            f"\t({fanfic.site}) Replacing EPUB format for ID {fanfic.calibre_id}"
         )
 
         try:
@@ -265,10 +266,7 @@ class CalibreDBClient:
 
             self._execute_command(full_command_args, fanfic)
 
-            ff_logging.log(
-                f"\t({fanfic.site}) Successfully replaced EPUB format",
-                "OKGREEN",
-            )
+            ff_logging.log(f"\t({fanfic.site}) Successfully replaced EPUB format")
             return True
         except Exception as e:
             ff_logging.log_failure(
