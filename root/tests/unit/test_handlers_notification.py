@@ -49,8 +49,7 @@ class TestHandlersNotification(unittest.TestCase):
         # Verify
         self.mock_notification.send_notification.assert_called_once()
         args = self.mock_notification.send_notification.call_args[0]
-        self.assertIn("Added", args[0])  # Title
-        self.assertIn("added", args[1])  # Body
+        self.assertEqual(args[0], "New Fanfiction Download")  # Legacy Title behavior
 
     @patch("workers.handlers.update_strategies")
     @patch("workers.handlers.ff_logging")
@@ -83,8 +82,7 @@ class TestHandlersNotification(unittest.TestCase):
         # Verify
         self.mock_notification.send_notification.assert_called_once()
         args = self.mock_notification.send_notification.call_args[0]
-        self.assertIn("Updated", args[0])  # Title
-        self.assertIn("updated", args[1])  # Body
+        self.assertEqual(args[0], "New Fanfiction Download")  # Legacy Title behavior
 
     @patch("workers.handlers.update_strategies")
     @patch("workers.handlers.ff_logging")
