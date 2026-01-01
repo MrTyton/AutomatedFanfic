@@ -57,6 +57,7 @@ def _process_task(
                 common.log_epub_metadata(path_or_url, site)
 
         # 2. Construct FanFicFare command
+        ff_logging.log(f"\t({site}) Updating {path_or_url}", "OKGREEN")
         try:
             cmd_args = command.construct_fanficfare_command(
                 calibre_client.cdb_info, fanfic, path_or_url
