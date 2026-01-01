@@ -132,7 +132,7 @@ class PreserveMetadataStrategy(UpdateStrategy):
         calibre_client.add_story(location=temp_dir, fanfic=fanfic)
 
         # Verify addition and get new ID
-        if not calibre_client.get_story_id(fanfic):
+        if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
             ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
             failure_handler(
                 fanfic,
@@ -187,7 +187,7 @@ class RemoveAddStrategy(UpdateStrategy):
         calibre_client.add_story(location=temp_dir, fanfic=fanfic)
 
         # Verify addition
-        if not calibre_client.get_story_id(fanfic):
+        if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
             ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
             failure_handler(
                 fanfic,
@@ -228,7 +228,7 @@ class AddNewStoryStrategy(UpdateStrategy):
         calibre_client.add_story(location=temp_dir, fanfic=fanfic)
 
         # Verify addition and get new ID
-        if not calibre_client.get_story_id(fanfic):
+        if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
             ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
             failure_handler(
                 fanfic,

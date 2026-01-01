@@ -135,23 +135,8 @@ class CalibreDBClient:
         """
         # Search by URL source identifier source:site:id
         # FanFicFare stores the source URL identifier in the 'source' identifier field
-        # We can construct a search query for this
 
-        # This logic mimics what was in fanfic_info.get_id_from_calibredb
-        # but uses the centralized execution.
-
-        # The exact search syntax depends on how FanFicFare saves the identifier.
-        # Usually checking the identifiers field.
-        # However, the previous implementation in fanfic_info.py used a specific command structure.
-        # Let's verify that original implementation from memory/cache or re-implement robustly.
-
-        # Original logic used `calibredb list --search "identifiers:url={url}" --fields id --for-machine`
-        # But we need to be careful about the exact search query associated with the site.
-
-        # Let's try the standard search.
         try:
-            # User reported success with: calibredb search "Identifiers:URL"
-            # We switched from 'list' to 'search' to match this working pattern.
             search_query = f"Identifiers:{fanfic.url}"
 
             output = self._execute_command_with_output(f'search "{search_query}"')
@@ -187,7 +172,30 @@ class CalibreDBClient:
         ff_logging.log(f"\t({fanfic.site}) Adding {file_to_add} to Calibre")
 
         # -d checks for duplicates (though we rely on our own checks too)
-        self._execute_command(f'add -d "{file_to_add}"', fanfic)
+        # -d checks for duplicates (though we rely on our own checks too)
+        try:
+            output = self._execute_command_with_output(
+                f'add -d "{file_to_add}"', fanfic
+            )
+
+            # Parse output for "Added book ids: 123"
+            # Typical output: "Added book ids: 123" or "Added book ids: 123, 124"
+            match = re.search(r"Added book ids: ([\d, ]+)", output)
+            if match:
+                ids_str = match.group(1)
+                ids = [x.strip() for x in ids_str.split(",") if x.strip()]
+                if ids:
+                    fanfic.calibre_id = ids[0]
+                    ff_logging.log_debug(
+                        f"\t({fanfic.site}) Added story with ID: {fanfic.calibre_id}"
+                    )
+            else:
+                ff_logging.log_debug(
+                    f"\t({fanfic.site}) Could not parse ID from add output: {output.strip()}"
+                )
+
+        except Exception as e:
+            ff_logging.log_failure(f"\t({fanfic.site}) Failed to add story: {e}")
 
     def remove_story(self, fanfic: fanfic_info.FanficInfo) -> None:
         """Remove a story from Calibre.
@@ -200,6 +208,7 @@ class CalibreDBClient:
             return
 
         self._execute_command(f"remove {fanfic.calibre_id}", fanfic)
+        fanfic.calibre_id = None
 
     def export_story(self, fanfic: fanfic_info.FanficInfo, location: str) -> None:
         """Export a story to a directory.

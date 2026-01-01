@@ -170,7 +170,8 @@ class TestCalibreDBClient(unittest.TestCase):
         """Test add_story method."""
         mock_get_files.return_value = epub_files
 
-        with patch.object(self.client, "_execute_command") as mock_execute:
+        with patch.object(self.client, "_execute_command_with_output") as mock_execute:
+            mock_execute.return_value = "Added book ids: 123"
             self.client.add_story(location, fanfic)
 
             if should_fail:
@@ -187,6 +188,9 @@ class TestCalibreDBClient(unittest.TestCase):
                     fanfic,
                 )
                 self.assertEqual(fanfic.title, "Story Title")
+                # Also verify ID was parsed set if successful
+                if not should_fail:
+                    self.assertEqual(fanfic.calibre_id, "123")
 
     @parameterized.expand(
         [
