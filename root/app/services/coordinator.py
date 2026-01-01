@@ -174,8 +174,15 @@ class Coordinator:
                 break
 
 
-def start_coordinator(ingress_queue: mp.Queue, worker_queues: Dict[str, mp.Queue]):
+def start_coordinator(
+    ingress_queue: mp.Queue,
+    worker_queues: Dict[str, mp.Queue],
+    verbose: bool = False,
+):
     """Entry point for the coordinator process."""
+    # Initialize logging for this process
+    ff_logging.set_verbose(verbose)
+
     coordinator = Coordinator(ingress_queue, worker_queues)
     try:
         coordinator.run()

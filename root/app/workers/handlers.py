@@ -131,6 +131,7 @@ def process_fanfic_addition(
         story_id = calibre_client.get_story_id(fanfic)
 
         if story_id:
+            ff_logging.log(f"\t({site}) Story is in Calibre with Story ID: {story_id}")
             # Existing story - use metadata preservation mode from config
             mode = calibre_client.cdb_info.metadata_preservation_mode
 
@@ -159,6 +160,13 @@ def process_fanfic_addition(
 
         if success:
             ff_logging.log(f"({site}) Successfully processed {fanfic.title}")
+
+            ff_logging.log_debug(
+                f"\t({site}) Sending success notification for {fanfic.title}"
+            )
+            notification_info.send_notification(
+                "New Fanfiction Download", fanfic.title or "Unknown Title", site
+            )
         # Note: Failures are handled within the strategy.execute calls via failure_handler
 
     except Exception as e:

@@ -58,7 +58,15 @@ def execute_command(command: list[str] | str, cwd: str | None = None) -> str:
 
     if cwd:
         debug_msg += f" (in {cwd})"
-    ff_logging.log_debug(debug_msg)
+
+    # Log the full command in a copy-pasteable format
+    if isinstance(cmd_list, list):
+        formatted_cmd = shlex.join(cmd_list)
+        ff_logging.log_debug(f"Executing: {formatted_cmd}")
+        if cwd:
+            ff_logging.log_debug(f"  Working Directory: {cwd}")
+    else:
+        ff_logging.log_debug(debug_msg)
 
     # Use subprocess.run for safer and more robust execution
     # shell=False is safer and less error-prone with list args

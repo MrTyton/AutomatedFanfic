@@ -164,10 +164,13 @@ def url_worker(
     retry_config: config_models.RetryConfig,
     worker_id: str,
     active_urls: dict | None = None,
+    verbose: bool = False,
 ) -> None:
     """
     Main worker function for processing fanfiction downloads in a dedicated process.
     """
+    # Initialize logging for this process
+    ff_logging.set_verbose(verbose)
 
     ff_logging.log(f"Starting Worker {worker_id}", "HEADER")
 

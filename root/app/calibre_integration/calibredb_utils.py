@@ -116,6 +116,8 @@ class CalibreDBClient:
         """
         full_command = f"calibredb {command_args} {self.cdb_info}"
 
+        ff_logging.log_debug(f'\tCalling calibredb with command: \t"{command_args}"')
+
         with self.cdb_info.lock:
             output = check_output(
                 full_command, shell=True, stderr=PIPE, stdin=PIPE, timeout=timeout
@@ -148,22 +150,23 @@ class CalibreDBClient:
 
         # Let's try the standard search.
         try:
-            # We search for the specific URL in the identifiers
-            # Note: We wrap the URL in quotes to handle special characters
-            search_query = f'identifiers:"url={fanfic.url}"'
+            # User reported success with: calibredb search "Identifiers:URL"
+            # We switched from 'list' to 'search' to match this working pattern.
+            search_query = f"Identifiers:{fanfic.url}"
 
-            output = self._execute_command_with_output(
-                f"list --search='{search_query}' --fields id --for-machine"
-            )
+            output = self._execute_command_with_output(f'search "{search_query}"')
 
-            data = json.loads(output)
-            if data and len(data) > 0:
-                fanfic.calibre_id = str(data[0]["id"])
+            # calibredb search returns a comma-separated list of IDs (e.g., "1, 2, 3")
+            ids = [x.strip() for x in output.split(",") if x.strip()]
+
+            if ids:
+                fanfic.calibre_id = ids[0]
                 return fanfic.calibre_id
 
             return None
 
-        except Exception:
+        except Exception as e:
+            ff_logging.log_debug(f"\tError checking story ID: {e}")
             return None
 
     def add_story(self, location: str, fanfic: fanfic_info.FanficInfo) -> None:

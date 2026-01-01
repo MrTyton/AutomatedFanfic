@@ -224,6 +224,7 @@ def register_processes(
             ingress_queue,
             url_parsers,
             active_urls,
+            args.verbose,
         ),
     )
 
@@ -231,14 +232,14 @@ def register_processes(
     process_manager.register_process(
         "waiting_watcher",
         ff_waiter.wait_processor,
-        args=(ingress_queue, waiting_queue),
+        args=(ingress_queue, waiting_queue, args.verbose),
     )
 
     # Register Coordinator
     process_manager.register_process(
         "coordinator",
         coordinator.start_coordinator,
-        args=(ingress_queue, worker_queues),
+        args=(ingress_queue, worker_queues, args.verbose),
     )
 
     # Register Workers
@@ -255,6 +256,7 @@ def register_processes(
                 config.retry,
                 worker_id,
                 active_urls,
+                args.verbose,
             ),
         )
 

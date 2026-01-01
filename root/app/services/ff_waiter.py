@@ -137,7 +137,11 @@ def process_fanfic(
     timer.start()
 
 
-def wait_processor(ingress_queue: mp.Queue, waiting_queue: mp.Queue) -> None:
+def wait_processor(
+    ingress_queue: mp.Queue,
+    waiting_queue: mp.Queue,
+    verbose: bool = False,
+) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 
     Continuously monitors the waiting queue for failed fanfiction entries that
@@ -170,6 +174,9 @@ def wait_processor(ingress_queue: mp.Queue, waiting_queue: mp.Queue) -> None:
         >>> # Typically called by ProcessManager in separate process
         >>> wait_processor(ingress_queue, waiting_queue)
     """
+    # Initialize logging for this process
+    ff_logging.set_verbose(verbose)
+
     while True:
         # Block waiting for next failed fanfiction entry from waiting queue
         fanfic: fanfic_info.FanficInfo = waiting_queue.get()

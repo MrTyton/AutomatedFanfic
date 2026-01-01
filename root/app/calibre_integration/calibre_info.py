@@ -232,8 +232,16 @@ class CalibreInfo:
         """
         # Copy default configuration if it exists
         if self.default_ini and os.path.isfile(self.default_ini):
-            shutil.copyfile(self.default_ini, os.path.join(temp_dir, "defaults.ini"))
+            path = os.path.join(temp_dir, "defaults.ini")
+            shutil.copyfile(self.default_ini, path)
+            ff_logging.log_debug(f"\tCopied defaults.ini to {path}")
+        else:
+            ff_logging.log_debug("\tNo defaults.ini found to copy")
 
         # Copy personal configuration if it exists
         if self.personal_ini and os.path.isfile(self.personal_ini):
-            shutil.copyfile(self.personal_ini, os.path.join(temp_dir, "personal.ini"))
+            path = os.path.join(temp_dir, "personal.ini")
+            shutil.copyfile(self.personal_ini, path)
+            ff_logging.log_debug(f"\tCopied personal.ini to {path}")
+        else:
+            ff_logging.log_debug("\tNo personal.ini found to copy")
