@@ -284,6 +284,7 @@ def email_watcher(
     ingress_queue: mp.Queue,
     url_parsers: dict,
     active_urls: dict | None = None,
+    verbose: bool = False,
 ):
     """
     Continuously monitor email for fanfiction URLs and route to processing queues.
@@ -344,6 +345,9 @@ def email_watcher(
         email_info.sleep_time to balance responsiveness with email
         server load considerations.
     """
+    # Initialize logging for this process
+    ff_logging.set_verbose(verbose)
+
     while True:
         # Extract URLs from the configured email account
         urls = email_info.get_urls()

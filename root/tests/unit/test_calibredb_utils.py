@@ -521,3 +521,49 @@ class TestCalibreDBClient(unittest.TestCase):
         result = self.client.add_format_to_existing_story("/fake/dir", mock_fanfic)
 
         self.assertFalse(result)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    def test_get_story_id_success(self, mock_check_output):
+        """Test successful story ID retrieval using search command."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.url = "http://example.com/story"
+        mock_fanfic.site = "site"
+
+        # Mock search output: comma-separated list of IDs
+        mock_check_output.return_value = b"123, 124\n"
+
+        result = self.client.get_story_id(mock_fanfic)
+
+        self.assertEqual(result, "123")
+        self.assertEqual(mock_fanfic.calibre_id, "123")
+
+        # Verify the command structure matches user request
+        mock_check_output.assert_called_once()
+        args = mock_check_output.call_args[0][0]  # First arg of call
+        # Expected: calibredb search "Identifiers:http://example.com/story" ...
+        self.assertIn("search", args)
+        self.assertIn('"Identifiers:http://example.com/story"', args)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    def test_get_story_id_not_found(self, mock_check_output):
+        """Test story ID not found (empty output)."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.url = "http://example.com/story"
+
+        mock_check_output.return_value = b"\n"
+
+        result = self.client.get_story_id(mock_fanfic)
+
+        self.assertIsNone(result)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    def test_get_story_id_error(self, mock_check_output):
+        """Test error handling in get_story_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.url = "http://example.com/story"
+
+        mock_check_output.side_effect = Exception("Search failed")
+
+        result = self.client.get_story_id(mock_fanfic)
+
+        self.assertIsNone(result)
