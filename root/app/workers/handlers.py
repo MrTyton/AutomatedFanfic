@@ -128,7 +128,8 @@ def process_fanfic_addition(
     """
     try:
         # Determine if the story exists in Calibre
-        story_id = calibre_client.get_story_id(fanfic)
+        # We already checked in pipeline.py (common.get_path_or_url), so fanfic.calibre_id should be set if it exists.
+        story_id = fanfic.calibre_id
 
         if story_id:
             ff_logging.log(f"\t({site}) Story is in Calibre with Story ID: {story_id}")
