@@ -90,45 +90,56 @@ def set_thread_color(ansi_code: str) -> None:
 def get_color_for_worker(index: int) -> str:
     """Generates a unique ANSI 256-color code for a worker index.
 
-    Uses a stride-based algorithm to assign distinct colors to sequential
-    worker IDs, avoiding hard-to-read dark colors and reserved system colors
-    (Yellow, Magenta, Cyan).
+    Selects from a curated list of high-contrast colors suitable for dark backgrounds,
+    ensuring readability and consistency across worker instances.
     """
-    # ANSI 256 equivalent codes to avoid (Visually similar to system colors)
-    # 226-231 (Yellows), 200-201 (Magentas), 50-51 (Cyans), 46 (Green)
-    # Also avoiding 196 (Red - confusing with failure)
-    excluded_colors = {
-        226,
-        227,
-        228,
-        229,
-        230,
-        231,  # Yellows
-        200,
-        201,
-        13,  # Magentas
-        50,
-        51,
-        14,  # Cyans
-        46,
-        82,
-        118,  # Bright Greens
-        196,
-        160,  # Bright Reds
-    }
+    # Curated list of 35 high-visibility ANSI 256 colors
+    # selected for readability on dark backgrounds.
+    # Includes: Blues, Cyans, Greens, Pinks, Purples, Oranges, Yellows
+    # Curated list of 35 high-visibility ANSI 256 colors
+    # manually interleaved to ensure high contrast between sequential workers.
+    safe_colors = [
+        210,  # Light Coral
+        209,  # Salmon
+        196,  # Red (Bright)
+        39,  # Deep Sky Blue
+        153,  # Light Cyan
+        46,  # Green (Bright)
+        201,  # Magenta
+        51,  # Cyan
+        118,  # Chartreuse
+        226,  # Yellow
+        141,  # Lavender
+        49,  # Medium Spring Green
+        75,  # Steel Blue
+        220,  # Gold
+        155,  # Pale Green
+        213,  # Orchid
+        81,  # Sky Blue
+        99,  # Slate Blue
+        219,  # Plum
+        87,  # Dark Slate Gray (actually light cyan-ish)
+        190,  # Yellow Green
+        159,  # Pale Cyan
+        207,  # Medium Orchid
+        154,  # Green Yellow
+        45,  # Turquoise
+        86,  # Aquamarine
+        123,  # Dark Sky Blue
+        147,  # Light Steel Blue
+        117,  # Light Blue
+        85,  # Dark Sea Green
+        208,  # Dark Orange
+        192,  # Dark Olive Green (Light)
+        120,  # Light Green
+        212,  # Pink
+        33,  # Dodger Blue
+    ]
 
-    # Use ANSI 256 colors.
-    # Skip first 20 (standard/too dark) and last few (grays)
-    # Range 20-231.
-    color_idx = 20 + ((index * 47) % 210)
+    # Cycle through the safe color list based on worker index
+    color_code = safe_colors[index % len(safe_colors)]
 
-    # If we hit an excluded color, shift until we find a safe one
-    while color_idx in excluded_colors:
-        color_idx = (color_idx + 1) % 232  # Wrap around
-        if color_idx < 20:  # Skip standard low range
-            color_idx = 20
-
-    return f"\033[38;5;{color_idx}m"
+    return f"\033[38;5;{color_code}m"
 
 
 def log(msg: str, color: str = "") -> None:
