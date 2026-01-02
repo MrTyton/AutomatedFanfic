@@ -114,3 +114,6 @@ ENV/
 
 # Workspace
 .code-workspace
+
+# Local Documentation
+.github/project_architecture.md
