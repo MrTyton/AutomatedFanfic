@@ -1,75 +1,41 @@
-# Use a multi-stage build optimized for change frequency and cache efficiency
-# CACHE OPTIMIZATION STRATEGY:
-# - Version-related ARGs (VERSION) are deferred until the final stage to prevent cache invalidation
-# - Dependency-specific ARGs (CALIBRE_RELEASE, FANFICFARE_VERSION) are only used in their respective stages
-# - This ensures that app code changes don't invalidate Calibre/FanFicFare installation cache layers
-FROM python:3.12-slim AS python-base
+# Builder Pattern Strategy:
+# 1. 'builder-base': Common build tools (curl, jq, xz)
+# 2. 'calibre-downloader': Downloads and prunes Calibre. CACHED until CALIBRE_RELEASE changes.
+# 3. 'python-deps': Installs Python libs. CACHED until requirements.txt changes.
+# 4. 'runtime': Final image. Copies artifacts from previous stages. Small, clean, secure.
 
-# Set up environment variables early
+# Base Stage: Common python base
+FROM python:3.12-slim AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONOPTIMIZE=2 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PUID="911" \
-    PGID="911" \
-    VERBOSE=false \
     DEBIAN_FRONTEND=noninteractive
 
-# Stage 1: Install runtime system dependencies (rarely change)
-FROM python-base AS system-deps
-
-# Install runtime dependencies in a single layer with cache mount
+# Builder Tools Stage: Install tools needed for building/downloading
+FROM base AS builder-tools
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates \
     curl \
     jq \
     xz-utils && \
-    apt-get clean && \
-    rm -rf /tmp/* /var/tmp/*
+    pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Stage 2: Create user (rarely changes)
-FROM system-deps AS user-setup
+# Calibre Downloader Stage: Downloads and prunes Calibre
+FROM builder-tools AS calibre-downloader
 
-# Create user and basic setup
-RUN groupadd --gid "$PGID" abc && \
-    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc
-
-# Stage 3: Install stable Python dependencies (rarely change)
-FROM user-setup AS python-stable-deps
-
-# Install stable Python packages from requirements.txt
-COPY requirements.txt /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    echo "*** Install Stable Python Packages ***" && \
-    pip install --no-cache-dir -r /tmp/requirements.txt && \
-    rm -f /tmp/requirements.txt
-
-# Stage 4: Calibre installation (changes monthly)
-FROM python-stable-deps AS calibre-installer
-
-# BuildKit automatic platform detection
 ARG TARGETPLATFORM
-ARG BUILDPLATFORM
-ARG TARGETOS
-ARG TARGETARCH
-
-# Only include the Calibre version ARG here - defer VERSION until later
 ARG CALIBRE_RELEASE
 
-# Download and extract Calibre (optimized multi-architecture)
+# Download and extract Calibre
 RUN --mount=type=cache,target=/tmp/calibre-cache \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
     echo "**** install calibre ****" && \
-    # Use BuildKit's automatic platform detection instead of uname
+    mkdir -p /opt/calibre && \
     case "${TARGETPLATFORM:-linux/amd64}" in \
     "linux/amd64") \
-    echo "Installing Calibre from official binaries for amd64" && \
     if [ -z "${CALIBRE_RELEASE}" ]; then \
     CALIBRE_RELEASE_TAG=$(curl -sX GET "https://api.github.com/repos/kovidgoyal/calibre/releases/latest" | jq -r .tag_name); \
     CALIBRE_VERSION=$(echo "${CALIBRE_RELEASE_TAG}" | sed 's/^v//'); \
@@ -79,153 +45,122 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     echo "Using Calibre version: ${CALIBRE_VERSION}" && \
     CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
     CALIBRE_CACHE_FILE="/tmp/calibre-cache/calibre-${CALIBRE_VERSION}-x86_64.txz" && \
-    echo "Downloading from ${CALIBRE_URL}" && \
-    # Check if cached version exists and is valid
     if [ ! -f "${CALIBRE_CACHE_FILE}" ] || [ ! -s "${CALIBRE_CACHE_FILE}" ]; then \
-    echo "Downloading fresh copy to cache..." && \
-    curl -o "${CALIBRE_CACHE_FILE}" -L "${CALIBRE_URL}" && \
-    echo "Download complete, extracting..." ; \
+    echo "Downloading fresh copy..." && \
+    curl -o "${CALIBRE_CACHE_FILE}" -L "${CALIBRE_URL}"; \
     else \
-    echo "Using cached Calibre binary..." ; \
+    echo "Using cached binary..."; \
     fi && \
-    mkdir -p /opt/calibre && \
     tar xf "${CALIBRE_CACHE_FILE}" -C /opt/calibre && \
-    # Set up official Calibre binaries
-    if [ -f "/opt/calibre/calibre_postinstall" ]; then \
-    chmod +x /opt/calibre/calibre_postinstall && \
-    echo "*** Running Calibre post-install ***" && \
-    /opt/calibre/calibre_postinstall && \
-    echo "*** Calibre post-install completed successfully ***" ; \
-    else \
-    echo "*** Warning: calibre_postinstall not found, manual setup required ***" && \
-    # Manual library path setup if post-install is missing
-    echo "/opt/calibre/lib" > /etc/ld.so.conf.d/calibre.conf && \
-    ldconfig ; \
-    fi && \
-    # Ensure library configuration is updated regardless
-    echo "*** Updating library cache ***" && \
-    echo "/opt/calibre/lib" > /etc/ld.so.conf.d/calibre.conf && \
-    ldconfig && \
-    echo "*** Setting up Calibre symlinks (calibredb only) ***" && \
-    find /opt/calibre -name "calibredb" -type f -executable -exec ln -sf {} /usr/local/bin/calibredb \; && \
-    # Verify calibredb is working before cleanup
-    echo "*** Testing calibredb before cleanup ***" && \
-    /usr/local/bin/calibredb --version && \
-    echo "*** Removing unnecessary Calibre components (aggressive cleanup) ***" && \
-    # Remove ALL GUI applications and conversion tools we don't need
+    # Cleanup Calibre (Aggressive)
     rm -f /opt/calibre/calibre /opt/calibre/ebook-viewer /opt/calibre/ebook-edit \
     /opt/calibre/ebook-convert /opt/calibre/ebook-meta /opt/calibre/ebook-polish \
     /opt/calibre/calibre-server /opt/calibre/calibre-smtp /opt/calibre/web2disk \
     /opt/calibre/lrf2lrs /opt/calibre/lrfviewer /opt/calibre/markdown-calibre \
     /opt/calibre/calibre-debug /opt/calibre/fetch-ebook-metadata 2>/dev/null || true && \
-    # Remove GUI Python packages completely
     rm -rf /opt/calibre/lib/python*/site-packages/calibre/gui2 \
     /opt/calibre/lib/python*/site-packages/calibre/srv \
-    /opt/calibre/lib/python*/site-packages/calibre/ebooks/oeb/display 2>/dev/null || true && \
-    # Aggressively remove Qt GUI components
+    /opt/calibre/lib/python*/site-packages/calibre/ebooks/oeb/display \
+    /opt/calibre/resources/viewer /opt/calibre/resources/editor \
+    /opt/calibre/resources/content-server /opt/calibre/resources/images \
+    /opt/calibre/resources/fonts/liberation \
+    /opt/calibre/lib/libcrypto.so* /opt/calibre/lib/libssl.so* \
+    /opt/calibre/lib/qt-plugins 2>/dev/null || true && \
+    # Pruning Qt/PyQt completely requires more tailored `find` which we can do here
     find /opt/calibre -name "*Gui*" -type f -delete 2>/dev/null || true && \
     find /opt/calibre -name "*Widget*" -type f -delete 2>/dev/null || true && \
-    find /opt/calibre -name "*Designer*" -type f -delete 2>/dev/null || true && \
-    # Remove Qt GUI modules entirely
-    find /opt/calibre -path "*/PyQt*/Qt*Widgets*" -delete 2>/dev/null || true && \
-    find /opt/calibre -path "*/PyQt*/Qt*Gui*" -delete 2>/dev/null || true && \
-    find /opt/calibre -path "*/PyQt*/Qt*Designer*" -delete 2>/dev/null || true && \
-    find /opt/calibre -path "*/PyQt*/Qt*PrintSupport*" -delete 2>/dev/null || true && \
-    # Remove all GUI resource directories
-    rm -rf /opt/calibre/resources/viewer \
-    /opt/calibre/resources/editor \
-    /opt/calibre/resources/content-server \
-    /opt/calibre/resources/images/mimetypes \
-    /opt/calibre/resources/images/library.png \
-    /opt/calibre/resources/images/viewer 2>/dev/null || true && \
-    # Remove fonts and other GUI assets we don't need for calibredb
-    rm -rf /opt/calibre/resources/fonts/liberation 2>/dev/null || true && \
-    # CRITICAL: Remove conflicting OpenSSL libraries from Calibre that break Python's SSL
-    echo "*** Removing conflicting Calibre OpenSSL libraries ***" && \
-    rm -f /opt/calibre/lib/libcrypto.so* /opt/calibre/lib/libssl.so* 2>/dev/null || true && \
-    # Remove unnecessary Qt plugins for headless operation
-    rm -rf /opt/calibre/lib/qt-plugins/platforms \
-    /opt/calibre/lib/qt-plugins/imageformats \
-    /opt/calibre/lib/qt-plugins/iconengines 2>/dev/null || true && \
-    # Final verification that calibredb still works after cleanup
-    echo "*** Final verification of calibredb ***" && \
-    /usr/local/bin/calibredb --version && \
-    echo "*** Calibre cleanup complete - calibredb verified working ***" \
-    ;; \
-    "linux/arm64"|"linux/arm/v7"|"linux/arm/v6") \
-    echo "Installing Calibre from system packages for ARM architecture (calibredb only)" && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends calibre && \
-    # Create consistent symlink for ARM (calibredb only)
-    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb && \
-    echo "*** Removing unnecessary Calibre components from system installation ***" && \
-    # Remove GUI applications and conversion tools
-    rm -f /usr/bin/calibre /usr/bin/ebook-* /usr/bin/lrf* /usr/bin/web2disk 2>/dev/null || true && \
-    rm -f /usr/bin/*viewer* /usr/bin/*editor* 2>/dev/null || true && \
-    # Remove GUI-related packages if they were installed as dependencies
-    apt-get remove --purge -y calibre-bin 2>/dev/null || true && \
-    apt-get autoremove -y 2>/dev/null || true && \
-    echo "*** ARM Calibre cleanup complete ***" \
+    find /opt/calibre -path "*/PyQt*/Qt*" -delete 2>/dev/null || true \
     ;; \
     *) \
-    echo "Unsupported platform: ${TARGETPLATFORM}" && \
-    echo "Attempting system package installation as fallback..." && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends calibre && \
-    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb && \
-    echo "*** Removing unnecessary Calibre components from fallback installation ***" && \
-    # Remove GUI applications and conversion tools
-    rm -f /usr/bin/calibre /usr/bin/ebook-* /usr/bin/lrf* /usr/bin/web2disk 2>/dev/null || true && \
-    rm -f /usr/bin/*viewer* /usr/bin/*editor* 2>/dev/null || true && \
-    apt-get autoremove -y 2>/dev/null || true && \
-    echo "*** Fallback Calibre cleanup complete ***" \
+    # ARM/Other fallback - strictly for file structure consistency if needed
+    # But actually, for ARM, we usually install via APT in runtime.
+    # This stage might be empty for ARM or we handle it differently.
+    # For this optimization, we assume the user's primary concern is the heavy AMD64 binary.
+    echo "Non-AMD64 build: Calibre will be installed via APT in runtime stage." \
     ;; \
-    esac && \
-    echo "*** Calibre setup complete ***"
+    esac
 
-# Stage 5: FanFicFare installation (changes weekly)
-FROM calibre-installer AS fanficfare-installer
+# Python Dependencies Stage
+FROM builder-tools AS python-deps
+COPY requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --prefix=/install --no-warn-script-location --no-cache-dir -r /tmp/requirements.txt
 
-# Only include FanFicFare version ARG here - defer VERSION until later
+# FanFicFare Installer Stage
+FROM builder-tools AS fanficfare-installer
 ARG FANFICFARE_VERSION
 RUN --mount=type=cache,target=/root/.cache/pip \
-    set -e && \
     echo "*** Install FanFicFare from TestPyPI ***" && \
     INDEX_URL="https://test.pypi.org/simple/" && \
-    # Determine package specification
     if [ -n "${FANFICFARE_VERSION}" ]; then \
-    PACKAGE_SPEC="FanFicFare==${FANFICFARE_VERSION}" && \
-    echo "Installing FanFicFare==${FANFICFARE_VERSION} from TestPyPI" ; \
+    PACKAGE_SPEC="FanFicFare==${FANFICFARE_VERSION}"; \
     else \
-    PACKAGE_SPEC="FanFicFare" && \
-    echo "Installing latest FanFicFare from TestPyPI" ; \
+    PACKAGE_SPEC="FanFicFare"; \
     fi && \
-    # Install package
-    pip install --no-cache-dir -i "${INDEX_URL}" "${PACKAGE_SPEC}" && \
-    echo "*** FanFicFare installation complete ***"
+    pip install --prefix=/install --no-warn-script-location --no-cache-dir -i "${INDEX_URL}" --extra-index-url https://pypi.org/simple "${PACKAGE_SPEC}"
 
-# Stage 6: Application code (changes with every code update)
-FROM fanficfare-installer AS app-code
+# Runtime Stage: The final image
+FROM base AS runtime
 
-# Copy application files - this is where app version changes should invalidate cache
+ARG PUID="911"
+ARG PGID="911"
+# Version ARGs for labels
+ARG VERSION
+ARG CALIBRE_RELEASE
+# Re-declare for runtime usage if needed (rare) or just for logic
+ARG TARGETPLATFORM
+
+# Install minimalistic runtime deps
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    # ARM builds might need calibre from apt
+    $(if [ "${TARGETPLATFORM}" != "linux/amd64" ]; then echo "calibre"; fi) && \
+    apt-get clean && \
+    rm -rf /tmp/* /var/tmp/*
+
+# Create user
+RUN groupadd --gid "$PGID" abc && \
+    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc
+
+# Copy Python dependencies from builder
+COPY --from=python-deps /install /usr/local
+COPY --from=fanficfare-installer /install /usr/local
+
+# Copy Calibre from builder (AMD64 only)
+# For ARM, this directory will be empty or not copied if we logic'd it right, but `COPY --from` fails if src missing.
+# We'll use a trick: Check if /opt/calibre exists in source.
+# Actually, simpler: We always create /opt/calibre in builder, even if empty.
+COPY --from=calibre-downloader /opt/calibre /opt/calibre
+
+# Final Setup
+RUN echo "*** Setting up Env ***" && \
+    # Fix library paths for Calibre (AMD64)
+    if [ -d "/opt/calibre/lib" ]; then \
+    echo "/opt/calibre/lib" > /etc/ld.so.conf.d/calibre.conf && \
+    ldconfig; \
+    fi && \
+    # Symlink calibredb
+    if [ -f "/opt/calibre/calibredb" ]; then \
+    ln -sf /opt/calibre/calibredb /usr/local/bin/calibredb; \
+    elif [ -f "/usr/bin/calibredb" ]; then \
+    ln -sf /usr/bin/calibredb /usr/local/bin/calibredb; \
+    fi && \
+    # Verify calibredb works
+    calibredb --version
+
+# Copy Application Code (Frequent changes)
 COPY root/ /
 RUN chmod -R +x /app/ && \
     chown -R abc:abc /app/
 
-# Final runtime stage - minimal, just sets labels and runtime configuration
-FROM app-code AS runtime
-
-# Now add version-specific ARGs that change with each app update
-ARG VERSION
-ARG CALIBRE_RELEASE
+# Runtime Config
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
-
-# Runtime configuration
 ENV VERBOSE=false
-
-# Ensure Calibre shared libraries can be found (but not conflicting OpenSSL ones)
 ENV LD_LIBRARY_PATH="/opt/calibre/lib"
-
 VOLUME /config
 WORKDIR /config
 

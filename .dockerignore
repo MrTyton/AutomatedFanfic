@@ -36,6 +36,7 @@ dmypy.json
 *_test.py
 test_*.py
 tests/
+root/tests/
 htmlcov/
 .coverage.*
 coverage.xml
