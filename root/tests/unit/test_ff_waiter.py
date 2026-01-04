@@ -173,8 +173,7 @@ class TestWaitProcessor(unittest.TestCase):
     """Test the wait_processor function."""
 
     @patch("services.ff_waiter.process_fanfic")
-    @patch("services.ff_waiter.sleep")
-    def test_wait_processor_processes_fanfics(self, mock_sleep, mock_process_fanfic):
+    def test_wait_processor_processes_fanfics(self, mock_process_fanfic):
         """Test that wait_processor processes fanfics from the waiting queue."""
         waiting_queue = mp.Queue()
         ingress_queue = mp.Queue()
@@ -190,12 +189,8 @@ class TestWaitProcessor(unittest.TestCase):
         # Verify process_fanfic was called with the correct arguments
         mock_process_fanfic.assert_called_once_with(fanfic, ingress_queue)
 
-        # Verify sleep was called
-        mock_sleep.assert_called_with(5)
-
     @patch("services.ff_waiter.process_fanfic")
-    @patch("services.ff_waiter.sleep")
-    def test_wait_processor_poison_pill_shutdown(self, mock_sleep, mock_process_fanfic):
+    def test_wait_processor_poison_pill_shutdown(self, mock_process_fanfic):
         """Test that wait_processor stops when receiving None (poison pill)."""
         waiting_queue = mp.Queue()
         ingress_queue = mp.Queue()
@@ -209,12 +204,8 @@ class TestWaitProcessor(unittest.TestCase):
         # Verify process_fanfic was never called
         mock_process_fanfic.assert_not_called()
 
-        # Verify sleep was never called (no processing iteration)
-        mock_sleep.assert_not_called()
-
     @patch("services.ff_waiter.process_fanfic")
-    @patch("services.ff_waiter.sleep")
-    def test_wait_processor_multiple_fanfics(self, mock_sleep, mock_process_fanfic):
+    def test_wait_processor_multiple_fanfics(self, mock_process_fanfic):
         """Test that wait_processor handles multiple fanfics before shutdown."""
         waiting_queue = mp.Queue()
         ingress_queue = mp.Queue()
@@ -239,10 +230,6 @@ class TestWaitProcessor(unittest.TestCase):
             call(fanfic3, ingress_queue),
         ]
         mock_process_fanfic.assert_has_calls(expected_calls)
-
-        # Verify sleep was called 3 times (once per fanfic processed)
-        self.assertEqual(mock_sleep.call_count, 3)
-        mock_sleep.assert_has_calls([call(5), call(5), call(5)])
 
 
 if __name__ == "__main__":

@@ -71,6 +71,7 @@ import multiprocessing as mp
 import socket
 import time
 import logging
+import threading
 from contextlib import contextmanager
 from fanficfare import geturls
 from utils import ff_logging
@@ -288,6 +289,7 @@ def email_watcher(
     url_parsers: dict,
     active_urls: dict | None = None,
     verbose: bool = False,
+    shutdown_event: threading.Event = None,
 ):
     """
     Continuously monitor email for fanfiction URLs and route to processing queues.
@@ -307,52 +309,19 @@ def email_watcher(
                            Generated from FanFicFare adapters in the main process.
         active_urls (dict, optional): Shared dictionary tracking URLs currently in
                                      queues or being processed to prevent duplicates.
-
-    Processing Flow:
-        1. Extract URLs from email using FanFicFare's geturls functionality
-        2. Parse each URL to identify the source fanfiction site
-        3. Handle special cases (e.g., FFNet disable notifications)
-        4. Check for duplicates in active_urls
-        5. Route URLs to appropriate site-specific processing queues
-        6. Sleep until next polling cycle
-
-    Special Handling:
-        - Disabled Sites: URLs from sites listed in disabled_sites only send
-                         notifications without being added to processing queues
-        - Unknown Sites: URLs that don't match known patterns are routed
-                        to the "other" queue
-
-    Example:
-        ```python
-        # Typically run in a separate process
-        email_info = EmailInfo("config.toml")
-        notification_wrapper = NotificationWrapper(config)
-
-        ingress_queue = mp.Queue()
-
-        # This runs indefinitely until process termination
-        email_watcher(email_info, notification_wrapper, ingress_queue)
-        ```
-
-    Infinite Loop:
-        This function runs indefinitely and should be executed in a separate
-        process. It only exits when the process is terminated externally.
-
-    Thread Safety:
-        This function is designed for multiprocessing environments. All
-        communication with other processes occurs through the provided
-        queue objects, which are thread/process-safe.
-
-    Note:
-        The sleep interval between email checks is configured via
-        email_info.sleep_time to balance responsiveness with email
-        server load considerations.
+        verbose (bool): Enable verbose logging.
+        shutdown_event (threading.Event, optional): Event to signal shutdown.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[93m")  # Yellow
 
     while True:
+        # Check for shutdown signal
+        if shutdown_event and shutdown_event.is_set():
+            ff_logging.log_debug("EmailWatcher received shutdown signal")
+            break
+
         # Extract URLs from the configured email account
         urls = email_info.get_urls()
         fics_to_add = set()
@@ -400,5 +369,9 @@ def email_watcher(
             # Route to ingress queue
             ingress_queue.put(fic)
 
-        # Wait before next email check cycle
-        time.sleep(email_info.sleep_time)
+        # Wait before next email check cycle, respecting shutdown event
+        if shutdown_event:
+            if shutdown_event.wait(timeout=email_info.sleep_time):
+                break
+        else:
+            time.sleep(email_info.sleep_time)
