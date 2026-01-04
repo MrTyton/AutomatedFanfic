@@ -141,7 +141,7 @@ class Coordinator:
             if self.assignments[finished_site] == worker_id:
                 del self.assignments[finished_site]
                 ff_logging.log_debug(
-                    f"Coordinator: Worker {worker_id} finished site {finished_site}. Lock released."
+                    f"Coordinator: Worker {worker_id} finished site {finished_site}. Lock released.",
                 )
             else:
                 ff_logging.log(
@@ -174,7 +174,7 @@ class Coordinator:
                 self.assignments[candidate_site] = worker_id
                 self.idle_workers.remove(worker_id)
                 ff_logging.log_debug(
-                    f"Coordinator: Assigned {candidate_site} to {worker_id}"
+                    f"Coordinator: Assigned {candidate_site} to {worker_id}",
                 )
 
                 # Drain ENTIRE backlog for this site to the worker

@@ -73,7 +73,8 @@ class TestLogFunction(unittest.TestCase):
     def test_log_header(self, name, message, color, code, mock_print):
         ff_logging.log(message, color)
         mock_print.assert_called_once_with(
-            f"\x1b[1m2021-01-01 12:00:00 PM\x1b[0m - \x1b[{code}m{message}\x1b[0m"
+            f"\x1b[1m2021-01-01 12:00:00 PM\x1b[0m - \x1b[{code}m{message}\x1b[0m",
+            flush=True,
         )
 
 

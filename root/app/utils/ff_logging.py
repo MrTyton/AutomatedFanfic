@@ -161,7 +161,10 @@ def log(msg: str, color: str = "") -> None:
     # Generate current timestamp in standardized format
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
     # Output formatted message with timestamp and color codes
-    print(f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}")
+    print(
+        f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}",
+        flush=True,
+    )
 
 
 def log_failure(msg: str) -> None:
