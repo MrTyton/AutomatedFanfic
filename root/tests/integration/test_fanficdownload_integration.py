@@ -621,9 +621,10 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_calibre.return_value = mock_calibre_instance
 
         # Mock worker functions to be fast and simple
-        with patch("fanficdownload.url_ingester.email_watcher", _global_mock_worker):
-            with patch("fanficdownload.ff_waiter.wait_processor", _global_mock_worker):
-                with patch("fanficdownload.url_worker.url_worker", _global_mock_worker):
+        # Mock worker functions to be fast and simple
+        with patch("services.url_ingester.email_watcher", _global_mock_worker):
+            with patch("services.ff_waiter.wait_processor", _global_mock_worker):
+                with patch("workers.pipeline.url_worker", _global_mock_worker):
                     with patch(
                         "process_management.ProcessManager.wait_for_all"
                     ) as mock_wait:
