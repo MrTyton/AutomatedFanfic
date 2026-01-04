@@ -39,10 +39,9 @@ from utils import ff_logging  # Custom logging module for formatted logging
 from parsers import auto_url_parsers
 from calibre_integration import calibre_info
 from calibre_integration import calibredb_utils
-from services import coordinator
-from services import ff_waiter
 from notifications import notification_wrapper
 from services import url_ingester
+from services import supervisor
 from workers import pipeline as url_worker, pool_runner
 from models import config_models
 from models.config_models import ConfigError, ConfigValidationError
@@ -199,7 +198,7 @@ def register_processes(
     # We use all available slots for threads as they are lightweight, but we respect the
     # max_workers limit as a "System Process Limit" since each thread spawns a subprocess.
     # Overhead: Main(1) + SyncManager(1) + Coordinator(1) + Email(1) + Waiter(1) + ResourceTracker(1) = 6
-    overhead_count = 6
+    overhead_count = 4
     worker_pool_size = max(1, config.max_workers - overhead_count)
 
     ff_logging.log(
@@ -226,32 +225,20 @@ def register_processes(
     email_info = url_ingester.EmailInfo(config.email)
     notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
 
-    # Register email watcher
+    # Register Supervisor Process (Hosts Email, Waiter, Coordinator)
     process_manager.register_process(
-        "email_watcher",
-        url_ingester.email_watcher,
+        "supervisor",
+        supervisor.run_supervisor,
         args=(
+            worker_queues,
+            ingress_queue,
+            waiting_queue,
             email_info,
             notification_info,
-            ingress_queue,
             url_parsers,
             active_urls,
             args.verbose,
         ),
-    )
-
-    # Register waiting watcher
-    process_manager.register_process(
-        "waiting_watcher",
-        ff_waiter.wait_processor,
-        args=(ingress_queue, waiting_queue, args.verbose),
-    )
-
-    # Register Coordinator
-    process_manager.register_process(
-        "coordinator",
-        coordinator.start_coordinator,
-        args=(ingress_queue, worker_queues, args.verbose),
     )
 
     # Register the single pool process that hosts all worker threads

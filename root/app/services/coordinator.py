@@ -16,10 +16,19 @@ from utils import ff_logging
 from models.fanfic_info import FanficInfo
 
 
+import threading
+
+
 class Coordinator:
-    def __init__(self, ingress_queue: mp.Queue, worker_queues: Dict[str, mp.Queue]):
+    def __init__(
+        self,
+        ingress_queue: mp.Queue,
+        worker_queues: Dict[str, mp.Queue],
+        shutdown_event: threading.Event = None,
+    ):
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
+        self.shutdown_event = shutdown_event
 
         # Backlog: Ordered list of tasks per site
         # { 'fanfiction': deque([task1, task2]), 'ao3': deque([task3]) }
@@ -42,6 +51,11 @@ class Coordinator:
         ff_logging.log_debug("Coordinator started")
 
         while self.running:
+            # Check for external shutdown signal (if provided)
+            if self.shutdown_event and self.shutdown_event.is_set():
+                ff_logging.log_debug("Coordinator received shutdown signal")
+                break
+
             # Process incoming events (tasks or signals)
             # Use a timeout to prevent busy waiting while keeping the loop responsive
             # and allowing for periodic tasks or shutdown checks if needed.
@@ -204,13 +218,16 @@ def start_coordinator(
     ingress_queue: mp.Queue,
     worker_queues: Dict[str, mp.Queue],
     verbose: bool = False,
+    shutdown_event: threading.Event = None,
 ):
     """Entry point for the coordinator process."""
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[95m")  # Magenta
 
-    coordinator = Coordinator(ingress_queue, worker_queues)
+    coordinator = Coordinator(
+        ingress_queue, worker_queues, shutdown_event=shutdown_event
+    )
     try:
         coordinator.run()
     except KeyboardInterrupt:

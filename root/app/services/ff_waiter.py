@@ -30,7 +30,6 @@ Example:
 
 import multiprocessing as mp
 import threading
-from time import sleep
 
 from models import fanfic_info
 from utils import ff_logging
@@ -141,6 +140,7 @@ def wait_processor(
     ingress_queue: mp.Queue,
     waiting_queue: mp.Queue,
     verbose: bool = False,
+    shutdown_event: threading.Event = None,
 ) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 
@@ -149,38 +149,36 @@ def wait_processor(
     the retry protocol by receiving failed fanfictions and scheduling their
     delayed reprocessing via the pre-calculated retry decisions.
 
-    This function runs in a dedicated process and processes entries from the
-    waiting queue in a continuous loop. Each failed fanfiction is processed
-    via process_fanfic() which uses the pre-calculated retry decision to
-    schedule timer-based requeuing back to the ingress queue.
+    This function runs in a dedicated process (or thread) and processes entries
+    from the waiting queue in a continuous loop. Each failed fanfiction is
+    processed via process_fanfic() which uses the pre-calculated retry decision
+    to schedule timer-based requeuing back to the ingress queue.
 
     Args:
         ingress_queue (mp.Queue): The single ingress queue for all tasks.
         waiting_queue (mp.Queue): The shared multiprocessing queue containing
                                  failed fanfiction entries awaiting delayed retry.
                                  Supports poison pill (None) shutdown pattern.
-
-    Note:
-        This function runs indefinitely until a None entry (poison pill) is
-        received in the waiting queue, which signals graceful shutdown. The
-        5-second sleep prevents busy-waiting and reduces CPU usage.
-
-    Shutdown:
-        The function supports graceful shutdown via poison pill pattern. When
-        ProcessManager needs to stop this worker, it sends None to the queue,
-        causing the function to break from its processing loop and return.
-
-    Example:
-        >>> # Typically called by ProcessManager in separate process
-        >>> wait_processor(ingress_queue, waiting_queue)
+        verbose (bool): Enable verbose logging.
+        shutdown_event (threading.Event, optional): Event to signal shutdown.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[96m")  # Bright Cyan
 
     while True:
-        # Block waiting for next failed fanfiction entry from waiting queue
-        fanfic: fanfic_info.FanficInfo = waiting_queue.get()
+        # Check for shutdown signal
+        if shutdown_event and shutdown_event.is_set():
+            ff_logging.log_debug("Waiter received shutdown signal")
+            break
+
+        try:
+            # Block waiting for next failed fanfiction entry from waiting queue
+            # Use timeout if shutdown_event is provided to allow checking it
+            timeout = 2.0 if shutdown_event else None
+            fanfic: fanfic_info.FanficInfo = waiting_queue.get(timeout=timeout)
+        except Exception:  # queue.Empty is likely, but need to catch it safely
+            continue
 
         # Check for poison pill shutdown signal (None entry)
         if fanfic is None:
@@ -189,5 +187,5 @@ def wait_processor(
         # Schedule delayed retry processing for the failed fanfiction
         process_fanfic(fanfic, ingress_queue)
 
-        # Brief sleep to prevent busy-waiting and reduce CPU usage
-        sleep(5)  # Sleep for 5 seconds between processing iterations
+        # Original implementation used sleep(5), but if we block on get(), we don't need explicit sleep
+        # unless queue.get() returns immediately. Since we are waiting for items, we can just loop.
