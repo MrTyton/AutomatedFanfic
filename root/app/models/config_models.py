@@ -619,6 +619,29 @@ class AppConfig(BaseSettings):
         if self.max_workers <= 0:
             raise ValueError("max_workers must be positive")
 
+        # Warn if suboptimal settings are detected
+        if self.max_workers == 1:
+            ff_logging.log(
+                "Warning: max_workers=1 may result in slow processing. "
+                f"Consider using max_workers={get_cpu_count()} to utilize all CPU cores.",
+                "WARNING",
+            )
+
+        # Validate Calibre path if it's a local path (not URL)
+        if self.calibre and self.calibre.path:
+            path_str = self.calibre.path.strip()
+            if not path_str.startswith(("http://", "https://")):
+                # It's a local path
+                from pathlib import Path
+
+                calibre_path = Path(path_str)
+                if not calibre_path.exists():
+                    ff_logging.log(
+                        f"Warning: Calibre library path does not exist: {path_str}\n"
+                        "Please ensure the path is correct or the library is accessible.",
+                        "WARNING",
+                    )
+
         return self
 
 
@@ -698,11 +721,19 @@ class ConfigManager:
             # Validate required sections exist
             if "email" not in toml_data:
                 raise ConfigValidationError(
-                    "Missing required 'email' section in configuration"
+                    "Missing required 'email' section in configuration.\n"
+                    "Example configuration:\n"
+                    "[email]\n"
+                    "email = 'your-username'\n"
+                    "password = 'your-password'\n"
+                    "server = 'imap.gmail.com'"
                 )
             if "calibre" not in toml_data:
                 raise ConfigValidationError(
-                    "Missing required 'calibre' section in configuration"
+                    "Missing required 'calibre' section in configuration.\n"
+                    "Example configuration:\n"
+                    "[calibre]\n"
+                    "path = '/path/to/calibre/library'"
                 )
 
             # Create and validate configuration object

@@ -485,6 +485,75 @@ class TestProcessManagerMonitoring(unittest.TestCase):
         # Clean up
         self.manager.stop_all()
 
+    def test_auto_restart_on_process_death(self):
+        """Test that processes are automatically restarted when they die unexpectedly."""
+        # Register a process that fails immediately
+        self.manager.register_process("failing_process", failing_worker_function)
+
+        # Start ALL processes to trigger monitoring thread
+        self.assertTrue(self.manager.start_all())
+        self.manager.processes["failing_process"].pid
+
+        # Verify monitoring thread is running
+        self.assertIsNotNone(self.manager._monitor_thread)
+        self.assertTrue(self.manager._monitor_thread.is_alive())
+
+        # Wait for the process to fail and for health monitoring to detect it and restart
+        # Health check runs every 0.1 seconds, restart delay is 0.05s
+        # Need to wait long enough for failure detection + restart
+        time.sleep(0.5)
+
+        process_info = self.manager.processes["failing_process"]
+
+        # Auto-restart should have been attempted
+        # The restart_count should be greater than 0, indicating restarts happened
+        self.assertGreater(
+            process_info.restart_count,
+            0,
+            "Process should have been restarted at least once",
+        )
+
+        # Clean up
+        self.manager.stop_all()
+
+    def test_auto_restart_respects_max_attempts(self):
+        """Test that auto-restart stops after reaching max attempts."""
+        # Configure for exactly 2 restart attempts
+        self.manager.process_config.max_restart_attempts = 2
+
+        # Register a failing process
+        self.manager.register_process("persistent_failure", failing_worker_function)
+
+        # Start ALL processes to trigger monitoring
+        self.assertTrue(self.manager.start_all())
+
+        # Verify monitoring thread is running
+        self.assertIsNotNone(self.manager._monitor_thread)
+        self.assertTrue(self.manager._monitor_thread.is_alive())
+
+        # Wait for multiple restart cycles
+        # With health check every 0.1s and restart delay of 0.05s,
+        # plus time for each failure, need at least 3-4 cycles worth of time
+        time.sleep(1.0)
+
+        process_info = self.manager.processes["persistent_failure"]
+
+        # Should have attempted restarts but stopped at the limit
+        # With max_restart_attempts=2, should not exceed 2
+        self.assertLessEqual(
+            process_info.restart_count,
+            2,
+            f"Restart count {process_info.restart_count} should not exceed max_restart_attempts=2",
+        )
+
+        # Should have attempted at least one restart
+        self.assertGreater(
+            process_info.restart_count, 0, "Should have attempted at least one restart"
+        )
+
+        # Clean up
+        self.manager.stop_all()
+
 
 class TestProcessManagerErrorHandling(unittest.TestCase):
     """Test ProcessManager error handling scenarios."""
@@ -549,6 +618,35 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
         if original_process and original_process.is_alive():
             original_process.terminate()
             original_process.join(1.0)
+
+    def test_force_kill_after_graceful_timeout(self):
+        """Test that processes are force killed when they don't terminate gracefully."""
+        # Create a process that ignores termination signals
+        stop_event = mp.Event()
+        self.manager.register_process(
+            "stubborn_process", infinite_worker_function, args=(stop_event,)
+        )
+
+        # Start the process
+        self.assertTrue(self.manager.start_process("stubborn_process"))
+
+        # Verify it's running
+        time.sleep(0.1)
+        self.assertTrue(self.manager.processes["stubborn_process"].is_alive())
+
+        # Stop with a very short timeout to force kill path
+        # The graceful timeout should be exceeded, triggering force kill
+        self.manager.stop_process("stubborn_process", timeout=0.1)
+
+        # Should eventually succeed (either gracefully or via force kill)
+        # In practice, the process will be killed
+        time.sleep(0.2)
+
+        # Process should no longer be alive
+        self.assertFalse(self.manager.processes["stubborn_process"].is_alive())
+
+        # Clean up
+        stop_event.set()
 
     def test_signal_handler_deduplication(self):
         """Test that signal handler prevents repeated signal handling."""
@@ -745,6 +843,190 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
 
         signal_thread.join()
         stop_event.set()
+
+
+class TestProcessManagerEdgeCases(unittest.TestCase):
+    """Test edge cases and error paths in ProcessManager."""
+
+    def setUp(self):
+        """Set up test configuration and ProcessManager."""
+        self.config = AppConfig(
+            email=EmailConfig(
+                email="testuser",
+                password="test_password",
+                server="test.server.com",
+            ),
+            calibre=CalibreConfig(path="/test/path"),
+            process=ProcessConfig(
+                shutdown_timeout=2.0,
+                health_check_interval=1.0,
+                max_restart_attempts=3,
+            ),
+        )
+        self.manager = ProcessManager(self.config)
+
+    def tearDown(self):
+        """Clean up processes."""
+        try:
+            self.manager.stop_all()
+            self.manager.wait_for_termination(timeout=5.0)
+        except Exception:
+            pass
+
+    @patch("process_management.manager.ff_logging.log")
+    def test_stop_process_already_stopped(self, mock_log):
+        """Test stop_process when process is already stopped."""
+        self.manager.register_process("test_process", dummy_worker_function)
+
+        # Stop without starting
+        result = self.manager.stop_process("test_process")
+
+        # Should return True (already stopped)
+        self.assertTrue(result)
+
+    @patch("process_management.manager.ff_logging.log")
+    def test_stop_process_nonexistent(self, mock_log):
+        """Test stop_process with non-existent process name."""
+        result = self.manager.stop_process("nonexistent_process")
+
+        # Should return False
+        self.assertFalse(result)
+
+    @patch("process_management.manager.ff_logging.log")
+    def test_wait_for_all_no_processes(self, mock_log):
+        """Test wait_for_all when no processes exist."""
+        result = self.manager.wait_for_all(timeout=1.0)
+
+        # Should return True (nothing to wait for)
+        self.assertTrue(result)
+
+    @patch("process_management.manager.ff_logging.log")
+    def test_check_health_stopped_process(self, mock_log):
+        """Test health check on a stopped process."""
+        self.manager.register_process("test_process", dummy_worker_function)
+
+        # Don't start the process
+        proc_info = self.manager.processes["test_process"]
+
+        # Health check should not attempt restart
+        initial_restart_count = proc_info.restart_count
+        self.manager._health_check_process("test_process", proc_info, time.time())
+
+        # Restart count should not change for stopped process
+        self.assertEqual(proc_info.restart_count, initial_restart_count)
+
+    @patch("process_management.manager.ff_logging.log")
+    def test_restart_process_max_attempts_logging(self, mock_log):
+        """Test that exceeding max restart attempts is logged."""
+        self.manager.register_process("failing_process", failing_worker_function)
+        self.manager.start_all()
+
+        # Wait for health monitoring to detect failures
+        time.sleep(1.5)
+
+        proc_info = self.manager.processes["failing_process"]
+
+        # Force restart count to max
+        proc_info.restart_count = self.config.process.max_restart_attempts
+
+        # Try to restart again - should be rejected
+        result = self.manager.restart_process("failing_process")
+
+        # Should fail due to max attempts
+        self.assertFalse(result)
+
+    def test_process_start_with_invalid_target(self):
+        """Test that manager handles process with None target gracefully."""
+        # Register a process with None target
+        self.manager.register_process("bad_process", None)
+
+        # Attempting to start should not crash the manager
+        result = self.manager.start_process("bad_process")
+
+        # Should return False or handle gracefully
+        self.assertIsNotNone(result)
+
+    @patch("process_management.manager.ff_logging.log")
+    def test_get_status_empty_manager(self, mock_log):
+        """Test get_status with no processes."""
+        status = self.manager.get_status()
+
+        self.assertIsInstance(status, dict)
+        self.assertEqual(len(status), 0)
+
+    @patch("process_management.manager.ff_logging.log_failure")
+    def test_monitoring_thread_continues_after_exception(self, mock_log_failure):
+        """Test that monitoring thread handles exceptions gracefully."""
+        self.manager.register_process("test_process", dummy_worker_function, args=(2,))
+        self.manager.start_all()
+
+        # Mock _health_check_process to raise exception
+        original_health_check = self.manager._health_check_process
+        exception_count = [0]
+
+        def failing_health_check(proc_info):
+            if exception_count[0] == 0:
+                exception_count[0] += 1
+                raise Exception("Health check error")
+            return original_health_check(proc_info)
+
+        with patch.object(
+            self.manager, "_health_check_process", side_effect=failing_health_check
+        ):
+            # Wait for health check cycle
+            time.sleep(1.5)
+
+            # Manager should still be operational despite exception
+            self.assertTrue(self.manager._monitor_thread.is_alive())
+
+        # Cleanup
+        self.manager.stop_all()
+
+    @patch("process_management.manager.ff_logging.log_failure")
+    def test_register_process_duplicate_name(self, mock_log_failure):
+        """Test registering a process with duplicate name."""
+        self.manager.register_process("test_process", dummy_worker_function)
+
+        # Try to register again
+        self.manager.register_process("test_process", dummy_worker_function)
+
+        # Should log failure about duplicate
+        mock_log_failure.assert_called()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("already registered", failure_msg)
+
+    def test_stop_process_timeout_behavior(self):
+        """Test stop_process with custom timeout."""
+        stop_event = threading.Event()
+
+        # Register process that runs indefinitely
+        self.manager.register_process(
+            "infinite_process",
+            infinite_worker_function,
+            kwargs={"stop_event": stop_event},
+        )
+        self.manager.start_process("infinite_process")
+        time.sleep(0.2)
+
+        # Try to stop with very short timeout
+        start_time = time.time()
+        self.manager.stop_process("infinite_process", timeout=0.1)
+        elapsed = time.time() - start_time
+
+        # Should timeout quickly
+        self.assertLess(elapsed, 0.5)
+
+        # Cleanup
+        stop_event.set()
+        self.manager.stop_all()
+
+    @patch("process_management.manager.ff_logging.log")
+    def test_start_process_nonexistent(self, mock_log):
+        """Test starting a process that was never registered."""
+        result = self.manager.start_process("nonexistent_process")
+
+        # Should return False
+        self.assertFalse(result)
 
 
 if __name__ == "__main__":

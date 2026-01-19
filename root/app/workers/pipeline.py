@@ -1,5 +1,17 @@
 """
 Main pipeline logic for URL worker processes.
+
+Worker-Coordinator Communication:
+    Workers communicate with the coordinator through the ingress_queue (received as waiting_queue
+    parameter). This queue serves dual purposes:
+    1. Coordinator -> Workers: Distributes FanficInfo tasks
+    2. Workers -> Coordinator: Signals worker idle status and requeues failed tasks
+
+    When a worker finishes processing all tasks for a site, it sends:
+    ('WORKER_IDLE', worker_id, finished_site) back to the ingress_queue.
+
+    The ingress_queue parameter is the same queue used by failure handlers for retries,
+    creating a unified task ingress point for the coordinator.
 """
 
 import multiprocessing as mp
@@ -104,18 +116,23 @@ def _process_task(
                 f"\t({site}) Failed to update {path_or_url}: {error_msg}"
             )
 
-            # Log detailed output if available
-            if hasattr(e, "output") and e.output:
-                error_output = e.output
-                if isinstance(error_output, bytes):
-                    error_output = error_output.decode("utf-8", errors="replace")
-                ff_logging.log_debug(f"\t({site}) FanFicFare output:\n{error_output}")
+            # Log detailed output if available (for CalledProcessError)
+            if isinstance(e, subprocess.CalledProcessError):
+                if e.output:
+                    error_output = e.output
+                    if isinstance(error_output, bytes):
+                        error_output = error_output.decode("utf-8", errors="replace")
+                    ff_logging.log_debug(
+                        f"\t({site}) FanFicFare output:\n{error_output}"
+                    )
 
-            if hasattr(e, "stderr") and e.stderr:
-                error_stderr = e.stderr
-                if isinstance(error_stderr, bytes):
-                    error_stderr = error_stderr.decode("utf-8", errors="replace")
-                ff_logging.log_debug(f"\t({site}) FanFicFare STDERR:\n{error_stderr}")
+                if e.stderr:
+                    error_stderr = e.stderr
+                    if isinstance(error_stderr, bytes):
+                        error_stderr = error_stderr.decode("utf-8", errors="replace")
+                    ff_logging.log_debug(
+                        f"\t({site}) FanFicFare STDERR:\n{error_stderr}"
+                    )
 
             handlers.handle_failure(
                 fanfic,
@@ -187,30 +204,14 @@ def url_worker(
 
     ff_logging.log_debug(f"Starting Worker {worker_id}")
 
-    # Track last site to release lock
+    # Track last site finished to signal idle to coordinator
     last_finished_site = None
 
     while True:
         try:
-            # Signal idle if we finished a site
+            # Signal idle if we finished processing a site in the previous iteration
             if last_finished_site:
-                # We need to signal coordinator.
-                # But worker queues are one-way usually?
-                # The architecture implies we communicate back?
-                # Original coordinator had "ingress_queue" which workers put signals into?
-                # Wait, where is ingress_queue?
-                # In original url_worker, it used `queue` to GET tasks.
-                # Does it PUT to `queue`? No.
-                # Coordinator manages assignments.
-                # Ah, `waiting_queue` in arguments. Is that the ingress queue?
-                # In `fanficdownload.py`:
-                # `ingress_queue = mp.Queue()`
-                # `pm.register_process(..., args=(worker_queues[name], cdb_info, notification_wrapper, ingress_queue, ...))`
-                # So `waiting_queue` param IS the `ingress_queue` of Coordinator!
-                # Yes, because `handle_failure` puts retries there.
-
-                # Signal IDLE
-                # We put ('WORKER_IDLE', worker_id, last_finished_site) into ingress_queue
+                # Signal IDLE - worker finished a site and has no pending work
                 waiting_queue.put(("WORKER_IDLE", worker_id, last_finished_site))
                 last_finished_site = None
 

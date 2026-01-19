@@ -419,16 +419,17 @@ class ProcessManager:
         """
         ff_logging.log_debug("Process monitoring started")
 
+        # Skip entire loop if monitoring is disabled
+        if not self.process_config.enable_monitoring:
+            ff_logging.log_debug("Process monitoring disabled in configuration")
+            return
+
         while not self._shutdown_event.is_set():
             try:
                 current_time = time.time()
 
                 # Iterate through all managed processes
                 for name, process_info in self.processes.items():
-                    # Skip monitoring if disabled in configuration
-                    if not self.process_config.enable_monitoring:
-                        continue
-
                     # Check if health check interval has elapsed
                     if (
                         process_info.last_health_check is None

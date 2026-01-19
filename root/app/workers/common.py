@@ -30,7 +30,10 @@ def get_path_or_url(
             URL of the story otherwise.
     """
     # Check if the story exists in the Calibre library by attempting to retrieve its ID
-    if calibre_client.get_story_id(ff_info):
+    story_id = calibre_client.get_story_id(ff_info)
+
+    # If story exists in Calibre, export it
+    if story_id:
         # Export the story to the specified location
         calibre_client.export_story(fanfic=ff_info, location=location)
         # Assuming export_story function successfully exports the story, retrieve and return the path to the exported file
@@ -87,7 +90,10 @@ def log_epub_metadata(epub_path: str, site: str) -> None:
             container_root = ET.fromstring(container_xml)
             # Namespace for container.xml
             ns = {"u": "urn:oasis:names:tc:opendocument:xmlns:container"}
-            rootfile_path = container_root.find(".//u:rootfile", ns).attrib["full-path"]
+            rootfile_elem = container_root.find(".//u:rootfile", ns)
+            if rootfile_elem is None:
+                raise ValueError("Could not find rootfile element in container.xml")
+            rootfile_path = rootfile_elem.attrib["full-path"]
 
             # Read content.opf
             opf_xml = zip_ref.read(rootfile_path)

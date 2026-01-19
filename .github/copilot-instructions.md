@@ -1,185 +1,210 @@
-# AutomatedFanfic - AI Coding Agent Instructions
+# AutomatedFanfic AI Agent Instructions
 
 ## Project Overview
+AutomatedFanfic is a Python 3.13+ multiprocessing fanfiction downloader that monitors email (IMAP) for fanfiction URLs, processes them via FanFicFare CLI across 100+ sites, manages e-books through Calibre (calibredb), and sends notifications via Apprise. The architecture uses ProcessManager for lifecycle coordination, a Supervisor process hosting Email Watcher/Waiter/Coordinator as threads, and site-specific url_worker processes with domain locking.
 
-AutomatedFanfic is a Python multiprocessing application that automates fanfiction downloading using FanFicFare CLI with Docker containerization. The application monitors email for fanfiction URLs, downloads/updates stories via Calibre integration, and provides notification capabilities.
+**📘 For detailed architecture documentation, see [`project_architecture.md`](project_architecture.md)** - covers data flows, sequence diagrams, lifecycle patterns, and the "Domain Locking" politeness policy.
 
-**Core Architecture**: Multiprocessing-based with centralized ProcessManager coordination, email monitoring, URL parsing workers, and notification systems.
+## Architecture Patterns
 
-## Key Architecture Patterns
+### Process Structure
+- **Main Process**: Launches ProcessManager, registers all services/workers, handles signals (SIGTERM/SIGINT)
+- **Supervisor Process**: Single process hosting 3 threads (EmailWatcher, Waiter, Coordinator) for memory efficiency
+- **Worker Processes**: Site-specific `url_worker` processes (e.g., "ao3-worker", "ffnet-worker") for parallel downloads
+- **ProcessManager**: Centralized lifecycle manager with health monitoring, auto-restart (max 3 attempts), monitoring thread
 
-### 1. Multiprocessing & Worker Management
-- **Primary Pattern**: `ProcessManager` (process_manager.py) coordinates worker processes with health monitoring
-- **Worker Types**: Email monitoring (`url_ingester.py`) and site-specific URL processors (`url_worker.py`)
-- **Queue-Based Communication**: Multiprocessing queues for inter-process data flow
-- **Graceful Shutdown**: Signal handling (SIGTERM/SIGINT) with coordinated cleanup via shutdown events
+### Communication Flow
+- **ingress_queue**: Unified task ingress point - receives FanficInfo tasks from email/retries AND worker signals ('WORKER_IDLE', worker_id, site)
+- **worker_queues**: Dict[site, mp.Queue] - site-specific queues for coordinator → worker task distribution
+- **waiting_queue**: Delayed retry queue for failed downloads (exponential backoff: 1min, 2min, 3min...)
+- **active_urls**: Dict[url, FanficInfo] - shared memory tracking of in-flight downloads
 
-### 2. Configuration Management
-- **Pydantic Models**: Type-safe configuration with validation (`config_models.py`)
-- **TOML-Based**: Primary config in `config.toml`, with defaults and validation
-- **Hierarchical Structure**: Email, Calibre, Pushbullet, Apprise, Retry, and Process configurations
-- **Comprehensive Validation**: RetryConfig and ProcessConfig models with field constraints and custom validators
-- **Hot Reload**: Some configs (INI files) reload without restart; TOML requires restart
-- **ConfigManager**: Centralized loading with error handling (ConfigError, ConfigValidationError)
+### Key Design Principles
+1. **Domain Locking**: Coordinator ensures no two workers process same site simultaneously
+2. **Unified Ingress**: Workers requeue failed tasks to ingress_queue, not worker_queues directly
+3. **Thread Coloring**: Each process/thread has color-coded logging (e.g., Supervisor=green, workers=cyan)
+4. **Defensive Programming**: All queue operations wrapped in try/except, check `qsize()` support on startup
+5. **Signal Safety**: All processes register SIGTERM/SIGINT handlers for Docker compatibility
 
-### 3. URL Processing & Site Recognition
-- **Auto-Generated Parsers**: `auto_url_parsers.py` dynamically generates regex patterns from FanFicFare adapters
-- **Site-Specific Queues**: Each major fanfiction site gets its own processing queue (fanfiction.net, archiveofourown.org, etc.)
-- **Fallback Queue**: "other" queue handles unrecognized sites
-- **URL Patterns**: Algorithmic generation eliminates manual regex maintenance
+## Configuration & Models
 
-### 4. Error Handling & Retry Logic
-- **Exponential Backoff**: Failures wait progressively (1min, 2min, 3min... up to configurable max_normal_retries)
-- **Hail-Mary Protocol**: Final attempt waits configurable hours (default 12) before retry
-- **RetryConfig Model**: Centralized retry configuration with hail_mary_enabled, max_normal_retries, hail_mary_wait_hours
-- **Force Update Logic**: Automatic force detection for chapter mismatches, with `update_no_force` override
-- **Behavior Tracking**: Stories track retry count, force requests, and failure states
-- **Special Handling**: update_no_force method ignores force requests with dedicated notification
+### TOML Configuration (Pydantic)
+- **config_models.py**: Pydantic BaseModel classes for validation (EmailConfig, CalibreConfig, RetryConfig, AppConfig)
+- **Special Fields**:
+  - `update_method`: "update" | "update_always" | "force" | "update_no_force" (controls FanFicFare -u/-U/--force flags)
+  - `metadata_preservation_mode`: "remove_add" | "preserve_metadata" | "add_format" (Calibre metadata handling)
+  - `hail_mary_enabled`: bool (enable 12-hour final retry after 11 normal attempts)
+  - `max_normal_retries`: int (1-50, default 11) - exponential backoff attempts before Hail-Mary
+- **Validation**: Use `@field_validator` for custom checks (e.g., email format, server trimming)
+
+### Core Data Models
+- **FanficInfo** (`models/fanfic_info.py`): Primary data structure passed between workers
+  - Fields: url, site, title, calibre_id, behavior ("update"|"force"), repeat_count, last_status
+  - Methods: `increment_repeat()`, `__eq__/__hash__` based on (url, site, calibre_id)
+- **FailureAction** (`models/retry_types.py`): Enum for retry decisions (REQUEUE, HAIL_MARY, FAIL)
+- **ProcessInfo** (`process_management/state.py`): Process tracking with state, start_time, restart_count
 
 ## Critical Workflows
 
-### Application Startup
-1. Parse command-line arguments (`--config`, `--verbose`)
-2. Load TOML configuration with Pydantic validation
-3. Initialize ProcessManager with app config
-4. Create notification wrapper and Calibre connection
-5. Register email watcher and site-specific workers
-6. Start all processes with health monitoring
-7. Wait for completion or signal interruption
+### Testing Commands (MUST activate venv)
+```powershell
+# ALWAYS activate venv first - required for each new shell
+& c:/Users/Joshua/Documents/GitHub/AutomatedFanfic/.venv/Scripts/Activate.ps1
 
-### Email Monitoring Loop
-1. Connect to IMAP server with configured credentials
-2. Poll mailbox for unread emails at `sleep_time` interval
-3. Extract URLs using FanFicFare's `geturls()` function
-4. Route URLs to appropriate site queues based on regex matching
-5. Special handling: FFNet URLs trigger notifications only if `ffnet_disable=true`
+# Full test suite with coverage
+python -m pytest root/tests/ --cov=root/app --cov-report=term-missing --tb=line -q
 
-### Story Processing Workflow
-1. Worker receives FanficInfo from queue
-2. Check if story exists in Calibre database
-3. Determine update method based on configuration and story state
-4. Execute FanFicFare with appropriate flags (`-u`, `-U`, `--force`)
-5. Handle success: Add/update Calibre, send notification
-6. Handle failure: Increment retry count, apply exponential backoff, check for Hail-Mary
+# Integration tests only (31 tests, slower)
+python -m pytest root/tests/integration/ -v
 
-### Signal Handling (Important!)
-- **Deduplication**: Shutdown event prevents multiple signal handler executions
-- **Coordinated Exit**: Main process waits for all workers to terminate
-- **Docker Compatibility**: Prevents 30-second SIGTERM timeouts by ensuring main process exits
-- **Clean Shutdown**: ProcessManager stops all workers before main process termination
+# Unit tests only (501 tests, fast)
+python -m pytest root/tests/unit/ -v
 
-## Testing Conventions
-
-### Test Structure
-- **Unit Tests**: `root/tests/unit/` - Fast, isolated component testing (387 tests total, 96% coverage)
-- **Integration Tests**: `root/tests/integration/` - Multi-component interaction testing
-- **Manual Tests**: `root/tests/manual_signal_test.py` - Interactive verification scripts
-- **Comprehensive Coverage**: Full coverage of configuration models, notification systems, workers, and core logic
-
-### Parameterized Testing
-- **Pattern**: Extensive use of `@parameterized.expand()` for data-driven tests
-- **Test Cases**: Named tuples for structured test case definitions (e.g., `URLPatternTestCase`, `HandleFailureTestCase`)
-- **Edge Cases**: Comprehensive coverage of URL variations, error conditions, and configuration combinations
-
-### Mocking Strategy
-- **Mock External Dependencies**: FanFicFare, Calibre, email servers, notifications
-- **Preserve Core Logic**: Mock I/O boundaries but test business logic
-- **Process Testing**: Mock multiprocessing components for unit tests, real processes for integration
-
-## Configuration Reference
-
-### Critical Settings
-```toml
-[email]
-email = "username_or_full_email"  # Username only OR full email address (provider dependent)
-password = "app_password"  # Not account password
-server = "imap.gmail.com"
-mailbox = "INBOX"
-sleep_time = 60
-ffnet_disable = true  # true = notify only, false = process
-
-[calibre]
-path = "/path/to/library"  # Local path OR server URL
-update_method = "update"  # "update"|"update_always"|"force"|"update_no_force"
-
-[process]
-health_check_interval = 60.0
-shutdown_timeout = 30.0
-restart_threshold = 3
-
-[retry]
-hail_mary_enabled = true
-max_normal_retries = 11
-hail_mary_wait_hours = 12.0
+# Coverage HTML report
+python -m pytest root/tests/ --cov=root/app --cov-report=html
 ```
 
-### Update Method Behavior
-- **`"update"`**: Normal FanFicFare `-u` flag, respects force requests
-- **`"update_always"`**: Always uses `-U` flag for full refresh
-- **`"force"`**: Always uses `--force` flag
-- **`"update_no_force"`**: Uses `-u` flag, **ignores all force requests** (important!)
+### Retry Protocol (11+1 System)
+1. **Normal Retries**: 11 attempts with exponential backoff (1min, 2min, 3min... 11min)
+2. **Hail-Mary**: After 11 failures, wait `hail_mary_wait_hours` (default 12.0), then 1 final attempt with force
+3. **Auto-Force Detection**: System automatically triggers force on chapter count mismatch or metadata bugs
+4. **Force Precedence**: `update_no_force` always ignores force requests → normal retry failures trigger special notification
 
-## Important Gotchas & Patterns
+### Worker Idle Signal Pattern
+```python
+# Workers signal coordinator when finishing a site:
+ingress_queue.put(('WORKER_IDLE', worker_id, finished_site))
 
-### Multiprocessing Context
-- **mp.Process**: Used for worker isolation, not threading
-- **Queue Communication**: All inter-process data must be serializable
-- **Shared State**: Avoid shared memory; use message passing patterns
-- **Process Lifecycle**: Always use ProcessManager for consistent startup/shutdown
+# Coordinator processes signals:
+signal_tuple = ingress_queue.get(timeout=5)
+if isinstance(signal_tuple, tuple) and signal_tuple[0] == 'WORKER_IDLE':
+    worker_id, finished_site = signal_tuple[1], signal_tuple[2]
+    # Remove site assignment, mark worker idle
+```
 
-### Docker Integration
-- **Signal Propagation**: Container signals reach main process correctly
-- **Volume Mapping**: Config and Calibre library directories must be mapped
-- **Network Access**: Email (IMAP) and Calibre server connections required
-- **Graceful Shutdown**: Critical for preventing data corruption and timeout issues
+### ProcessManager Health Monitoring
+```python
+# Health check signature (note: name comes BEFORE process_info)
+def _health_check_process(self, name: str, process_info: ProcessInfo, current_time: float) -> bool:
+    # Check if process alive, restart if crashed (max 3 attempts)
+    # Monitoring thread runs every process_config.health_check_interval_seconds
+```
 
-### FanFicFare Integration
-- **CLI Wrapper**: Application shells out to FanFicFare command-line tool
-- **Output Parsing**: Regex patterns in `regex_parsing.py` interpret FanFicFare output
-- **Adapter Updates**: `auto_url_parsers.py` automatically syncs with FanFicFare's site support
-- **Error Detection**: Multiple regex patterns detect specific failure modes
+## Common Patterns & Conventions
 
-### Development Patterns
-- **Logging**: Use `ff_logging` module for consistent formatting and levels
-- **Error Handling**: Distinguish between retryable failures and permanent errors
-- **Configuration Changes**: TOML changes require restart; INI files reload automatically
-- **Testing**: Run full test suite with `pytest root/tests/` from project root
-- **Dead Code Analysis**: Use `vulture` tool to identify unused code (e.g., `vulture root/app/`)
+### Logging with Context
+```python
+# Site-based logging (workers)
+ff_logging.log(f"({site}) Processing {fanfic.url}")
+ff_logging.log_debug(f"\t({site}) Extracted title: {title}")
+ff_logging.log_failure(f"({site}) Failed to download: {error}")
 
-## Dead Code Management
+# Structured logging (services)
+ff_logging.log("Supervisor: Starting helper services...")
+ff_logging.log_debug("ProcessManager: Registered process: ao3-worker")
+```
 
-### Using Vulture for Code Cleanup
-- **Installation**: `pip install vulture` (included in dev requirements)
-- **Analysis**: `vulture root/app/` to find potentially unused code
-- **Verification**: Always verify findings before deletion (may have false positives)
-- **Safe Patterns**: Remove unused imports, legacy functions, and obsolete modules
-- **Test Cleanup**: Also run `vulture root/tests/` to find unused test code
+### Queue Safety
+```python
+# ALWAYS wrap queue operations
+try:
+    task = queue.get(timeout=5)
+except Empty:
+    continue  # Normal timeout
+except OSError:
+    # Queue closed - graceful shutdown
+    ff_logging.log_debug("Queue closed, shutting down")
+    break
 
-## Common Operations
+# Check qsize() support once at startup
+try:
+    queue.qsize()
+    self.qsize_supported = True
+except NotImplementedError:
+    self.qsize_supported = False  # macOS doesn't support qsize()
+```
 
-### Adding New Site Support
-1. Site should be automatically detected via FanFicFare adapters
-2. Add site-specific queue in `fanficdownload.py` if needed for performance
-3. Test URL recognition in `test_auto_url_parsers.py`
-4. Verify integration in `test_regex_parsing.py`
+### Temporary Directories (Workers)
+```python
+from utils import system_utils
 
-### Debugging Processing Issues
-1. Enable verbose logging with `--verbose` flag
-2. Check ProcessManager health monitoring logs
-3. Verify queue depths and worker responsiveness
-4. Test individual components with unit tests
-5. Use manual signal test for shutdown behavior verification
+# ALWAYS use context manager for worker processing
+with system_utils.temporary_directory() as temp_dir:
+    # Download/update story in temp_dir
+    # Cleanup automatic on exit
+```
 
-### Configuration Validation
-1. Use Pydantic model validation for type safety
-2. Test edge cases in `test_config_models.py`
-3. Verify TOML parsing and error handling
-4. Ensure backward compatibility for existing configs
+### Testing Process Manager
+```python
+# Use register_process (NOT add_process - deprecated)
+manager.register_process("test_proc", target=dummy_target, args=(arg1,))
+manager.start_process("test_proc")
 
-### Code Quality & Maintenance
-1. Run `vulture root/app/ root/tests/` to identify dead code
-2. Verify test coverage with `pytest --cov=root/app root/tests/`
-3. Use parameterized tests for comprehensive edge case coverage
-4. Maintain configuration validation tests for all config sections
+# Health check requires (name, process_info, current_time)
+manager._health_check_process("test_proc", proc_info, time.time())
+```
 
-This document captures the essential patterns, workflows, and conventions that make AutomatedFanfic work effectively. Focus on multiprocessing coordination, configuration management, and robust error handling when making changes.
+## Integration Points
+
+### FanFicFare CLI
+- **Location**: External Python package, invoked via subprocess
+- **Command Construction**: `command.construct_fanficfare_command(calibre_info, fanfic, path_or_url)`
+- **Flags**: `-u` (update), `-U` (update always), `--force` (force download), `--update-cover` (calibre mode)
+- **Output Parsing**: `regex_parsing.py` extracts chapter counts, error messages from stderr/stdout
+
+### Calibre Integration
+- **calibredb CLI**: All operations via subprocess (add, remove, export, set_metadata)
+- **Version Detection**: `get_calibre_version()` parses "calibredb (calibre X.Y.Z)"
+- **Metadata Preservation**:
+  - "remove_add": Remove old + add new (LOSES custom columns)
+  - "preserve_metadata": Export custom columns → remove → add → restore
+  - "add_format": Replace EPUB file only (PRESERVES all metadata)
+- **ID Parsing**: `add_story()` extracts `Added book ids: 123` from stdout
+
+### Apprise Notifications
+- **Automatic Pushbullet**: [pushbullet] config auto-converted to Apprise URL
+- **Multi-Service**: urls list supports Discord, Email, secondary Pushbullet accounts
+- **Notification Types**: Success, failure, retry exhausted, Hail-Mary attempts
+
+## Edge Cases & Defensive Checks
+
+### Known Uncovered Areas (9% remaining)
+- **Error Logging**: Many `ff_logging.log_failure()` calls in exception handlers (hard to trigger)
+- **Platform-Specific**: `queue.qsize()` NotImplementedError on macOS (rarely tested)
+- **Deep State Paths**: Coordinator backlog management with complex site assignment chains
+- **Signal Handlers**: SIGTERM/SIGINT handlers in worker processes (integration test territory)
+
+### Tests NOT to Write
+- **Hanging Worker Tests**: Avoid mocking worker loop exceptions that catch KeyboardInterrupt
+- **Deep Mock Chains**: Tests requiring 5+ nested mocks often indicate over-testing private methods
+- **Queue Exhaustion**: Tests that exhaust queue.get() side_effects can hang indefinitely
+
+## Development Best Practices
+
+1. **Always Read Method Signatures**: Check parameter order before calling internal methods (e.g., `_health_check_process`)
+2. **Test Public APIs**: Focus on `register_process()`, `start_process()`, `stop_process()` - avoid testing removed private methods
+3. **Coordinator Complexity**: Coordinator has deep state management - prefer integration tests over unit tests for complex flows
+4. **Worker Isolation**: Workers use temporary directories, never share state beyond active_urls dict
+5. **Configuration First**: Load config.toml → validate with Pydantic → pass AppConfig to ProcessManager
+6. **Graceful Shutdown**: All long-running loops check `shutdown_event.is_set()` or handle SIGTERM
+
+## Quick Reference
+
+### File Structure
+- `root/app/fanficdownload.py` - Entry point, argument parsing
+- `root/app/services/supervisor.py` - Supervisor process hosting threads
+- `root/app/services/coordinator.py` - Task distribution with domain locking
+- `root/app/workers/pipeline.py` - Worker processing loop
+- `root/app/process_management/manager.py` - ProcessManager lifecycle
+- `root/app/models/` - Pydantic config, FanficInfo, retry types
+- `root/tests/unit/` - 501 unit tests (fast, mocked)
+- `root/tests/integration/` - 31 integration tests (slow, real processes)
+
+### Key Dependencies
+- Python 3.13.5, pytest 8.3.5, pytest-cov 7.0.0
+- FanFicFare (external), Calibre (calibredb CLI), Apprise (notifications)
+- Pydantic for config validation, multiprocessing for concurrency
+
+### Coverage Status (91% overall)
+- calibredb_utils: 98%, manager: 89%, calibre_info: 89%, pipeline: 93%
+- coordinator: 74% (deep state paths), ff_logging: 62% (error branches)

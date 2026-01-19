@@ -82,8 +82,10 @@ The `FanficInfo` object (`models/fanfic_info.py`) is the atomic unit of work. It
 | `url` | Canonical URL of the story. |
 | `site` | Domain identifier (e.g., `fanfiction.net`). |
 | `calibre_id` | Database ID in Calibre (if exists). Used to prevent duplicates. |
-| `repeats` | Integer counter for failed attempts. |
-| `retry_decision` | Stores the outcome of failure logic (e.g., "Retry in 5 mins"). |
+| `title` | Story title (extracted from EPUB filename or metadata). |
+| `behavior` | Update behavior: "update" or "force" (controls FanFicFare flags). |
+| `repeats` | Integer counter for failed attempts (incremented via `increment_repeat()`). |
+| `retry_decision` | Stores the RetryDecision (action, delay, notification) from failure logic. |
 
 **Key Feature**: `__eq__` and `__hash__` are implemented based on `(url, site, calibre_id)`, allowing these objects to be deduplicated in Sets even across different process boundaries.
 
@@ -126,13 +128,14 @@ sequenceDiagram
 The system assumes things will fail (network issues, Cloudflare, rate limits) and is designed to handle it.
 
 1.  **Failure Detection**: `workers/handlers.py` catches exceptions from `FanFicFare`.
-2.  **Retry Logic**:
-    -   **Exponential Backoff**: 1st fail -> 1 min, 2nd -> 5 mins, 3rd -> 15 mins.
-    -   **Hail Mary Protocol**: If all retries fail, wait 1 hour and try one LAST time with different settings (e.g., slower speed).
+2.  **Retry Logic** (`models/retry_types.py`):
+    -   **Exponential Backoff**: Base delay = min(current_repeats, 20) minutes with ±50% jitter (e.g., 1st fail ~1min, 2nd ~2min, 3rd ~3min... capped at 20min).
+    -   **Hail Mary Protocol**: After `max_normal_retries` (default 11) failures, wait `hail_mary_wait_hours` (default 12.0) and try ONE final time with force behavior.
+    -   **Auto-Force Detection**: System automatically sets `behavior="force"` on chapter count mismatch or metadata bugs (detected via regex parsing).
 3.  **The Waiter Service (`services/ff_waiter.py`)**:
-    -   Failed tasks are sent here.
-    -   It holds them in memory (via `threading.Timer`) until their penalty time expires.
-    -   Then puts them back into `Ingress Queue` to try again.
+    -   Failed tasks are sent to `waiting_queue`.
+    -   It schedules delayed retries using `threading.Timer` based on pre-calculated `retry_decision`.
+    -   After timer expires, puts tasks back into `ingress_queue` for coordinator redistribution.
 
 ## 6. Directory Structure Reference
 
