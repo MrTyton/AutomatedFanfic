@@ -570,3 +570,218 @@ class TestCalibreDBClient(unittest.TestCase):
         result = self.client.get_story_id(mock_fanfic)
 
         self.assertIsNone(result)
+
+
+class TestCalibreDBClientErrorPaths(unittest.TestCase):
+    """Test error logging and edge case paths in CalibreDBClient."""
+
+    def setUp(self):
+        """Set up commonly used mocks."""
+        self.mock_calibre_info = MagicMock(spec=calibre_info.CalibreInfo)
+        self.mock_calibre_info.lock = MagicMock()
+        self.client = CalibreDBClient(self.mock_calibre_info)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_get_calibre_version_error(self, mock_log_failure):
+        """Test get_calibre_version when calibredb command fails."""
+        with patch("calibre_integration.calibredb_utils.check_output") as mock_check:
+            mock_check.side_effect = FileNotFoundError("calibredb not found")
+
+            result = CalibreDBClient.get_calibre_version()
+
+            self.assertTrue(result.startswith("Error:"))
+            self.assertIn("calibredb not found", result)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_add_story_parse_id_failure(self, mock_log_failure, mock_check_output):
+        """Test add_story when ID parsing fails from output."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "testsite"
+        mock_fanfic.calibre_id = None
+
+        # Return output without expected "Added book ids:" pattern
+        mock_check_output.return_value = b"Some unexpected output\n"
+
+        with patch.object(
+            self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
+        ):
+            self.client.add_story("/fake/location", mock_fanfic)
+
+            # Fanfic title should still be updated
+            self.assertIsNotNone(mock_fanfic.title)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_add_story_exception_handling(self, mock_log_failure):
+        """Test add_story error logging when command raises exception."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "testsite"
+
+        with patch.object(
+            self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
+        ):
+            with patch.object(self.client, "_execute_command_with_output") as mock_exec:
+                mock_exec.side_effect = Exception("Add failed")
+
+                self.client.add_story("/fake/location", mock_fanfic)
+
+                # Should log failure
+                mock_log_failure.assert_called()
+                failure_msg = mock_log_failure.call_args[0][0]
+                self.assertIn("Failed to add story", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_remove_story_no_calibre_id(self, mock_log_failure):
+        """Test remove_story when fanfic has no calibre_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = None
+
+        self.client.remove_story(mock_fanfic)
+
+        # Should log failure about missing ID
+        mock_log_failure.assert_called_once()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("no calibre_id", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_export_story_no_calibre_id(self, mock_log_failure):
+        """Test export_story when fanfic has no calibre_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = None
+
+        self.client.export_story(mock_fanfic, "/fake/location")
+
+        # Should log failure about missing ID
+        mock_log_failure.assert_called_once()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("no calibre_id", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_add_format_no_calibre_id(self, mock_log_failure):
+        """Test add_format_to_existing_story when fanfic has no calibre_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = None
+
+        result = self.client.add_format_to_existing_story("/fake/location", mock_fanfic)
+
+        self.assertFalse(result)
+        mock_log_failure.assert_called_once()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("no calibre_id", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_add_format_no_epub_found(self, mock_log_failure):
+        """Test add_format_to_existing_story when no EPUB files found."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = "123"
+
+        with patch.object(self.client, "_find_epub_in_directory", return_value=None):
+            result = self.client.add_format_to_existing_story(
+                "/fake/location", mock_fanfic
+            )
+
+            self.assertFalse(result)
+            mock_log_failure.assert_called()
+            failure_msg = mock_log_failure.call_args[0][0]
+            self.assertIn("No EPUB files found", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_add_format_exception_handling(self, mock_log_failure):
+        """Test add_format_to_existing_story error logging on exception."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "testsite"
+        mock_fanfic.calibre_id = "123"
+
+        with patch.object(
+            self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
+        ):
+            with patch.object(self.client, "_execute_command") as mock_exec:
+                mock_exec.side_effect = Exception("Replace failed")
+
+                result = self.client.add_format_to_existing_story(
+                    "/fake/location", mock_fanfic
+                )
+
+                self.assertFalse(result)
+                mock_log_failure.assert_called()
+                failure_msg = mock_log_failure.call_args[0][0]
+                self.assertIn("Failed to replace EPUB format", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_get_metadata_no_calibre_id(self, mock_log_failure):
+        """Test get_metadata when fanfic has no calibre_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = None
+
+        result = self.client.get_metadata(mock_fanfic)
+
+        self.assertEqual(result, {})
+        mock_log_failure.assert_called_once()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("no calibre_id", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_get_metadata_no_results(self, mock_log_failure, mock_check_output):
+        """Test get_metadata when Calibre returns empty metadata list."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "testsite"
+        mock_fanfic.calibre_id = "123"
+
+        # Empty list result
+        mock_check_output.return_value = b"[]"
+
+        result = self.client.get_metadata(mock_fanfic)
+
+        self.assertEqual(result, {})
+        mock_log_failure.assert_called()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("No metadata found", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_get_metadata_exception(self, mock_log_failure, mock_check_output):
+        """Test get_metadata error logging when command raises exception."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "testsite"
+        mock_fanfic.calibre_id = "123"
+
+        mock_check_output.side_effect = Exception("Metadata retrieval failed")
+
+        result = self.client.get_metadata(mock_fanfic)
+
+        self.assertEqual(result, {})
+        mock_log_failure.assert_called()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("Failed to retrieve metadata", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_set_metadata_fields_no_calibre_id(self, mock_log_failure):
+        """Test set_metadata_fields when fanfic has no calibre_id."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = None
+
+        self.client.set_metadata_fields(mock_fanfic, {"#custom": "value"})
+
+        mock_log_failure.assert_called_once()
+        failure_msg = mock_log_failure.call_args[0][0]
+        self.assertIn("no calibre_id", failure_msg)
+
+    @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
+    def test_set_metadata_fields_command_exception(self, mock_log_failure):
+        """Test set_metadata_fields error logging when set_custom command fails."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.site = "testsite"
+        mock_fanfic.calibre_id = "123"
+
+        metadata = {"#custom_field": "test_value"}
+
+        with patch.object(self.client, "_execute_command") as mock_exec:
+            mock_exec.side_effect = Exception("set_custom failed")
+
+            self.client.set_metadata_fields(mock_fanfic, metadata, ["#custom_field"])
+
+            # Should log failure for the field
+            mock_log_failure.assert_called()
+            failure_msg = mock_log_failure.call_args[0][0]
+            self.assertIn("Failed to restore field", failure_msg)
