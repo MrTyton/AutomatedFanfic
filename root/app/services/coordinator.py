@@ -123,7 +123,7 @@ class Coordinator:
 
             # Use short timeout if we have work and workers to assign it to
             if has_backlog and has_idle_workers:
-                timeout = 0.1  # Fast response when work is pending
+                timeout = 0.05  # Fast response when work is pending
             elif has_backlog or not has_idle_workers:
                 timeout = 0.5  # Medium timeout when partially busy
             else:
@@ -230,7 +230,7 @@ class Coordinator:
 
     def _find_unassigned_site(self) -> Optional[str]:
         """Find a site in backlog that is not currently assigned to any worker."""
-        for site in list(self.state.backlog.keys()):
+        for site in self.state.backlog:
             if site not in self.state.assignments and self.state.backlog[site]:
                 return site
         return None

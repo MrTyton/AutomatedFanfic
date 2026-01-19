@@ -174,8 +174,8 @@ def wait_processor(
 
         try:
             # Block waiting for next failed fanfiction entry from waiting queue
-            # Use timeout if shutdown_event is provided to allow checking it
-            timeout = 2.0 if shutdown_event else None
+            # Always use timeout to ensure responsive shutdown behavior
+            timeout = 2.0
             fanfic: fanfic_info.FanficInfo = waiting_queue.get(timeout=timeout)
         except Exception:  # queue.Empty is likely, but need to catch it safely
             continue

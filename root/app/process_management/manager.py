@@ -336,8 +336,9 @@ class ProcessManager:
         Wait for all processes to fully terminate after a stop operation.
         """
         start_wait = time.time()
+        remaining = timeout
 
-        while (time.time() - start_wait) < timeout:
+        while remaining > 0:
             all_terminated = True
             for process_info in self.processes.values():
                 if process_info.is_alive():
@@ -347,7 +348,9 @@ class ProcessManager:
             if all_terminated:
                 return True
 
-            time.sleep(0.1)  # Small delay before checking again
+            # Use shutdown event wait for immediate wakeup on shutdown
+            self._shutdown_event.wait(min(0.1, remaining))
+            remaining = timeout - (time.time() - start_wait)
 
         return False
 
@@ -383,8 +386,8 @@ class ProcessManager:
                     )
                     return False
 
-            # Brief sleep to avoid busy waiting and reduce CPU usage
-            time.sleep(0.5)
+            # Use shutdown event wait for immediate wakeup on shutdown
+            self._shutdown_event.wait(0.5)
 
     def get_status(self) -> Dict[str, Dict[str, Any]]:
         """
