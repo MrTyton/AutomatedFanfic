@@ -17,6 +17,7 @@ Worker-Coordinator Communication:
 import multiprocessing as mp
 import subprocess
 import time
+from queue import Empty
 
 from utils import ff_logging
 from calibre_integration import calibredb_utils
@@ -204,26 +205,30 @@ def url_worker(
 
     ff_logging.log_debug(f"Starting Worker {worker_id}")
 
-    # Track last site finished to signal idle to coordinator
-    last_finished_site = None
+    # Track current site being processed
+    current_site = None
 
     while True:
         try:
-            # Signal idle if we finished processing a site in the previous iteration
-            if last_finished_site:
-                # Signal IDLE - worker finished a site and has no pending work
-                waiting_queue.put(("WORKER_IDLE", worker_id, last_finished_site))
-                last_finished_site = None
-
-            # Blocking get - wait for work
+            # Blocking get with timeout to check for queue empty
             try:
-                fanfic = queue.get()
+                fanfic = queue.get(timeout=0.1)
 
                 # Check for Poison Pill (None)
                 if fanfic is None:
                     ff_logging.log(f"Worker {worker_id} stopping", "HEADER")
                     break
 
+            except Empty:
+                # Queue is empty - signal idle if we were processing a site
+                if current_site is not None:
+                    waiting_queue.put(("WORKER_IDLE", worker_id, current_site))
+                    ff_logging.log_debug(
+                        f"Worker {worker_id} signaling idle after draining {current_site} queue"
+                    )
+                    current_site = None
+                # Continue waiting for more work
+                continue
             except Exception as e:
                 if isinstance(e, ValueError):  # Queue closed
                     ff_logging.log(f"Worker {worker_id} queue closed", "WARNING")
@@ -231,6 +236,9 @@ def url_worker(
                 ff_logging.log_failure(f"Worker {worker_id} error waiting: {e}")
                 time.sleep(1)
                 continue
+
+            # Track which site we're processing
+            current_site = fanfic.site
 
             # Process Task
             should_remove = True
@@ -256,8 +264,6 @@ def url_worker(
                     calibre_client.cdb_info,
                 )
             finally:
-                last_finished_site = fanfic.site
-
                 # Update active_urls
                 if active_urls is not None and should_remove:
                     try:

@@ -1672,5 +1672,211 @@ class TestConstructFanficfareCommand(unittest.TestCase):
         self.assertIn(path, cmd_args)
 
 
+class TestWorkerIdleSignaling(unittest.TestCase):
+    """Test cases for worker idle signaling behavior to coordinator."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.mock_queue = MagicMock()
+
+        # Set up Calibre client with cdb_info
+        self.mock_cdb_info = MagicMock(spec=CalibreInfo)
+        self.mock_cdb_info.library_path = "/mock/library"
+        self.mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
+        self.mock_client.cdb_info = self.mock_cdb_info
+
+        self.mock_notification_info = MagicMock(spec=NotificationWrapper)
+        self.mock_waiting_queue = MagicMock()
+        self.worker_id = "worker_0"
+
+        self.retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True,
+            hail_mary_wait_hours=12.0,
+            max_normal_retries=11,
+        )
+
+    @patch("workers.handlers.process_fanfic_addition")
+    @patch("workers.command.execute_command")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    @patch("workers.command.construct_fanficfare_command")
+    @patch("workers.pipeline.regex_parsing.check_failure_regexes")
+    @patch("workers.pipeline.regex_parsing.check_forceable_regexes")
+    def test_worker_signals_idle_only_when_queue_empty(
+        self,
+        mock_check_forceable,
+        mock_check_failure,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+        mock_execute,
+        mock_process_addition,
+    ):
+        """Test that worker signals WORKER_IDLE only after draining entire queue, not after each task."""
+        # Create test fanfics for the same site
+        fanfic1 = FanficInfo(
+            url="https://archiveofourown.org/works/1",
+            site="archiveofourown",
+            title="Story 1",
+        )
+        fanfic2 = FanficInfo(
+            url="https://archiveofourown.org/works/2",
+            site="archiveofourown",
+            title="Story 2",
+        )
+        fanfic3 = FanficInfo(
+            url="https://archiveofourown.org/works/3",
+            site="archiveofourown",
+            title="Story 3",
+        )
+
+        # Set up queue to return 3 tasks, then Empty exceptions (queue drained), then KeyboardInterrupt
+        from queue import Empty
+
+        self.mock_queue.get.side_effect = [
+            fanfic1,
+            fanfic2,
+            fanfic3,
+            Empty(),  # First Empty - should trigger WORKER_IDLE signal
+            KeyboardInterrupt,  # Then interrupt to exit
+        ]
+
+        # Set up successful processing path
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "https://archiveofourown.org/works/1"
+        mock_construct_cmd.return_value = ["fanficfare", "command"]
+        mock_execute.return_value = "successful output"
+        mock_check_failure.return_value = True  # No failure
+        mock_check_forceable.return_value = False  # No force needed
+
+        # Run worker
+        pipeline.url_worker(
+            self.mock_queue,
+            self.mock_client,
+            self.mock_notification_info,
+            self.mock_waiting_queue,
+            self.retry_config,
+            self.worker_id,
+            None,  # active_urls
+        )
+
+        # Verify WORKER_IDLE was sent exactly once, after queue was drained
+        idle_signals = [
+            call
+            for call in self.mock_waiting_queue.put.call_args_list
+            if len(call[0]) > 0
+            and isinstance(call[0][0], tuple)
+            and call[0][0][0] == "WORKER_IDLE"
+        ]
+
+        # Should have exactly 1 WORKER_IDLE signal
+        self.assertEqual(
+            len(idle_signals),
+            1,
+            f"Expected 1 WORKER_IDLE signal after queue drained, got {len(idle_signals)}",
+        )
+
+        # Verify the idle signal contains correct worker_id and site
+        idle_signal = idle_signals[0][0][0]
+        self.assertEqual(idle_signal[0], "WORKER_IDLE")
+        self.assertEqual(idle_signal[1], self.worker_id)
+        self.assertEqual(idle_signal[2], "archiveofourown")
+
+        # Verify all 3 tasks were processed
+        self.assertEqual(mock_process_addition.call_count, 3)
+
+    @patch("workers.handlers.process_fanfic_addition")
+    @patch("workers.command.execute_command")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    @patch("workers.command.construct_fanficfare_command")
+    @patch("workers.pipeline.regex_parsing.check_failure_regexes")
+    @patch("workers.pipeline.regex_parsing.check_forceable_regexes")
+    def test_worker_signals_idle_for_different_sites(
+        self,
+        mock_check_forceable,
+        mock_check_failure,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+        mock_execute,
+        mock_process_addition,
+    ):
+        """Test that worker signals idle with correct site when processing different sites."""
+        # Create tasks from different sites
+        fanfic_ao3_1 = FanficInfo(
+            url="https://archiveofourown.org/works/1",
+            site="archiveofourown",
+            title="AO3 Story 1",
+        )
+        fanfic_ao3_2 = FanficInfo(
+            url="https://archiveofourown.org/works/2",
+            site="archiveofourown",
+            title="AO3 Story 2",
+        )
+        fanfic_ffnet = FanficInfo(
+            url="https://fanfiction.net/s/12345",
+            site="fanfiction",
+            title="FFNet Story",
+        )
+
+        # Set up queue: 2 AO3 tasks, then Empty, then 1 FFNet task, then Empty, then exit
+        from queue import Empty
+
+        self.mock_queue.get.side_effect = [
+            fanfic_ao3_1,
+            fanfic_ao3_2,
+            Empty(),  # Should signal idle for archiveofourown
+            fanfic_ffnet,
+            Empty(),  # Should signal idle for fanfiction
+            KeyboardInterrupt,
+        ]
+
+        # Set up successful processing
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "https://test.com/story"
+        mock_construct_cmd.return_value = ["fanficfare", "command"]
+        mock_execute.return_value = "successful output"
+        mock_check_failure.return_value = True
+        mock_check_forceable.return_value = False
+
+        # Run worker
+        pipeline.url_worker(
+            self.mock_queue,
+            self.mock_client,
+            self.mock_notification_info,
+            self.mock_waiting_queue,
+            self.retry_config,
+            self.worker_id,
+            None,
+        )
+
+        # Extract all WORKER_IDLE signals
+        idle_signals = [
+            call[0][0]
+            for call in self.mock_waiting_queue.put.call_args_list
+            if len(call[0]) > 0
+            and isinstance(call[0][0], tuple)
+            and call[0][0][0] == "WORKER_IDLE"
+        ]
+
+        # Should have exactly 2 WORKER_IDLE signals
+        self.assertEqual(
+            len(idle_signals),
+            2,
+            f"Expected 2 WORKER_IDLE signals (one per site), got {len(idle_signals)}",
+        )
+
+        # First idle signal should be for archiveofourown
+        self.assertEqual(idle_signals[0][0], "WORKER_IDLE")
+        self.assertEqual(idle_signals[0][1], self.worker_id)
+        self.assertEqual(idle_signals[0][2], "archiveofourown")
+
+        # Second idle signal should be for fanfiction
+        self.assertEqual(idle_signals[1][0], "WORKER_IDLE")
+        self.assertEqual(idle_signals[1][1], self.worker_id)
+        self.assertEqual(idle_signals[1][2], "fanfiction")
+
+
 if __name__ == "__main__":
     unittest.main()
