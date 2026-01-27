@@ -2,7 +2,7 @@
 # These are the core dependencies needed to run the application
 
 # Core notification and configuration libraries
-apprise==1.9.6
+apprise==1.9.7
 pydantic==2.12.5
 pydantic-settings==2.12.0
 
@@ -17,7 +17,7 @@ pushbullet.py==0.12.0
 beautifulsoup4==4.14.3
 html2text==2024.2.26
 html5lib==1.1
-soupsieve==2.8.2
+soupsieve==2.8.3
 
 # Text encoding and character detection
 chardet==5.2.0
@@ -40,4 +40,4 @@ Brotli==1.2.0
 # Date/time handling and utilities
 python-dateutil==2.9.0.post0
 six==1.17.0
-pyparsing==3.3.1
+pyparsing==3.3.2
