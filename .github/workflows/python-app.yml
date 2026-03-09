@@ -127,7 +127,7 @@ jobs:
         fi
 
     - name: Upload pytest test results
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: pytest-results-3.12
         path: junit/test-results.xml
