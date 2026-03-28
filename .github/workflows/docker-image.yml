@@ -199,7 +199,7 @@ jobs:
       # Set up QEMU
       - name: Set up QEMU
         if: steps.should_build.outputs.build == 'true'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       # Setup Docker Buildx
       - name: Setup Docker Buildx
