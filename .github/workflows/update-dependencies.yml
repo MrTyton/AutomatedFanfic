@@ -184,7 +184,7 @@ jobs:
         id: commit_changes
         # This step also depends on the output of the modified update_latest_txt step
         if: steps.update_latest_txt.outputs.version-changed == 'true'
-        uses: EndBug/add-and-commit@v9
+        uses: EndBug/add-and-commit@v10
         with:
           author_name: github-actions[bot]
           author_email: github-actions[bot]@users.noreply.github.com
