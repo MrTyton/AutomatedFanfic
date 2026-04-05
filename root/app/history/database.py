@@ -537,8 +537,8 @@ class AsyncHistoryDB:
     async def get_recent_activity(self, limit: int = 20) -> list[dict]:
         """Get the most recent non-download events for the dashboard feed.
 
-        Excludes notification events — they echo downloads and can drown
-        out retries and email checks in the activity feed.
+        Excludes email check events — they fire frequently and push out
+        the events users actually care about (retries, notifications).
         """
         conn = await self._get_conn()
         try:
@@ -555,10 +555,10 @@ class AsyncHistoryDB:
             events.extend([dict(r) for r in await cursor.fetchall()])
 
             cursor = await conn.execute(
-                """SELECT 'email_check' as event_type, id,
-                          urls_found, urls_new, checked_at as timestamp
-                   FROM email_events
-                   ORDER BY checked_at DESC LIMIT ?""",
+                """SELECT 'notification' as event_type, id, title, body,
+                          site, provider, sent_at as timestamp
+                   FROM notification_events
+                   ORDER BY sent_at DESC LIMIT ?""",
                 (limit,),
             )
             events.extend([dict(r) for r in await cursor.fetchall()])
