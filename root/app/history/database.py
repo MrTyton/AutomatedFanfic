@@ -392,7 +392,8 @@ class AsyncHistoryDB:
 
             cursor = await conn.execute(
                 """SELECT 'download' as event_type, id, url, site, title,
-                          status, started_at as timestamp
+                          calibre_id, status, error_message,
+                          started_at as timestamp, completed_at
                    FROM download_events
                    ORDER BY started_at DESC LIMIT ?""",
                 (limit,),
@@ -404,6 +405,15 @@ class AsyncHistoryDB:
                           attempt_number, action, scheduled_at as timestamp
                    FROM retry_events
                    ORDER BY scheduled_at DESC LIMIT ?""",
+                (limit,),
+            )
+            events.extend([dict(r) for r in await cursor.fetchall()])
+
+            cursor = await conn.execute(
+                """SELECT 'notification' as event_type, id, title, body,
+                          site, provider, sent_at as timestamp
+                   FROM notification_events
+                   ORDER BY sent_at DESC LIMIT ?""",
                 (limit,),
             )
             events.extend([dict(r) for r in await cursor.fetchall()])

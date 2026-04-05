@@ -236,6 +236,9 @@ def register_processes(
     history_writer = HistoryWriter(history_queue, history_db_path or "/data/history.db")
     history_writer.start()
 
+    # Wire up notification history recording (must happen after both are created)
+    notification_info.history_recorder = history_recorder
+
     # Initialize ConfigStore for hot-reloadable settings
     config_store = ConfigStore(manager.dict())
     config_store.initialize_from_config(config)
