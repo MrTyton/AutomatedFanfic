@@ -28,9 +28,29 @@ async def _build_snapshot(state: Any) -> dict:
             urls = list(state.active_urls.keys())
         except Exception:
             urls = []
-        snapshot["active_downloads"] = {"items": urls, "count": len(urls)}
     else:
-        snapshot["active_downloads"] = {"items": [], "count": 0}
+        urls = []
+
+    # Split active URLs into truly-processing vs waiting-for-retry
+    waiting_url_set: set[str] = set()
+    if state.history_db is not None:
+        try:
+            waiting_url_set = set(await state.history_db.get_waiting_urls())
+        except Exception:
+            pass
+
+    set(urls)
+    processing_urls = [u for u in urls if u not in waiting_url_set]
+    waiting_urls = [u for u in urls if u in waiting_url_set]
+
+    snapshot["active_downloads"] = {
+        "items": processing_urls,
+        "count": len(processing_urls),
+    }
+    snapshot["waiting_downloads"] = {
+        "items": waiting_urls,
+        "count": len(waiting_urls),
+    }
 
     # ── Queue depths ────────────────────────────────────────────
     queues: dict[str, int] = {}
@@ -77,14 +97,9 @@ async def _build_snapshot(state: Any) -> dict:
             )
         except Exception:
             snapshot["recent_activity"] = []
-        try:
-            snapshot["waiting_downloads"] = await state.history_db.get_waiting_count()
-        except Exception:
-            snapshot["waiting_downloads"] = 0
     else:
         snapshot["recent_downloads"] = []
         snapshot["recent_activity"] = []
-        snapshot["waiting_downloads"] = 0
 
     return snapshot
 
