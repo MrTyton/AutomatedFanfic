@@ -114,6 +114,7 @@ def wait_processor(
     waiting_queue: mp.Queue,
     verbose: bool = False,
     shutdown_event: threading.Event = None,
+    history_recorder=None,
 ) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 
@@ -151,6 +152,8 @@ def wait_processor(
         while pending_heap and pending_heap[0][0] <= now:
             _, _, fanfic = heapq.heappop(pending_heap)
             ingress_queue.put(fanfic)
+            if history_recorder:
+                history_recorder.record_retry_fired(fanfic.url, fanfic.repeats or 0)
 
         # --- Calculate how long we can sleep ---
         if pending_heap:

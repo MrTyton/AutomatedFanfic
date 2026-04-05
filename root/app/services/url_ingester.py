@@ -290,6 +290,7 @@ def email_watcher(
     active_urls: dict | None = None,
     verbose: bool = False,
     shutdown_event: threading.Event = None,
+    history_recorder=None,
 ):
     """
     Continuously monitor email for fanfiction URLs and route to processing queues.
@@ -329,6 +330,12 @@ def email_watcher(
         # Track usage within this batch to prevent duplicate logs for same-normalized URLs
         processed_in_batch = set()
 
+        # History tracking counters
+        urls_found = len(urls)
+        urls_new = 0
+        urls_duplicate = 0
+        urls_disabled_site = 0
+
         # Process each URL found in email messages
         for url in urls:
             # Parse URL to identify site and normalize format
@@ -341,6 +348,7 @@ def email_watcher(
 
             # Skip processing for disabled sites - notification only
             if fanfic.site in email_info.disabled_sites:
+                urls_disabled_site += 1
                 notification_info.send_notification(
                     "New Fanfiction Download", fanfic.url, fanfic.site
                 )
@@ -348,6 +356,7 @@ def email_watcher(
 
             # Check if URL is already active
             if active_urls is not None and fanfic.url in active_urls:
+                urls_duplicate += 1
                 ff_logging.log(
                     f"Skipping {fanfic.url} - already in queue or processing",
                     "WARNING",
@@ -355,6 +364,7 @@ def email_watcher(
                 continue
 
             # Add to processing set for queue routing
+            urls_new += 1
             fics_to_add.add(fanfic)
 
             # Mark as active
@@ -368,6 +378,19 @@ def email_watcher(
             )
             # Route to ingress queue
             ingress_queue.put(fic)
+            if history_recorder:
+                history_recorder.record_download_created(
+                    fic.url, fic.site, fic.behavior
+                )
+
+        # Record email check event
+        if history_recorder:
+            history_recorder.record_email_check(
+                urls_found=urls_found,
+                urls_new=urls_new,
+                urls_duplicate=urls_duplicate,
+                urls_disabled_site=urls_disabled_site,
+            )
 
         # Wait before next email check cycle, respecting shutdown event
         if shutdown_event:
