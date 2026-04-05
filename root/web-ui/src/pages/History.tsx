@@ -10,7 +10,9 @@ function ExpandableError({ text }: { text: string }) {
             style={{
                 color: 'var(--error)',
                 cursor: 'pointer',
-                ...(expanded ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word' } : { display: 'block', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
+                display: 'block',
+                maxWidth: 200,
+                ...(expanded ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
             }}
         >
             {text}
