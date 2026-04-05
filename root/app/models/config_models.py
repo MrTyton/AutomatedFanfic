@@ -567,6 +567,16 @@ class WebConfig(BaseModel):
         description="Path to the SQLite history database file",
     )
 
+    @field_validator("history_db_path")
+    @classmethod
+    def validate_history_db_path(cls, v):
+        v = v.strip().rstrip("/")
+        # If no file extension, treat as directory and append default filename
+        basename = v.rsplit("/", 1)[-1] if "/" in v else v
+        if "." not in basename:
+            v = v + "/history.db"
+        return v
+
 
 class AppConfig(BaseSettings):
     """Main application configuration container and validator.

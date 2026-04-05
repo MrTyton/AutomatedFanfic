@@ -130,9 +130,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get clean && \
     rm -rf /tmp/* /var/tmp/*
 
-# Create user
+# Create user and data directory
 RUN groupadd --gid "$PGID" abc && \
-    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc
+    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
+    mkdir -p /data && chown abc:abc /data
 
 # Copy Python dependencies from builder
 COPY --from=python-deps /install /usr/local
