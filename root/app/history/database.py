@@ -105,6 +105,7 @@ class SyncHistoryDB:
     def connect(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._db_path)
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
@@ -323,6 +324,7 @@ class AsyncHistoryDB:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = await aiosqlite.connect(self._db_path)
         conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA busy_timeout=5000")
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA foreign_keys=ON")
         return conn

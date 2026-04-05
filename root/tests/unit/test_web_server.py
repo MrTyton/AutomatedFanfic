@@ -291,6 +291,34 @@ class TestWebConfig(unittest.TestCase):
         with self.assertRaises(ValidationError):
             WebConfig(port=70000)
 
+    def test_history_db_path_directory_gets_filename_appended(self):
+        """Directory path without extension gets history.db appended."""
+        from models.config_models import WebConfig
+
+        wc = WebConfig(history_db_path="/config")
+        self.assertEqual(wc.history_db_path, "/config/history.db")
+
+    def test_history_db_path_directory_with_trailing_slash(self):
+        """Directory path with trailing slash gets history.db appended."""
+        from models.config_models import WebConfig
+
+        wc = WebConfig(history_db_path="/config/")
+        self.assertEqual(wc.history_db_path, "/config/history.db")
+
+    def test_history_db_path_explicit_file_unchanged(self):
+        """Explicit file path with extension is left unchanged."""
+        from models.config_models import WebConfig
+
+        wc = WebConfig(history_db_path="/data/my.db")
+        self.assertEqual(wc.history_db_path, "/data/my.db")
+
+    def test_history_db_path_whitespace_stripped(self):
+        """Whitespace in path is stripped."""
+        from models.config_models import WebConfig
+
+        wc = WebConfig(history_db_path="  /data/history.db  ")
+        self.assertEqual(wc.history_db_path, "/data/history.db")
+
     def test_app_config_includes_web(self):
         """AppConfig has a web field with defaults."""
         from models.config_models import WebConfig
