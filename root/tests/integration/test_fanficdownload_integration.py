@@ -624,11 +624,14 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         with patch("services.url_ingester.email_watcher", _global_mock_worker):
             with patch("services.ff_waiter.wait_processor", _global_mock_worker):
                 with patch("workers.pipeline.url_worker", _global_mock_worker):
-                    with patch(
-                        "process_management.ProcessManager.wait_for_all"
-                    ) as mock_wait, patch(
-                        "process_management.ProcessManager.start_all"
-                    ) as mock_start:
+                    with (
+                        patch(
+                            "process_management.ProcessManager.wait_for_all"
+                        ) as mock_wait,
+                        patch(
+                            "process_management.ProcessManager.start_all"
+                        ) as mock_start,
+                    ):
                         mock_wait.return_value = True
 
                         try:
