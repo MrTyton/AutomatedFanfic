@@ -220,7 +220,7 @@ export default function Dashboard({ data }: Props) {
                                 </td>
                             </tr>
                         ))}
-                        {activeUrls.length === 0 && recentDownloads.length === 0 && (
+                        {activeUrls.length === 0 && waitingUrls.length === 0 && recentDownloads.length === 0 && (
                             <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
                         )}
                     </tbody>
