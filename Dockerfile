@@ -99,6 +99,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --prefix=/install --no-warn-script-location --no-cache-dir \
     --extra-index-url https://test.pypi.org/simple/ "${PACKAGE_SPEC}"
 
+# Frontend Builder Stage: Build React SPA
+FROM node:22-slim AS frontend-builder
+WORKDIR /build
+COPY root/web-ui/package.json root/web-ui/package-lock.json* ./
+RUN npm ci --no-audit --no-fund
+COPY root/web-ui/ ./
+RUN npm run build
+
 # Runtime Stage: The final image
 FROM base AS runtime
 
@@ -154,6 +162,7 @@ RUN echo "*** Setting up Env ***" && \
 
 # Copy Application Code (Frequent changes)
 COPY root/ /
+COPY --from=frontend-builder /build/dist /web-ui/dist
 RUN chmod -R +x /app/ && \
     chown -R abc:abc /app/
 
@@ -161,7 +170,9 @@ RUN chmod -R +x /app/ && \
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 ENV VERBOSE=false
 ENV LD_LIBRARY_PATH="/opt/calibre/lib"
+EXPOSE 8080
 VOLUME /config
+VOLUME /data
 WORKDIR /config
 
 CMD ["/app/entrypoint.sh"]

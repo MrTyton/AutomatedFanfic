@@ -26,6 +26,7 @@ def run_supervisor(
     url_parsers: dict,
     active_urls: dict,
     verbose: bool = False,
+    history_recorder=None,
 ):
     """
     Entry point for the Supervisor process.
@@ -67,6 +68,7 @@ def run_supervisor(
                 active_urls,
                 verbose,
                 shutdown_event,
+                history_recorder,
             ),
             name="EmailWatcher",
         )
@@ -75,7 +77,13 @@ def run_supervisor(
         # 2. Waiter Thread
         waiter_thread = threading.Thread(
             target=ff_waiter.wait_processor,
-            args=(ingress_queue, waiting_queue, verbose, shutdown_event),
+            args=(
+                ingress_queue,
+                waiting_queue,
+                verbose,
+                shutdown_event,
+                history_recorder,
+            ),
             name="Waiter",
         )
         threads.append(waiter_thread)

@@ -26,6 +26,7 @@ def run_worker_pool(
     retry_config: config_models.RetryConfig,
     active_urls: dict,
     verbose: bool = False,
+    history_recorder=None,
 ) -> None:
     """
     Runs a pool of worker threads within a single process.
@@ -71,6 +72,7 @@ def run_worker_pool(
                     worker_id,
                     active_urls,
                     verbose,
+                    history_recorder,
                 ),
                 name=worker_id,
                 daemon=True,  # Important: Allows process to exit if threads are stuck
@@ -103,6 +105,7 @@ def run_worker_pool(
                                 worker_id,
                                 active_urls,
                                 verbose,
+                                history_recorder,
                             ),
                             name=worker_id,
                             daemon=True,
