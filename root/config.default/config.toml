@@ -59,6 +59,13 @@ personal_ini = ""
 #   "update_no_force" - Update but ignore force requests
 update_method = "update"
 
+# Strategy for preserving Calibre metadata during story updates
+# Options:
+#   "remove_add" - Remove old book, add new (default; loses custom columns)
+#   "preserve_metadata" - Export custom columns before removal, restore after
+#   "add_format" - Replace EPUB file only (preserves ALL metadata)
+metadata_preservation_mode = "remove_add"
+
 # ============================================================================
 # PUSHBULLET CONFIGURATION
 # Configuration for Pushbullet notification service
@@ -146,3 +153,20 @@ signal_timeout = 10.0
 # Maximum number of worker processes (optional)
 # If not specified, defaults to the number of CPU cores
 # max_workers = 4
+
+# ============================================================================
+# WEB DASHBOARD CONFIGURATION
+# Configuration for the built-in web dashboard and monitoring UI
+# ============================================================================
+[web]
+# Whether the web dashboard server is enabled
+enabled = false
+
+# Host address for the web server (e.g., "0.0.0.0" for all interfaces, "127.0.0.1" for local only)
+host = "0.0.0.0"
+
+# Port for the web server (1-65535)
+port = 8080
+
+# Path to the SQLite history database file
+history_db_path = "/data/history.db"

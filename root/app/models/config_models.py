@@ -557,7 +557,7 @@ class ProcessConfig(BaseModel):
 class WebConfig(BaseModel):
     """Configuration for the web dashboard server."""
 
-    enabled: bool = Field(default=True, description="Enable the web dashboard server")
+    enabled: bool = Field(default=False, description="Enable the web dashboard server")
     host: str = Field(default="0.0.0.0", description="Host address for the web server")
     port: int = Field(
         default=8080, ge=1, le=65535, description="Port for the web server"

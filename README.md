@@ -21,6 +21,7 @@ This is a docker image to run the Automated FFF CLI, with Apprise integration.
     - [Retry and Hail-Mary Protocol](#retry-and-hail-mary-protocol)
     - [Pushbullet](#pushbullet)
     - [Apprise](#apprise)
+    - [Web Dashboard](#web-dashboard)
 
 ## Platform Support
 
@@ -57,8 +58,45 @@ If the `update_method` is set to `"update_no_force"` and a force update is reque
    - The image supports both x86_64 and ARM64 architectures
    - Docker will automatically pull the correct version for your platform
 2. Map the `/config` volume to someplace on your drive.
-3. After running the image once, it will have copied over default configs. Fill them out and everything should start working.
+3. Map the `/data` volume for persistent history database storage (required if using the web dashboard).
+4. If you want to use the web dashboard, map port `8080` (or your configured port) and set `enabled = true` in the `[web]` section of `config.toml`.
+5. After running the image once, it will have copied over default configs. Fill them out and everything should start working.
    1. This default config is currently broken, so when you map the `/config` volume just copy over the default ones found in this repo.
+
+**Docker Run Example:**
+```bash
+docker run -d \
+  --name automated-ffdl \
+  -v /path/to/config:/config \
+  -v /path/to/data:/data \
+  -p 8080:8080 \
+  mrtyton/automated-ffdl
+```
+
+**Docker Compose Example:**
+```yaml
+services:
+  automated-ffdl:
+    image: mrtyton/automated-ffdl
+    container_name: automated-ffdl
+    volumes:
+      - /path/to/config:/config
+      - /path/to/data:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+```
+
+**Volumes:**
+| Volume | Purpose |
+|---|---|
+| `/config` | Configuration files (`config.toml`, `defaults.ini`, `personal.ini`) |
+| `/data` | Persistent data (history database for the web dashboard) |
+
+**Ports:**
+| Port | Purpose |
+|---|---|
+| `8080` | Web dashboard (only needed if `[web] enabled = true`) |
 
 ### How to Run - Non-Docker
 
@@ -259,3 +297,48 @@ urls = []
 ```
 
 - `urls`: A list of Apprise service URLs for any *additional* notification targets. You can find a comprehensive list of supported services and their URL formats on the [Apprise GitHub page](https://github.com/caronc/apprise#supported-notifications).
+
+### Web Dashboard
+
+AutomatedFanfic includes an optional built-in web dashboard for monitoring downloads, retries, and activity in real time. It is **disabled by default** and must be explicitly enabled.
+
+```toml
+[web]
+enabled = false
+host = "0.0.0.0"
+port = 8080
+history_db_path = "/data/history.db"
+```
+
+- `enabled`: Set to `true` to start the web dashboard server. Defaults to `false`.
+- `host`: The address the web server binds to. Use `"0.0.0.0"` to listen on all interfaces (required for Docker), or `"127.0.0.1"` for local-only access.
+- `port`: The port the web server listens on (1–65535). Defaults to `8080`.
+- `history_db_path`: Path to the SQLite database file used for storing download history, retry events, email checks, and notifications. Defaults to `"/data/history.db"` (the `/data` Docker volume).
+
+**Dashboard Features:**
+- **Live Dashboard**: Real-time view of active downloads, waiting retries, queue depths, and process status
+- **Activity Feed**: Recent downloads, retries, and notifications in a unified timeline
+- **Add URLs**: Manually inject fanfiction URLs into the processing queue
+- **History**: Searchable, paginated history of all downloads, retries, email checks, and notifications
+- **Expandable Errors**: Click truncated error messages to see full details
+
+**Docker Setup:**
+
+To use the web dashboard in Docker, you need to:
+1. Set `enabled = true` in the `[web]` section of your `config.toml`
+2. Map the `/data` volume for persistent history storage
+3. Map the dashboard port
+
+```bash
+docker run -d \
+  -v /path/to/config:/config \
+  -v /path/to/data:/data \
+  -p 8080:8080 \
+  mrtyton/automated-ffdl
+```
+
+If you change the `port` in `config.toml`, update the Docker port mapping accordingly (e.g., `-p 9999:9999` for `port = 9999`).
+
+**Non-Docker Setup:**
+
+For non-Docker usage, set `host = "127.0.0.1"` to restrict access to localhost, and set `history_db_path` to a writable path on your filesystem (e.g., `"./data/history.db"`).
