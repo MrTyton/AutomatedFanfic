@@ -8,11 +8,14 @@ Provides:
 import signal
 import threading
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Optional
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from history.database import AsyncHistoryDB
 from utils import ff_logging
@@ -72,6 +75,18 @@ def create_app(web_state: WebState) -> FastAPI:
     app.include_router(controls.router)
     app.include_router(config.router)
     app.include_router(websocket.router)
+
+    # Serve React SPA static files (must come after API routes)
+    _static_dir = Path(__file__).resolve().parent.parent.parent / "web-ui" / "dist"
+    if _static_dir.is_dir():
+        app.mount(
+            "/assets", StaticFiles(directory=_static_dir / "assets"), name="assets"
+        )
+
+        @app.get("/{full_path:path}")
+        async def _spa_fallback(full_path: str):
+            """Serve index.html for all non-API paths (SPA client-side routing)."""
+            return FileResponse(_static_dir / "index.html")
 
     return app
 
