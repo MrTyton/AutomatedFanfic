@@ -57,13 +57,14 @@ export default function History() {
                                 <th>Title</th>
                                 <th>URL</th>
                                 <th>Story ID</th>
+                                <th>Error</th>
                                 <th>Started</th>
                                 <th>Completed</th>
                             </tr>
                         </thead>
                         <tbody>
                             {downloads.length === 0 ? (
-                                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads recorded yet</td></tr>
+                                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads recorded yet</td></tr>
                             ) : downloads.map((r, i) => (
                                 <tr key={i}>
                                     <td>
@@ -77,6 +78,7 @@ export default function History() {
                                         <a href={r.url.startsWith('http') ? r.url : `https://${r.url}`} target="_blank" rel="noreferrer">{r.url}</a>
                                     </td>
                                     <td>{r.calibre_id ?? '—'}</td>
+                                    <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.error_message ? 'var(--error)' : undefined }}>{r.error_message ?? '—'}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{new Date(r.started_at).toLocaleString()}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{r.completed_at ? new Date(r.completed_at).toLocaleString() : '—'}</td>
                                 </tr>

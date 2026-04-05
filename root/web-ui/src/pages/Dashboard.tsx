@@ -14,6 +14,7 @@ interface RecentEvent {
     status?: string
     calibre_id?: string
     completed_at?: string
+    error_message?: string
     action?: string
     attempt_number?: number
     timestamp?: string
@@ -48,7 +49,8 @@ function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: s
         const title = evt.title || evt.url || 'Unknown'
         const site = evt.site || '—'
         if (evt.status === 'success') return { icon: '✓', text: <>({site}) {title}</>, time }
-        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}</>, time }
+        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time }
+        if (evt.status === 'abandoned') return { icon: '✗', text: <>({site}) Abandoned: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time }
         if (evt.status === 'pending') return { icon: '↓', text: <>({site}) Processing {evt.url ? urlLink(evt.url) : title}</>, time }
         return { icon: '↓', text: <>({site}) {title}</>, time }
     }
@@ -241,6 +243,11 @@ export default function Dashboard({ data }: Props) {
                                         <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer">
                                             {dl.url}
                                         </a>
+                                    )}
+                                    {dl.error_message && (
+                                        <div style={{ color: 'var(--error)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                                            {dl.error_message}
+                                        </div>
                                     )}
                                 </td>
                                 <td>{dl.calibre_id ?? '—'}</td>
