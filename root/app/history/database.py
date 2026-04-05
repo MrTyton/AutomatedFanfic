@@ -148,10 +148,11 @@ class SyncHistoryDB:
         completed_at: Optional[datetime] = None,
         site: Optional[str] = None,
     ) -> None:
-        """Update the most recent pending download_event for *url*.
+        """Update the most recent in-progress download_event for *url*.
 
-        If no pending row exists (e.g. URL was added before history tracking),
-        insert a new completed row so the event isn't lost.
+        Matches rows with status 'pending' or 'waiting' (both represent
+        in-progress downloads).  If no such row exists, insert a new
+        completed row so the event isn't lost.
         """
         assert self._conn is not None
         cur = self._conn.execute(
@@ -163,7 +164,7 @@ class SyncHistoryDB:
                    completed_at = COALESCE(?, completed_at)
                WHERE id = (
                    SELECT id FROM download_events
-                   WHERE url = ? AND status = 'pending'
+                   WHERE url = ? AND status IN ('pending', 'waiting')
                    ORDER BY started_at DESC LIMIT 1
                )""",
             (

@@ -90,7 +90,7 @@ def handle_failure(
         f"Attempt {fanfic.repeats}"
     )
 
-    # Record retry event in history
+    # Record retry event in history and update download status to waiting
     if history_recorder:
         history_recorder.record_retry(
             url=fanfic.url,
@@ -99,6 +99,7 @@ def handle_failure(
             action=decision.action.value,
             delay_minutes=decision.delay_minutes,
         )
+        history_recorder.record_download_waiting(url=fanfic.url, site=fanfic.site)
 
     # Send to waiting queue with decision information attached
     waiting_queue.put(fanfic)
