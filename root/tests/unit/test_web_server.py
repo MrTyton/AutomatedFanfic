@@ -269,7 +269,7 @@ class TestWebConfig(unittest.TestCase):
         from models.config_models import WebConfig
 
         wc = WebConfig()
-        self.assertTrue(wc.enabled)
+        self.assertFalse(wc.enabled)
         self.assertEqual(wc.host, "0.0.0.0")
         self.assertEqual(wc.port, 8080)
         self.assertEqual(wc.history_db_path, "/data/history.db")
