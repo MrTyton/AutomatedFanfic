@@ -1,0 +1,14 @@
+# Auto-detect text files and ensure consistent line endings
+* text=auto
+
+# Shell scripts must always use LF (Linux line endings)
+*.sh text eol=lf
+
+# Docker files
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+
+# Keep Windows line endings for Windows-specific files
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
