@@ -31,6 +31,23 @@ async def list_downloads(
     return {"items": items, "total": total}
 
 
+@router.get("/retries")
+async def list_retries(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=500),
+):
+    """Paginated list of all retry events."""
+    db = request.app.state.web_state.history_db
+    if db is None:
+        return {"items": [], "total": 0}
+
+    offset = (page - 1) * page_size
+    items = await db.get_retries(limit=page_size, offset=offset)
+    total = await db.get_retry_count()
+    return {"items": items, "total": total}
+
+
 @router.get("/retries/{url:path}")
 async def retries_for_url(request: Request, url: str):
     """All retry events for a specific URL, ordered by attempt number."""

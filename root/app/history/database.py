@@ -409,6 +409,28 @@ class AsyncHistoryDB:
         finally:
             await conn.close()
 
+    async def get_retries(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        conn = await self._get_conn()
+        try:
+            cursor = await conn.execute(
+                """SELECT * FROM retry_events
+                   ORDER BY scheduled_at DESC LIMIT ? OFFSET ?""",
+                (limit, offset),
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            await conn.close()
+
+    async def get_retry_count(self) -> int:
+        conn = await self._get_conn()
+        try:
+            cursor = await conn.execute("SELECT COUNT(*) FROM retry_events")
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+        finally:
+            await conn.close()
+
     async def get_email_checks(self, limit: int = 50, offset: int = 0) -> list[dict]:
         conn = await self._get_conn()
         try:
@@ -513,25 +535,21 @@ class AsyncHistoryDB:
             await conn.close()
 
     async def get_recent_activity(self, limit: int = 20) -> list[dict]:
-        """Get the most recent non-download events for the dashboard feed."""
+        """Get the most recent non-download events for the dashboard feed.
+
+        Excludes notification events — they echo downloads and can drown
+        out retries and email checks in the activity feed.
+        """
         conn = await self._get_conn()
         try:
             events: list[dict] = []
 
             cursor = await conn.execute(
                 """SELECT 'retry' as event_type, id, url, site,
-                          attempt_number, action, scheduled_at as timestamp
+                          attempt_number, action, delay_minutes,
+                          error_message, scheduled_at as timestamp
                    FROM retry_events
                    ORDER BY scheduled_at DESC LIMIT ?""",
-                (limit,),
-            )
-            events.extend([dict(r) for r in await cursor.fetchall()])
-
-            cursor = await conn.execute(
-                """SELECT 'notification' as event_type, id, title, body,
-                          site, provider, sent_at as timestamp
-                   FROM notification_events
-                   ORDER BY sent_at DESC LIMIT ?""",
                 (limit,),
             )
             events.extend([dict(r) for r in await cursor.fetchall()])

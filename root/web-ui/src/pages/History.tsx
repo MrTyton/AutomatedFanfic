@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getDownloads, getEmails, getNotifications, type DownloadRow, type EmailRow, type NotificationRow } from '../api'
+import { getDownloads, getEmails, getNotifications, getRetries, type DownloadRow, type EmailRow, type NotificationRow, type RetryRow } from '../api'
 
 export default function History() {
-    const [tab, setTab] = useState<'downloads' | 'emails' | 'notifications'>('downloads')
+    const [tab, setTab] = useState<'downloads' | 'retries' | 'emails' | 'notifications'>('downloads')
     const [page, setPage] = useState(1)
 
     const [downloads, setDownloads] = useState<DownloadRow[]>([])
     const [downloadTotal, setDownloadTotal] = useState(0)
+    const [retries, setRetries] = useState<RetryRow[]>([])
+    const [retryTotal, setRetryTotal] = useState(0)
     const [emails, setEmails] = useState<EmailRow[]>([])
     const [notifications, setNotifications] = useState<NotificationRow[]>([])
 
     const fetchData = useCallback(() => {
         if (tab === 'downloads') {
             getDownloads(page).then(d => { setDownloads(d.items); setDownloadTotal(d.total) }).catch(() => { })
+        } else if (tab === 'retries') {
+            getRetries(page).then(d => { setRetries(d.items); setRetryTotal(d.total) }).catch(() => { })
         } else if (tab === 'emails') {
             getEmails(page).then(d => setEmails(d.items)).catch(() => { })
         } else if (tab === 'notifications') {
@@ -32,7 +36,7 @@ export default function History() {
             <h1 style={{ marginBottom: '1rem' }}>History</h1>
 
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                {(['downloads', 'emails', 'notifications'] as const).map(t => (
+                {(['downloads', 'retries', 'emails', 'notifications'] as const).map(t => (
                     <button
                         key={t}
                         className={tab === t ? '' : 'secondary'}
@@ -84,6 +88,54 @@ export default function History() {
                             <button className="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
                             <span style={{ lineHeight: '2rem' }}>Page {page} of {Math.ceil(downloadTotal / 25)}</span>
                             <button className="secondary" disabled={page * 25 >= downloadTotal} onClick={() => setPage(p => p + 1)}>Next →</button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {tab === 'retries' && (
+                <div className="card">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Action</th>
+                                <th>Site</th>
+                                <th>URL</th>
+                                <th>Attempt</th>
+                                <th>Delay</th>
+                                <th>Error</th>
+                                <th>Scheduled</th>
+                                <th>Fired</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {retries.length === 0 ? (
+                                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No retry events recorded yet</td></tr>
+                            ) : retries.map(r => (
+                                <tr key={r.id}>
+                                    <td>
+                                        <span className={`badge ${r.action === 'retry' ? 'badge-warning' : r.action === 'hail_mary' ? 'badge-error' : 'badge-error'}`}>
+                                            {r.action === 'hail_mary' ? 'hail mary' : r.action}
+                                        </span>
+                                    </td>
+                                    <td>{r.site}</td>
+                                    <td style={{ maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <a href={r.url.startsWith('http') ? r.url : `https://${r.url}`} target="_blank" rel="noreferrer">{r.url}</a>
+                                    </td>
+                                    <td>{r.attempt_number}</td>
+                                    <td>{r.delay_minutes > 0 ? `${r.delay_minutes}m` : '—'}</td>
+                                    <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.error_message ?? '—'}</td>
+                                    <td style={{ fontSize: '0.85rem' }}>{new Date(r.scheduled_at).toLocaleString()}</td>
+                                    <td style={{ fontSize: '0.85rem' }}>{r.fired_at ? new Date(r.fired_at).toLocaleString() : '—'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {retryTotal > 25 && (
+                        <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <button className="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+                            <span style={{ lineHeight: '2rem' }}>Page {page} of {Math.ceil(retryTotal / 25)}</span>
+                            <button className="secondary" disabled={page * 25 >= retryTotal} onClick={() => setPage(p => p + 1)}>Next →</button>
                         </div>
                     )}
                 </div>
