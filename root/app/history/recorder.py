@@ -62,6 +62,7 @@ class HistoryRecorder:
         url: str,
         title: Optional[str] = None,
         calibre_id: Optional[str] = None,
+        site: Optional[str] = None,
     ) -> None:
         self._put(
             HistoryMessage(
@@ -71,13 +72,14 @@ class HistoryRecorder:
                     "status": DownloadStatus.SUCCESS.value,
                     "title": title,
                     "calibre_id": calibre_id,
+                    "site": site,
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
         )
 
     def record_download_failed(
-        self, url: str, error_message: Optional[str] = None
+        self, url: str, error_message: Optional[str] = None, site: Optional[str] = None
     ) -> None:
         self._put(
             HistoryMessage(
@@ -86,13 +88,14 @@ class HistoryRecorder:
                     "url": url,
                     "status": DownloadStatus.FAILED.value,
                     "error_message": error_message,
+                    "site": site,
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
         )
 
     def record_download_abandoned(
-        self, url: str, error_message: Optional[str] = None
+        self, url: str, error_message: Optional[str] = None, site: Optional[str] = None
     ) -> None:
         self._put(
             HistoryMessage(
@@ -101,6 +104,7 @@ class HistoryRecorder:
                     "url": url,
                     "status": DownloadStatus.ABANDONED.value,
                     "error_message": error_message,
+                    "site": site,
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
@@ -260,6 +264,7 @@ class HistoryWriter:
                         if payload.get("completed_at")
                         else None
                     ),
+                    site=payload.get("site"),
                 )
 
             elif et == HistoryEventType.RETRY:

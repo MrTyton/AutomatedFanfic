@@ -31,6 +31,9 @@ class WebState:
     # Process manager reference for status queries
     process_status_callable: Optional[Any] = None
 
+    # History recorder (queue-based, for writes from web routes)
+    history_recorder: Optional[Any] = None
+
     # Configuration
     config: Optional[Any] = None
     config_path: Optional[str] = None

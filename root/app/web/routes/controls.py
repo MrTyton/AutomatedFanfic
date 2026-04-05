@@ -58,6 +58,11 @@ async def add_url(request: Request, body: AddUrlRequest):
 
     state.ingress_queue.put(fanfic)
 
+    if state.history_recorder:
+        state.history_recorder.record_download_created(
+            fanfic.url, fanfic.site, fanfic.behavior
+        )
+
     return AddUrlResponse(
         accepted=True,
         message=f"Added {fanfic.url} (site: {fanfic.site}) to processing queue",
@@ -103,6 +108,12 @@ async def add_urls(request: Request, body: AddUrlsRequest):
                 state.active_urls[fanfic.url] = True
 
             state.ingress_queue.put(fanfic)
+
+            if state.history_recorder:
+                state.history_recorder.record_download_created(
+                    fanfic.url, fanfic.site, fanfic.behavior
+                )
+
             results.append(
                 AddUrlResponse(
                     accepted=True,

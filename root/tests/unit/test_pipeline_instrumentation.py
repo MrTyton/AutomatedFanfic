@@ -290,6 +290,7 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
             url="https://ao3.org/works/1",
             title="Test Story",
             calibre_id="42",
+            site="ao3",
         )
 
     @patch("workers.handlers.update_strategies")
@@ -312,7 +313,7 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
         )
 
         self.recorder.record_download_failed.assert_called_once_with(
-            "https://ao3.org/works/1", "Calibre failed"
+            "https://ao3.org/works/1", "Calibre failed", site="ao3"
         )
 
     @patch("workers.handlers.update_strategies")

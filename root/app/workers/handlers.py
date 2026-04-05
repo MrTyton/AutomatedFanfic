@@ -66,7 +66,9 @@ def handle_failure(
         )
         if history_recorder:
             history_recorder.record_download_abandoned(
-                fanfic.url, f"Maximum retries reached after {fanfic.repeats} attempts"
+                fanfic.url,
+                f"Maximum retries reached after {fanfic.repeats} attempts",
+                site=fanfic.site,
             )
         return
 
@@ -188,6 +190,7 @@ def process_fanfic_addition(
                     url=fanfic.url,
                     title=fanfic.title,
                     calibre_id=fanfic.calibre_id,
+                    site=fanfic.site,
                 )
 
             ff_logging.log_debug(
@@ -201,7 +204,9 @@ def process_fanfic_addition(
     except Exception as e:
         ff_logging.log_failure(f"Error processing additions to Calibre: {e}")
         if history_recorder:
-            history_recorder.record_download_failed(fanfic.url, str(e))
+            history_recorder.record_download_failed(
+                fanfic.url, str(e), site=fanfic.site
+            )
         handle_failure(
             fanfic,
             notification_info,
