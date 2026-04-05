@@ -29,7 +29,6 @@ Example:
 """
 
 from . import notification_base
-from typing import List
 from concurrent.futures import ThreadPoolExecutor
 from .apprise_notification import AppriseNotification
 from utils import ff_logging
@@ -82,7 +81,7 @@ class NotificationWrapper:
             >>> wrapper = NotificationWrapper("custom/config.toml")  # Custom path
         """
         # Initialize empty worker list and store configuration path
-        self.notification_workers: List[notification_base.NotificationBase] = []
+        self.notification_workers: list[notification_base.NotificationBase] = []
         self.toml_path = toml_path
         # Automatically initialize all available notification workers
         self._initialize_workers()

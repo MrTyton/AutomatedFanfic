@@ -59,7 +59,7 @@ class TestCalibreDBClient(unittest.TestCase):
     ):
         """Test the internal _execute_command method."""
         if should_raise_exception:
-            mock_call.side_effect = Exception("Test exception")
+            mock_call.side_effect = OSError("Test exception")
 
         # Accessing private method for testing purpose
         self.client._execute_command(command, fanfic)
@@ -242,7 +242,7 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
             (
                 "generic_exception",
-                Exception("Something went wrong"),
+                OSError("Something went wrong"),
                 "Error: Something went wrong",
             ),
         ]
@@ -510,7 +510,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_get_files.return_value = ["/fake/dir/story.epub"]
 
         with patch.object(self.client, "_execute_command") as mock_execute:
-            mock_execute.side_effect = Exception("Command failed")
+            mock_execute.side_effect = OSError("Command failed")
             result = self.client.add_format_to_existing_story("/fake/dir", mock_fanfic)
             self.assertFalse(result)
 
@@ -565,7 +565,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic = MagicMock()
         mock_fanfic.url = "http://example.com/story"
 
-        mock_check_output.side_effect = Exception("Search failed")
+        mock_check_output.side_effect = OSError("Search failed")
 
         result = self.client.get_story_id(mock_fanfic)
 
@@ -621,7 +621,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
             self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
         ):
             with patch.object(self.client, "_execute_command_with_output") as mock_exec:
-                mock_exec.side_effect = Exception("Add failed")
+                mock_exec.side_effect = OSError("Add failed")
 
                 self.client.add_story("/fake/location", mock_fanfic)
 
@@ -696,7 +696,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
             self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
         ):
             with patch.object(self.client, "_execute_command") as mock_exec:
-                mock_exec.side_effect = Exception("Replace failed")
+                mock_exec.side_effect = OSError("Replace failed")
 
                 result = self.client.add_format_to_existing_story(
                     "/fake/location", mock_fanfic
@@ -746,7 +746,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
         mock_fanfic.site = "testsite"
         mock_fanfic.calibre_id = "123"
 
-        mock_check_output.side_effect = Exception("Metadata retrieval failed")
+        mock_check_output.side_effect = OSError("Metadata retrieval failed")
 
         result = self.client.get_metadata(mock_fanfic)
 
@@ -777,7 +777,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
         metadata = {"#custom_field": "test_value"}
 
         with patch.object(self.client, "_execute_command") as mock_exec:
-            mock_exec.side_effect = Exception("set_custom failed")
+            mock_exec.side_effect = OSError("set_custom failed")
 
             self.client.set_metadata_fields(mock_fanfic, metadata, ["#custom_field"])
 

@@ -20,8 +20,6 @@ processes in the multiprocessing architecture, maintaining all necessary state
 for fanfiction download, update, retry, and Calibre integration workflows.
 """
 
-from typing import Optional
-
 from models import retry_types
 
 
@@ -56,11 +54,11 @@ class FanficInfo:
         self,
         url: str,
         site: str,
-        calibre_id: Optional[str] = None,
-        repeats: Optional[int] = 0,
-        behavior: Optional[str] = None,
-        title: Optional[str] = None,
-        retry_decision: Optional[retry_types.RetryDecision] = None,
+        calibre_id: str | None = None,
+        repeats: int | None = 0,
+        behavior: str | None = None,
+        title: str | None = None,
+        retry_decision: retry_types.RetryDecision | None = None,
     ):
         """Initializes a FanficInfo object with story metadata and current state.
 

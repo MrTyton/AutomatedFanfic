@@ -44,7 +44,7 @@ jobs:
     - name: Setup Python Environment
       uses: ./.github/actions/setup-python
       with:
-        python-version: "3.12"
+        python-version: "3.14"
         install-fanficfare: "false"  # Not needed for pre-commit
         install-dev-tools: "true"
         requirements-file: "requirements-dev.txt"  # Need dev dependencies for pre-commit
@@ -68,7 +68,7 @@ jobs:
     - name: Setup Python Environment
       uses: ./.github/actions/setup-python
       with:
-        python-version: "3.12"
+        python-version: "3.14"
         install-fanficfare: "false"  # Not needed for linting
         install-dev-tools: "true"
         requirements-file: "requirements.txt"  # Only runtime dependencies needed for linting
@@ -94,7 +94,7 @@ jobs:
     - name: Setup Python Environment
       uses: ./.github/actions/setup-python
       with:
-        python-version: "3.12"
+        python-version: "3.14"
         install-fanficfare: "true"
         install-dev-tools: "true"
         requirements-file: "requirements-dev.txt"  # Need dev dependencies for testing
@@ -129,7 +129,7 @@ jobs:
     - name: Upload pytest test results
       uses: actions/upload-artifact@v7
       with:
-        name: pytest-results-3.12
+        name: pytest-results-3.14
         path: junit/test-results.xml
       # Always run this step to upload results even if tests fail
       if: always()

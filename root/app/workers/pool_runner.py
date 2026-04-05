@@ -9,7 +9,6 @@ downloads, significantly reducing memory overhead compared to multi-process appr
 import threading
 import multiprocessing as mp
 import time
-from typing import Dict, List
 import signal
 
 from utils import ff_logging
@@ -20,7 +19,7 @@ from notifications import notification_wrapper
 
 
 def run_worker_pool(
-    worker_queues: Dict[str, mp.Queue],
+    worker_queues: dict[str, mp.Queue],
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
     waiting_queue: mp.Queue,
@@ -45,7 +44,7 @@ def run_worker_pool(
 
     ff_logging.log_debug(f"Worker Pool Process using {len(worker_queues)} threads")
 
-    threads: List[threading.Thread] = []
+    threads: list[threading.Thread] = []
     shutdown_event = threading.Event()
 
     # Define signal handler for graceful shutdown of the pool process

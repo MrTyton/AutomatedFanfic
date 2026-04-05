@@ -44,6 +44,7 @@ Thread Safety:
 
 from contextlib import contextmanager
 import os
+from pathlib import Path
 import shutil
 from tempfile import mkdtemp
 
@@ -151,10 +152,10 @@ def get_files(directory_path, file_extension=None, return_full_path=False):
     # Scan all items in the specified directory
     for file in os.listdir(directory_path):
         # Build complete path for proper file type checking
-        full_path = os.path.join(directory_path, file)
+        full_path = str(Path(directory_path) / file)
 
         # Filter for files only (exclude directories) and check extension if specified
-        if os.path.isfile(full_path) and (
+        if Path(full_path).is_file() and (
             file_extension is None or file.endswith(f"{file_extension}")
         ):
             # Add either full path or filename based on return_full_path setting
@@ -205,8 +206,8 @@ def copy_configs_to_temp_dir(cdb, temp_dir: str) -> None:
     """
     # Copy default configuration if it exists
     if cdb.default_ini:
-        shutil.copyfile(cdb.default_ini, os.path.join(temp_dir, "defaults.ini"))
+        shutil.copyfile(cdb.default_ini, str(Path(temp_dir) / "defaults.ini"))
 
     # Copy personal configuration if it exists
     if cdb.personal_ini:
-        shutil.copyfile(cdb.personal_ini, os.path.join(temp_dir, "personal.ini"))
+        shutil.copyfile(cdb.personal_ini, str(Path(temp_dir) / "personal.ini"))

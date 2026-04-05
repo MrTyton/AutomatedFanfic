@@ -58,7 +58,7 @@ Note:
     This eliminates the need for manual regex maintenance as new sites are added.
 """
 
-import os
+from pathlib import Path
 import re
 from models import fanfic_info
 from utils import ff_logging
@@ -120,7 +120,7 @@ def extract_filename(filename: str) -> str:
         the original filename is returned after trimming whitespace.
     """
     # Extract just the filename portion, removing any directory path
-    basenamed_filepath = os.path.basename(filename)
+    basenamed_filepath = Path(filename).name
 
     # Try to match the expected "Title-ID" pattern
     match = story_name.search(basenamed_filepath)
