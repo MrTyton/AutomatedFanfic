@@ -140,6 +140,12 @@ export default function Dashboard({ data }: Props) {
                     <textarea
                         value={urlText}
                         onChange={e => setUrlText(e.target.value)}
+                        onKeyDown={e => {
+                            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                e.preventDefault()
+                                handleAddUrls(e as unknown as React.FormEvent)
+                            }
+                        }}
                         placeholder={"Paste one or more URLs, one per line\nhttps://archiveofourown.org/works/12345\nhttps://www.royalroad.com/fiction/12345"}
                         rows={3}
                         style={{ resize: 'vertical', marginBottom: '0.5rem' }}
