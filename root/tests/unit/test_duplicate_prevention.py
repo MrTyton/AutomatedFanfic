@@ -164,7 +164,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_exec.side_effect = Exception("Download failed")
 
         # Mock handle_failure to set retry decision
-        def side_effect_handle_failure(fanfic, *args):
+        def side_effect_handle_failure(fanfic, *args, **kwargs):
             fanfic.retry_decision = MagicMock()
             fanfic.retry_decision.action = retry_types.FailureAction.RETRY
 
@@ -223,7 +223,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_exec.side_effect = Exception("Download failed")
 
         # Mock handle_failure to set abandon decision
-        def side_effect_handle_failure(fanfic, *args):
+        def side_effect_handle_failure(fanfic, *args, **kwargs):
             fanfic.retry_decision = MagicMock()
             fanfic.retry_decision.action = retry_types.FailureAction.ABANDON
 

@@ -58,7 +58,9 @@ class NotificationWrapper:
         >>> wrapper.send_notification("Title", "Message", "site")
     """
 
-    def __init__(self, toml_path: str = "/config/config.toml") -> None:
+    def __init__(
+        self, toml_path: str = "/config/config.toml", history_recorder=None
+    ) -> None:
         """Initializes the notification wrapper and its notification workers.
 
         Sets up the notification coordination system by initializing the
@@ -83,6 +85,7 @@ class NotificationWrapper:
         # Initialize empty worker list and store configuration path
         self.notification_workers: list[notification_base.NotificationBase] = []
         self.toml_path = toml_path
+        self.history_recorder = history_recorder
         # Automatically initialize all available notification workers
         self._initialize_workers()
 
@@ -184,3 +187,7 @@ class NotificationWrapper:
         # Wait for all notifications to complete and handle any exceptions
         for future in futures:
             future.result()  # This will raise an exception if the worker raised one
+
+        # Record notification in history
+        if self.history_recorder:
+            self.history_recorder.record_notification(title, body, site)

@@ -40,6 +40,7 @@ def _process_task(
     ingress_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
     worker_id: str,
+    history_recorder=None,
 ) -> bool:
     """
     Process a single fanfiction task.
@@ -85,6 +86,7 @@ def _process_task(
                 ingress_queue,
                 retry_config,
                 calibre_client.cdb_info,
+                history_recorder=history_recorder,
             )
             return handlers.check_active_removal(fanfic)
 
@@ -141,6 +143,7 @@ def _process_task(
                 ingress_queue,
                 retry_config,
                 calibre_client.cdb_info,
+                history_recorder=history_recorder,
             )
             return handlers.check_active_removal(fanfic)
 
@@ -152,6 +155,7 @@ def _process_task(
                 ingress_queue,
                 retry_config,
                 calibre_client.cdb_info,
+                history_recorder=history_recorder,
             )
             return handlers.check_active_removal(fanfic)
 
@@ -172,6 +176,7 @@ def _process_task(
             ingress_queue,  # Passing ingress/waiting queue for retries
             notification_info,
             retry_config,
+            history_recorder=history_recorder,
         )
 
         return True  # Success, remove from active
@@ -186,6 +191,7 @@ def url_worker(
     worker_id: str,
     active_urls: dict | None = None,
     verbose: bool = False,
+    history_recorder=None,
 ) -> None:
     """
     Main worker function for processing fanfiction downloads in a dedicated process.
@@ -250,6 +256,7 @@ def url_worker(
                     waiting_queue,  # passed as ingress_queue
                     retry_config,
                     worker_id,
+                    history_recorder=history_recorder,
                 )
             except Exception as e:
                 ff_logging.log_failure(
@@ -262,6 +269,7 @@ def url_worker(
                     waiting_queue,
                     retry_config,
                     calibre_client.cdb_info,
+                    history_recorder=history_recorder,
                 )
             finally:
                 # Update active_urls

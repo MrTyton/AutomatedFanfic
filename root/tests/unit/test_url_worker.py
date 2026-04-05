@@ -699,6 +699,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_waiting_queue,
                 retry_config,
                 self.mock_cdb,
+                history_recorder=None,
             )
 
     @patch("workers.command.execute_command")
@@ -757,6 +758,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 self.mock_waiting_queue,
                 retry_config,
                 self.mock_cdb,
+                history_recorder=None,
             )
 
     @patch("workers.command.execute_command")
@@ -812,6 +814,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.mock_waiting_queue,
             retry_config,
             self.mock_cdb,
+            history_recorder=None,
         )
 
     @patch("workers.command.execute_command")
@@ -925,6 +928,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.mock_waiting_queue,
             self.mock_notification_info,
             retry_config,
+            history_recorder=None,
         )
 
 

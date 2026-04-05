@@ -20,6 +20,7 @@ def handle_failure(
     waiting_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
     cdb: calibre_info.CalibreInfo | None = None,
+    history_recorder=None,
 ) -> None:
     """
     Handle failure of a fanfiction download/update task.
@@ -63,6 +64,10 @@ def handle_failure(
             f"Maximum retries reached for {fanfic.title}. "
             f"Abandoning after {fanfic.repeats} attempts."
         )
+        if history_recorder:
+            history_recorder.record_download_abandoned(
+                fanfic.url, f"Maximum retries reached after {fanfic.repeats} attempts"
+            )
         return
 
     # Handle RETRY and HAIL_MARY cases
@@ -82,6 +87,16 @@ def handle_failure(
         f"Sending {fanfic.title} to waiting queue for {decision.action.value}. "
         f"Attempt {fanfic.repeats}"
     )
+
+    # Record retry event in history
+    if history_recorder:
+        history_recorder.record_retry(
+            url=fanfic.url,
+            site=fanfic.site,
+            attempt_number=fanfic.repeats or 0,
+            action=decision.action.value,
+            delay_minutes=decision.delay_minutes,
+        )
 
     # Send to waiting queue with decision information attached
     waiting_queue.put(fanfic)
@@ -112,6 +127,7 @@ def process_fanfic_addition(
     waiting_queue: mp.Queue,
     notification_info: notification_wrapper.NotificationWrapper,
     retry_config: config_models.RetryConfig,
+    history_recorder=None,
 ) -> None:
     """
     Integrate downloaded fanfic with Calibre library.
@@ -167,6 +183,13 @@ def process_fanfic_addition(
 
             ff_logging.log(f"\t({site}) Successfully processed {fanfic.title}")
 
+            if history_recorder:
+                history_recorder.record_download_success(
+                    url=fanfic.url,
+                    title=fanfic.title,
+                    calibre_id=fanfic.calibre_id,
+                )
+
             ff_logging.log_debug(
                 f"\t({site}) Sending success notification for {fanfic.title}"
             )
@@ -177,10 +200,13 @@ def process_fanfic_addition(
 
     except Exception as e:
         ff_logging.log_failure(f"Error processing additions to Calibre: {e}")
+        if history_recorder:
+            history_recorder.record_download_failed(fanfic.url, str(e))
         handle_failure(
             fanfic,
             notification_info,
             waiting_queue,
             retry_config,
             calibre_client.cdb_info,
+            history_recorder=history_recorder,
         )
