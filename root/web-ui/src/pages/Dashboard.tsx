@@ -23,7 +23,7 @@ interface RecentEvent {
 
 interface WaitingUrl {
     url: string
-    started_at?: string
+    updated_at?: string
 }
 
 function extractSite(url: string): string {
@@ -199,7 +199,7 @@ export default function Dashboard({ data }: Props) {
                                 </td>
                                 <td>—</td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    {w.started_at ? new Date(w.started_at).toLocaleString() : '—'}
+                                    {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
                                 </td>
                             </tr>
                         ))}
