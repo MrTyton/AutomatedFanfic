@@ -8,6 +8,7 @@ the single-threaded HistoryWriter (see recorder.py).
 
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import aiosqlite
@@ -101,6 +102,7 @@ class SyncHistoryDB:
         self._conn: Optional[sqlite3.Connection] = None
 
     def connect(self) -> None:
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._db_path)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -274,6 +276,7 @@ class AsyncHistoryDB:
         self._db_path = db_path
 
     async def _get_conn(self) -> aiosqlite.Connection:
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = await aiosqlite.connect(self._db_path)
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA journal_mode=WAL")

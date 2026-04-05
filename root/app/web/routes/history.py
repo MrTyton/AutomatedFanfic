@@ -10,15 +10,23 @@ async def list_downloads(
     request: Request,
     site: str | None = None,
     status: str | None = None,
-    limit: int = Query(default=50, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
 ):
     """Paginated list of download events with optional filters."""
     db = request.app.state.web_state.history_db
     if db is None:
         return {"items": [], "total": 0}
 
-    items = await db.get_downloads(site=site, status=status, limit=limit, offset=offset)
+    # Support both page/page_size and limit/offset params
+    actual_limit = limit if limit is not None else page_size
+    actual_offset = offset if offset is not None else (page - 1) * page_size
+
+    items = await db.get_downloads(
+        site=site, status=status, limit=actual_limit, offset=actual_offset
+    )
     total = await db.get_download_count(site=site, status=status)
     return {"items": items, "total": total}
 
