@@ -44,7 +44,8 @@ function formatEvent(evt: RecentEvent): { icon: string; text: string; time: stri
     }
     if (evt.event_type === 'retry') {
         const site = evt.site || '—'
-        return { icon: '↻', text: `(${site}) Retry #${evt.attempt_number ?? '?'} — ${evt.action ?? 'requeue'}`, time }
+        const label = evt.url || site
+        return { icon: '↻', text: `(${site}) Retry #${evt.attempt_number ?? '?'} — ${evt.action ?? 'requeue'} — ${label}`, time }
     }
     if (evt.event_type === 'notification') {
         return { icon: '🔔', text: `${evt.title}: ${evt.body || ''}`, time }
@@ -175,7 +176,7 @@ export default function Dashboard({ data }: Props) {
                         {recentDownloads.map((dl, i) => (
                             <tr key={`dl-${i}`}>
                                 <td>
-                                    <span className={`badge ${dl.status === 'success' ? 'badge-success' : dl.status === 'failed' ? 'badge-error' : 'badge-warning'}`}>
+                                    <span className={`badge ${dl.status === 'success' ? 'badge-success' : dl.status === 'failed' ? 'badge-error' : dl.status === 'waiting' ? 'badge-info' : dl.status === 'abandoned' ? 'badge-error' : 'badge-warning'}`}>
                                         {dl.status}
                                     </span>
                                 </td>

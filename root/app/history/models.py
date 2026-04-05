@@ -21,6 +21,7 @@ class DownloadStatus(str, Enum):
     PENDING = "pending"
     SUCCESS = "success"
     FAILED = "failed"
+    WAITING = "waiting"
     ABANDONED = "abandoned"
 
 

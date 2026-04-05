@@ -149,6 +149,11 @@ th {
     color: #fff;
 }
 
+.badge-info {
+    background: var(--surface2);
+    color: var(--text);
+}
+
 .badge-hot {
     background: var(--success);
     color: #fff;
