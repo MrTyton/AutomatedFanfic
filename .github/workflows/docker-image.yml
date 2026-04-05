@@ -199,13 +199,13 @@ jobs:
       # Set up QEMU
       - name: Set up QEMU
         if: steps.should_build.outputs.build == 'true'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       # Setup Docker Buildx
       - name: Setup Docker Buildx
         if: steps.should_build.outputs.build == 'true'
         id: buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         with:
           driver-opts: |
             network=host
@@ -267,14 +267,14 @@ jobs:
 
       - name: Login to DockerHub
         if: steps.should_build.outputs.build == 'true'
-        uses: docker/login-action@v3.7.0
+        uses: docker/login-action@v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Build and push platform-specific image
         if: steps.should_build.outputs.build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -323,7 +323,7 @@ jobs:
 
       - name: Upload platform digest
         if: steps.should_build.outputs.build == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ steps.platform.outputs.arch }}
           path: /tmp/digests/${{ steps.platform.outputs.arch }}
@@ -348,10 +348,10 @@ jobs:
           path: /tmp/digests
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3.7.0
+        uses: docker/login-action@v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
