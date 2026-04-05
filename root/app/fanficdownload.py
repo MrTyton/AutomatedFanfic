@@ -296,6 +296,7 @@ def register_processes(
                 config,
                 args.config,
                 config_store,
+                history_recorder,
                 args.verbose,
             ),
         )

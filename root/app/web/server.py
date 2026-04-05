@@ -103,6 +103,7 @@ def run_web_server(
     app_config: Any = None,
     config_path: Optional[str] = None,
     config_store: Any = None,
+    history_recorder: Any = None,
     verbose: bool = False,
 ) -> None:
     """Process entry point for the web server.
@@ -130,6 +131,7 @@ def run_web_server(
         worker_queues=worker_queues,
         waiting_queue=waiting_queue,
         process_status_callable=process_status_callable,
+        history_recorder=history_recorder,
         config=app_config,
         config_path=config_path,
         config_store=config_store,

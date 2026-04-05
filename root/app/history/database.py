@@ -146,10 +146,15 @@ class SyncHistoryDB:
         calibre_id: Optional[str] = None,
         error_message: Optional[str] = None,
         completed_at: Optional[datetime] = None,
+        site: Optional[str] = None,
     ) -> None:
-        """Update the most recent pending download_event for *url*."""
+        """Update the most recent pending download_event for *url*.
+
+        If no pending row exists (e.g. URL was added before history tracking),
+        insert a new completed row so the event isn't lost.
+        """
         assert self._conn is not None
-        self._conn.execute(
+        cur = self._conn.execute(
             """UPDATE download_events
                SET status = ?,
                    title = COALESCE(?, title),
@@ -170,6 +175,24 @@ class SyncHistoryDB:
                 url,
             ),
         )
+        if cur.rowcount == 0:
+            # No pending row found — insert a complete record
+            self._conn.execute(
+                """INSERT INTO download_events
+                   (url, site, title, calibre_id, status,
+                    error_message, started_at, completed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    url,
+                    site or "",
+                    title,
+                    calibre_id,
+                    status.value,
+                    error_message,
+                    _dt_to_str(completed_at or datetime.now()),
+                    _dt_to_str(completed_at),
+                ),
+            )
         self._conn.commit()
 
     def insert_retry(self, event: RetryEvent) -> int:
