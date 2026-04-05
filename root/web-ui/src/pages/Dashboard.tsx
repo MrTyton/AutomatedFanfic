@@ -82,15 +82,20 @@ export default function Dashboard({ data }: Props) {
     const ingressDepth = typeof data.queues.ingress === 'number' ? data.queues.ingress : 0
     const waitingDepth = typeof data.queues.waiting === 'number' ? data.queues.waiting : 0
 
-    // Build combined download rows: active items + recent download events
-    const recentDownloads = (data.recent_events as RecentEvent[])
-        .filter(e => e.event_type === 'download' && e.status !== 'pending')
+    // Recent completed downloads (separate feed, not diluted by other events)
+    const recentDownloads = (data.recent_downloads as RecentEvent[])
+        .filter(e => e.status !== 'pending')
 
-    // Build activity feed (non-download events: retries, notifications)
-    const activityEvents = (data.recent_events as RecentEvent[])
+    // Build activity feed from separate activity events + download events
+    const downloadActivity = (data.recent_downloads as RecentEvent[])
+        .map(e => formatEvent({ ...e, event_type: 'download' }))
+    const otherActivity = (data.recent_activity as RecentEvent[])
         .map(formatEvent)
+    const activityEvents = [...downloadActivity, ...otherActivity]
         .filter((e): e is { icon: string; text: string; time: string } =>
             e !== null && e.text !== '')
+        .sort((a, b) => b.time.localeCompare(a.time))
+        .slice(0, 20)
 
     return (
         <>

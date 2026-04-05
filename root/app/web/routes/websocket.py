@@ -63,15 +63,23 @@ async def _build_snapshot(state: Any) -> dict:
     else:
         snapshot["processes"] = {}
 
-    # ── Recent history events ───────────────────────────────────
+    # ── Recent history events (separate feeds) ─────────────────
     if state.history_db is not None:
         try:
-            recent = await state.history_db.get_recent_events(limit=10)
-            snapshot["recent_events"] = recent
+            snapshot["recent_downloads"] = await state.history_db.get_recent_downloads(
+                limit=20
+            )
         except Exception:
-            snapshot["recent_events"] = []
+            snapshot["recent_downloads"] = []
+        try:
+            snapshot["recent_activity"] = await state.history_db.get_recent_activity(
+                limit=20
+            )
+        except Exception:
+            snapshot["recent_activity"] = []
     else:
-        snapshot["recent_events"] = []
+        snapshot["recent_downloads"] = []
+        snapshot["recent_activity"] = []
 
     return snapshot
 
