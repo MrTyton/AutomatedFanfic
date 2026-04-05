@@ -173,6 +173,6 @@ ENV LD_LIBRARY_PATH="/opt/calibre/lib"
 EXPOSE 8080
 VOLUME /config
 VOLUME /data
-WORKDIR /config
+WORKDIR /app
 
 CMD ["/app/entrypoint.sh"]
