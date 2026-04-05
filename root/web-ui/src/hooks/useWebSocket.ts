@@ -5,7 +5,8 @@ export interface DashboardSnapshot {
     active_downloads: { items: string[]; count: number }
     queues: Record<string, number | Record<string, number>>
     processes: Record<string, string>
-    recent_events: unknown[]
+    recent_downloads: unknown[]
+    recent_activity: unknown[]
 }
 
 export function useDashboardSocket() {

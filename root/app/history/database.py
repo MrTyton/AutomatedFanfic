@@ -455,3 +455,57 @@ class AsyncHistoryDB:
             return events[:limit]
         finally:
             await conn.close()
+
+    async def get_recent_downloads(self, limit: int = 20) -> list[dict]:
+        """Get the most recent download events for the dashboard."""
+        conn = await self._get_conn()
+        try:
+            cursor = await conn.execute(
+                """SELECT id, url, site, title, calibre_id, status,
+                          error_message, started_at, completed_at
+                   FROM download_events
+                   ORDER BY started_at DESC LIMIT ?""",
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            await conn.close()
+
+    async def get_recent_activity(self, limit: int = 20) -> list[dict]:
+        """Get the most recent non-download events for the dashboard feed."""
+        conn = await self._get_conn()
+        try:
+            events: list[dict] = []
+
+            cursor = await conn.execute(
+                """SELECT 'retry' as event_type, id, url, site,
+                          attempt_number, action, scheduled_at as timestamp
+                   FROM retry_events
+                   ORDER BY scheduled_at DESC LIMIT ?""",
+                (limit,),
+            )
+            events.extend([dict(r) for r in await cursor.fetchall()])
+
+            cursor = await conn.execute(
+                """SELECT 'notification' as event_type, id, title, body,
+                          site, provider, sent_at as timestamp
+                   FROM notification_events
+                   ORDER BY sent_at DESC LIMIT ?""",
+                (limit,),
+            )
+            events.extend([dict(r) for r in await cursor.fetchall()])
+
+            cursor = await conn.execute(
+                """SELECT 'email_check' as event_type, id,
+                          urls_found, urls_new, checked_at as timestamp
+                   FROM email_events
+                   ORDER BY checked_at DESC LIMIT ?""",
+                (limit,),
+            )
+            events.extend([dict(r) for r in await cursor.fetchall()])
+
+            events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+            return events[:limit]
+        finally:
+            await conn.close()

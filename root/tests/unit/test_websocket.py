@@ -25,7 +25,8 @@ class TestWebSocketDashboard(unittest.TestCase):
             self.assertIn("active_downloads", data)
             self.assertIn("queues", data)
             self.assertIn("processes", data)
-            self.assertIn("recent_events", data)
+            self.assertIn("recent_downloads", data)
+            self.assertIn("recent_activity", data)
 
     def test_snapshot_with_active_urls(self):
         """Snapshot includes active URL data when available."""
@@ -59,4 +60,5 @@ class TestWebSocketDashboard(unittest.TestCase):
             self.assertEqual(data["active_downloads"]["count"], 0)
             self.assertEqual(data["queues"], {})
             self.assertEqual(data["processes"], {})
-            self.assertEqual(data["recent_events"], [])
+            self.assertEqual(data["recent_downloads"], [])
+            self.assertEqual(data["recent_activity"], [])
