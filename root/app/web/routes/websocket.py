@@ -96,7 +96,7 @@ async def dashboard_websocket(websocket: WebSocket):
         while True:
             snapshot = await _build_snapshot(state)
             await websocket.send_json(snapshot)
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(1)
     except WebSocketDisconnect:
         pass
     except Exception:
