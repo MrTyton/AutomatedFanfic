@@ -268,6 +268,7 @@ def register_processes(
             worker_queues,
             calibre_client,
             notification_info,
+            ingress_queue,
             waiting_queue,
             config.retry,
             active_urls,

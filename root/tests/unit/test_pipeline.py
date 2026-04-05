@@ -20,7 +20,8 @@ class TestPipeline(unittest.TestCase):
         self.mock_notification = MagicMock(
             spec=notification_wrapper.NotificationWrapper
         )
-        self.mock_queue = MagicMock(spec=mp.Queue)
+        self.mock_ingress_queue = MagicMock(spec=mp.Queue)
+        self.mock_waiting_queue = MagicMock(spec=mp.Queue)
         self.retry_config = config_models.RetryConfig()
         self.worker_id = "worker_1"
 
@@ -42,7 +43,8 @@ class TestPipeline(unittest.TestCase):
             self.fanfic,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -74,7 +76,8 @@ class TestPipeline(unittest.TestCase):
             self.fanfic,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -104,7 +107,8 @@ class TestPipeline(unittest.TestCase):
             self.fanfic,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -120,7 +124,8 @@ class TestPipeline(unittest.TestCase):
             queue,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -136,7 +141,8 @@ class TestPipeline(unittest.TestCase):
             queue,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -159,7 +165,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
         self.mock_notification = MagicMock(
             spec=notification_wrapper.NotificationWrapper
         )
-        self.mock_queue = MagicMock(spec=mp.Queue)
+        self.mock_ingress_queue = MagicMock(spec=mp.Queue)
+        self.mock_waiting_queue = MagicMock(spec=mp.Queue)
         self.retry_config = config_models.RetryConfig()
         self.worker_id = "worker_1"
 
@@ -174,7 +181,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
             queue,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -193,7 +201,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
             queue,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -222,7 +231,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
             self.fanfic,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
         )
@@ -244,7 +254,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
             queue,
             self.mock_client,
             self.mock_notification,
-            self.mock_queue,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
             self.retry_config,
             "invalid_worker_id_format",
         )

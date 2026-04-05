@@ -2,16 +2,15 @@
 Main pipeline logic for URL worker processes.
 
 Worker-Coordinator Communication:
-    Workers communicate with the coordinator through the ingress_queue (received as waiting_queue
-    parameter). This queue serves dual purposes:
-    1. Coordinator -> Workers: Distributes FanficInfo tasks
-    2. Workers -> Coordinator: Signals worker idle status and requeues failed tasks
+    Workers communicate with the coordinator through two queues:
+    1. ingress_queue: For WORKER_IDLE signals and force re-queues back to coordinator
+    2. waiting_queue: For failed downloads needing exponential backoff via ff_waiter
 
     When a worker finishes processing all tasks for a site, it sends:
-    ('WORKER_IDLE', worker_id, finished_site) back to the ingress_queue.
+    ('WORKER_IDLE', worker_id, finished_site) to the ingress_queue.
 
-    The ingress_queue parameter is the same queue used by failure handlers for retries,
-    creating a unified task ingress point for the coordinator.
+    When a download fails and needs retry, it goes to the waiting_queue
+    where ff_waiter applies exponential backoff before re-submitting.
 """
 
 import multiprocessing as mp
@@ -38,6 +37,7 @@ def _process_task(
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
     ingress_queue: mp.Queue,
+    waiting_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
     worker_id: str,
     history_recorder=None,
@@ -83,7 +83,7 @@ def _process_task(
             handlers.handle_failure(
                 fanfic,
                 notification_info,
-                ingress_queue,
+                waiting_queue,
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
@@ -140,7 +140,7 @@ def _process_task(
             handlers.handle_failure(
                 fanfic,
                 notification_info,
-                ingress_queue,
+                waiting_queue,
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
@@ -152,7 +152,7 @@ def _process_task(
             handlers.handle_failure(
                 fanfic,
                 notification_info,
-                ingress_queue,
+                waiting_queue,
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
@@ -173,7 +173,7 @@ def _process_task(
             temp_dir,
             site,
             path_or_url,
-            ingress_queue,  # Passing ingress/waiting queue for retries
+            waiting_queue,
             notification_info,
             retry_config,
             history_recorder=history_recorder,
@@ -186,6 +186,7 @@ def url_worker(
     queue: mp.Queue,
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
+    ingress_queue: mp.Queue,
     waiting_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
     worker_id: str,
@@ -228,7 +229,7 @@ def url_worker(
             except Empty:
                 # Queue is empty - signal idle if we were processing a site
                 if current_site is not None:
-                    waiting_queue.put(("WORKER_IDLE", worker_id, current_site))
+                    ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
                     ff_logging.log_debug(
                         f"Worker {worker_id} signaling idle after draining {current_site} queue"
                     )
@@ -253,7 +254,8 @@ def url_worker(
                     fanfic,
                     calibre_client,
                     notification_info,
-                    waiting_queue,  # passed as ingress_queue
+                    ingress_queue,
+                    waiting_queue,
                     retry_config,
                     worker_id,
                     history_recorder=history_recorder,

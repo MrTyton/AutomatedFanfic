@@ -114,6 +114,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         cdb = MagicMock()
         retry_config = MagicMock(spec=RetryConfig)
         retry_config.max_normal_retries = 3
+        ingress_queue = MagicMock()
         waiting_queue = MagicMock()
 
         # Execute
@@ -122,6 +123,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.queue,
                 cdb,
                 self.notification_info,
+                ingress_queue,
                 waiting_queue,
                 retry_config,
                 "test_worker",
@@ -173,6 +175,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         cdb = MagicMock()
         retry_config = MagicMock(spec=RetryConfig)
         retry_config.max_normal_retries = 3
+        ingress_queue = MagicMock()
         waiting_queue = MagicMock()
 
         # Execute
@@ -181,6 +184,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.queue,
                 cdb,
                 self.notification_info,
+                ingress_queue,
                 waiting_queue,
                 retry_config,
                 "test_worker",
@@ -232,6 +236,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         cdb = MagicMock()
         retry_config = MagicMock(spec=RetryConfig)
         retry_config.max_normal_retries = 3
+        ingress_queue = MagicMock()
         waiting_queue = MagicMock()
 
         # Execute
@@ -240,6 +245,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.queue,
                 cdb,
                 self.notification_info,
+                ingress_queue,
                 waiting_queue,
                 retry_config,
                 "test_worker",

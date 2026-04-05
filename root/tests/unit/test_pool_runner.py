@@ -16,6 +16,7 @@ class TestPoolRunner(unittest.TestCase):
             spec=notification_wrapper.NotificationWrapper
         )
         self.mock_waiting_queue = MagicMock(spec=mp.Queue)
+        self.mock_ingress_queue = MagicMock(spec=mp.Queue)
         self.mock_retry_config = MagicMock(spec=config_models.RetryConfig)
         self.active_urls = {}
 
@@ -40,6 +41,7 @@ class TestPoolRunner(unittest.TestCase):
             self.worker_queues,
             self.mock_client,
             self.mock_notification,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             self.mock_retry_config,
             self.active_urls,
@@ -115,6 +117,7 @@ class TestPoolRunner(unittest.TestCase):
             self.worker_queues,
             self.mock_client,
             self.mock_notification,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             self.mock_retry_config,
             self.active_urls,
@@ -142,6 +145,7 @@ class TestPoolRunner(unittest.TestCase):
             {},  # No workers for this test
             self.mock_client,
             self.mock_notification,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             self.mock_retry_config,
             self.active_urls,
@@ -176,6 +180,7 @@ class TestPoolRunner(unittest.TestCase):
             self.worker_queues,
             self.mock_client,
             self.mock_notification,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             self.mock_retry_config,
             self.active_urls,
