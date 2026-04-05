@@ -348,6 +348,7 @@ class AsyncHistoryDB:
         offset: int = 0,
         site: Optional[str] = None,
         status: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> list[dict]:
         conn = await self._get_conn()
         try:
@@ -359,6 +360,10 @@ class AsyncHistoryDB:
             if status:
                 conditions.append("status = ?")
                 params.append(status)
+            if search:
+                conditions.append("(site LIKE ? OR url LIKE ? OR title LIKE ?)")
+                pattern = f"%{search}%"
+                params.extend([pattern, pattern, pattern])
 
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             query = f"""SELECT * FROM download_events {where}
@@ -375,6 +380,7 @@ class AsyncHistoryDB:
         self,
         site: Optional[str] = None,
         status: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> int:
         conn = await self._get_conn()
         try:
@@ -386,6 +392,10 @@ class AsyncHistoryDB:
             if status:
                 conditions.append("status = ?")
                 params.append(status)
+            if search:
+                conditions.append("(site LIKE ? OR url LIKE ? OR title LIKE ?)")
+                pattern = f"%{search}%"
+                params.extend([pattern, pattern, pattern])
 
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
             cursor = await conn.execute(

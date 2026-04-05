@@ -53,9 +53,11 @@ export interface RetryRow {
     fired_at: string | null
 }
 
-export function getDownloads(page = 1, size = 25) {
+export function getDownloads(page = 1, size = 25, search = '') {
+    const params = new URLSearchParams({ page: String(page), page_size: String(size) })
+    if (search) params.set('search', search)
     return apiFetch<{ items: DownloadRow[]; total: number }>(
-        `/api/history/downloads?page=${page}&page_size=${size}`,
+        `/api/history/downloads?${params}`,
     )
 }
 
