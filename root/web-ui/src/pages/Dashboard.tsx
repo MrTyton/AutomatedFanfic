@@ -112,11 +112,14 @@ export default function Dashboard({ data }: Props) {
     const recentDownloads = (data.recent_downloads as RecentEvent[])
         .filter(e => e.status !== 'pending' && e.status !== 'waiting')
 
-    // Build activity feed from activity events only (retries, email checks).
-    // Downloads have their own table above; notifications are excluded to
-    // prevent them from drowning out other event types.
-    const activityEvents = (data.recent_activity as RecentEvent[])
+    // Build activity feed: downloads + retries + notifications.
+    // Email checks are excluded server-side since they fire frequently
+    // and push out events the user actually cares about.
+    const downloadActivity = (data.recent_downloads as RecentEvent[])
+        .map(e => formatEvent({ ...e, event_type: 'download' }))
+    const otherActivity = (data.recent_activity as RecentEvent[])
         .map(formatEvent)
+    const activityEvents = [...downloadActivity, ...otherActivity]
         .filter((e): e is { icon: string; text: ReactNode; time: string } =>
             e !== null && e.text != null)
         .sort((a, b) => b.time.localeCompare(a.time))
