@@ -40,6 +40,19 @@ export interface NotificationRow {
     provider: string | null
 }
 
+export interface RetryRow {
+    id: number
+    download_event_id: number | null
+    url: string
+    site: string
+    attempt_number: number
+    action: string
+    delay_minutes: number
+    error_message: string | null
+    scheduled_at: string
+    fired_at: string | null
+}
+
 export function getDownloads(page = 1, size = 25) {
     return apiFetch<{ items: DownloadRow[]; total: number }>(
         `/api/history/downloads?page=${page}&page_size=${size}`,
@@ -57,6 +70,12 @@ export function getNotifications(page = 1, size = 25) {
     const offset = (page - 1) * size
     return apiFetch<{ items: NotificationRow[] }>(
         `/api/history/notifications?limit=${size}&offset=${offset}`,
+    )
+}
+
+export function getRetries(page = 1, size = 25) {
+    return apiFetch<{ items: RetryRow[]; total: number }>(
+        `/api/history/retries?page=${page}&page_size=${size}`,
     )
 }
 
