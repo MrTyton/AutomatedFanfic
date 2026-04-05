@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import type { DashboardSnapshot } from '../hooks/useWebSocket'
 import { addUrls, type AddUrlResult } from '../api'
 
@@ -66,6 +66,16 @@ export default function Dashboard({ data }: Props) {
     const [urlText, setUrlText] = useState('')
     const [results, setResults] = useState<AddUrlResult[]>([])
     const [loading, setLoading] = useState(false)
+    const resultTimer = useRef<number>(0)
+
+    // Clear results after 5 seconds
+    useEffect(() => {
+        if (results.length > 0) {
+            clearTimeout(resultTimer.current)
+            resultTimer.current = window.setTimeout(() => setResults([]), 5000)
+        }
+        return () => clearTimeout(resultTimer.current)
+    }, [results])
 
     const handleAddUrls = async (e: React.FormEvent) => {
         e.preventDefault()
