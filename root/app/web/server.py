@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from history.database import AsyncHistoryDB
 from utils import ff_logging
 from web.dependencies import WebState
-from web.routes import config, controls, health, history, monitoring
+from web.routes import config, controls, health, history, monitoring, websocket
 
 
 @asynccontextmanager
@@ -71,6 +71,7 @@ def create_app(web_state: WebState) -> FastAPI:
     app.include_router(monitoring.router)
     app.include_router(controls.router)
     app.include_router(config.router)
+    app.include_router(websocket.router)
 
     return app
 
