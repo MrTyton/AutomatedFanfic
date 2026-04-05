@@ -96,6 +96,17 @@ class Coordinator:
         # Shutdown flag
         self.running = True
 
+    def get_state_snapshot(self) -> dict:
+        """Return a serialisable snapshot of the coordinator's internal state."""
+        backlog_snapshot = {}
+        for site, deque in self.state.backlog.items():
+            backlog_snapshot[site] = [f.url for f in deque]
+        return {
+            "backlog": backlog_snapshot,
+            "assignments": dict(self.state.assignments),
+            "idle_workers": sorted(self.state.idle_workers),
+        }
+
     def _check_qsize_support(self) -> None:
         """Check if queue.qsize() is supported on this platform."""
         try:

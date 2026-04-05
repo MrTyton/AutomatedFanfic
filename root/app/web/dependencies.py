@@ -34,6 +34,7 @@ class WebState:
     # Configuration
     config: Optional[Any] = None
     config_path: Optional[str] = None
+    config_store: Optional[Any] = None  # ConfigStore for hot-reload
 
     # Verbose flag
     verbose: bool = False

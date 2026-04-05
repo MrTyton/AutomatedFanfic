@@ -49,3 +49,6 @@ websockets==15.0.1
 
 # Async SQLite for history database
 aiosqlite==0.21.0
+
+# TOML writing (stdlib tomllib is read-only)
+tomlkit>=0.13.0
