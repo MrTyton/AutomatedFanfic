@@ -35,7 +35,7 @@ def run_worker_pool(
         worker_queues: Dictionary mapping worker_ids to their input queues.
         calibre_client: Shared Calibre client instance.
         notification_info: Shared notification wrapper.
-        waiting_queue: Shared queue for retries (ingress queue).
+        waiting_queue: Shared queue for retries (exponential backoff).
         retry_config: Retry configuration.
         active_urls: Shared dictionary of active URLs.
         verbose: Verbose logging flag.
