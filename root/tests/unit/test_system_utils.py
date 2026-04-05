@@ -53,7 +53,7 @@ class TestSystemUtils(unittest.TestCase):
         ]
     )
     @patch("os.listdir", return_value=["file1.txt", "file2.py", "file3.txt"])
-    @patch("os.path.isfile", return_value=True)
+    @patch("pathlib.Path.is_file", return_value=True)
     def test_get_files(
         self,
         directory_path,

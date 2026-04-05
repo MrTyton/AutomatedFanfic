@@ -9,7 +9,7 @@ import multiprocessing as mp
 import signal
 import threading
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable
 
 from utils import ff_logging
 from models.config_models import AppConfig, ProcessConfig
@@ -33,7 +33,7 @@ class ProcessManager:
         - Context manager support for clean resource management
     """
 
-    def __init__(self, config: Optional[AppConfig] = None):
+    def __init__(self, config: AppConfig | None = None):
         """
         Initialize the ProcessManager with configuration.
 
@@ -47,12 +47,12 @@ class ProcessManager:
                        for proper process management.
         """
         # Process tracking and state management
-        self.processes: Dict[str, ProcessInfo] = {}
+        self.processes: dict[str, ProcessInfo] = {}
         self.pool = None  # Worker pool for CPU-bound tasks
 
         # Synchronization primitives for thread coordination
         self._shutdown_event = threading.Event()
-        self._monitor_thread: Optional[threading.Thread] = None
+        self._monitor_thread: threading.Thread | None = None
         self._signal_handlers_set = False
 
         # Configuration validation and setup
@@ -69,8 +69,8 @@ class ProcessManager:
         self,
         name: str,
         target: Callable,
-        args: Tuple = (),
-        kwargs: Optional[Dict[str, Any]] = None,
+        args: tuple = (),
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         """
         Register a process for management without starting it.
@@ -136,12 +136,12 @@ class ProcessManager:
             ff_logging.log_debug(f"Started process: {name} (PID: {process.pid})")
             return True
 
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             ff_logging.log_failure(f"Failed to start process '{name}': {e}")
             process_info.state = ProcessState.FAILED
             return False
 
-    def stop_process(self, name: str, timeout: Optional[float] = None) -> bool:
+    def stop_process(self, name: str, timeout: float | None = None) -> bool:
         """
         Stop a running process gracefully with configurable timeout.
 
@@ -184,7 +184,7 @@ class ProcessManager:
                 try:
                     process.kill()
                     process.join(5)  # Wait briefly for kill to take effect
-                except Exception as kill_error:
+                except OSError as kill_error:
                     ff_logging.log_failure(
                         f"Error during force kill of '{name}': {kill_error}"
                     )
@@ -198,7 +198,7 @@ class ProcessManager:
             ff_logging.log_debug(f"Stopped process: {name}")
             return True
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             ff_logging.log_failure(f"Error stopping process '{name}': {e}")
             process_info.state = ProcessState.FAILED
             return False
@@ -259,7 +259,7 @@ class ProcessManager:
 
         return success
 
-    def stop_all(self, timeout: Optional[float] = None) -> bool:
+    def stop_all(self, timeout: float | None = None) -> bool:
         """
         Stop all processes gracefully with parallel shutdown.
         """
@@ -276,7 +276,7 @@ class ProcessManager:
                 self.pool.terminate()
                 self.pool.join()
                 self.pool = None
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 ff_logging.log_failure(f"Error stopping pool: {e}")
 
         # Use configured timeout if none provided
@@ -296,7 +296,7 @@ class ProcessManager:
                     process_info.process.terminate()
                     process_info.state = ProcessState.STOPPING
                     processes_to_stop.append((name, process_info))
-                except Exception as e:
+                except OSError as e:
                     ff_logging.log_failure(f"Error terminating process '{name}': {e}")
             elif not process_info.is_alive():
                 process_info.state = ProcessState.STOPPED
@@ -325,7 +325,7 @@ class ProcessManager:
                     process_info.process.join(1)  # Brief wait for kill
                 process_info.state = ProcessState.FAILED
                 success = False
-            except Exception as e:
+            except OSError as e:
                 ff_logging.log_failure(f"Error force killing '{name}': {e}")
                 success = False
 
@@ -354,7 +354,7 @@ class ProcessManager:
 
         return False
 
-    def wait_for_all(self, timeout: Optional[float] = None) -> bool:
+    def wait_for_all(self, timeout: float | None = None) -> bool:
         """
         Wait for all managed processes to complete or shutdown signal.
         """
@@ -389,7 +389,7 @@ class ProcessManager:
             # Use shutdown event wait for immediate wakeup on shutdown
             self._shutdown_event.wait(0.5)
 
-    def get_status(self) -> Dict[str, Dict[str, Any]]:
+    def get_status(self) -> dict[str, dict[str, Any]]:
         """
         Get status of all managed processes.
         """
@@ -510,7 +510,7 @@ class ProcessManager:
         self._signal_handlers_set = True
         ff_logging.log_debug("Signal handlers configured")
 
-    def create_worker_pool(self, worker_count: Optional[int] = None):
+    def create_worker_pool(self, worker_count: int | None = None):
         """
         Create a worker pool for CPU-bound tasks.
         """
@@ -525,7 +525,7 @@ class ProcessManager:
             ff_logging.log_debug(f"Created worker pool with {worker_count} workers")
             return self.pool
 
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             ff_logging.log_failure(f"Failed to create worker pool: {e}")
             raise
 

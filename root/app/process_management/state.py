@@ -9,7 +9,7 @@ import multiprocessing as mp
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable
 
 
 class ProcessState(Enum):
@@ -60,15 +60,15 @@ class ProcessInfo:
     """
 
     name: str
-    process: Optional[mp.Process] = None
-    target: Optional[Callable] = None
-    args: Tuple = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    process: mp.Process | None = None
+    target: Callable | None = None
+    args: tuple = field(default_factory=tuple)
+    kwargs: dict[str, Any] = field(default_factory=dict)
     state: ProcessState = ProcessState.STOPPED
-    start_time: Optional[float] = None
-    last_health_check: Optional[float] = None
+    start_time: float | None = None
+    last_health_check: float | None = None
     restart_count: int = 0
-    pid: Optional[int] = None
+    pid: int | None = None
 
     def is_alive(self) -> bool:
         """
@@ -79,7 +79,7 @@ class ProcessInfo:
         """
         return self.process is not None and self.process.is_alive()
 
-    def get_uptime(self) -> Optional[float]:
+    def get_uptime(self) -> float | None:
         """
         Calculate the current uptime of the process in seconds.
 

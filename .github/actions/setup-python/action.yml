@@ -4,7 +4,7 @@ inputs:
   python-version:
     description: "Python version"
     required: false
-    default: "3.12"
+    default: "3.14"
   install-fanficfare:
     description: "Whether to install FanFicFare from PyPI/TestPyPI"
     required: false

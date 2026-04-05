@@ -621,19 +621,21 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_calibre.return_value = mock_calibre_instance
 
         # Mock worker functions to be fast and simple
-        # Mock worker functions to be fast and simple
         with patch("services.url_ingester.email_watcher", _global_mock_worker):
             with patch("services.ff_waiter.wait_processor", _global_mock_worker):
                 with patch("workers.pipeline.url_worker", _global_mock_worker):
                     with patch(
                         "process_management.ProcessManager.wait_for_all"
-                    ) as mock_wait:
+                    ) as mock_wait, patch(
+                        "process_management.ProcessManager.start_all"
+                    ) as mock_start:
                         mock_wait.return_value = True
 
                         try:
                             # This should complete without hanging
                             fanficdownload.main()
-                            # Verify wait_for_all was called
+                            # Verify processes were registered and started
+                            mock_start.assert_called()
                             mock_wait.assert_called()
                         except SystemExit:
                             # main() might call sys.exit(), which is normal

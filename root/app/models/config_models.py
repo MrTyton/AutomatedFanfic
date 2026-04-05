@@ -32,7 +32,7 @@ scenarios with comprehensive validation to prevent runtime configuration errors.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Literal
+from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import tomllib
@@ -146,7 +146,7 @@ class EmailConfig(BaseModel):
     sleep_time: int = Field(
         default=60, ge=1, description="Sleep time between checks in seconds"
     )
-    disabled_sites: List[str] = Field(
+    disabled_sites: list[str] = Field(
         default_factory=list,
         description="List of site identifiers to disable processing for (notification only)",
     )
@@ -251,12 +251,12 @@ class CalibreConfig(BaseModel):
     """
 
     path: str = Field(default="", description="Path to Calibre library or server URL")
-    username: Optional[str] = Field(default=None, description="Calibre username")
-    password: Optional[str] = Field(default=None, description="Calibre password")
-    default_ini: Optional[str] = Field(
+    username: str | None = Field(default=None, description="Calibre username")
+    password: str | None = Field(default=None, description="Calibre password")
+    default_ini: str | None = Field(
         default=None, description="Path to defaults.ini file"
     )
-    personal_ini: Optional[str] = Field(
+    personal_ini: str | None = Field(
         default=None, description="Path to personal.ini file"
     )
     update_method: Literal[
@@ -361,8 +361,8 @@ class PushbulletConfig(BaseModel):
     """
 
     enabled: bool = Field(default=False, description="Enable Pushbullet notifications")
-    api_key: Optional[str] = Field(default=None, description="Pushbullet API key")
-    device: Optional[str] = Field(default=None, description="Target device name")
+    api_key: str | None = Field(default=None, description="Pushbullet API key")
+    device: str | None = Field(default=None, description="Target device name")
 
     @model_validator(mode="after")
     def validate_pushbullet(self):
@@ -400,7 +400,7 @@ class AppriseConfig(BaseModel):
         strings are automatically filtered out during validation.
     """
 
-    urls: List[str] = Field(
+    urls: list[str] = Field(
         default_factory=list, description="List of Apprise notification URLs"
     )
 
@@ -539,7 +539,7 @@ class ProcessConfig(BaseModel):
     )
 
     # Worker process settings
-    worker_timeout: Optional[float] = Field(
+    worker_timeout: float | None = Field(
         default=None,
         ge=30.0,
         description="Timeout in seconds for individual worker operations",
@@ -655,11 +655,11 @@ class ConfigManager:
         different working directories and relative path references.
     """
 
-    _cache: Dict[str, AppConfig] = {}
+    _cache: dict[str, AppConfig] = {}
 
     @classmethod
     def load_config(
-        cls, config_path: Union[str, Path], force_reload: bool = False
+        cls, config_path: str | Path, force_reload: bool = False
     ) -> AppConfig:
         """Loads and validates configuration from a TOML file with caching.
 
@@ -756,7 +756,7 @@ class ConfigManager:
         cls._cache.clear()
 
     @classmethod
-    def get_cached_config(cls, config_path: Union[str, Path]) -> Optional[AppConfig]:
+    def get_cached_config(cls, config_path: str | Path) -> AppConfig | None:
         """Retrieves a cached configuration without loading from disk.
 
         Looks up a previously loaded configuration in the cache without
@@ -780,7 +780,7 @@ class ConfigManager:
 
 
 # Helper functions for global configuration access
-def get_config(config_path: Union[str, Path]) -> Optional[AppConfig]:
+def get_config(config_path: str | Path) -> AppConfig | None:
     """Retrieves configuration from cache without loading from disk.
 
     This convenience function provides a simple interface to check if a
@@ -802,7 +802,7 @@ def get_config(config_path: Union[str, Path]) -> Optional[AppConfig]:
     return ConfigManager.get_cached_config(config_path)
 
 
-def load_config(config_path: Union[str, Path]) -> AppConfig:
+def load_config(config_path: str | Path) -> AppConfig:
     """Loads configuration from file with caching and validation.
 
     This convenience function provides a simple interface to load configuration

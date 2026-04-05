@@ -22,6 +22,7 @@ and configuration consistency across all worker processes.
 """
 
 import os
+from pathlib import Path
 from subprocess import call
 import shutil
 from utils import ff_logging  # Custom logging module for failure logging
@@ -117,7 +118,7 @@ class CalibreInfo:
         ini_file = self._append_filename(config_path, default_filename)
 
         # Verify the file exists before returning the path
-        if ini_file and not os.path.isfile(ini_file):
+        if ini_file and not Path(ini_file).is_file():
             ff_logging.log_failure(f"File {ini_file} does not exist.")
             return ""
         return ini_file
@@ -148,7 +149,7 @@ class CalibreInfo:
         # Check if filename is already at the end of the path
         if not path.endswith(filename):
             # Safely join path and filename using os.path.join
-            return os.path.join(path, filename)
+            return str(Path(path) / filename)
 
         # Return original path if filename already present
         return path
@@ -175,7 +176,7 @@ class CalibreInfo:
                 # Attempt to call calibredb with no arguments to test availability
                 call(["calibredb"], stdout=nullout, stderr=nullout)
             return True
-        except (OSError, Exception) as e:
+        except OSError as e:
             # Log the specific error for debugging purposes
             ff_logging.log_failure(f"Error checking Calibre installation: {e}")
             return False
@@ -231,16 +232,16 @@ class CalibreInfo:
             shutil.SameFileError: If source and destination are the same file.
         """
         # Copy default configuration if it exists
-        if self.default_ini and os.path.isfile(self.default_ini):
-            path = os.path.join(temp_dir, "defaults.ini")
+        if self.default_ini and Path(self.default_ini).is_file():
+            path = str(Path(temp_dir) / "defaults.ini")
             shutil.copyfile(self.default_ini, path)
             ff_logging.log_debug(f"\tCopied defaults.ini to {path}")
         else:
             ff_logging.log_debug("\tNo defaults.ini found to copy")
 
         # Copy personal configuration if it exists
-        if self.personal_ini and os.path.isfile(self.personal_ini):
-            path = os.path.join(temp_dir, "personal.ini")
+        if self.personal_ini and Path(self.personal_ini).is_file():
+            path = str(Path(temp_dir) / "personal.ini")
             shutil.copyfile(self.personal_ini, path)
             ff_logging.log_debug(f"\tCopied personal.ini to {path}")
         else:

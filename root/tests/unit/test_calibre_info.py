@@ -38,7 +38,7 @@ class TestCalibreInfo(unittest.TestCase):
     )
     @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
-    @patch("os.path.isfile")
+    @patch("pathlib.Path.is_file")
     def test_calibre_info_init_success(
         self,
         name,
@@ -145,7 +145,7 @@ class TestCalibreInfo(unittest.TestCase):
     )
     @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
-    @patch("os.path.isfile")
+    @patch("pathlib.Path.is_file")
     def test_str_representation(
         self,
         name,
@@ -217,7 +217,7 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
 
     @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
-    @patch("os.path.isfile")
+    @patch("pathlib.Path.is_file")
     def test_missing_default_ini_file(
         self, mock_isfile, mock_manager, mock_load_config
     ):
@@ -233,11 +233,8 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
         mock_load_config.return_value = mock_config
         mock_manager.return_value = MagicMock()
 
-        # Only the default_ini file doesn't exist
-        def isfile_side_effect(path):
-            return not path.endswith("defaults.ini")
-
-        mock_isfile.side_effect = isfile_side_effect
+        # default_ini path doesn't exist (personal_ini is None so is_file won't be called for it)
+        mock_isfile.return_value = False
 
         calibre_info = CalibreInfo("test.toml", mock_manager())
 
@@ -246,7 +243,7 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
 
     @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
-    @patch("os.path.isfile")
+    @patch("pathlib.Path.is_file")
     def test_missing_personal_ini_file(
         self, mock_isfile, mock_manager, mock_load_config
     ):
@@ -262,11 +259,8 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
         mock_load_config.return_value = mock_config
         mock_manager.return_value = MagicMock()
 
-        # Only the personal_ini file doesn't exist
-        def isfile_side_effect(path):
-            return not path.endswith("personal.ini")
-
-        mock_isfile.side_effect = isfile_side_effect
+        # personal_ini path doesn't exist (default_ini is None so is_file won't be called for it)
+        mock_isfile.return_value = False
 
         calibre_info = CalibreInfo("test.toml", mock_manager())
 
@@ -275,7 +269,7 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
 
     @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
-    @patch("os.path.isfile")
+    @patch("pathlib.Path.is_file")
     @patch("shutil.copyfile")
     @patch("utils.ff_logging.log_debug")
     def test_copy_configs_to_temp_dir_missing_files(

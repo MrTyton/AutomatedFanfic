@@ -21,7 +21,7 @@ Architecture Note:
 import multiprocessing as mp
 import collections
 from dataclasses import dataclass, field
-from typing import Dict, Set, Optional, Tuple
+
 from queue import Empty
 from enum import Enum
 from utils import ff_logging
@@ -42,10 +42,10 @@ class WorkerSignal:
 
     signal_type: SignalType
     worker_id: str
-    site: Optional[str] = None
+    site: str | None = None
 
     @classmethod
-    def from_tuple(cls, signal_tuple: Tuple) -> Optional["WorkerSignal"]:
+    def from_tuple(cls, signal_tuple: tuple) -> "WorkerSignal | None":
         """Create WorkerSignal from legacy tuple format for backward compatibility."""
         if not isinstance(signal_tuple, tuple) or len(signal_tuple) < 2:
             return None
@@ -68,11 +68,11 @@ class CoordinatorState:
     state management and easier testing.
     """
 
-    backlog: Dict[str, collections.deque] = field(
+    backlog: dict[str, collections.deque] = field(
         default_factory=lambda: collections.defaultdict(collections.deque)
     )
-    assignments: Dict[str, str] = field(default_factory=dict)
-    idle_workers: Set[str] = field(default_factory=set)
+    assignments: dict[str, str] = field(default_factory=dict)
+    idle_workers: set[str] = field(default_factory=set)
     qsize_supported: bool = True  # Cache whether queue.qsize() is supported
 
 
@@ -80,8 +80,8 @@ class Coordinator:
     def __init__(
         self,
         ingress_queue: mp.Queue,
-        worker_queues: Dict[str, mp.Queue],
-        shutdown_event: Optional[threading.Event] = None,
+        worker_queues: dict[str, mp.Queue],
+        shutdown_event: threading.Event | None = None,
     ):
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
@@ -168,7 +168,7 @@ class Coordinator:
         except Empty:
             # Timeout reached, just return so main loop can check running state
             pass
-        except Exception as e:
+        except OSError as e:
             ff_logging.log_failure(f"Coordinator: Error processing ingress: {e}")
 
     def _handle_new_task(self, task: FanficInfo):
@@ -206,7 +206,7 @@ class Coordinator:
                 return "Queue Pos: Unknown"
         return "Queue Pos: Unknown"
 
-    def _handle_worker_idle(self, worker_id: str, finished_site: Optional[str]):
+    def _handle_worker_idle(self, worker_id: str, finished_site: str | None):
         """Handle worker reporting idle status."""
         # Mark worker as idle
         self.state.idle_workers.add(worker_id)
@@ -228,7 +228,7 @@ class Coordinator:
         # Try to give this worker (and others) new work
         self._assign_work_if_possible()
 
-    def _find_unassigned_site(self) -> Optional[str]:
+    def _find_unassigned_site(self) -> str | None:
         """Find a site in backlog that is not currently assigned to any worker."""
         for site in self.state.backlog:
             if site not in self.state.assignments and self.state.backlog[site]:
@@ -315,9 +315,9 @@ class Coordinator:
 
 def start_coordinator(
     ingress_queue: mp.Queue,
-    worker_queues: Dict[str, mp.Queue],
+    worker_queues: dict[str, mp.Queue],
     verbose: bool = False,
-    shutdown_event: Optional[threading.Event] = None,
+    shutdown_event: threading.Event | None = None,
 ):
     """Entry point for the coordinator process."""
     # Initialize logging for this process

@@ -144,7 +144,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
     @patch("services.coordinator.ff_logging")
     def test_ingress_queue_exception(self, mock_logging):
         """Test exception handling during queue get."""
-        self.mock_ingress.get.side_effect = Exception("Queue Error")
+        self.mock_ingress.get.side_effect = OSError("Queue Error")
 
         self.coordinator._process_single_ingress_item(timeout=1.0)
 

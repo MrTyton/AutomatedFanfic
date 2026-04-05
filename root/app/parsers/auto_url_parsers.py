@@ -35,10 +35,9 @@ Example:
 import re
 import fanficfare.adapters as adapters
 from urllib.parse import urlparse
-from typing import Dict, Tuple
 
 
-def generate_url_parsers_from_fanficfare() -> Dict[str, Tuple[re.Pattern, str]]:
+def generate_url_parsers_from_fanficfare() -> dict[str, tuple[re.Pattern, str]]:
     """Generates URL parsers dictionary from FanFicFare adapters automatically.
 
     Extracts site examples from FanFicFare adapters and creates regex patterns
@@ -104,7 +103,7 @@ def generate_url_parsers_from_fanficfare() -> Dict[str, Tuple[re.Pattern, str]]:
     return url_parsers
 
 
-def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> Tuple[str, str]:
+def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> tuple[str, str]:
     """Generates regex pattern and URL prefix for a given domain and path structure.
 
     Creates a regex pattern that can match story URLs from a specific fanfiction

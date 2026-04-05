@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "automatedfanfic"
 version = "0.1.0"
 description = "Automated Fanfic Downloader"
-requires-python = ">=3.9"
+requires-python = ">=3.13"
 
 [tool.setuptools.packages.find]
 where = ["root/app"]
@@ -21,7 +21,6 @@ addopts = [
     "--tb=short",
     "--strict-markers",
     "--strict-config",
-    "--disable-warnings"
 ]
 markers = [
     "unit: Unit tests",

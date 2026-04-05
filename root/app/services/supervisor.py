@@ -11,20 +11,20 @@ import threading
 import signal
 import time
 import multiprocessing as mp
-from typing import Dict, Any
+from typing import Any
 
 from utils import ff_logging
 from services import url_ingester, ff_waiter, coordinator
 
 
 def run_supervisor(
-    worker_queues: Dict[str, mp.Queue],
+    worker_queues: dict[str, mp.Queue],
     ingress_queue: mp.Queue,
     waiting_queue: mp.Queue,
     email_info: url_ingester.EmailInfo,
     notification_info: Any,
-    url_parsers: Dict,
-    active_urls: Dict,
+    url_parsers: dict,
+    active_urls: dict,
     verbose: bool = False,
 ):
     """

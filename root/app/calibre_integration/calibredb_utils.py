@@ -8,8 +8,15 @@ and multiprocessing-safe locking mechanisms.
 
 import json
 import re
-from subprocess import check_output, call, PIPE, DEVNULL
-from typing import Optional, List, Any, Dict
+from subprocess import (
+    check_output,
+    call,
+    PIPE,
+    DEVNULL,
+    CalledProcessError,
+    TimeoutExpired,
+)
+from typing import Any
 
 from . import calibre_info
 from models import fanfic_info
@@ -56,14 +63,14 @@ class CalibreDBClient:
                 return output  # Return full output if pattern not found
             return output
 
-        except Exception as e:
+        except (CalledProcessError, OSError, TimeoutExpired) as e:
             return f"Error: {e}"
 
     def _execute_command(
         self,
         command_args: str,
-        fanfic: Optional[fanfic_info.FanficInfo] = None,
-        timeout: Optional[int] = None,
+        fanfic: fanfic_info.FanficInfo | None = None,
+        timeout: int | None = None,
     ) -> None:
         """Execute a calibredb command with locking and error logging.
 
@@ -92,14 +99,14 @@ class CalibreDBClient:
                     stderr=DEVNULL,
                     timeout=timeout,
                 )
-        except Exception as e:
+        except (OSError, TimeoutExpired) as e:
             ff_logging.log_failure(f'\tCommand "{command_args} {id_str}" failed: {e}')
 
     def _execute_command_with_output(
         self,
         command_args: str,
-        fanfic: Optional[fanfic_info.FanficInfo] = None,
-        timeout: Optional[int] = None,
+        fanfic: fanfic_info.FanficInfo | None = None,
+        timeout: int | None = None,
     ) -> str:
         """Execute a calibredb command and return its output.
 
@@ -124,7 +131,7 @@ class CalibreDBClient:
             ).decode("utf-8")
         return output
 
-    def get_story_id(self, fanfic: fanfic_info.FanficInfo) -> Optional[str]:
+    def get_story_id(self, fanfic: fanfic_info.FanficInfo) -> str | None:
         """Check if a story exists in Calibre and return its ID.
 
         Args:
@@ -151,7 +158,7 @@ class CalibreDBClient:
             ff_logging.log(f"\t({fanfic.site}) Story not in Calibre")
             return None
 
-        except Exception as e:
+        except (CalledProcessError, OSError) as e:
             ff_logging.log(f"\t({fanfic.site}) Story not in Calibre")
             ff_logging.log_debug(f"\tError checking story ID: {e}")
             return None
@@ -194,7 +201,7 @@ class CalibreDBClient:
                     f"\t({fanfic.site}) Could not parse ID from add output: {output.strip()}"
                 )
 
-        except Exception as e:
+        except (CalledProcessError, OSError) as e:
             ff_logging.log_failure(f"\t({fanfic.site}) Failed to add story: {e}")
 
     def remove_story(self, fanfic: fanfic_info.FanficInfo) -> None:
@@ -277,13 +284,13 @@ class CalibreDBClient:
 
             ff_logging.log(f"\t({fanfic.site}) Successfully replaced EPUB format")
             return True
-        except Exception as e:
+        except (OSError, TimeoutExpired) as e:
             ff_logging.log_failure(
                 f"\t({fanfic.site}) Failed to replace EPUB format: {e}"
             )
             return False
 
-    def get_metadata(self, fanfic: fanfic_info.FanficInfo) -> Dict[str, Any]:
+    def get_metadata(self, fanfic: fanfic_info.FanficInfo) -> dict[str, Any]:
         """Get all metadata for a story.
 
         Args:
@@ -317,7 +324,7 @@ class CalibreDBClient:
                 )
                 return {}
 
-        except Exception as e:
+        except (CalledProcessError, OSError, json.JSONDecodeError) as e:
             ff_logging.log_failure(
                 f"\tFailed to retrieve metadata for ID {fanfic.calibre_id}: {e}"
             )
@@ -326,8 +333,8 @@ class CalibreDBClient:
     def set_metadata_fields(
         self,
         fanfic: fanfic_info.FanficInfo,
-        metadata: Dict[str, Any],
-        fields_to_restore: Optional[List[str]] = None,
+        metadata: dict[str, Any],
+        fields_to_restore: list[str] | None = None,
     ) -> None:
         """Restore custom metadata fields.
 
@@ -381,7 +388,7 @@ class CalibreDBClient:
                 self._execute_command(command, fanfic)
 
                 restored_count += 1
-            except Exception as e:
+            except (OSError, TimeoutExpired) as e:
                 ff_logging.log_failure(f"\t  Failed to restore field {field_name}: {e}")
 
         ff_logging.log_debug(
@@ -391,8 +398,8 @@ class CalibreDBClient:
     def log_metadata_comparison(
         self,
         fanfic: fanfic_info.FanficInfo,
-        old_metadata: Dict[str, Any],
-        new_metadata: Dict[str, Any],
+        old_metadata: dict[str, Any],
+        new_metadata: dict[str, Any],
     ) -> None:
         """Log comparison of metadata (helper method)."""
         # This logic is pure calculation/logging, so it fits here as a utility method on the client
@@ -430,7 +437,7 @@ class CalibreDBClient:
             for field in new_fields:
                 ff_logging.log_debug(f"\t    + {field}")
 
-    def _find_epub_in_directory(self, location: str) -> Optional[str]:
+    def _find_epub_in_directory(self, location: str) -> str | None:
         """Helper to find first EPUB in directory."""
         epub_files = system_utils.get_files(
             location, file_extension="epub", return_full_path=True

@@ -608,7 +608,7 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
         original_process = process_info.process
         process_info.process = Mock()
         process_info.process.is_alive.return_value = True
-        process_info.process.terminate.side_effect = RuntimeError("Terminate failed")
+        process_info.process.terminate.side_effect = OSError("Terminate failed")
 
         result = self.manager.stop_process("test")
         self.assertFalse(result)
@@ -997,7 +997,7 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
 
     def test_stop_process_timeout_behavior(self):
         """Test stop_process with custom timeout."""
-        stop_event = threading.Event()
+        stop_event = mp.Event()
 
         # Register process that runs indefinitely
         self.manager.register_process(
