@@ -85,7 +85,7 @@ export default function Dashboard({ data }: Props) {
 
     // Recent completed downloads (separate feed, not diluted by other events)
     const recentDownloads = (data.recent_downloads as RecentEvent[])
-        .filter(e => e.status !== 'pending')
+        .filter(e => e.status !== 'pending' && e.status !== 'waiting')
 
     // Build activity feed from separate activity events + download events
     const downloadActivity = (data.recent_downloads as RecentEvent[])
@@ -114,7 +114,7 @@ export default function Dashboard({ data }: Props) {
                 </div>
                 <div className="card">
                     <h2>Waiting Queue</h2>
-                    <div className="stat">{waitingDepth}</div>
+                    <div className="stat">{data.waiting_downloads ?? waitingDepth}</div>
                 </div>
             </div>
 

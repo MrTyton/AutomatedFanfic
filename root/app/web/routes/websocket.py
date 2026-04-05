@@ -77,9 +77,14 @@ async def _build_snapshot(state: Any) -> dict:
             )
         except Exception:
             snapshot["recent_activity"] = []
+        try:
+            snapshot["waiting_downloads"] = await state.history_db.get_waiting_count()
+        except Exception:
+            snapshot["waiting_downloads"] = 0
     else:
         snapshot["recent_downloads"] = []
         snapshot["recent_activity"] = []
+        snapshot["waiting_downloads"] = 0
 
     return snapshot
 

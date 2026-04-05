@@ -239,6 +239,17 @@ class SyncHistoryDB:
                WHERE url = ? AND attempt_number = ? AND fired_at IS NULL""",
             (_dt_to_str(fired_at), url, attempt_number),
         )
+        # Reset download status back to pending now that it's re-entering the pipeline
+        self._conn.execute(
+            """UPDATE download_events
+               SET status = 'pending', completed_at = NULL
+               WHERE id = (
+                   SELECT id FROM download_events
+                   WHERE url = ? AND status = 'waiting'
+                   ORDER BY started_at DESC LIMIT 1
+               )""",
+            (url,),
+        )
         self._conn.commit()
 
     def insert_email_check(self, event: EmailCheckEvent) -> int:
@@ -470,6 +481,18 @@ class AsyncHistoryDB:
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
+        finally:
+            await conn.close()
+
+    async def get_waiting_count(self) -> int:
+        """Count downloads currently in 'waiting' status (retry backoff)."""
+        conn = await self._get_conn()
+        try:
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM download_events WHERE status = 'waiting'"
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else 0
         finally:
             await conn.close()
 
