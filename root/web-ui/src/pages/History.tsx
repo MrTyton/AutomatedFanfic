@@ -1,21 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getDownloads, getEmails, getNotifications, type DownloadRow, type EmailRow, type NotificationRow } from '../api'
 
 export default function History() {
     const [tab, setTab] = useState<'downloads' | 'emails' | 'notifications'>('downloads')
     const [page, setPage] = useState(1)
 
-    // Downloads
     const [downloads, setDownloads] = useState<DownloadRow[]>([])
     const [downloadTotal, setDownloadTotal] = useState(0)
-
-    // Emails
     const [emails, setEmails] = useState<EmailRow[]>([])
-
-    // Notifications
     const [notifications, setNotifications] = useState<NotificationRow[]>([])
 
-    useEffect(() => {
+    const fetchData = useCallback(() => {
         if (tab === 'downloads') {
             getDownloads(page).then(d => { setDownloads(d.items); setDownloadTotal(d.total) }).catch(() => { })
         } else if (tab === 'emails') {
@@ -24,6 +19,13 @@ export default function History() {
             getNotifications(page).then(d => setNotifications(d.items)).catch(() => { })
         }
     }, [page, tab])
+
+    // Initial fetch + auto-refresh every 10s
+    useEffect(() => {
+        fetchData()
+        const interval = setInterval(fetchData, 10000)
+        return () => clearInterval(interval)
+    }, [fetchData])
 
     return (
         <>
@@ -46,29 +48,33 @@ export default function History() {
                     <table>
                         <thead>
                             <tr>
-                                <th>URL</th>
+                                <th>Status</th>
                                 <th>Site</th>
                                 <th>Title</th>
-                                <th>Status</th>
+                                <th>URL</th>
+                                <th>Story ID</th>
                                 <th>Started</th>
+                                <th>Completed</th>
                             </tr>
                         </thead>
                         <tbody>
                             {downloads.length === 0 ? (
-                                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads recorded yet</td></tr>
+                                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads recorded yet</td></tr>
                             ) : downloads.map((r, i) => (
                                 <tr key={i}>
-                                    <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        <a href={r.url} target="_blank" rel="noreferrer">{r.url}</a>
-                                    </td>
-                                    <td>{r.site}</td>
-                                    <td>{r.title ?? '—'}</td>
                                     <td>
                                         <span className={`badge ${r.status === 'success' ? 'badge-success' : r.status === 'failed' ? 'badge-error' : 'badge-warning'}`}>
                                             {r.status}
                                         </span>
                                     </td>
-                                    <td>{new Date(r.started_at).toLocaleString()}</td>
+                                    <td>{r.site}</td>
+                                    <td>{r.title ?? '—'}</td>
+                                    <td style={{ maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <a href={r.url.startsWith('http') ? r.url : `https://${r.url}`} target="_blank" rel="noreferrer">{r.url}</a>
+                                    </td>
+                                    <td>{r.calibre_id ?? '—'}</td>
+                                    <td style={{ fontSize: '0.85rem' }}>{new Date(r.started_at).toLocaleString()}</td>
+                                    <td style={{ fontSize: '0.85rem' }}>{r.completed_at ? new Date(r.completed_at).toLocaleString() : '—'}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -119,17 +125,19 @@ export default function History() {
                             <tr>
                                 <th>Sent At</th>
                                 <th>Title</th>
+                                <th>Body</th>
                                 <th>Site</th>
                                 <th>Provider</th>
                             </tr>
                         </thead>
                         <tbody>
                             {notifications.length === 0 ? (
-                                <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No notifications recorded yet</td></tr>
+                                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No notifications recorded yet</td></tr>
                             ) : notifications.map(n => (
                                 <tr key={n.id}>
                                     <td>{new Date(n.sent_at).toLocaleString()}</td>
                                     <td>{n.title}</td>
+                                    <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.body}</td>
                                     <td>{n.site ?? '—'}</td>
                                     <td>{n.provider ?? '—'}</td>
                                 </tr>

@@ -12,21 +12,26 @@ interface RecentEvent {
     site?: string
     title?: string
     status?: string
+    calibre_id?: string
+    completed_at?: string
     action?: string
     attempt_number?: number
     timestamp?: string
+    body?: string
+    provider?: string
 }
 
 function extractSite(url: string): string {
     try {
-        const host = new URL(url).hostname.replace('www.', '')
+        const u = url.startsWith('http') ? url : `https://${url}`
+        const host = new URL(u).hostname.replace('www.', '')
         return host.split('.')[0]
     } catch {
         return '—'
     }
 }
 
-function formatEvent(evt: RecentEvent): { icon: string; text: string; time: string } {
+function formatEvent(evt: RecentEvent): { icon: string; text: string; time: string } | null {
     const time = evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : ''
 
     if (evt.event_type === 'download') {
@@ -34,14 +39,17 @@ function formatEvent(evt: RecentEvent): { icon: string; text: string; time: stri
         const site = evt.site || '—'
         if (evt.status === 'success') return { icon: '✓', text: `(${site}) ${title}`, time }
         if (evt.status === 'failed') return { icon: '✗', text: `(${site}) Failed: ${title}`, time }
-        return { icon: '↓', text: `(${site}) Processing ${title}`, time }
+        if (evt.status === 'pending') return { icon: '↓', text: `(${site}) Processing ${evt.url || title}`, time }
+        return { icon: '↓', text: `(${site}) ${title}`, time }
     }
     if (evt.event_type === 'retry') {
         const site = evt.site || '—'
         return { icon: '↻', text: `(${site}) Retry #${evt.attempt_number ?? '?'} — ${evt.action ?? 'requeue'}`, time }
     }
-    // Skip email_check events — not useful in the feed
-    return { icon: '', text: '', time: '' }
+    if (evt.event_type === 'notification') {
+        return { icon: '🔔', text: `${evt.title}: ${evt.body || ''}`, time }
+    }
+    return null
 }
 
 export default function Dashboard({ data }: Props) {
@@ -69,14 +77,20 @@ export default function Dashboard({ data }: Props) {
 
     if (!data) return <p>Waiting for data…</p>
 
+    const activeUrls = data.active_downloads.items
     const activeCount = data.active_downloads.count
     const ingressDepth = typeof data.queues.ingress === 'number' ? data.queues.ingress : 0
     const waitingDepth = typeof data.queues.waiting === 'number' ? data.queues.waiting : 0
 
-    // Filter recent events to only meaningful ones (downloads, retries)
-    const meaningfulEvents = (data.recent_events as RecentEvent[])
+    // Build combined download rows: active items + recent download events
+    const recentDownloads = (data.recent_events as RecentEvent[])
+        .filter(e => e.event_type === 'download' && e.status !== 'pending')
+
+    // Build activity feed (non-download events: retries, notifications)
+    const activityEvents = (data.recent_events as RecentEvent[])
         .map(formatEvent)
-        .filter(e => e.text !== '')
+        .filter((e): e is { icon: string; text: string; time: string } =>
+            e !== null && e.text !== '')
 
     return (
         <>
@@ -124,36 +138,77 @@ export default function Dashboard({ data }: Props) {
                 )}
             </div>
 
-            {/* Currently Processing */}
-            {activeCount > 0 && (
-                <div className="card">
-                    <h2>Currently Processing</h2>
-                    <table>
-                        <thead><tr><th>Site</th><th>URL</th></tr></thead>
-                        <tbody>
-                            {data.active_downloads.items.map((url) => (
-                                <tr key={url}>
-                                    <td><span className="badge badge-warning">{extractSite(url)}</span></td>
-                                    <td>
-                                        <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer">
-                                            {url}
+            {/* Combined Downloads: Currently Processing + Recent Completed */}
+            <div className="card">
+                <h2>Downloads</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Site</th>
+                            <th>Title / URL</th>
+                            <th>Story ID</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {/* Active downloads first */}
+                        {activeUrls.map((url) => (
+                            <tr key={`active-${url}`}>
+                                <td><span className="badge badge-warning">processing</span></td>
+                                <td>{extractSite(url)}</td>
+                                <td>
+                                    <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer">
+                                        {url}
+                                    </a>
+                                </td>
+                                <td>—</td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>now</td>
+                            </tr>
+                        ))}
+                        {/* Recent completed downloads */}
+                        {recentDownloads.map((dl, i) => (
+                            <tr key={`dl-${i}`}>
+                                <td>
+                                    <span className={`badge ${dl.status === 'success' ? 'badge-success' : dl.status === 'failed' ? 'badge-error' : 'badge-warning'}`}>
+                                        {dl.status}
+                                    </span>
+                                </td>
+                                <td>{dl.site || extractSite(dl.url || '')}</td>
+                                <td>
+                                    {dl.title ? (
+                                        <><strong>{dl.title}</strong>{' '}
+                                            <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                {dl.url}
+                                            </a>
+                                        </>
+                                    ) : (
+                                        <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer">
+                                            {dl.url}
                                         </a>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                                    )}
+                                </td>
+                                <td>{dl.calibre_id ?? '—'}</td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
+                                </td>
+                            </tr>
+                        ))}
+                        {activeUrls.length === 0 && recentDownloads.length === 0 && (
+                            <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
 
-            {/* Recent Activity */}
-            {meaningfulEvents.length > 0 && (
+            {/* Recent Activity (retries, notifications, etc.) */}
+            {activityEvents.length > 0 && (
                 <div className="card">
                     <h2>Recent Activity</h2>
                     <table>
                         <thead><tr><th style={{ width: 30 }}></th><th>Event</th><th style={{ width: 90 }}>Time</th></tr></thead>
                         <tbody>
-                            {meaningfulEvents.map((evt, i) => (
+                            {activityEvents.map((evt, i) => (
                                 <tr key={i}>
                                     <td>{evt.icon}</td>
                                     <td>{evt.text}</td>

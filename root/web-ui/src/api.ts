@@ -14,6 +14,7 @@ export interface DownloadRow {
     url: string
     site: string
     title: string | null
+    calibre_id: string | null
     status: string
     error_message: string | null
     started_at: string
