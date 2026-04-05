@@ -554,6 +554,20 @@ class ProcessConfig(BaseModel):
     )
 
 
+class WebConfig(BaseModel):
+    """Configuration for the web dashboard server."""
+
+    enabled: bool = Field(default=True, description="Enable the web dashboard server")
+    host: str = Field(default="0.0.0.0", description="Host address for the web server")
+    port: int = Field(
+        default=8080, ge=1, le=65535, description="Port for the web server"
+    )
+    history_db_path: str = Field(
+        default="/data/history.db",
+        description="Path to the SQLite history database file",
+    )
+
+
 class AppConfig(BaseSettings):
     """Main application configuration container and validator.
 
@@ -589,6 +603,7 @@ class AppConfig(BaseSettings):
     apprise: AppriseConfig = Field(default_factory=AppriseConfig)
     retry: RetryConfig = Field(default_factory=RetryConfig)
     process: ProcessConfig = Field(default_factory=ProcessConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
 
     # Application settings
     version: str = Field(default="1.3.23", description="Application version")
