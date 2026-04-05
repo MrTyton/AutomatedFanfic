@@ -58,6 +58,11 @@ class TestFanficDownloadMain(unittest.TestCase):
         # Set up retry config
         self.mock_config.retry = MagicMock()
 
+        # Set up web config
+        self.mock_config.web = MagicMock()
+        self.mock_config.web.enabled = False
+        self.mock_config.web.history_db_path = "/data/history.db"
+
         # Set up top-level config
         self.mock_config.max_workers = 4
 
@@ -98,6 +103,9 @@ class TestFanficDownloadMain(unittest.TestCase):
         self.assertEqual(args.config, expected_config)
         self.assertEqual(args.verbose, expected_verbose)
 
+    @patch("fanficdownload.ConfigStore")
+    @patch("fanficdownload.HistoryWriter")
+    @patch("fanficdownload.HistoryRecorder")
     @patch("fanficdownload.ProcessManager")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.url_ingester.EmailInfo")
@@ -121,6 +129,9 @@ class TestFanficDownloadMain(unittest.TestCase):
         mock_email_info,
         mock_notification,
         mock_process_manager,
+        mock_history_recorder,
+        mock_history_writer,
+        mock_config_store,
     ):
         """Test successful main() execution path."""
         # Set up argument parsing
@@ -324,6 +335,9 @@ class TestFanficDownloadMain(unittest.TestCase):
         )
         mock_sys_exit.assert_called_once_with(1)
 
+    @patch("fanficdownload.ConfigStore")
+    @patch("fanficdownload.HistoryWriter")
+    @patch("fanficdownload.HistoryRecorder")
     @patch("fanficdownload.ProcessManager")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.url_ingester.EmailInfo")
@@ -347,6 +361,9 @@ class TestFanficDownloadMain(unittest.TestCase):
         mock_email_info,
         mock_notification,
         mock_process_manager,
+        mock_history_recorder,
+        mock_history_writer,
+        mock_config_store,
     ):
         """Test main() handles KeyboardInterrupt correctly."""
         # Set up argument parsing

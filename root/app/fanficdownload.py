@@ -46,6 +46,8 @@ from workers import pipeline as url_worker, pool_runner
 from models import config_models
 from models.config_models import ConfigError, ConfigValidationError
 from process_management import ProcessManager
+from history.recorder import HistoryRecorder, HistoryWriter
+from config.config_store import ConfigStore
 
 # Define the application version
 __version__ = "2.5.0"
@@ -225,6 +227,19 @@ def register_processes(
     email_info = url_ingester.EmailInfo(config.email)
     notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
 
+    # Initialize history recording infrastructure
+    history_queue = manager.Queue()
+    history_recorder = HistoryRecorder(history_queue)
+    history_db_path = config.web.history_db_path if config.web.enabled else None
+
+    # Start the HistoryWriter daemon thread (runs in main process)
+    history_writer = HistoryWriter(history_queue, history_db_path or "/data/history.db")
+    history_writer.start()
+
+    # Initialize ConfigStore for hot-reloadable settings
+    config_store = ConfigStore(manager.dict())
+    config_store.initialize_from_config(config)
+
     # Register Supervisor Process (Hosts Email, Waiter, Coordinator)
     process_manager.register_process(
         "supervisor",
@@ -238,6 +253,7 @@ def register_processes(
             url_parsers,
             active_urls,
             args.verbose,
+            history_recorder,
         ),
     )
 
@@ -253,8 +269,33 @@ def register_processes(
             config.retry,
             active_urls,
             args.verbose,
+            history_recorder,
         ),
     )
+
+    # Register web server process if enabled
+    if config.web.enabled:
+        from web import server as web_server
+
+        ff_logging.log(f"Web dashboard enabled on {config.web.host}:{config.web.port}")
+        process_manager.register_process(
+            "web_server",
+            web_server.run_web_server,
+            args=(
+                config.web.host,
+                config.web.port,
+                config.web.history_db_path,
+                active_urls,
+                ingress_queue,
+                worker_queues,
+                waiting_queue,
+                None,  # process_status_callable — not cross-process safe yet
+                config,
+                args.config,
+                config_store,
+                args.verbose,
+            ),
+        )
 
 
 def main() -> None:
