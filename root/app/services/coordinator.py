@@ -181,11 +181,11 @@ class Coordinator:
             queue = self.worker_queues[worker_id]
             queue.put(task)
 
-            pos_str = self._get_queue_position_string(queue)
-
-            ff_logging.log_debug(
-                f"Coordinator: Active assignment push: {task.url} to {worker_id} (Site: {site}, {pos_str})"
-            )
+            if ff_logging.is_verbose():
+                pos_str = self._get_queue_position_string(queue)
+                ff_logging.log_debug(
+                    f"Coordinator: Active assignment push: {task.url} to {worker_id} (Site: {site}, {pos_str})"
+                )
             return
 
         # 2. Site is not active. Add to backlog.
@@ -251,6 +251,9 @@ class Coordinator:
         self, site: str, worker_id: str, queue: mp.Queue, tasks_pushed: list
     ):
         """Log detailed information about the assignment."""
+        if not ff_logging.is_verbose():
+            return
+
         # Get final queue size to calculate positions
         if self.state.qsize_supported:
             try:

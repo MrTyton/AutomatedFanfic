@@ -1,116 +1,96 @@
 import multiprocessing as mp
-from typing import NamedTuple
+import threading
 import unittest
-from unittest.mock import patch, call
+from unittest.mock import patch
 
-
-from parameterized import parameterized
 
 from models import fanfic_info
 from services import ff_waiter
 from models import retry_types
 
 
-class TestProcessFanfic(unittest.TestCase):
-    """Test the process_fanfic function with pre-calculated retry decisions."""
+class TestLogRetryDecision(unittest.TestCase):
+    """Test the _log_retry_decision helper function."""
 
-    class ProcessFanficTestCase(NamedTuple):
-        action: retry_types.FailureAction
-        delay_minutes: float
-        expected_delay_seconds: int
-        expected_log_pattern: str
-        description: str
-
-    @parameterized.expand(
-        [
-            ProcessFanficTestCase(
-                action=retry_types.FailureAction.RETRY,
-                delay_minutes=5.0,
-                expected_delay_seconds=300,
-                expected_log_pattern="Waiting ~5.00 minutes for url in queue site (retry #2)",
-                description="Regular retry with 5 minute delay",
-            ),
-            ProcessFanficTestCase(
-                action=retry_types.FailureAction.RETRY,
-                delay_minutes=10.5,
-                expected_delay_seconds=630,
-                expected_log_pattern="Waiting ~10.50 minutes for url in queue site (retry #2)",
-                description="Regular retry with fractional delay",
-            ),
-            ProcessFanficTestCase(
-                action=retry_types.FailureAction.HAIL_MARY,
-                delay_minutes=720.0,
-                expected_delay_seconds=43200,
-                expected_log_pattern="Hail-Mary attempt: Waiting 720.0 minutes for url in queue site",
-                description="Hail-Mary with 12 hour delay",
-            ),
-        ]
-    )
     @patch("services.ff_waiter.ff_logging.log")
-    @patch("threading.Timer")
-    def test_process_fanfic_with_decisions(
-        self,
-        action,
-        delay_minutes,
-        expected_delay_seconds,
-        expected_log_pattern,
-        description,
-        mock_timer,
-        mock_log,
-    ):
-        """Test that process_fanfic correctly applies pre-calculated retry decisions."""
-        # Create fanfic with retry decision
-        fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=2)
-        fanfic.retry_decision = retry_types.RetryDecision(
-            action=action,
-            delay_minutes=delay_minutes,
+    def test_retry_action_logs_waiting(self, mock_log):
+        fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=3)
+        decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.RETRY,
+            delay_minutes=5.0,
             should_notify=False,
             notification_message="",
         )
 
-        ingress_queue = mp.Queue()
+        ff_waiter._log_retry_decision(fanfic, decision)
 
-        ff_waiter.process_fanfic(fanfic, ingress_queue)
-
-        # Verify the logging contains expected pattern
         mock_log.assert_called_once()
-        log_call_args = mock_log.call_args[0]
-        self.assertIn(expected_log_pattern, log_call_args[0])
-        self.assertEqual("WARNING", log_call_args[1])
-
-        # Verify the timer was called with the correct delay
-        mock_timer.assert_called_once_with(
-            expected_delay_seconds,
-            ff_waiter.insert_after_time,
-            args=(ingress_queue, fanfic),
-        )
-        mock_timer.return_value.start.assert_called_once()
+        self.assertIn("Waiting ~5.00 minutes", mock_log.call_args[0][0])
+        self.assertIn("retry #3", mock_log.call_args[0][0])
 
     @patch("services.ff_waiter.ff_logging.log")
-    @patch("threading.Timer")
-    def test_process_fanfic_with_no_decision(self, mock_timer, mock_log):
-        """Test that process_fanfic handles missing retry decision with fallback."""
+    def test_hail_mary_action_logs_hail_mary(self, mock_log):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
-        # No retry_decision set (None)
-
-        ingress_queue = mp.Queue()
-
-        ff_waiter.process_fanfic(fanfic, ingress_queue)
-
-        # Should log warning about missing decision and retry details
-        self.assertEqual(mock_log.call_count, 2)
-        first_log_call = mock_log.call_args_list[0]
-        self.assertIn("No retry decision found for url", first_log_call[0][0])
-        self.assertEqual("WARNING", first_log_call[0][1])
-
-        # Should use default 5 minute delay
-        mock_timer.assert_called_once_with(
-            300, ff_waiter.insert_after_time, args=(ingress_queue, fanfic)
+        decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.HAIL_MARY,
+            delay_minutes=720.0,
+            should_notify=False,
+            notification_message="",
         )
 
+        ff_waiter._log_retry_decision(fanfic, decision)
+
+        mock_log.assert_called_once()
+        self.assertIn("Hail-Mary attempt", mock_log.call_args[0][0])
+
     @patch("services.ff_waiter.ff_logging.log")
-    def test_process_fanfic_abandon_action(self, mock_log):
-        """Test that ABANDON action is handled correctly (should not schedule timer)."""
+    def test_abandon_action_logs_error(self, mock_log):
+        fanfic = fanfic_info.FanficInfo(site="site", url="url")
+        decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.ABANDON,
+            delay_minutes=0.0,
+            should_notify=False,
+            notification_message="",
+        )
+
+        ff_waiter._log_retry_decision(fanfic, decision)
+
+        mock_log.assert_called_once()
+        self.assertIn("Unexpected abandon action", mock_log.call_args[0][0])
+        self.assertEqual("ERROR", mock_log.call_args[0][1])
+
+
+class TestGetDelaySeconds(unittest.TestCase):
+    """Test the _get_delay_seconds helper function."""
+
+    @patch("services.ff_waiter.ff_logging.log")
+    def test_retry_returns_delay(self, mock_log):
+        fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=2)
+        fanfic.retry_decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.RETRY,
+            delay_minutes=5.0,
+            should_notify=False,
+            notification_message="",
+        )
+
+        delay = ff_waiter._get_delay_seconds(fanfic)
+        self.assertEqual(delay, 300)
+
+    @patch("services.ff_waiter.ff_logging.log")
+    def test_hail_mary_returns_delay(self, mock_log):
+        fanfic = fanfic_info.FanficInfo(site="site", url="url")
+        fanfic.retry_decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.HAIL_MARY,
+            delay_minutes=720.0,
+            should_notify=False,
+            notification_message="",
+        )
+
+        delay = ff_waiter._get_delay_seconds(fanfic)
+        self.assertEqual(delay, 43200)
+
+    @patch("services.ff_waiter.ff_logging.log")
+    def test_abandon_returns_none(self, mock_log):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
         fanfic.retry_decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.ABANDON,
@@ -119,98 +99,82 @@ class TestProcessFanfic(unittest.TestCase):
             notification_message="",
         )
 
-        ingress_queue = mp.Queue()
+        delay = ff_waiter._get_delay_seconds(fanfic)
+        self.assertIsNone(delay)
 
-        with patch("threading.Timer") as mock_timer:
-            ff_waiter.process_fanfic(fanfic, ingress_queue)
+    @patch("services.ff_waiter.ff_logging.log")
+    def test_no_decision_uses_fallback(self, mock_log):
+        fanfic = fanfic_info.FanficInfo(site="site", url="url")
+        # No retry_decision set (None)
 
-            # Should log error and not start timer
-            mock_log.assert_called_once()
-            log_call_args = mock_log.call_args[0]
-            self.assertIn(
-                "Unexpected abandon action in waiting queue", log_call_args[0]
-            )
-            self.assertEqual("ERROR", log_call_args[1])
+        delay = ff_waiter._get_delay_seconds(fanfic)
 
-            # Timer should not be called
-            mock_timer.assert_not_called()
+        self.assertEqual(delay, 300)  # 5 min default
+        # First log call should be the warning about missing decision
+        self.assertIn("No retry decision found", mock_log.call_args_list[0][0][0])
 
+    @patch("services.ff_waiter.ff_logging.log")
+    def test_fractional_delay(self, mock_log):
+        fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=1)
+        fanfic.retry_decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.RETRY,
+            delay_minutes=10.5,
+            should_notify=False,
+            notification_message="",
+        )
 
-class TestInsertAfterTime(unittest.TestCase):
-    """Test the insert_after_time function."""
-
-    def test_insert_after_time_queue_put(self):
-        """Test that insert_after_time correctly puts fanfic into queue."""
-        # Create a real queue to test actual functionality
-        queue = mp.Queue()
-        fanfic = fanfic_info.FanficInfo(site="test_site", url="test_url")
-
-        # Call the function
-        ff_waiter.insert_after_time(queue, fanfic)
-
-        # Verify the fanfic was put in the queue
-        retrieved_fanfic = queue.get(timeout=1)  # 1 second timeout
-        self.assertEqual(retrieved_fanfic, fanfic)
-        self.assertEqual(retrieved_fanfic.site, "test_site")
-        self.assertEqual(retrieved_fanfic.url, "test_url")
-
-    def test_insert_after_time_queue_empty_after_get(self):
-        """Test that queue is empty after getting the item."""
-        queue = mp.Queue()
-        fanfic = fanfic_info.FanficInfo(site="another_site", url="another_url")
-
-        ff_waiter.insert_after_time(queue, fanfic)
-
-        # Get the item
-        retrieved_fanfic = queue.get(timeout=1)
-        self.assertEqual(retrieved_fanfic, fanfic)
-
-        # Queue should now be empty
-        self.assertTrue(queue.empty())
+        delay = ff_waiter._get_delay_seconds(fanfic)
+        self.assertEqual(delay, 630)
 
 
 class TestWaitProcessor(unittest.TestCase):
-    """Test the wait_processor function."""
+    """Test the wait_processor function with heap-based scheduling."""
 
-    @patch("services.ff_waiter.process_fanfic")
-    def test_wait_processor_processes_fanfics(self, mock_process_fanfic):
-        """Test that wait_processor processes fanfics from the waiting queue."""
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_wait_processor_processes_fanfics(self, mock_get_delay):
+        """Test that wait_processor schedules items and requeues after delay."""
+        mock_get_delay.return_value = 0  # Zero delay = immediate requeue
+
         waiting_queue = mp.Queue()
         ingress_queue = mp.Queue()
 
-        # Add a fanfic and then poison pill to stop the loop
         fanfic = fanfic_info.FanficInfo(site="test_site", url="test_url")
+        fanfic.retry_decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.RETRY,
+            delay_minutes=0.0,
+            should_notify=False,
+            notification_message="",
+        )
         waiting_queue.put(fanfic)
-        waiting_queue.put(None)  # Poison pill to stop processing
+        waiting_queue.put(None)  # Poison pill
 
-        # Run the processor
         ff_waiter.wait_processor(ingress_queue, waiting_queue)
 
-        # Verify process_fanfic was called with the correct arguments
-        mock_process_fanfic.assert_called_once_with(fanfic, ingress_queue)
+        # Item should be requeued to ingress
+        result = ingress_queue.get(timeout=2)
+        self.assertEqual(result.url, "test_url")
 
-    @patch("services.ff_waiter.process_fanfic")
-    def test_wait_processor_poison_pill_shutdown(self, mock_process_fanfic):
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_wait_processor_poison_pill_shutdown(self, mock_get_delay):
         """Test that wait_processor stops when receiving None (poison pill)."""
         waiting_queue = mp.Queue()
         ingress_queue = mp.Queue()
 
-        # Add only poison pill - should stop immediately
         waiting_queue.put(None)
 
-        # Run the processor
         ff_waiter.wait_processor(ingress_queue, waiting_queue)
 
-        # Verify process_fanfic was never called
-        mock_process_fanfic.assert_not_called()
+        mock_get_delay.assert_not_called()
+        self.assertTrue(ingress_queue.empty())
 
-    @patch("services.ff_waiter.process_fanfic")
-    def test_wait_processor_multiple_fanfics(self, mock_process_fanfic):
-        """Test that wait_processor handles multiple fanfics before shutdown."""
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_wait_processor_multiple_fanfics_ordered(self, mock_get_delay):
+        """Test that multiple zero-delay items are all requeued."""
+        mock_get_delay.return_value = 0
+
         waiting_queue = mp.Queue()
         ingress_queue = mp.Queue()
 
-        # Add multiple fanfics and then poison pill
         fanfic1 = fanfic_info.FanficInfo(site="site1", url="url1")
         fanfic2 = fanfic_info.FanficInfo(site="site2", url="url2")
         fanfic3 = fanfic_info.FanficInfo(site="site1", url="url3")
@@ -218,18 +182,75 @@ class TestWaitProcessor(unittest.TestCase):
         waiting_queue.put(fanfic1)
         waiting_queue.put(fanfic2)
         waiting_queue.put(fanfic3)
-        waiting_queue.put(None)  # Poison pill
+        waiting_queue.put(None)
 
-        # Run the processor
         ff_waiter.wait_processor(ingress_queue, waiting_queue)
 
-        # Verify process_fanfic was called for each fanfic
-        expected_calls = [
-            call(fanfic1, ingress_queue),
-            call(fanfic2, ingress_queue),
-            call(fanfic3, ingress_queue),
-        ]
-        mock_process_fanfic.assert_has_calls(expected_calls)
+        urls = []
+        while not ingress_queue.empty():
+            urls.append(ingress_queue.get(timeout=1).url)
+        self.assertEqual(sorted(urls), ["url1", "url2", "url3"])
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_wait_processor_abandon_items_dropped(self, mock_get_delay):
+        """Test that items with ABANDON action (None delay) are dropped."""
+        mock_get_delay.return_value = None  # Signals ABANDON
+
+        waiting_queue = mp.Queue()
+        ingress_queue = mp.Queue()
+
+        fanfic = fanfic_info.FanficInfo(site="site", url="url")
+        waiting_queue.put(fanfic)
+        waiting_queue.put(None)
+
+        ff_waiter.wait_processor(ingress_queue, waiting_queue)
+
+        self.assertTrue(ingress_queue.empty())
+
+    def test_wait_processor_shutdown_event(self):
+        """Test that wait_processor exits when shutdown_event is set."""
+        waiting_queue = mp.Queue()
+        ingress_queue = mp.Queue()
+
+        shutdown_event = threading.Event()
+        shutdown_event.set()  # Already signaled
+
+        ff_waiter.wait_processor(
+            ingress_queue, waiting_queue, shutdown_event=shutdown_event
+        )
+
+        # Should exit immediately without processing anything
+        self.assertTrue(ingress_queue.empty())
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_wait_processor_delayed_items_requeued(self, mock_get_delay):
+        """Test that delayed items are requeued after their expiry."""
+        # Very small delay (0.05s) to keep test fast
+        mock_get_delay.return_value = 0.05
+
+        waiting_queue = mp.Queue()
+        ingress_queue = mp.Queue()
+        shutdown_event = threading.Event()
+
+        fanfic = fanfic_info.FanficInfo(site="site", url="delayed_url")
+        waiting_queue.put(fanfic)
+
+        # Run in a thread so we can shut it down
+        def run():
+            ff_waiter.wait_processor(
+                ingress_queue, waiting_queue, shutdown_event=shutdown_event
+            )
+
+        t = threading.Thread(target=run)
+        t.start()
+
+        # Wait for the item to be requeued (with generous timeout)
+        result = ingress_queue.get(timeout=5)
+        self.assertEqual(result.url, "delayed_url")
+
+        # Shut down
+        shutdown_event.set()
+        t.join(timeout=5)
 
 
 if __name__ == "__main__":

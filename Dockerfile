@@ -90,14 +90,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 FROM builder-tools AS fanficfare-installer
 ARG FANFICFARE_VERSION
 RUN --mount=type=cache,target=/root/.cache/pip \
-    echo "*** Install FanFicFare from TestPyPI ***" && \
-    INDEX_URL="https://test.pypi.org/simple/" && \
+    echo "*** Install FanFicFare from PyPI + TestPyPI ***" && \
     if [ -n "${FANFICFARE_VERSION}" ]; then \
     PACKAGE_SPEC="FanFicFare==${FANFICFARE_VERSION}"; \
     else \
     PACKAGE_SPEC="FanFicFare"; \
     fi && \
-    pip install --prefix=/install --no-warn-script-location --no-cache-dir -i "${INDEX_URL}" --extra-index-url https://pypi.org/simple "${PACKAGE_SPEC}"
+    pip install --prefix=/install --no-warn-script-location --no-cache-dir \
+    --extra-index-url https://test.pypi.org/simple/ "${PACKAGE_SPEC}"
 
 # Runtime Stage: The final image
 FROM base AS runtime

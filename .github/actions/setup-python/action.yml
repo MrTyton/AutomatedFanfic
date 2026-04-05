@@ -6,7 +6,7 @@ inputs:
     required: false
     default: "3.12"
   install-fanficfare:
-    description: "Whether to install FanFicFare from TestPyPI"
+    description: "Whether to install FanFicFare from PyPI/TestPyPI"
     required: false
     default: "true"
   install-dev-tools:
@@ -55,7 +55,7 @@ runs:
           echo "::warning::${{ inputs.requirements-file }} not found, skipping application dependencies"
         fi
 
-    - name: Install FanFicFare from TestPyPI
+    - name: Install FanFicFare
       if: inputs.install-fanficfare == 'true'
       shell: bash
       run: |
@@ -64,8 +64,8 @@ runs:
           FANFICFARE_VERSION=$(cat release-versions/fanficfare.txt)
           echo "Target FanFicFare version: $FANFICFARE_VERSION"
 
-          echo "Installing FanFicFare==$FANFICFARE_VERSION from TestPyPI..."
-          python -m pip install --no-cache-dir -i https://test.pypi.org/simple/ "FanFicFare==$FANFICFARE_VERSION"
+          echo "Installing FanFicFare==$FANFICFARE_VERSION from PyPI + TestPyPI..."
+          python -m pip install --no-cache-dir --extra-index-url https://test.pypi.org/simple/ "FanFicFare==$FANFICFARE_VERSION"
 
           echo "Verifying FanFicFare installation..."
           # FanFicFare stores version in cli.py, not in __version__

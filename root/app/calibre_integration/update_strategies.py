@@ -72,8 +72,10 @@ class AddFormatStrategy(UpdateStrategy):
             f"\t({site}) Using add_format mode - replacing EPUB file only"
         )
 
-        # Get metadata before for comparison
-        old_metadata = calibre_client.get_metadata(fanfic)
+        # Get metadata before for comparison (verbose only — each call spawns a subprocess)
+        old_metadata = (
+            calibre_client.get_metadata(fanfic) if ff_logging.is_verbose() else None
+        )
 
         # Replace the EPUB format without touching metadata
         success = calibre_client.add_format_to_existing_story(temp_dir, fanfic)
@@ -91,9 +93,10 @@ class AddFormatStrategy(UpdateStrategy):
             )
             return False
 
-        # Get metadata after to verify preservation
-        new_metadata = calibre_client.get_metadata(fanfic)
-        calibre_client.log_metadata_comparison(fanfic, old_metadata, new_metadata)
+        # Get metadata after to verify preservation (verbose only)
+        if ff_logging.is_verbose():
+            new_metadata = calibre_client.get_metadata(fanfic)
+            calibre_client.log_metadata_comparison(fanfic, old_metadata, new_metadata)
         return True
 
 
@@ -150,9 +153,12 @@ class PreserveMetadataStrategy(UpdateStrategy):
             )
             calibre_client.set_metadata_fields(fanfic, old_metadata)
 
-            # Get final metadata and compare
-            new_metadata = calibre_client.get_metadata(fanfic)
-            calibre_client.log_metadata_comparison(fanfic, old_metadata, new_metadata)
+            # Get final metadata and compare (verbose only — spawns a subprocess)
+            if ff_logging.is_verbose():
+                new_metadata = calibre_client.get_metadata(fanfic)
+                calibre_client.log_metadata_comparison(
+                    fanfic, old_metadata, new_metadata
+                )
 
         return True
 
@@ -176,8 +182,10 @@ class RemoveAddStrategy(UpdateStrategy):
             f"\t({site}) Using remove_add mode - custom metadata will NOT be preserved"
         )
 
-        # Get metadata before for logging comparison
-        old_metadata = calibre_client.get_metadata(fanfic)
+        # Get metadata before for logging comparison (verbose only — spawns a subprocess)
+        old_metadata = (
+            calibre_client.get_metadata(fanfic) if ff_logging.is_verbose() else None
+        )
 
         # Remove the existing story
         ff_logging.log(f"\t({site}) Removing story {fanfic.calibre_id} from Calibre")
@@ -198,11 +206,16 @@ class RemoveAddStrategy(UpdateStrategy):
             )
             return False
 
-        # Log metadata comparison to show what was lost (debug only)
-        new_metadata = calibre_client.get_metadata(fanfic)
-        if old_metadata or new_metadata:
-            ff_logging.log_debug(f"\t({site}) Metadata comparison (remove_add mode):")
-            calibre_client.log_metadata_comparison(fanfic, old_metadata, new_metadata)
+        # Log metadata comparison to show what was lost (verbose only — spawns a subprocess)
+        if ff_logging.is_verbose():
+            new_metadata = calibre_client.get_metadata(fanfic)
+            if old_metadata or new_metadata:
+                ff_logging.log_debug(
+                    f"\t({site}) Metadata comparison (remove_add mode):"
+                )
+                calibre_client.log_metadata_comparison(
+                    fanfic, old_metadata, new_metadata
+                )
 
         return True
 
