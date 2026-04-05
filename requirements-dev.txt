@@ -6,6 +6,7 @@
 
 # Testing framework and utilities
 freezegun==1.5.5
+httpx>=0.27.0
 parameterized==0.9.0
 
 # Code quality and pre-commit hooks
