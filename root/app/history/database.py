@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS download_events (
     status          TEXT    NOT NULL DEFAULT 'pending',
     error_message   TEXT,
     started_at      TEXT    NOT NULL,
-    completed_at    TEXT
+    completed_at    TEXT,
+    updated_at      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_download_events_url ON download_events(url);
@@ -107,6 +108,11 @@ class SyncHistoryDB:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
+        # Migrate: add updated_at if missing (existing databases)
+        try:
+            self._conn.execute("ALTER TABLE download_events ADD COLUMN updated_at TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         self._conn.commit()
 
     def close(self) -> None:
@@ -161,7 +167,8 @@ class SyncHistoryDB:
                    title = COALESCE(?, title),
                    calibre_id = COALESCE(?, calibre_id),
                    error_message = COALESCE(?, error_message),
-                   completed_at = COALESCE(?, completed_at)
+                   completed_at = COALESCE(?, completed_at),
+                   updated_at = ?
                WHERE id = (
                    SELECT id FROM download_events
                    WHERE url = ? AND status IN ('pending', 'waiting')
@@ -173,6 +180,7 @@ class SyncHistoryDB:
                 calibre_id,
                 error_message,
                 _dt_to_str(completed_at),
+                _dt_to_str(datetime.now()),
                 url,
             ),
         )
@@ -242,13 +250,14 @@ class SyncHistoryDB:
         # Reset download status back to pending now that it's re-entering the pipeline
         self._conn.execute(
             """UPDATE download_events
-               SET status = 'pending', completed_at = NULL
+               SET status = 'pending', completed_at = NULL,
+                   updated_at = ?
                WHERE id = (
                    SELECT id FROM download_events
                    WHERE url = ? AND status = 'waiting'
                    ORDER BY started_at DESC LIMIT 1
                )""",
-            (url,),
+            (_dt_to_str(datetime.now()), url),
         )
         self._conn.commit()
 
@@ -322,6 +331,13 @@ class AsyncHistoryDB:
         conn = await self._get_conn()
         try:
             await conn.executescript(_SCHEMA)
+            # Migrate: add updated_at if missing (existing databases)
+            try:
+                await conn.execute(
+                    "ALTER TABLE download_events ADD COLUMN updated_at TEXT"
+                )
+            except Exception:
+                pass  # Column already exists
             await conn.commit()
         finally:
             await conn.close()
@@ -489,7 +505,7 @@ class AsyncHistoryDB:
         conn = await self._get_conn()
         try:
             cursor = await conn.execute(
-                "SELECT url, started_at FROM download_events WHERE status = 'waiting'"
+                "SELECT url, updated_at FROM download_events WHERE status = 'waiting'"
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
