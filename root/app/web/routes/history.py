@@ -10,6 +10,7 @@ async def list_downloads(
     request: Request,
     site: str | None = None,
     status: str | None = None,
+    search: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
     limit: int | None = Query(default=None, ge=1, le=500),
@@ -25,9 +26,13 @@ async def list_downloads(
     actual_offset = offset if offset is not None else (page - 1) * page_size
 
     items = await db.get_downloads(
-        site=site, status=status, limit=actual_limit, offset=actual_offset
+        site=site,
+        status=status,
+        search=search,
+        limit=actual_limit,
+        offset=actual_offset,
     )
-    total = await db.get_download_count(site=site, status=status)
+    total = await db.get_download_count(site=site, status=status, search=search)
     return {"items": items, "total": total}
 
 

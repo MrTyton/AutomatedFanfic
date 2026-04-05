@@ -1,9 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getDownloads, getEmails, getNotifications, getRetries, type DownloadRow, type EmailRow, type NotificationRow, type RetryRow } from '../api'
 
+function ExpandableError({ text }: { text: string }) {
+    const [expanded, setExpanded] = useState(false)
+    return (
+        <span
+            onClick={() => setExpanded(!expanded)}
+            title={expanded ? 'Click to collapse' : 'Click to see full error'}
+            style={{
+                color: 'var(--error)',
+                cursor: 'pointer',
+                ...(expanded ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word' } : { display: 'block', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
+            }}
+        >
+            {text}
+        </span>
+    )
+}
+
 export default function History() {
     const [tab, setTab] = useState<'downloads' | 'retries' | 'emails' | 'notifications'>('downloads')
     const [page, setPage] = useState(1)
+    const [search, setSearch] = useState('')
+    const [debouncedSearch, setDebouncedSearch] = useState('')
 
     const [downloads, setDownloads] = useState<DownloadRow[]>([])
     const [downloadTotal, setDownloadTotal] = useState(0)
@@ -12,9 +31,18 @@ export default function History() {
     const [emails, setEmails] = useState<EmailRow[]>([])
     const [notifications, setNotifications] = useState<NotificationRow[]>([])
 
+    // Debounce search input
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(search)
+            setPage(1)
+        }, 300)
+        return () => clearTimeout(timer)
+    }, [search])
+
     const fetchData = useCallback(() => {
         if (tab === 'downloads') {
-            getDownloads(page).then(d => { setDownloads(d.items); setDownloadTotal(d.total) }).catch(() => { })
+            getDownloads(page, 25, debouncedSearch).then(d => { setDownloads(d.items); setDownloadTotal(d.total) }).catch(() => { })
         } else if (tab === 'retries') {
             getRetries(page).then(d => { setRetries(d.items); setRetryTotal(d.total) }).catch(() => { })
         } else if (tab === 'emails') {
@@ -22,7 +50,7 @@ export default function History() {
         } else if (tab === 'notifications') {
             getNotifications(page).then(d => setNotifications(d.items)).catch(() => { })
         }
-    }, [page, tab])
+    }, [page, tab, debouncedSearch])
 
     // Initial fetch + auto-refresh every 10s
     useEffect(() => {
@@ -35,7 +63,7 @@ export default function History() {
         <>
             <h1 style={{ marginBottom: '1rem' }}>History</h1>
 
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
                 {(['downloads', 'retries', 'emails', 'notifications'] as const).map(t => (
                     <button
                         key={t}
@@ -45,6 +73,15 @@ export default function History() {
                         {t.charAt(0).toUpperCase() + t.slice(1)}
                     </button>
                 ))}
+                {tab === 'downloads' && (
+                    <input
+                        type="text"
+                        placeholder="Search by site, URL, or title…"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        style={{ marginLeft: 'auto', width: 260 }}
+                    />
+                )}
             </div>
 
             {tab === 'downloads' && (
@@ -78,7 +115,7 @@ export default function History() {
                                         <a href={r.url.startsWith('http') ? r.url : `https://${r.url}`} target="_blank" rel="noreferrer">{r.url}</a>
                                     </td>
                                     <td>{r.calibre_id ?? '—'}</td>
-                                    <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.error_message ? 'var(--error)' : undefined }}>{r.error_message ?? '—'}</td>
+                                    <td>{r.error_message ? <ExpandableError text={r.error_message} /> : '—'}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{new Date(r.started_at).toLocaleString()}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{r.completed_at ? new Date(r.completed_at).toLocaleString() : '—'}</td>
                                 </tr>
@@ -126,7 +163,7 @@ export default function History() {
                                     </td>
                                     <td>{r.attempt_number}</td>
                                     <td>{r.delay_minutes > 0 ? `${r.delay_minutes}m` : '—'}</td>
-                                    <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.error_message ?? '—'}</td>
+                                    <td>{r.error_message ? <ExpandableError text={r.error_message} /> : '—'}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{new Date(r.scheduled_at).toLocaleString()}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{r.fired_at ? new Date(r.fired_at).toLocaleString() : '—'}</td>
                                 </tr>
