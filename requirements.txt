@@ -41,3 +41,11 @@ Brotli==1.2.0
 python-dateutil==2.9.0.post0
 six==1.17.0
 pyparsing==3.3.2
+
+# Web server and API
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+websockets==15.0.1
+
+# Async SQLite for history database
+aiosqlite==0.21.0
