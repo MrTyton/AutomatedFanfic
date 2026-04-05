@@ -629,6 +629,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
         self.mock_client.cdb_info = self.mock_cdb
         self.mock_notification_info = MagicMock(spec=NotificationWrapper)
+        self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
 
         # Create test fanfic object
@@ -683,6 +684,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_queue,
                     self.mock_client,
                     self.mock_notification_info,
+                    self.mock_ingress_queue,
                     self.mock_waiting_queue,
                     retry_config,
                     "worker_id",
@@ -741,6 +743,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     self.mock_queue,
                     self.mock_client,
                     self.mock_notification_info,
+                    self.mock_ingress_queue,
                     self.mock_waiting_queue,
                     retry_config,
                     "worker_id",
@@ -801,6 +804,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.mock_queue,
             self.mock_client,
             self.mock_notification_info,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             retry_config,
             "worker_id",
@@ -858,6 +862,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.mock_queue,
             self.mock_client,
             self.mock_notification_info,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             retry_config,
             "worker_id",
@@ -867,7 +872,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Verify fanfic was re-queued with force behavior
         self.assertEqual(self.test_fanfic.behavior, "force")
         # Use assert_any_call because WORKER_IDLE might also be sent
-        self.mock_waiting_queue.put.assert_any_call(self.test_fanfic)
+        self.mock_ingress_queue.put.assert_any_call(self.test_fanfic)
 
     @patch("workers.handlers.process_fanfic_addition")
     @patch("workers.command.execute_command")
@@ -912,6 +917,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             self.mock_queue,
             self.mock_client,
             self.mock_notification_info,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             retry_config,
             "worker_id",
@@ -1690,6 +1696,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.mock_client.cdb_info = self.mock_cdb_info
 
         self.mock_notification_info = MagicMock(spec=NotificationWrapper)
+        self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
         self.worker_id = "worker_0"
 
@@ -1758,6 +1765,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             self.mock_queue,
             self.mock_client,
             self.mock_notification_info,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
@@ -1767,7 +1775,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Verify WORKER_IDLE was sent exactly once, after queue was drained
         idle_signals = [
             call
-            for call in self.mock_waiting_queue.put.call_args_list
+            for call in self.mock_ingress_queue.put.call_args_list
             if len(call[0]) > 0
             and isinstance(call[0][0], tuple)
             and call[0][0][0] == "WORKER_IDLE"
@@ -1849,6 +1857,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             self.mock_queue,
             self.mock_client,
             self.mock_notification_info,
+            self.mock_ingress_queue,
             self.mock_waiting_queue,
             self.retry_config,
             self.worker_id,
@@ -1858,7 +1867,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Extract all WORKER_IDLE signals
         idle_signals = [
             call[0][0]
-            for call in self.mock_waiting_queue.put.call_args_list
+            for call in self.mock_ingress_queue.put.call_args_list
             if len(call[0]) > 0
             and isinstance(call[0][0], tuple)
             and call[0][0][0] == "WORKER_IDLE"

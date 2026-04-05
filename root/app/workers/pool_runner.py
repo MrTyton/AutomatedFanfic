@@ -22,6 +22,7 @@ def run_worker_pool(
     worker_queues: dict[str, mp.Queue],
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
+    ingress_queue: mp.Queue,
     waiting_queue: mp.Queue,
     retry_config: config_models.RetryConfig,
     active_urls: dict,
@@ -35,7 +36,8 @@ def run_worker_pool(
         worker_queues: Dictionary mapping worker_ids to their input queues.
         calibre_client: Shared Calibre client instance.
         notification_info: Shared notification wrapper.
-        waiting_queue: Shared queue for retries (exponential backoff).
+        ingress_queue: Shared ingress queue for WORKER_IDLE signals and force re-queues.
+        waiting_queue: Shared queue for retry backoff (consumed by ff_waiter).
         retry_config: Retry configuration.
         active_urls: Shared dictionary of active URLs.
         verbose: Verbose logging flag.
@@ -67,6 +69,7 @@ def run_worker_pool(
                     queue,
                     calibre_client,
                     notification_info,
+                    ingress_queue,
                     waiting_queue,
                     retry_config,
                     worker_id,
@@ -100,6 +103,7 @@ def run_worker_pool(
                                 worker_queues[worker_id],
                                 calibre_client,
                                 notification_info,
+                                ingress_queue,
                                 waiting_queue,
                                 retry_config,
                                 worker_id,
