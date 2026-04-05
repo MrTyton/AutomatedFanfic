@@ -81,7 +81,13 @@ export default function Dashboard({ data }: Props) {
     const activeUrls = data.active_downloads.items
     const activeCount = data.active_downloads.count
     const ingressDepth = typeof data.queues.ingress === 'number' ? data.queues.ingress : 0
-    const waitingDepth = typeof data.queues.waiting === 'number' ? data.queues.waiting : 0
+    const waitingData = data.waiting_downloads ?? { items: [], count: 0 }
+    const waitingUrls: string[] = typeof waitingData === 'object' && waitingData !== null
+        ? (waitingData as { items: string[]; count: number }).items ?? []
+        : []
+    const waitingCount = typeof waitingData === 'object' && waitingData !== null
+        ? (waitingData as { items: string[]; count: number }).count ?? 0
+        : (typeof waitingData === 'number' ? waitingData : 0)
 
     // Recent completed downloads (separate feed, not diluted by other events)
     const recentDownloads = (data.recent_downloads as RecentEvent[])
@@ -114,7 +120,7 @@ export default function Dashboard({ data }: Props) {
                 </div>
                 <div className="card">
                     <h2>Waiting Queue</h2>
-                    <div className="stat">{data.waiting_downloads ?? waitingDepth}</div>
+                    <div className="stat">{waitingCount}</div>
                 </div>
             </div>
 
@@ -158,7 +164,7 @@ export default function Dashboard({ data }: Props) {
                         </tr>
                     </thead>
                     <tbody>
-                        {/* Active downloads first */}
+                        {/* Active downloads (truly processing) */}
                         {activeUrls.map((url) => (
                             <tr key={`active-${url}`}>
                                 <td><span className="badge badge-warning">processing</span></td>
@@ -170,6 +176,20 @@ export default function Dashboard({ data }: Props) {
                                 </td>
                                 <td>—</td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>now</td>
+                            </tr>
+                        ))}
+                        {/* Waiting downloads (retry backoff) */}
+                        {waitingUrls.map((url) => (
+                            <tr key={`waiting-${url}`}>
+                                <td><span className="badge badge-info">waiting</span></td>
+                                <td>{extractSite(url)}</td>
+                                <td>
+                                    <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer">
+                                        {url}
+                                    </a>
+                                </td>
+                                <td>—</td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>waiting for retry</td>
                             </tr>
                         ))}
                         {/* Recent completed downloads */}

@@ -484,15 +484,15 @@ class AsyncHistoryDB:
         finally:
             await conn.close()
 
-    async def get_waiting_count(self) -> int:
-        """Count downloads currently in 'waiting' status (retry backoff)."""
+    async def get_waiting_urls(self) -> list[str]:
+        """Get URLs currently in 'waiting' status (retry backoff)."""
         conn = await self._get_conn()
         try:
             cursor = await conn.execute(
-                "SELECT COUNT(*) FROM download_events WHERE status = 'waiting'"
+                "SELECT url FROM download_events WHERE status = 'waiting'"
             )
-            row = await cursor.fetchone()
-            return row[0] if row else 0
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
         finally:
             await conn.close()
 
