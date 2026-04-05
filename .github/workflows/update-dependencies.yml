@@ -74,24 +74,45 @@ jobs:
           echo "Current FanFicFare version: $CURRENT_FFF_VERSION"
           echo "Current Calibre version: $CURRENT_CALIBRE_VERSION"
 
-          # Check FanFicFare version
-          echo "Fetching FanFicFare version information..."
-          FFF_INDEX_URL="https://test.pypi.org/simple/fanficfare/"
-          FFF_PAGE=$(curl -sSfL "$FFF_INDEX_URL" 2>/dev/null)
+          # Check FanFicFare version from both PyPI and TestPyPI
+          echo "Fetching FanFicFare version information from both indexes..."
 
-          if [ $? -ne 0 ] || [ -z "$FFF_PAGE" ]; then
-            echo "::error::Failed to fetch FanFicFare index from $FFF_INDEX_URL"
+          TESTPYPI_FFF_VERSION=""
+          PYPI_FFF_VERSION=""
+
+          # Check TestPyPI
+          TESTPYPI_URL="https://test.pypi.org/simple/fanficfare/"
+          TESTPYPI_PAGE=$(curl -sSfL "$TESTPYPI_URL" 2>/dev/null) || true
+          if [ -n "$TESTPYPI_PAGE" ]; then
+            TESTPYPI_FFF_VERSION=$(echo "$TESTPYPI_PAGE" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
+            echo "Latest FanFicFare on TestPyPI: ${TESTPYPI_FFF_VERSION:-not found}"
+          else
+            echo "::warning::Failed to fetch FanFicFare index from TestPyPI"
+          fi
+
+          # Check PyPI
+          PYPI_URL="https://pypi.org/simple/fanficfare/"
+          PYPI_PAGE=$(curl -sSfL "$PYPI_URL" 2>/dev/null) || true
+          if [ -n "$PYPI_PAGE" ]; then
+            PYPI_FFF_VERSION=$(echo "$PYPI_PAGE" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
+            echo "Latest FanFicFare on PyPI: ${PYPI_FFF_VERSION:-not found}"
+          else
+            echo "::warning::Failed to fetch FanFicFare index from PyPI"
+          fi
+
+          # Pick the highest version from either source
+          if [ -n "$TESTPYPI_FFF_VERSION" ] && [ -n "$PYPI_FFF_VERSION" ]; then
+            LATEST_FFF_VERSION=$(printf '%s\n%s\n' "$TESTPYPI_FFF_VERSION" "$PYPI_FFF_VERSION" | sort -V | tail -n 1)
+          elif [ -n "$PYPI_FFF_VERSION" ]; then
+            LATEST_FFF_VERSION="$PYPI_FFF_VERSION"
+          elif [ -n "$TESTPYPI_FFF_VERSION" ]; then
+            LATEST_FFF_VERSION="$TESTPYPI_FFF_VERSION"
+          else
+            echo "::error::Could not determine the latest FanFicFare version from either index"
             exit 1
           fi
 
-          LATEST_FFF_VERSION=$(echo "$FFF_PAGE" | grep -oP 'fanficfare-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -n 1)
-
-          if [ -z "$LATEST_FFF_VERSION" ]; then
-            echo "::error::Could not determine the latest FanFicFare version"
-            exit 1
-          fi
-
-          echo "Latest FanFicFare version: $LATEST_FFF_VERSION"
+          echo "Latest FanFicFare version (across both indexes): $LATEST_FFF_VERSION"
 
           if [ "$LATEST_FFF_VERSION" != "$CURRENT_FFF_VERSION" ]; then
             echo "FanFicFare update detected: $CURRENT_FFF_VERSION -> $LATEST_FFF_VERSION"

@@ -2,110 +2,56 @@
 
 This module implements the AutomatedFanfic waiting queue system for handling
 failed fanfiction downloads that need to be retried after exponential backoff
-delays. It provides timer-based delayed requeuing functionality as part of the
-Hail-Mary protocol for story processing failures.
+delays. It provides heap-scheduled delayed requeuing functionality as part of
+the Hail-Mary protocol for story processing failures.
 
 Key Features:
-    - Timer-based delayed fanfiction reprocessing
+    - Heap-based delayed fanfiction reprocessing (single scheduler thread)
     - Exponential backoff delay calculation based on retry counts
-    - Threading-based delay management without blocking main processes
     - Integration with site-specific processing queues
-    - Graceful shutdown support via poison pill pattern
+    - Graceful shutdown support via poison pill pattern and shutdown_event
 
 Functions:
-    insert_after_time: Timer callback for delayed queue insertion
-    process_fanfic: Calculates delays and schedules fanfiction reprocessing
-    wait_processor: Main waiting queue processor with continuous monitoring
+    _log_retry_decision: Logs retry decision details for a fanfic.
+    _get_delay_seconds: Extracts delay from a fanfic's retry decision.
+    wait_processor: Main waiting queue processor with heap-based scheduling.
 
 Architecture:
     The module works with the broader multiprocessing architecture by receiving
     failed fanfiction entries in a waiting queue, calculating appropriate retry
-    delays based on failure counts, and using threading.Timer to schedule
-    requeuing back to site-specific processing queues after the delay period.
+    delays based on failure counts, and using a heap-based scheduler to
+    requeue items back to the ingress queue after the delay period expires.
+
+    Previous versions used one threading.Timer per failed fanfic, which could
+    accumulate hundreds of threads under sustained failure conditions. The
+    current implementation uses a single-threaded heapq scheduler, reducing
+    thread count from O(N_failures) to O(1).
 
 Example:
     >>> # Used by ProcessManager to start waiting queue processor
-    >>> wait_processor(site_queues, waiting_queue)
+    >>> wait_processor(ingress_queue, waiting_queue)
 """
 
+import heapq
 import multiprocessing as mp
 import threading
+import time
 
 from models import fanfic_info
 from utils import ff_logging
 from models import retry_types
 
 
-def insert_after_time(queue: mp.Queue, fanfic: fanfic_info.FanficInfo) -> None:
-    """Inserts a fanfiction entry into a processing queue after timer delay.
-
-    Timer callback function used by threading.Timer to requeue a fanfiction
-    entry back into its appropriate site-specific processing queue after a
-    calculated delay period. This function is called asynchronously when
-    the retry timer expires.
-
-    Args:
-        queue (mp.Queue): The multiprocessing queue to insert the fanfiction
-                         entry into. Should be the site-specific queue that
-                         corresponds to the fanfiction's source site.
-        fanfic (fanfic_info.FanficInfo): The fanfiction metadata object to
-                                        requeue for processing. Contains URL,
-                                        site information, and retry state.
-
-    Note:
-        This function is executed in a separate timer thread and must be
-        thread-safe. It performs atomic queue insertion operation.
-
-    Example:
-        >>> # Usually called via threading.Timer, not directly
-        >>> timer = threading.Timer(300, insert_after_time, args=(queue, fanfic))
-    """
-    # Perform atomic queue insertion for multiprocessing safety
-    queue.put(fanfic)
-
-
-def process_fanfic(
+def _log_retry_decision(
     fanfic: fanfic_info.FanficInfo,
-    ingress_queue: mp.Queue,
+    decision: retry_types.RetryDecision,
 ) -> None:
-    """Processes a failed fanfiction by scheduling delayed retry via timer.
-
-    Schedules delayed retry for fanfictions that have been routed to the waiting
-    queue by url_worker after failure. Uses the retry decision that was already
-    made and stored in the fanfic object to determine delay timing and logging.
-
-    This function assumes the retry decision has already been made by url_worker
-    and stored in fanfic.retry_decision. It focuses solely on implementing the
-    delay timing and timer scheduling.
+    """Log details about a retry decision for a fanfic.
 
     Args:
-        fanfic (fanfic_info.FanficInfo): The fanfiction metadata object containing
-                                        URL, site information, current retry state,
-                                        and the pre-calculated retry decision.
-        ingress_queue (mp.Queue): The queue to insert the fanfiction into after delay.
-
-    Note:
-        This function starts a daemon timer thread that will execute independently.
-        The timer thread will call insert_after_time() when the delay expires.
-        Multiple timers can run concurrently for different fanfictions.
+        fanfic: The fanfiction metadata object.
+        decision: The retry decision containing action and delay info.
     """
-    # Use the retry decision that was already calculated by url_worker
-    decision = fanfic.retry_decision
-    if decision is None:
-        # Fallback in case decision wasn't set (shouldn't happen in normal flow)
-        # Use a simple default retry with minimal delay
-        ff_logging.log(
-            f"No retry decision found for {fanfic.url}. Using default retry action.",
-            "WARNING",
-        )
-        decision = retry_types.RetryDecision(
-            action=retry_types.FailureAction.RETRY,
-            delay_minutes=5.0,  # Default 5 minute delay
-            should_notify=False,
-            notification_message="",
-        )
-
-    # Log the delay and schedule timer
     if decision.action == retry_types.FailureAction.HAIL_MARY:
         ff_logging.log(
             f"Hail-Mary attempt: Waiting {decision.delay_minutes} minutes for {fanfic.url} "
@@ -120,20 +66,47 @@ def process_fanfic(
             "WARNING",
         )
     else:
-        # This shouldn't happen since url_worker already filtered out ABANDON cases
         ff_logging.log(
             f"Unexpected {decision.action.value} action in waiting queue for {fanfic.url}. "
             f"Abandoning processing.",
             "ERROR",
         )
-        return
 
-    # Convert delay to seconds and schedule timer
-    delay_seconds = int(decision.delay_minutes * 60)
-    timer = threading.Timer(
-        delay_seconds, insert_after_time, args=(ingress_queue, fanfic)
-    )
-    timer.start()
+
+def _get_delay_seconds(fanfic: fanfic_info.FanficInfo) -> int | None:
+    """Extract delay in seconds from a fanfic's retry decision, logging as needed.
+
+    Handles missing decisions with a fallback and rejects ABANDON actions.
+
+    Args:
+        fanfic: The fanfiction metadata object with retry_decision attached.
+
+    Returns:
+        Delay in seconds, or None if the item should be dropped (ABANDON action).
+    """
+    decision = fanfic.retry_decision
+    if decision is None:
+        ff_logging.log(
+            f"No retry decision found for {fanfic.url}. Using default retry action.",
+            "WARNING",
+        )
+        decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.RETRY,
+            delay_minutes=5.0,
+            should_notify=False,
+            notification_message="",
+        )
+        fanfic.retry_decision = decision
+
+    _log_retry_decision(fanfic, decision)
+
+    if decision.action not in (
+        retry_types.FailureAction.RETRY,
+        retry_types.FailureAction.HAIL_MARY,
+    ):
+        return None
+
+    return int(decision.delay_minutes * 60)
 
 
 def wait_processor(
@@ -144,15 +117,12 @@ def wait_processor(
 ) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 
-    Continuously monitors the waiting queue for failed fanfiction entries that
-    need delayed retry processing. Implements the waiting queue component of
-    the retry protocol by receiving failed fanfictions and scheduling their
-    delayed reprocessing via the pre-calculated retry decisions.
+    Continuously monitors the waiting queue for failed fanfiction entries and
+    schedules their reprocessing using a heap-based delay scheduler. Items are
+    requeued to the ingress queue once their delay expires.
 
-    This function runs in a dedicated process (or thread) and processes entries
-    from the waiting queue in a continuous loop. Each failed fanfiction is
-    processed via process_fanfic() which uses the pre-calculated retry decision
-    to schedule timer-based requeuing back to the ingress queue.
+    Uses a single heapq instead of per-item threading.Timer threads, keeping
+    thread count at O(1) regardless of failure volume.
 
     Args:
         ingress_queue (mp.Queue): The single ingress queue for all tasks.
@@ -162,9 +132,13 @@ def wait_processor(
         verbose (bool): Enable verbose logging.
         shutdown_event (threading.Event, optional): Event to signal shutdown.
     """
-    # Initialize logging for this process
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[96m")  # Bright Cyan
+
+    # Heap entries: (expiry_time, sequence_counter, fanfic)
+    # sequence_counter breaks ties so FanficInfo never needs to be compared.
+    pending_heap: list[tuple[float, int, fanfic_info.FanficInfo]] = []
+    seq = 0
 
     while True:
         # Check for shutdown signal
@@ -172,20 +146,37 @@ def wait_processor(
             ff_logging.log_debug("Waiter received shutdown signal")
             break
 
+        # --- Drain expired items from the heap ---
+        now = time.monotonic()
+        while pending_heap and pending_heap[0][0] <= now:
+            _, _, fanfic = heapq.heappop(pending_heap)
+            ingress_queue.put(fanfic)
+
+        # --- Calculate how long we can sleep ---
+        if pending_heap:
+            sleep_until_next = max(0.0, pending_heap[0][0] - time.monotonic())
+            # Don't sleep longer than 2s so we stay responsive to new items / shutdown
+            queue_timeout = min(sleep_until_next, 2.0)
+        else:
+            queue_timeout = 2.0
+
+        # --- Check waiting_queue for new failed items ---
         try:
-            # Block waiting for next failed fanfiction entry from waiting queue
-            # Always use timeout to ensure responsive shutdown behavior
-            timeout = 2.0
-            fanfic: fanfic_info.FanficInfo = waiting_queue.get(timeout=timeout)
-        except Exception:  # queue.Empty is likely, but need to catch it safely
+            fanfic_item: fanfic_info.FanficInfo = waiting_queue.get(
+                timeout=queue_timeout
+            )
+        except Exception:  # queue.Empty is expected on timeout
             continue
 
-        # Check for poison pill shutdown signal (None entry)
-        if fanfic is None:
+        # Poison pill shutdown
+        if fanfic_item is None:
             break
 
-        # Schedule delayed retry processing for the failed fanfiction
-        process_fanfic(fanfic, ingress_queue)
+        # Schedule the item on the heap
+        delay = _get_delay_seconds(fanfic_item)
+        if delay is None:
+            continue  # ABANDON — drop the item
 
-        # Original implementation used sleep(5), but if we block on get(), we don't need explicit sleep
-        # unless queue.get() returns immediately. Since we are waiting for items, we can just loop.
+        expiry = time.monotonic() + delay
+        heapq.heappush(pending_heap, (expiry, seq, fanfic_item))
+        seq += 1

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 import multiprocessing as mp
 
 from calibre_integration import update_strategies, calibredb_utils
@@ -31,7 +31,10 @@ class TestUpdateStrategies(unittest.TestCase):
 
     # --- AddFormatStrategy Tests ---
 
-    def test_add_format_success(self):
+    @patch(
+        "calibre_integration.update_strategies.ff_logging.is_verbose", return_value=True
+    )
+    def test_add_format_success_verbose(self, mock_verbose):
         strategy = update_strategies.AddFormatStrategy()
 
         # Setup mocks
@@ -64,6 +67,33 @@ class TestUpdateStrategies(unittest.TestCase):
         )
         self.mock_failure_handler.assert_not_called()
 
+    @patch(
+        "calibre_integration.update_strategies.ff_logging.is_verbose",
+        return_value=False,
+    )
+    def test_add_format_success_non_verbose(self, mock_verbose):
+        """In non-verbose mode, get_metadata should not be called (perf optimization)."""
+        strategy = update_strategies.AddFormatStrategy()
+
+        self.mock_client.add_format_to_existing_story.return_value = True
+
+        result = strategy.execute(
+            self.fanfic,
+            self.mock_client,
+            self.temp_dir,
+            "site",
+            self.path_or_url,
+            self.mock_queue,
+            self.mock_notification,
+            self.retry_config,
+            self.mock_failure_handler,
+        )
+
+        self.assertTrue(result)
+        self.mock_client.get_metadata.assert_not_called()
+        self.mock_client.log_metadata_comparison.assert_not_called()
+        self.mock_client.add_format_to_existing_story.assert_called_once()
+
     def test_add_format_failure(self):
         strategy = update_strategies.AddFormatStrategy()
 
@@ -95,10 +125,13 @@ class TestUpdateStrategies(unittest.TestCase):
 
     # --- PreserveMetadataStrategy Tests ---
 
-    def test_preserve_metadata_success_with_metadata(self):
+    @patch(
+        "calibre_integration.update_strategies.ff_logging.is_verbose", return_value=True
+    )
+    def test_preserve_metadata_success_with_metadata_verbose(self, mock_verbose):
         strategy = update_strategies.PreserveMetadataStrategy()
 
-        # Setup mocks
+        # Setup mocks: first call is pre-removal (always), second is post-restore (verbose)
         old_metadata = {"#custom": "value", "title": "Old"}
         new_metadata = {"#custom": "value", "title": "New"}
         self.mock_client.get_metadata.side_effect = [old_metadata, new_metadata]
@@ -117,7 +150,8 @@ class TestUpdateStrategies(unittest.TestCase):
         )
 
         self.assertTrue(result)
-        self.mock_client.get_metadata.assert_called_with(self.fanfic)
+        # get_metadata called twice: once for restoration, once for verbose comparison
+        self.assertEqual(self.mock_client.get_metadata.call_count, 2)
         self.mock_client.remove_story.assert_called_once_with(self.fanfic)
         self.mock_client.add_story.assert_called_once_with(
             location=self.temp_dir, fanfic=self.fanfic
@@ -126,6 +160,39 @@ class TestUpdateStrategies(unittest.TestCase):
             self.fanfic, old_metadata
         )
         self.mock_client.log_metadata_comparison.assert_called_once()
+
+    @patch(
+        "calibre_integration.update_strategies.ff_logging.is_verbose",
+        return_value=False,
+    )
+    def test_preserve_metadata_success_with_metadata_non_verbose(self, mock_verbose):
+        """Non-verbose: pre-removal get_metadata still called (needed for restoration), but post-restore comparison skipped."""
+        strategy = update_strategies.PreserveMetadataStrategy()
+
+        old_metadata = {"#custom": "value", "title": "Old"}
+        self.mock_client.get_metadata.return_value = old_metadata
+        self.mock_client.get_story_id.return_value = "124"
+
+        result = strategy.execute(
+            self.fanfic,
+            self.mock_client,
+            self.temp_dir,
+            "site",
+            self.path_or_url,
+            self.mock_queue,
+            self.mock_notification,
+            self.retry_config,
+            self.mock_failure_handler,
+        )
+
+        self.assertTrue(result)
+        # get_metadata called only once (pre-removal for restoration)
+        self.mock_client.get_metadata.assert_called_once_with(self.fanfic)
+        self.mock_client.set_metadata_fields.assert_called_once_with(
+            self.fanfic, old_metadata
+        )
+        # Verbose comparison skipped
+        self.mock_client.log_metadata_comparison.assert_not_called()
 
     def test_preserve_metadata_success_no_metadata(self):
         strategy = update_strategies.PreserveMetadataStrategy()
@@ -182,7 +249,10 @@ class TestUpdateStrategies(unittest.TestCase):
 
     # --- RemoveAddStrategy Tests ---
 
-    def test_remove_add_success(self):
+    @patch(
+        "calibre_integration.update_strategies.ff_logging.is_verbose", return_value=True
+    )
+    def test_remove_add_success_verbose(self, mock_verbose):
         strategy = update_strategies.RemoveAddStrategy()
 
         old_metadata = {"title": "Old"}
@@ -213,6 +283,36 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.remove_story.assert_called_once_with(self.fanfic)
         self.mock_client.add_story.assert_called_once()
         self.mock_client.log_metadata_comparison.assert_called_once()
+
+    @patch(
+        "calibre_integration.update_strategies.ff_logging.is_verbose",
+        return_value=False,
+    )
+    def test_remove_add_success_non_verbose(self, mock_verbose):
+        """Non-verbose: get_metadata not called at all (remove_add doesn't preserve metadata)."""
+        strategy = update_strategies.RemoveAddStrategy()
+
+        def remove_side_effect(fanfic):
+            fanfic.calibre_id = None
+
+        self.mock_client.remove_story.side_effect = remove_side_effect
+        self.mock_client.get_story_id.return_value = "125"
+
+        result = strategy.execute(
+            self.fanfic,
+            self.mock_client,
+            self.temp_dir,
+            "site",
+            self.path_or_url,
+            self.mock_queue,
+            self.mock_notification,
+            self.retry_config,
+            self.mock_failure_handler,
+        )
+
+        self.assertTrue(result)
+        self.mock_client.get_metadata.assert_not_called()
+        self.mock_client.log_metadata_comparison.assert_not_called()
 
     def test_remove_add_failure(self):
         strategy = update_strategies.RemoveAddStrategy()
