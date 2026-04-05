@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { DashboardSnapshot } from '../hooks/useWebSocket'
 import { addUrls, type AddUrlResult } from '../api'
 
@@ -21,6 +21,11 @@ interface RecentEvent {
     provider?: string
 }
 
+interface WaitingUrl {
+    url: string
+    started_at?: string
+}
+
 function extractSite(url: string): string {
     try {
         const u = url.startsWith('http') ? url : `https://${url}`
@@ -31,24 +36,28 @@ function extractSite(url: string): string {
     }
 }
 
-function formatEvent(evt: RecentEvent): { icon: string; text: string; time: string } | null {
+function urlLink(url: string): ReactNode {
+    const href = url.startsWith('http') ? url : `https://${url}`
+    return <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)' }}>{url}</a>
+}
+
+function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: string } | null {
     const time = evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : ''
 
     if (evt.event_type === 'download') {
         const title = evt.title || evt.url || 'Unknown'
         const site = evt.site || '—'
-        if (evt.status === 'success') return { icon: '✓', text: `(${site}) ${title}`, time }
-        if (evt.status === 'failed') return { icon: '✗', text: `(${site}) Failed: ${title}`, time }
-        if (evt.status === 'pending') return { icon: '↓', text: `(${site}) Processing ${evt.url || title}`, time }
-        return { icon: '↓', text: `(${site}) ${title}`, time }
+        if (evt.status === 'success') return { icon: '✓', text: <>({site}) {title}</>, time }
+        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}</>, time }
+        if (evt.status === 'pending') return { icon: '↓', text: <>({site}) Processing {evt.url ? urlLink(evt.url) : title}</>, time }
+        return { icon: '↓', text: <>({site}) {title}</>, time }
     }
     if (evt.event_type === 'retry') {
         const site = evt.site || '—'
-        const label = evt.url || site
-        return { icon: '↻', text: `(${site}) Retry #${evt.attempt_number ?? '?'} — ${evt.action ?? 'requeue'} — ${label}`, time }
+        return { icon: '↻', text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}</>, time }
     }
     if (evt.event_type === 'notification') {
-        return { icon: '🔔', text: `${evt.title}: ${evt.body || ''}`, time }
+        return { icon: '🔔', text: <>{evt.title}: {evt.body || ''}</>, time }
     }
     return null
 }
@@ -82,12 +91,12 @@ export default function Dashboard({ data }: Props) {
     const activeCount = data.active_downloads.count
     const ingressDepth = typeof data.queues.ingress === 'number' ? data.queues.ingress : 0
     const waitingData = data.waiting_downloads ?? { items: [], count: 0 }
-    const waitingUrls: string[] = typeof waitingData === 'object' && waitingData !== null
-        ? (waitingData as { items: string[]; count: number }).items ?? []
+    const waitingItems: WaitingUrl[] = typeof waitingData === 'object' && waitingData !== null
+        ? (waitingData as { items: WaitingUrl[]; count: number }).items ?? []
         : []
     const waitingCount = typeof waitingData === 'object' && waitingData !== null
-        ? (waitingData as { items: string[]; count: number }).count ?? 0
-        : (typeof waitingData === 'number' ? waitingData : 0)
+        ? (waitingData as { items: WaitingUrl[]; count: number }).count ?? 0
+        : 0
 
     // Recent completed downloads (separate feed, not diluted by other events)
     const recentDownloads = (data.recent_downloads as RecentEvent[])
@@ -99,8 +108,8 @@ export default function Dashboard({ data }: Props) {
     const otherActivity = (data.recent_activity as RecentEvent[])
         .map(formatEvent)
     const activityEvents = [...downloadActivity, ...otherActivity]
-        .filter((e): e is { icon: string; text: string; time: string } =>
-            e !== null && e.text !== '')
+        .filter((e): e is { icon: string; text: ReactNode; time: string } =>
+            e !== null && e.text != null)
         .sort((a, b) => b.time.localeCompare(a.time))
         .slice(0, 20)
 
@@ -179,17 +188,19 @@ export default function Dashboard({ data }: Props) {
                             </tr>
                         ))}
                         {/* Waiting downloads (retry backoff) */}
-                        {waitingUrls.map((url) => (
-                            <tr key={`waiting-${url}`}>
+                        {waitingItems.map((w) => (
+                            <tr key={`waiting-${w.url}`}>
                                 <td><span className="badge badge-info">waiting</span></td>
-                                <td>{extractSite(url)}</td>
+                                <td>{extractSite(w.url)}</td>
                                 <td>
-                                    <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer">
-                                        {url}
+                                    <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
+                                        {w.url}
                                     </a>
                                 </td>
                                 <td>—</td>
-                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>waiting for retry</td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    {w.started_at ? new Date(w.started_at).toLocaleString() : '—'}
+                                </td>
                             </tr>
                         ))}
                         {/* Recent completed downloads */}
@@ -220,7 +231,7 @@ export default function Dashboard({ data }: Props) {
                                 </td>
                             </tr>
                         ))}
-                        {activeUrls.length === 0 && waitingUrls.length === 0 && recentDownloads.length === 0 && (
+                        {activeUrls.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
                             <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
                         )}
                     </tbody>
