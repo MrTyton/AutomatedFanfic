@@ -524,7 +524,8 @@ class AsyncHistoryDB:
         try:
             cursor = await conn.execute(
                 """SELECT id, url, site, title, calibre_id, status,
-                          error_message, started_at, completed_at
+                          error_message, started_at, completed_at,
+                          COALESCE(completed_at, started_at) as timestamp
                    FROM download_events
                    ORDER BY started_at DESC LIMIT ?""",
                 (limit,),
