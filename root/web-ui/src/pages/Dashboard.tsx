@@ -44,24 +44,26 @@ function urlLink(url: string): ReactNode {
     return <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)' }}>{url}</a>
 }
 
-function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: string } | null {
-    const time = evt.timestamp ? new Date(evt.timestamp).toLocaleTimeString() : ''
+function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: string; sortKey: number } | null {
+    const rawTs = evt.timestamp || evt.completed_at
+    const time = rawTs ? new Date(rawTs).toLocaleTimeString() : ''
+    const sortKey = rawTs ? new Date(rawTs).getTime() : 0
 
     if (evt.event_type === 'download') {
         const title = evt.title || evt.url || 'Unknown'
         const site = evt.site || '—'
-        if (evt.status === 'success') return { icon: '✓', text: <>({site}) {title}</>, time }
-        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time }
-        if (evt.status === 'abandoned') return { icon: '✗', text: <>({site}) Abandoned: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time }
-        if (evt.status === 'pending') return { icon: '↓', text: <>({site}) Processing {evt.url ? urlLink(evt.url) : title}</>, time }
-        return { icon: '↓', text: <>({site}) {title}</>, time }
+        if (evt.status === 'success') return { icon: '✓', text: <>({site}) {title}</>, time, sortKey }
+        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time, sortKey }
+        if (evt.status === 'abandoned') return { icon: '✗', text: <>({site}) Abandoned: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time, sortKey }
+        if (evt.status === 'pending') return { icon: '↓', text: <>({site}) Processing {evt.url ? urlLink(evt.url) : title}</>, time, sortKey }
+        return { icon: '↓', text: <>({site}) {title}</>, time, sortKey }
     }
     if (evt.event_type === 'retry') {
         const site = evt.site || '—'
-        return { icon: '↻', text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}</>, time }
+        return { icon: '↻', text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}</>, time, sortKey }
     }
     if (evt.event_type === 'notification') {
-        return { icon: '🔔', text: <>{evt.title}: {evt.body || ''}</>, time }
+        return { icon: '🔔', text: <>{evt.title}: {evt.body || ''}</>, time, sortKey }
     }
     return null
 }
@@ -124,9 +126,9 @@ export default function Dashboard({ data }: Props) {
     const otherActivity = (data.recent_activity as RecentEvent[])
         .map(formatEvent)
     const activityEvents = [...downloadActivity, ...otherActivity]
-        .filter((e): e is { icon: string; text: ReactNode; time: string } =>
+        .filter((e): e is { icon: string; text: ReactNode; time: string; sortKey: number } =>
             e !== null && e.text != null)
-        .sort((a, b) => b.time.localeCompare(a.time))
+        .sort((a, b) => b.sortKey - a.sortKey)
         .slice(0, 20)
 
     return (
