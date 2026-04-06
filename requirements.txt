@@ -2,12 +2,12 @@
 # These are the core dependencies needed to run the application
 
 # Core notification and configuration libraries
-apprise==1.9.8
+apprise==1.9.9
 pydantic==2.12.5
-pydantic-settings==2.12.0
+pydantic-settings==2.13.1
 
 # HTTP requests and web scraping
-requests==2.32.5
+requests==2.33.1
 requests-file==2.1.0
 requests-toolbelt==1.0.0
 cloudscraper==1.2.71
@@ -21,7 +21,7 @@ soupsieve==2.8.3
 
 # Text encoding and character detection
 chardet==5.2.0
-charset-normalizer==3.4.5
+charset-normalizer==3.4.7
 webencodings==0.5.1
 
 # Network and security
@@ -43,12 +43,12 @@ six==1.17.0
 pyparsing==3.3.2
 
 # Web server and API
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
 websockets==15.0.1
 
 # Async SQLite for history database
-aiosqlite==0.21.0
+aiosqlite==0.22.1
 
 # TOML writing (stdlib tomllib is read-only)
 tomlkit>=0.13.0
