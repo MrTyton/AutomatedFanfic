@@ -41,6 +41,7 @@ def _process_task(
     retry_config: config_models.RetryConfig,
     worker_id: str,
     history_recorder=None,
+    active_urls: dict | None = None,
 ) -> bool:
     """
     Process a single fanfiction task.
@@ -66,6 +67,20 @@ def _process_task(
                 ff_logging.log_debug(
                     f"\t({site}) Extracted title from filename: {fanfic.title}"
                 )
+                # Push title to active_urls so the web UI can show it immediately
+                if active_urls is not None:
+                    try:
+                        active_urls[fanfic.url] = {
+                            "site": fanfic.site,
+                            "title": fanfic.title,
+                        }
+                    except Exception:
+                        pass
+                # Update the pending history DB row with the title
+                if history_recorder:
+                    history_recorder.record_download_title_update(
+                        url=fanfic.url, title=fanfic.title, site=fanfic.site
+                    )
 
             # Log epub metadata for debugging
             if ff_logging.is_verbose():
@@ -259,6 +274,7 @@ def url_worker(
                     retry_config,
                     worker_id,
                     history_recorder=history_recorder,
+                    active_urls=active_urls,
                 )
             except Exception as e:
                 ff_logging.log_failure(

@@ -123,6 +123,22 @@ class HistoryRecorder:
             )
         )
 
+    def record_download_title_update(
+        self, url: str, title: str, site: Optional[str] = None
+    ) -> None:
+        """Update the title on a pending download row without changing status."""
+        self._put(
+            HistoryMessage(
+                event_type=HistoryEventType.DOWNLOAD_UPDATED,
+                payload={
+                    "url": url,
+                    "status": DownloadStatus.PENDING.value,
+                    "title": title,
+                    "site": site,
+                },
+            )
+        )
+
     def record_retry(
         self,
         url: str,

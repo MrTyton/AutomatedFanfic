@@ -123,7 +123,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         url = "https://archiveofourown.org/works/123"
         fanfic = FanficInfo(url=url, site="ao3")
         mock_generate.return_value = fanfic
-        self.active_urls[url] = True  # Already active
+        self.active_urls[url] = {"site": "ao3"}  # Already active
 
         def get_urls_then_shutdown():
             self.shutdown_event.set()

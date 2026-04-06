@@ -7,17 +7,20 @@ router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
 @router.get("/active")
 async def active_downloads(request: Request):
-    """List of URLs currently being processed."""
+    """List of URLs currently being processed with metadata."""
     state = request.app.state.web_state
     if state.active_urls is None:
         return {"items": [], "count": 0}
 
     try:
-        urls = list(state.active_urls.keys())
+        items = [
+            {"url": url, **(meta if isinstance(meta, dict) else {})}
+            for url, meta in state.active_urls.items()
+        ]
     except Exception:
-        urls = []
+        items = []
 
-    return {"items": urls, "count": len(urls)}
+    return {"items": items, "count": len(items)}
 
 
 @router.get("/queues")

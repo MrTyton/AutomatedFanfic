@@ -46,7 +46,7 @@ class TestHealthRoutes(unittest.TestCase):
 
     def test_status_with_active_urls(self):
         """Status includes active download count."""
-        self.state.active_urls = {"url1": True, "url2": True}
+        self.state.active_urls = {"url1": {"site": "test"}, "url2": {"site": "test"}}
 
         resp = self.client.get("/api/status")
         data = resp.json()
@@ -147,11 +147,12 @@ class TestMonitoringRoutes(unittest.TestCase):
         self.assertEqual(resp.json(), {"items": [], "count": 0})
 
     def test_active_with_urls(self):
-        self.state.active_urls = {"url1": True, "url2": True}
+        self.state.active_urls = {"url1": {"site": "test"}, "url2": {"site": "test"}}
         resp = self.client.get("/api/monitoring/active")
         data = resp.json()
         self.assertEqual(data["count"], 2)
-        self.assertIn("url1", data["items"])
+        urls = [item["url"] for item in data["items"]]
+        self.assertIn("url1", urls)
 
     def test_queues_empty(self):
         resp = self.client.get("/api/monitoring/queues")
@@ -214,7 +215,7 @@ class TestControlRoutes(unittest.TestCase):
         )
 
         self.state.ingress_queue = MagicMock()
-        self.state.active_urls = {"https://ao3.org/works/1": True}
+        self.state.active_urls = {"https://ao3.org/works/1": {"site": "ao3"}}
 
         resp = self.client.post(
             "/api/controls/add-url", json={"url": "https://ao3.org/works/1"}

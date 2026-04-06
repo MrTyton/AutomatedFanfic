@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
-import type { DashboardSnapshot } from '../hooks/useWebSocket'
+import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
 import { addUrls, type AddUrlResult } from '../api'
 
 interface Props {
@@ -25,6 +25,8 @@ interface RecentEvent {
 interface WaitingUrl {
     url: string
     updated_at?: string
+    site?: string
+    title?: string
 }
 
 function extractSite(url: string): string {
@@ -99,7 +101,7 @@ export default function Dashboard({ data }: Props) {
 
     if (!data) return <p>Waiting for data…</p>
 
-    const activeUrls = data.active_downloads.items
+    const activeUrls: ActiveDownload[] = data.active_downloads.items
     const activeCount = data.active_downloads.count
     const ingressDepth = typeof data.queues.ingress === 'number' ? data.queues.ingress : 0
     const waitingData = data.waiting_downloads ?? { items: [], count: 0 }
@@ -194,14 +196,22 @@ export default function Dashboard({ data }: Props) {
                     </thead>
                     <tbody>
                         {/* Active downloads (truly processing) */}
-                        {activeUrls.map((url) => (
-                            <tr key={`active-${url}`}>
+                        {activeUrls.map((dl) => (
+                            <tr key={`active-${dl.url}`}>
                                 <td><span className="badge badge-warning">processing</span></td>
-                                <td>{extractSite(url)}</td>
+                                <td>{dl.site || extractSite(dl.url)}</td>
                                 <td>
-                                    <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer">
-                                        {url}
-                                    </a>
+                                    {dl.title ? (
+                                        <><strong>{dl.title}</strong>{' '}
+                                            <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                {dl.url}
+                                            </a>
+                                        </>
+                                    ) : (
+                                        <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer">
+                                            {dl.url}
+                                        </a>
+                                    )}
                                 </td>
                                 <td>—</td>
                                 <td></td>
@@ -211,11 +221,19 @@ export default function Dashboard({ data }: Props) {
                         {waitingItems.map((w) => (
                             <tr key={`waiting-${w.url}`}>
                                 <td><span className="badge badge-info">waiting</span></td>
-                                <td>{extractSite(w.url)}</td>
+                                <td>{w.site || extractSite(w.url)}</td>
                                 <td>
-                                    <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
-                                        {w.url}
-                                    </a>
+                                    {w.title ? (
+                                        <><strong>{w.title}</strong>{' '}
+                                            <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                {w.url}
+                                            </a>
+                                        </>
+                                    ) : (
+                                        <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
+                                            {w.url}
+                                        </a>
+                                    )}
                                 </td>
                                 <td>—</td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>

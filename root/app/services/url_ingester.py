@@ -369,7 +369,7 @@ def email_watcher(
 
             # Mark as active
             if active_urls is not None:
-                active_urls[fanfic.url] = True
+                active_urls[fanfic.url] = {"site": fanfic.site}
 
         # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:
