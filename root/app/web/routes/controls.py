@@ -54,7 +54,7 @@ async def add_url(request: Request, body: AddUrlRequest):
 
     # Add to active_urls and queue
     if state.active_urls is not None:
-        state.active_urls[fanfic.url] = True
+        state.active_urls[fanfic.url] = {"site": fanfic.site}
 
     state.ingress_queue.put(fanfic)
 
@@ -105,7 +105,7 @@ async def add_urls(request: Request, body: AddUrlsRequest):
                 continue
 
             if state.active_urls is not None:
-                state.active_urls[fanfic.url] = True
+                state.active_urls[fanfic.url] = {"site": fanfic.site}
 
             state.ingress_queue.put(fanfic)
 

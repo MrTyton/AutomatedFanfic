@@ -53,7 +53,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     def test_email_watcher_skips_active_url(self, mock_log, mock_generate, mock_sleep):
         # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
-        self.active_urls[url] = True
+        self.active_urls[url] = {"site": "fanfiction"}
 
         self.email_info.get_urls.side_effect = [[url], KeyboardInterrupt()]
 
@@ -99,7 +99,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         fanfic = FanficInfo(site="fanfiction", url=url)
-        self.active_urls[url] = True
+        self.active_urls[url] = {"site": "fanfiction"}
 
         # Queue returns fanfic then raises KeyboardInterrupt to exit loop
         self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
@@ -153,7 +153,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         fanfic = FanficInfo(site="fanfiction", url=url)
-        self.active_urls[url] = True
+        self.active_urls[url] = {"site": "fanfiction"}
 
         self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
@@ -214,7 +214,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         fanfic = FanficInfo(site="fanfiction", url=url)
-        self.active_urls[url] = True
+        self.active_urls[url] = {"site": "fanfiction"}
 
         self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False

@@ -23,13 +23,18 @@ async def _build_snapshot(state: Any) -> dict:
     snapshot: dict[str, Any] = {"timestamp": time.time()}
 
     # ── Active downloads ────────────────────────────────────────
+    url_metadata: dict[str, dict] = {}  # url -> {site, title, ...}
     if state.active_urls is not None:
         try:
-            urls = list(state.active_urls.keys())
+            for url, meta in state.active_urls.items():
+                if isinstance(meta, dict):
+                    url_metadata[url] = meta
+                else:
+                    url_metadata[url] = {}
         except Exception:
-            urls = []
-    else:
-        urls = []
+            pass
+
+    urls = list(url_metadata.keys())
 
     # Split active URLs into truly-processing vs waiting-for-retry
     waiting_url_map: dict[str, str] = {}  # url -> updated_at
@@ -40,9 +45,11 @@ async def _build_snapshot(state: Any) -> dict:
         except Exception:
             pass
 
-    processing_urls = [u for u in urls if u not in waiting_url_map]
+    processing_urls = [
+        {"url": u, **url_metadata.get(u, {})} for u in urls if u not in waiting_url_map
+    ]
     waiting_urls = [
-        {"url": u, "updated_at": waiting_url_map.get(u, "")}
+        {"url": u, "updated_at": waiting_url_map.get(u, ""), **url_metadata.get(u, {})}
         for u in urls
         if u in waiting_url_map
     ]

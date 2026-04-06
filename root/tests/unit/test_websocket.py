@@ -30,11 +30,14 @@ class TestWebSocketDashboard(unittest.TestCase):
 
     def test_snapshot_with_active_urls(self):
         """Snapshot includes active URL data when available."""
-        self.state.active_urls = {"https://ao3.org/works/1": True}
+        self.state.active_urls = {
+            "https://ao3.org/works/1": {"site": "archiveofourown"}
+        }
         with self.client.websocket_connect("/ws/dashboard") as ws:
             data = ws.receive_json()
             self.assertEqual(data["active_downloads"]["count"], 1)
-            self.assertIn("https://ao3.org/works/1", data["active_downloads"]["items"])
+            urls = [item["url"] for item in data["active_downloads"]["items"]]
+            self.assertIn("https://ao3.org/works/1", urls)
 
     def test_snapshot_with_queues(self):
         """Snapshot includes queue sizes when available."""

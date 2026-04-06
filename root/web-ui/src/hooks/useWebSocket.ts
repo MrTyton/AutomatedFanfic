@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
+export interface ActiveDownload {
+    url: string
+    site?: string
+    title?: string
+}
+
 export interface DashboardSnapshot {
     timestamp: number
-    active_downloads: { items: string[]; count: number }
+    active_downloads: { items: ActiveDownload[]; count: number }
     queues: Record<string, number | Record<string, number>>
     processes: Record<string, string>
     recent_downloads: unknown[]
     recent_activity: unknown[]
-    waiting_downloads?: { items: { url: string; updated_at?: string }[]; count: number }
+    waiting_downloads?: { items: { url: string; updated_at?: string; site?: string; title?: string }[]; count: number }
 }
 
 export function useDashboardSocket() {
