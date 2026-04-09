@@ -263,6 +263,121 @@ class TestConfigRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
 
 
+class TestWidgetRoute(unittest.TestCase):
+    """Tests for /api/widget endpoint (Homepage dashboard integration)."""
+
+    def setUp(self):
+        self.state = WebState()
+        self.app = create_app(self.state)
+        self.client = TestClient(self.app)
+
+    def test_widget_minimal_no_state(self):
+        """Widget returns valid structure with no shared state configured."""
+        resp = self.client.get("/api/widget")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["active_downloads"], 0)
+        self.assertEqual(data["queued"], 0)
+        self.assertEqual(data["waiting_retry"], 0)
+        self.assertEqual(data["total_completed"], 0)
+        self.assertEqual(data["status"], "running")
+        self.assertIsInstance(data["active"], list)
+        self.assertEqual(len(data["active"]), 0)
+
+    def test_widget_active_downloads(self):
+        """Widget reflects current active downloads count and list."""
+        self.state.active_urls = {
+            "https://ao3.org/works/1": {"site": "ao3", "title": "Story One"},
+            "https://ffnet.net/s/2": {"site": "ffnet", "title": "Story Two"},
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["active_downloads"], 2)
+        self.assertEqual(len(data["active"]), 2)
+        # Each active item should have url, site, title
+        titles = {item["title"] for item in data["active"]}
+        self.assertIn("Story One", titles)
+        self.assertIn("Story Two", titles)
+        sites = {item["site"] for item in data["active"]}
+        self.assertIn("ao3", sites)
+
+    def test_widget_active_items_have_url(self):
+        """Active items include the URL field."""
+        self.state.active_urls = {
+            "https://ao3.org/works/99": {"site": "ao3", "title": "Test"},
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["active"][0]["url"], "https://ao3.org/works/99")
+
+    def test_widget_queued_count(self):
+        """Widget shows ingress queue depth."""
+        mock_ingress = MagicMock()
+        mock_ingress.qsize.return_value = 7
+        self.state.ingress_queue = mock_ingress
+
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["queued"], 7)
+
+    def test_widget_waiting_retry_count(self):
+        """Widget shows waiting/retry queue depth."""
+        mock_waiting = MagicMock()
+        mock_waiting.qsize.return_value = 3
+        self.state.waiting_queue = mock_waiting
+
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["waiting_retry"], 3)
+
+    def test_widget_qsize_not_implemented(self):
+        """Widget handles platforms where qsize() is not supported."""
+        mock_q = MagicMock()
+        mock_q.qsize.side_effect = NotImplementedError
+        self.state.ingress_queue = mock_q
+        self.state.waiting_queue = mock_q
+
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["queued"], 0)
+        self.assertEqual(data["waiting_retry"], 0)
+
+    def test_widget_total_completed_with_db(self):
+        """Widget queries DB for total completed downloads."""
+
+        async def mock_count(**kwargs):
+            return 42
+
+        mock_db = MagicMock()
+        mock_db.get_download_count = mock_count
+        self.state.history_db = mock_db
+
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["total_completed"], 42)
+
+    def test_widget_status_running(self):
+        """Status is 'running' when processes are available."""
+        self.state.process_status_callable = lambda: {
+            "supervisor": {"state": "running"},
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["status"], "running")
+
+    def test_widget_active_items_handle_missing_metadata(self):
+        """Active items gracefully handle entries with no metadata dict."""
+        self.state.active_urls = {
+            "https://ao3.org/works/5": "not_a_dict",
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["active_downloads"], 1)
+        # Should still appear with url, defaults for missing fields
+        self.assertEqual(len(data["active"]), 1)
+        self.assertEqual(data["active"][0]["url"], "https://ao3.org/works/5")
+
+
 class TestWebConfig(unittest.TestCase):
     """Tests for the WebConfig model."""
 
