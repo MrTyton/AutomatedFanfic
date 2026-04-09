@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from history.database import AsyncHistoryDB
 from utils import ff_logging
 from web.dependencies import WebState
-from web.routes import config, controls, health, history, monitoring, websocket
+from web.routes import config, controls, health, history, monitoring, websocket, widget
 
 
 @asynccontextmanager
@@ -75,6 +75,7 @@ def create_app(web_state: WebState) -> FastAPI:
     app.include_router(controls.router)
     app.include_router(config.router)
     app.include_router(websocket.router)
+    app.include_router(widget.router)
 
     # Serve React SPA static files (must come after API routes)
     _static_dir = Path(__file__).resolve().parent.parent.parent / "web-ui" / "dist"
@@ -86,6 +87,13 @@ def create_app(web_state: WebState) -> FastAPI:
         @app.get("/{full_path:path}")
         async def _spa_fallback(full_path: str):
             """Serve index.html for all non-API paths (SPA client-side routing)."""
+            if full_path.startswith(("api/", "ws/")):
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": f"API route not found: /{full_path}"},
+                )
             return FileResponse(_static_dir / "index.html")
 
     return app

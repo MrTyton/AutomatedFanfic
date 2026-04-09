@@ -342,3 +342,41 @@ If you change the `port` in `config.toml`, update the Docker port mapping accord
 **Non-Docker Setup:**
 
 For non-Docker usage, set `host = "127.0.0.1"` to restrict access to localhost, and set `history_db_path` to a writable path on your filesystem (e.g., `"./data/history.db"`).
+
+**Homepage (gethomepage.dev) Widget:**
+
+The web dashboard exposes a widget-friendly endpoint at `/api/widget` for use with [Homepage](https://gethomepage.dev/)'s [Custom API widget](https://gethomepage.dev/widgets/services/customapi/). Use two widget entries under the same service group for a Sonarr-style layout with stat counters and an active downloads list:
+
+```yaml
+- AutomatedFanfic:
+    icon: mdi-book-open-variant
+    href: http://your-host:8080
+    widget:
+      type: customapi
+      url: http://your-host:8080/api/widget
+      mappings:
+        - field: active_downloads
+          label: Active
+          format: number
+        - field: queued
+          label: Queued
+          format: number
+        - field: waiting_retry
+          label: Retrying
+          format: number
+        - field: total_completed
+          label: Completed
+          format: number
+- AutomatedFanfic Queue:
+    widget:
+      type: customapi
+      url: http://your-host:8080/api/widget
+      display: dynamic-list
+      mappings:
+        items: active
+        name: title
+        label: site
+        limit: 5
+```
+
+Replace `your-host:8080` with the address and port of your AutomatedFanfic instance.
