@@ -3,7 +3,7 @@
 
 # Core notification and configuration libraries
 apprise==1.9.9
-pydantic==2.12.5
+pydantic==2.13.0
 pydantic-settings==2.13.1
 
 # HTTP requests and web scraping
