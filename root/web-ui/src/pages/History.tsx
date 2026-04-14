@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getDownloads, getEmails, getNotifications, getRetries, type DownloadRow, type EmailRow, type NotificationRow, type RetryRow } from '../api'
+import { statusBadgeClass } from '../statusColors'
 
 function ExpandableError({ text }: { text: string }) {
     const [expanded, setExpanded] = useState(false)
@@ -107,7 +108,7 @@ export default function History() {
                             ) : downloads.map((r, i) => (
                                 <tr key={i}>
                                     <td>
-                                        <span className={`badge ${r.status === 'success' ? 'badge-success' : r.status === 'failed' ? 'badge-error' : 'badge-warning'}`}>
+                                        <span className={statusBadgeClass(r.status)}>
                                             {r.status}
                                         </span>
                                     </td>
@@ -155,7 +156,7 @@ export default function History() {
                             ) : retries.map(r => (
                                 <tr key={r.id}>
                                     <td>
-                                        <span className={`badge ${r.action === 'retry' ? 'badge-warning' : r.action === 'hail_mary' ? 'badge-error' : 'badge-error'}`}>
+                                        <span className={statusBadgeClass(r.action)}>
                                             {r.action === 'hail_mary' ? 'hail mary' : r.action}
                                         </span>
                                     </td>

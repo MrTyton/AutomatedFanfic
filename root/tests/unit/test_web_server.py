@@ -377,6 +377,59 @@ class TestWidgetRoute(unittest.TestCase):
         self.assertEqual(len(data["active"]), 1)
         self.assertEqual(data["active"][0]["url"], "https://ao3.org/works/5")
 
+    def test_widget_active_items_show_downloading_state(self):
+        """Active items in active_urls but NOT in waiting DB show 'downloading'."""
+        self.state.active_urls = {
+            "https://ao3.org/works/1": {"site": "ao3", "title": "Active Story"},
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["active"][0]["state"], "downloading")
+
+    def test_widget_waiting_items_show_waiting_state(self):
+        """Items in active_urls that ARE in waiting DB show 'waiting'."""
+
+        async def mock_waiting():
+            return [{"url": "https://ao3.org/works/2", "updated_at": "2026-04-14"}]
+
+        async def mock_count(**kwargs):
+            return 0
+
+        mock_db = MagicMock()
+        mock_db.get_waiting_urls = mock_waiting
+        mock_db.get_download_count = mock_count
+        self.state.history_db = mock_db
+
+        self.state.active_urls = {
+            "https://ao3.org/works/1": {"site": "ao3", "title": "Active Story"},
+            "https://ao3.org/works/2": {"site": "ao3", "title": "Waiting Story"},
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        items_by_url = {item["url"]: item for item in data["active"]}
+        self.assertEqual(
+            items_by_url["https://ao3.org/works/1"]["state"], "downloading"
+        )
+        self.assertEqual(items_by_url["https://ao3.org/works/2"]["state"], "waiting")
+
+    def test_widget_no_db_all_items_show_downloading(self):
+        """Without history DB, all active items default to 'downloading'."""
+        self.state.active_urls = {
+            "https://ao3.org/works/1": {"site": "ao3", "title": "Story"},
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["active"][0]["state"], "downloading")
+
+    def test_widget_missing_metadata_shows_downloading_state(self):
+        """Items with non-dict metadata still get a state field."""
+        self.state.active_urls = {
+            "https://ao3.org/works/5": "not_a_dict",
+        }
+        resp = self.client.get("/api/widget")
+        data = resp.json()
+        self.assertEqual(data["active"][0]["state"], "downloading")
+
 
 class TestWebConfig(unittest.TestCase):
     """Tests for the WebConfig model."""

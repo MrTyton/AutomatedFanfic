@@ -7,7 +7,7 @@ the single-threaded HistoryWriter (see recorder.py).
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -578,5 +578,186 @@ class AsyncHistoryDB:
 
             events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
             return events[:limit]
+        finally:
+            await conn.close()
+
+    async def get_stats(self, period_hours: int = 24) -> dict:
+        """Get comprehensive statistics for the stats dashboard page."""
+        conn = await self._get_conn()
+        try:
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(hours=period_hours)
+            ).isoformat()
+
+            # All-time totals
+            cursor = await conn.execute("SELECT COUNT(*) FROM download_events")
+            total_downloads = (await cursor.fetchone())[0]
+
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM download_events WHERE status = 'success'"
+            )
+            total_success = (await cursor.fetchone())[0]
+
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM download_events WHERE status IN ('failed', 'abandoned')"
+            )
+            total_failed = (await cursor.fetchone())[0]
+
+            # Period totals
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM download_events WHERE started_at >= ?",
+                (cutoff,),
+            )
+            period_downloads = (await cursor.fetchone())[0]
+
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM download_events WHERE status = 'success' AND started_at >= ?",
+                (cutoff,),
+            )
+            period_success = (await cursor.fetchone())[0]
+
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM download_events WHERE status IN ('failed', 'abandoned') AND started_at >= ?",
+                (cutoff,),
+            )
+            period_failed = (await cursor.fetchone())[0]
+
+            # Retry stats (all-time)
+            cursor = await conn.execute(
+                "SELECT COUNT(DISTINCT download_event_id) FROM retry_events"
+            )
+            downloads_with_retries = (await cursor.fetchone())[0]
+
+            cursor = await conn.execute("SELECT COUNT(*) FROM retry_events")
+            total_retries = (await cursor.fetchone())[0]
+
+            # Average retries to success
+            cursor = await conn.execute(
+                """SELECT AVG(cnt) FROM (
+                       SELECT COUNT(*) as cnt
+                       FROM retry_events r
+                       JOIN download_events d ON r.download_event_id = d.id
+                       WHERE d.status = 'success'
+                       GROUP BY r.download_event_id
+                   )"""
+            )
+            row = await cursor.fetchone()
+            avg_retries_to_success = (
+                round(row[0], 2) if row and row[0] is not None else 0.0
+            )
+
+            # Downloads by site (all-time, top 20)
+            cursor = await conn.execute(
+                """SELECT site,
+                          COUNT(*) as total,
+                          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+                          SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
+                   FROM download_events
+                   GROUP BY site
+                   ORDER BY total DESC
+                   LIMIT 20"""
+            )
+            downloads_by_site = [dict(r) for r in await cursor.fetchall()]
+
+            # Downloads over time (daily buckets within period)
+            cursor = await conn.execute(
+                """SELECT DATE(started_at) as date,
+                          COUNT(*) as total,
+                          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+                          SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
+                   FROM download_events
+                   WHERE started_at >= ?
+                   GROUP BY DATE(started_at)
+                   ORDER BY date""",
+                (cutoff,),
+            )
+            downloads_over_time = [dict(r) for r in await cursor.fetchall()]
+
+            # Hourly distribution (all-time)
+            cursor = await conn.execute(
+                """SELECT CAST(strftime('%H', started_at) AS INTEGER) as hour,
+                          COUNT(*) as count
+                   FROM download_events
+                   GROUP BY hour
+                   ORDER BY hour"""
+            )
+            hourly_distribution = [dict(r) for r in await cursor.fetchall()]
+
+            # Weekly distribution (day of week, all-time)
+            # strftime('%w') returns 0=Sunday .. 6=Saturday
+            cursor = await conn.execute(
+                """SELECT CAST(strftime('%w', started_at) AS INTEGER) as day_of_week,
+                          COUNT(*) as count
+                   FROM download_events
+                   GROUP BY day_of_week
+                   ORDER BY day_of_week"""
+            )
+            weekly_distribution = [dict(r) for r in await cursor.fetchall()]
+
+            # Monthly distribution (day of month, all-time)
+            cursor = await conn.execute(
+                """SELECT CAST(strftime('%d', started_at) AS INTEGER) as day_of_month,
+                          COUNT(*) as count
+                   FROM download_events
+                   GROUP BY day_of_month
+                   ORDER BY day_of_month"""
+            )
+            monthly_distribution = [dict(r) for r in await cursor.fetchall()]
+
+            # Retry distribution by attempt number
+            cursor = await conn.execute(
+                """SELECT attempt_number, COUNT(*) as count
+                   FROM retry_events
+                   GROUP BY attempt_number
+                   ORDER BY attempt_number"""
+            )
+            retry_distribution = [dict(r) for r in await cursor.fetchall()]
+
+            # Status breakdown (all-time)
+            cursor = await conn.execute(
+                """SELECT status, COUNT(*) as count
+                   FROM download_events
+                   GROUP BY status
+                   ORDER BY count DESC"""
+            )
+            status_breakdown = [dict(r) for r in await cursor.fetchall()]
+
+            return {
+                "total_downloads": total_downloads,
+                "total_success": total_success,
+                "total_failed": total_failed,
+                "period_downloads": period_downloads,
+                "period_success": period_success,
+                "period_failed": period_failed,
+                "downloads_with_retries": downloads_with_retries,
+                "total_retries": total_retries,
+                "avg_retries_to_success": avg_retries_to_success,
+                "downloads_by_site": downloads_by_site,
+                "downloads_over_time": downloads_over_time,
+                "hourly_distribution": hourly_distribution,
+                "weekly_distribution": weekly_distribution,
+                "monthly_distribution": monthly_distribution,
+                "retry_distribution": retry_distribution,
+                "status_breakdown": status_breakdown,
+            }
+        except Exception:
+            return {
+                "total_downloads": 0,
+                "total_success": 0,
+                "total_failed": 0,
+                "period_downloads": 0,
+                "period_success": 0,
+                "period_failed": 0,
+                "downloads_with_retries": 0,
+                "total_retries": 0,
+                "avg_retries_to_success": 0.0,
+                "downloads_by_site": [],
+                "downloads_over_time": [],
+                "hourly_distribution": [],
+                "weekly_distribution": [],
+                "monthly_distribution": [],
+                "retry_distribution": [],
+                "status_breakdown": [],
+            }
         finally:
             await conn.close()
