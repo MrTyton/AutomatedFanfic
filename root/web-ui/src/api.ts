@@ -118,3 +118,68 @@ export function updateConfigSection(section: string, values: Record<string, unkn
         body: JSON.stringify({ values }),
     })
 }
+
+// ── Stats ──────────────────────────────────────────────────────
+export interface SiteStats {
+    site: string
+    total: number
+    success: number
+    failed: number
+}
+
+export interface TimePoint {
+    date: string
+    total: number
+    success: number
+    failed: number
+}
+
+export interface HourPoint {
+    hour: number
+    count: number
+}
+
+export interface WeekdayPoint {
+    day_of_week: number
+    count: number
+}
+
+export interface MonthDayPoint {
+    day_of_month: number
+    count: number
+}
+
+export interface RetryPoint {
+    attempt_number: number
+    count: number
+}
+
+export interface StatusPoint {
+    status: string
+    count: number
+}
+
+export interface StatsResponse {
+    period: string
+    total_downloads: number
+    total_success: number
+    total_failed: number
+    period_downloads: number
+    period_success: number
+    period_failed: number
+    downloads_with_retries: number
+    total_retries: number
+    avg_retries_to_success: number
+    downloads_by_site: SiteStats[]
+    downloads_over_time: TimePoint[]
+    hourly_distribution: HourPoint[]
+    weekly_distribution: WeekdayPoint[]
+    monthly_distribution: MonthDayPoint[]
+    retry_distribution: RetryPoint[]
+    status_breakdown: StatusPoint[]
+    error?: string
+}
+
+export function getStats(period: '24h' | '7d' | '30d' = '24h') {
+    return apiFetch<StatsResponse>(`/api/stats?period=${period}`)
+}

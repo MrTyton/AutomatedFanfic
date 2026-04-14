@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
 import { addUrls, type AddUrlResult } from '../api'
+import { statusBadgeClass } from '../statusColors'
 
 interface Props {
     data: DashboardSnapshot | null
@@ -247,7 +248,7 @@ export default function Dashboard({ data }: Props) {
                         {recentDownloads.map((dl, i) => (
                             <tr key={`dl-${i}`}>
                                 <td>
-                                    <span className={`badge ${dl.status === 'success' ? 'badge-success' : dl.status === 'failed' ? 'badge-error' : dl.status === 'waiting' ? 'badge-info' : dl.status === 'abandoned' ? 'badge-error' : 'badge-warning'}`}>
+                                    <span className={statusBadgeClass(dl.status)}>
                                         {dl.status}
                                     </span>
                                 </td>

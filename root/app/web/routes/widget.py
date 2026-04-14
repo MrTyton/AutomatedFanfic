@@ -15,6 +15,15 @@ async def homepage_widget(request: Request):
     """
     state = request.app.state.web_state
 
+    # Build set of URLs currently in retry backoff
+    waiting_urls: set[str] = set()
+    if state.history_db is not None:
+        try:
+            for row in await state.history_db.get_waiting_urls():
+                waiting_urls.add(row["url"])
+        except Exception:
+            pass
+
     # Active downloads
     active_items = []
     active_count = 0
@@ -28,6 +37,7 @@ async def homepage_widget(request: Request):
                 else:
                     entry["site"] = "unknown"
                     entry["title"] = url
+                entry["state"] = "waiting" if url in waiting_urls else "downloading"
                 active_items.append(entry)
             active_count = len(active_items)
         except Exception:

@@ -20,7 +20,16 @@ from fastapi.staticfiles import StaticFiles
 from history.database import AsyncHistoryDB
 from utils import ff_logging
 from web.dependencies import WebState
-from web.routes import config, controls, health, history, monitoring, websocket, widget
+from web.routes import (
+    config,
+    controls,
+    health,
+    history,
+    monitoring,
+    stats,
+    websocket,
+    widget,
+)
 
 
 @asynccontextmanager
@@ -76,6 +85,7 @@ def create_app(web_state: WebState) -> FastAPI:
     app.include_router(config.router)
     app.include_router(websocket.router)
     app.include_router(widget.router)
+    app.include_router(stats.router)
 
     # Serve React SPA static files (must come after API routes)
     _static_dir = Path(__file__).resolve().parent.parent.parent / "web-ui" / "dist"

@@ -106,6 +106,10 @@ main.content {
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
+.grid-4 {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 /* Table */
 table {
     width: 100%;
@@ -152,6 +156,11 @@ th {
 .badge-info {
     background: var(--surface2);
     color: var(--text);
+}
+
+.badge-abandoned {
+    background: var(--error);
+    color: #fff;
 }
 
 .badge-hot {
@@ -240,4 +249,15 @@ button.secondary {
 
 .connection-dot.disconnected {
     background: var(--error);
+}
+
+/* Period toggle */
+.period-toggle {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.period-toggle button {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
 }
