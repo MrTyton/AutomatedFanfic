@@ -17,8 +17,29 @@ function formatPct(num: number, denom: number): string {
     return `${((num / denom) * 100).toFixed(1)}%`
 }
 
+function fillDays(data: { date: string; total: number; success: number; failed: number }[], period: Period) {
+    if (data.length === 0) return data
+    const days = period === '24h' ? 1 : period === '7d' ? 7 : 30
+    const end = new Date()
+    const map = new Map(data.map(d => [d.date, d]))
+    const filled: typeof data = []
+    for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(end)
+        d.setDate(d.getDate() - i)
+        const key = d.toISOString().slice(0, 10)
+        filled.push(map.get(key) ?? { date: key, total: 0, success: 0, failed: 0 })
+    }
+    return filled
+}
+
+function loadPeriod(): Period {
+    const saved = localStorage.getItem('stats-period')
+    return saved === '24h' || saved === '7d' || saved === '30d' ? saved : '24h'
+}
+
 export default function Stats() {
-    const [period, setPeriod] = useState<Period>('24h')
+    const [period, _setPeriod] = useState<Period>(loadPeriod)
+    const setPeriod = (p: Period) => { localStorage.setItem('stats-period', p); _setPeriod(p) }
     const [distView, setDistView] = useState<DistView>('hourly')
     const [stats, setStats] = useState<StatsResponse | null>(null)
     const [loading, setLoading] = useState(true)
@@ -33,6 +54,9 @@ export default function Stats() {
 
     if (loading) return <p>Loading stats…</p>
     if (!stats || stats.error) return <p>Failed to load stats.</p>
+
+    const timeData = fillDays(stats.downloads_over_time, period)
+    const siteAxisWidth = Math.min(200, Math.max(120, ...(stats.downloads_by_site.map(s => s.site.length * 7.5))))
 
     return (
         <>
@@ -86,9 +110,9 @@ export default function Stats() {
             {/* Downloads Over Time */}
             <div className="card">
                 <h2>Downloads Over Time</h2>
-                {stats.downloads_over_time.length > 0 ? (
+                {timeData.length > 0 ? (
                     <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={stats.downloads_over_time}>
+                        <BarChart data={timeData}>
                             <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
                             <XAxis
                                 dataKey="date"
@@ -120,7 +144,7 @@ export default function Stats() {
                             <BarChart data={stats.downloads_by_site} layout="vertical">
                                 <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
                                 <XAxis type="number" stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} allowDecimals={false} />
-                                <YAxis type="category" dataKey="site" stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} width={100} />
+                                <YAxis type="category" dataKey="site" stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} width={siteAxisWidth} />
                                 <Tooltip
                                     contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
                                     labelStyle={{ color: '#eee' }}
