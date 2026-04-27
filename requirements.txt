@@ -51,4 +51,4 @@ websockets==15.0.1
 aiosqlite==0.22.1
 
 # TOML writing (stdlib tomllib is read-only)
-tomlkit>=0.13.0
+tomlkit>=0.14.0
