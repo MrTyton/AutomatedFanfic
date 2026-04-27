@@ -12,7 +12,7 @@ parameterized==0.9.0
 # Code quality and pre-commit hooks
 pre-commit==4.6.0
 black>=25.9.0
-ruff>=0.13.1
+ruff>=0.15.12
 
 # Build tools (may be needed for some development scenarios)
 setuptools==78.1.1
