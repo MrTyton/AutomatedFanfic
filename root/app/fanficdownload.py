@@ -50,7 +50,7 @@ from history.recorder import HistoryRecorder, HistoryWriter
 from config.config_store import ConfigStore
 
 # Define the application version
-__version__ = "3.6.2"
+__version__ = "3.6.3"
 
 
 def parse_arguments() -> argparse.Namespace:
