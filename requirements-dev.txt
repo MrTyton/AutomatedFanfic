@@ -10,8 +10,8 @@ httpx>=0.27.0
 parameterized==0.9.0
 
 # Code quality and pre-commit hooks
-pre-commit==4.5.1
-black>=25.12.0
+pre-commit==4.6.0
+black>=25.9.0
 ruff>=0.13.1
 
 # Build tools (may be needed for some development scenarios)
