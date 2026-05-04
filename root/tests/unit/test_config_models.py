@@ -379,6 +379,29 @@ path = ""
             os.unlink(temp_path)
             ConfigManager.clear_cache()
 
+    def test_config_manager_applies_ffdl_environment_overrides(self):
+        """FFDL_* environment variables should override TOML values."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write(self.minimal_toml_content)
+            temp_path = f.name
+
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "FFDL_EMAIL_PASSWORD": "env_password",
+                    "FFDL_CALIBRE_PATH": "/env/calibre/path",
+                },
+                clear=False,
+            ):
+                config = ConfigManager.load_config(temp_path, force_reload=True)
+
+            self.assertEqual(config.email.password, "env_password")
+            self.assertEqual(config.calibre.path, "/env/calibre/path")
+        finally:
+            os.unlink(temp_path)
+            ConfigManager.clear_cache()
+
     def test_app_config_validation_integration(self):
         """Test end-to-end AppConfig validation."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:

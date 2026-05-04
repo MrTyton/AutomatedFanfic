@@ -311,6 +311,28 @@ class TestProcessManager(unittest.TestCase):
         # Using 2.0s as a safe upper bound allowance for overhead
         self.assertLess(duration, 2.0, "Shutdown took too long, arguably sequential")
 
+    @patch("process_management.manager.mp_wait")
+    def test_stop_all_uses_os_wait_primitive(self, mock_mp_wait):
+        """stop_all should wait using multiprocessing wait sentinels."""
+        proc = MagicMock()
+        proc.sentinel = 1
+        proc.is_alive.side_effect = [True, False]
+
+        process_info = MagicMock()
+        process_info.process = proc
+        process_info.is_alive.return_value = True
+
+        self.manager.processes = {"test": process_info}
+
+        result = self.manager.stop_all(timeout=1.0)
+
+        self.assertTrue(result)
+        proc.terminate.assert_called_once()
+        mock_mp_wait.assert_called()
+
+        # Avoid invalid mocked sentinel handles in tearDown stop_all().
+        self.manager.processes = {}
+
     def test_get_status(self):
         """Test getting process status information."""
         self.manager.register_process("test", dummy_worker_function, (0.5,))

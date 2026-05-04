@@ -16,6 +16,7 @@ This is a docker image to run the Automated FFF CLI, with Apprise integration.
     - [How to Install - Docker](#how-to-install---docker)
     - [How to Run - Non-Docker](#how-to-run---non-docker)
   - [Configuration](#configuration)
+    - [Environment Variable Overrides](#environment-variable-overrides)
     - [Email](#email)
     - [Calibre](#calibre)
     - [Retry and Hail-Mary Protocol](#retry-and-hail-mary-protocol)
@@ -112,6 +113,46 @@ services:
 ## Configuration
 
 The config file is a [TOML](https://toml.io/en/) file that contains the script's specific options. Changes to this file will only take effect upon script startup.
+
+### Environment Variable Overrides
+
+AutomatedFanfic supports environment variable overrides using the `FFDL_` prefix. This is useful for Docker Compose/Kubernetes deployments where you want to inject secrets (like passwords) without storing them directly in `config.toml`.
+
+Environment values are applied **after** loading `config.toml`, so environment variables take precedence.
+
+**Important:** A valid `config.toml` is still required at startup (at minimum, include required `[email]` and `[calibre]` sections). Environment variables then override individual values.
+
+**Supported key formats:**
+- `FFDL_SECTION_FIELD` (single underscore between section and field)
+- `FFDL_SECTION__FIELD` (double underscore separator)
+
+Both map to the same nested TOML field path.
+
+**Examples:**
+- `FFDL_EMAIL_PASSWORD=super-secret`
+- `FFDL_CALIBRE_PATH=/books/Calibre`
+- `FFDL_WEB_ENABLED=true`
+- `FFDL_WEB_PORT=9090`
+- `FFDL_RETRY_HAIL_MARY_WAIT_HOURS=24.0`
+- `FFDL_MAX_WORKERS=8`
+
+**List fields:**
+- `email.disabled_sites` and `apprise.urls` can be set as comma-separated strings.
+- Example: `FFDL_EMAIL_DISABLED_SITES=fanfiction,royalroad`
+
+**Docker Compose example:**
+```yaml
+services:
+  automated-ffdl:
+    image: mrtyton/automated-ffdl
+    volumes:
+      - /path/to/config:/config
+      - /path/to/data:/data
+    environment:
+      - FFDL_EMAIL_PASSWORD=${FFDL_EMAIL_PASSWORD}
+      - FFDL_CALIBRE_PASSWORD=${FFDL_CALIBRE_PASSWORD}
+      - FFDL_WEB_ENABLED=true
+```
 
 
 ### Email

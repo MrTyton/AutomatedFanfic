@@ -13,6 +13,7 @@ class TestCalibreDBClient(unittest.TestCase):
     def setUp(self):
         """Set up commonly used mocks."""
         self.mock_calibre_info = MagicMock(spec=calibre_info.CalibreInfo)
+        self.mock_calibre_info.__str__.return_value = '--with-library "/fake/library"'
         self.mock_calibre_info.lock = MagicMock()
         self.client = CalibreDBClient(self.mock_calibre_info)
 
@@ -76,17 +77,45 @@ class TestCalibreDBClient(unittest.TestCase):
         else:
             mock_log_failure.assert_not_called()
 
+        called_args = mock_call.call_args[0][0]
+        self.assertIsInstance(called_args, list)
+        self.assertEqual(called_args[0], "calibredb")
+        self.assertEqual(called_args[1], command)
+        self.assertNotIn("shell", mock_call.call_args.kwargs)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    def test_execute_command_with_output_uses_argument_list(self, mock_check_output):
+        """_execute_command_with_output should invoke check_output with arg list."""
+        mock_check_output.return_value = b"ok"
+
+        result = self.client._execute_command_with_output("list")
+
+        self.assertEqual(result, "ok")
+        called_args = mock_check_output.call_args[0][0]
+        self.assertIsInstance(called_args, list)
+        self.assertEqual(called_args[0], "calibredb")
+        self.assertEqual(called_args[1], "list")
+        self.assertNotIn("shell", mock_check_output.call_args.kwargs)
+
     class ExportStoryParams(NamedTuple):
         fanfic: fanfic_info.FanficInfo
         location: str
-        expected_command: str
+        expected_command: list[str]
 
     @parameterized.expand(
         [
             ExportStoryParams(
                 fanfic=MagicMock(calibre_id="123"),
                 location="/fake/location",
-                expected_command='export 123 --dont-save-cover --dont-write-opf --single-dir --to-dir "/fake/location"',
+                expected_command=[
+                    "export",
+                    "123",
+                    "--dont-save-cover",
+                    "--dont-write-opf",
+                    "--single-dir",
+                    "--to-dir",
+                    "/fake/location",
+                ],
             ),
         ]
     )
@@ -103,13 +132,13 @@ class TestCalibreDBClient(unittest.TestCase):
 
     class RemoveStoryParams(NamedTuple):
         fanfic: fanfic_info.FanficInfo
-        expected_command: str
+        expected_command: list[str]
 
     @parameterized.expand(
         [
             RemoveStoryParams(
                 fanfic=MagicMock(calibre_id="123"),
-                expected_command="remove 123",
+                expected_command=["remove", "123"],
             ),
         ]
     )
@@ -127,7 +156,7 @@ class TestCalibreDBClient(unittest.TestCase):
         location: str
         fanfic: fanfic_info.FanficInfo
         epub_files: list
-        expected_command: str
+        expected_command: list[str]
         should_fail: bool
 
     @parameterized.expand(
@@ -136,14 +165,14 @@ class TestCalibreDBClient(unittest.TestCase):
                 location="/fake/location",
                 fanfic=MagicMock(),
                 epub_files=["/fake/location/story.epub"],
-                expected_command='add -d "/fake/location/story.epub"',
+                expected_command=["add", "-d", "/fake/location/story.epub"],
                 should_fail=False,
             ),
             AddStoryParams(
                 location="/fake/location",
                 fanfic=MagicMock(),
                 epub_files=[],
-                expected_command="",
+                expected_command=[],
                 should_fail=True,
             ),
         ]
@@ -377,7 +406,8 @@ class TestCalibreDBClient(unittest.TestCase):
             calls = mock_execute.call_args_list
             for call_obj in calls:
                 command = call_obj[0][0]  # first arg of call
-                self.assertTrue(command.startswith("set_custom "))
+                self.assertIsInstance(command, list)
+                self.assertEqual(command[0], "set_custom")
 
     def test_set_metadata_fields_no_custom_fields(self):
         """Test with no custom fields to restore."""
@@ -545,7 +575,7 @@ class TestCalibreDBClient(unittest.TestCase):
         args = mock_check_output.call_args[0][0]  # First arg of call
         # Expected: calibredb search "Identifiers:http://example.com/story" ...
         self.assertIn("search", args)
-        self.assertIn('"Identifiers:http://example.com/story"', args)
+        self.assertIn("Identifiers:http://example.com/story", args)
 
     @patch("calibre_integration.calibredb_utils.check_output")
     def test_get_story_id_not_found(self, mock_check_output):
@@ -578,6 +608,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
     def setUp(self):
         """Set up commonly used mocks."""
         self.mock_calibre_info = MagicMock(spec=calibre_info.CalibreInfo)
+        self.mock_calibre_info.__str__.return_value = '--with-library "/fake/library"'
         self.mock_calibre_info.lock = MagicMock()
         self.client = CalibreDBClient(self.mock_calibre_info)
 

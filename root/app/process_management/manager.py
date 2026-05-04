@@ -6,6 +6,7 @@ of worker processes, including lifecycle management, monitoring, and shutdown co
 """
 
 import multiprocessing as mp
+from multiprocessing.connection import wait as mp_wait
 import signal
 import threading
 import time
@@ -301,19 +302,48 @@ class ProcessManager:
             elif not process_info.is_alive():
                 process_info.state = ProcessState.STOPPED
 
-        # Phase 2: Wait for all processes to exit within timeout
-        while processes_to_stop and (time.time() - start_time < timeout):
+        # Phase 2: Wait for all processes to exit within timeout using OS wakeups
+        deadline = start_time + timeout
+        while processes_to_stop:
+            remaining = max(0.0, deadline - time.time())
+            if remaining <= 0:
+                break
+
+            waitable: list[tuple[str, ProcessInfo, int]] = []
+            non_waitable: list[tuple[str, ProcessInfo]] = []
+
+            for name, process_info in processes_to_stop:
+                process = process_info.process
+                if not process:
+                    continue
+
+                sentinel = getattr(process, "sentinel", None)
+                if isinstance(sentinel, int):
+                    waitable.append((name, process_info, sentinel))
+                else:
+                    non_waitable.append((name, process_info))
+
+            if waitable:
+                sentinels = [sentinel for _, _, sentinel in waitable]
+                # Wait for at least one process to finish, avoiding busy polling.
+                mp_wait(sentinels, timeout=remaining)
+
+            # Fallback path for mocked/non-waitable processes.
+            if non_waitable:
+                join_timeout = min(0.1, remaining)
+                for _, process_info in non_waitable:
+                    if process_info.process and process_info.process.is_alive():
+                        process_info.process.join(join_timeout)
+
             still_running = []
             for name, process_info in processes_to_stop:
-                if process_info.process.is_alive():
+                if process_info.process and process_info.process.is_alive():
                     still_running.append((name, process_info))
                 else:
                     process_info.state = ProcessState.STOPPED
                     ff_logging.log_debug(f"Process stopped gracefully: {name}")
 
             processes_to_stop = still_running
-            if processes_to_stop:
-                time.sleep(0.1)
 
         # Phase 3: Force kill any remaining processes
         success = True

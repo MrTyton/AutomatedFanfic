@@ -49,6 +49,15 @@ def run_supervisor(
             f"Supervisor received signal {signum}, shutting down threads..."
         )
         shutdown_event.set()
+        # Unblock services waiting on queue.get() calls.
+        try:
+            ingress_queue.put(None)
+        except Exception:
+            pass
+        try:
+            waiting_queue.put(None)
+        except Exception:
+            pass
 
     # Register signal handlers for graceful shutdown (SIGTERM from ProcessManager)
     signal.signal(signal.SIGTERM, signal_handler)

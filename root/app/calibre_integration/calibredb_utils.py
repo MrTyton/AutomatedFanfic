@@ -8,6 +8,7 @@ and multiprocessing-safe locking mechanisms.
 
 import json
 import re
+import shlex
 from subprocess import (
     check_output,
     call,
@@ -66,9 +67,19 @@ class CalibreDBClient:
         except (CalledProcessError, OSError, TimeoutExpired) as e:
             return f"Error: {e}"
 
+    def _build_calibredb_command(self, command_args: str | list[str]) -> list[str]:
+        """Build a safe calibredb argument list with configured library/auth args."""
+        if isinstance(command_args, str):
+            cmd = ["calibredb", *shlex.split(command_args)]
+        else:
+            cmd = ["calibredb", *command_args]
+
+        # CalibreInfo currently exposes CLI args via __str__.
+        return [*cmd, *shlex.split(str(self.cdb_info))]
+
     def _execute_command(
         self,
-        command_args: str,
+        command_args: str | list[str],
         fanfic: fanfic_info.FanficInfo | None = None,
         timeout: int | None = None,
     ) -> None:
@@ -83,7 +94,7 @@ class CalibreDBClient:
             timeout: Optional timeout in seconds.
         """
         id_str = fanfic.calibre_id if fanfic and fanfic.calibre_id else ""
-        full_command = f"calibredb {command_args} {self.cdb_info}"
+        full_command = self._build_calibredb_command(command_args)
 
         ff_logging.log_debug(
             f'\tCalling calibredb with command: \t"{command_args} {id_str}"'
@@ -93,7 +104,6 @@ class CalibreDBClient:
             with self.cdb_info.lock:
                 call(
                     full_command,
-                    shell=True,
                     stdin=PIPE,
                     stdout=DEVNULL,
                     stderr=DEVNULL,
@@ -104,7 +114,7 @@ class CalibreDBClient:
 
     def _execute_command_with_output(
         self,
-        command_args: str,
+        command_args: str | list[str],
         fanfic: fanfic_info.FanficInfo | None = None,
         timeout: int | None = None,
     ) -> str:
@@ -121,13 +131,13 @@ class CalibreDBClient:
         Raises:
             subprocess.CalledProcessError: If the command fails.
         """
-        full_command = f"calibredb {command_args} {self.cdb_info}"
+        full_command = self._build_calibredb_command(command_args)
 
         ff_logging.log_debug(f'\tCalling calibredb with command: \t"{command_args}"')
 
         with self.cdb_info.lock:
             output = check_output(
-                full_command, shell=True, stderr=PIPE, stdin=PIPE, timeout=timeout
+                full_command, stderr=PIPE, stdin=PIPE, timeout=timeout
             ).decode("utf-8")
         return output
 
@@ -146,7 +156,7 @@ class CalibreDBClient:
         try:
             search_query = f"Identifiers:{fanfic.url}"
 
-            output = self._execute_command_with_output(f'search "{search_query}"')
+            output = self._execute_command_with_output(["search", search_query])
 
             # calibredb search returns a comma-separated list of IDs (e.g., "1, 2, 3")
             ids = [x.strip() for x in output.split(",") if x.strip()]
@@ -182,7 +192,7 @@ class CalibreDBClient:
         # -d checks for duplicates (though we rely on our own checks too)
         try:
             output = self._execute_command_with_output(
-                f'add -d "{file_to_add}"', fanfic
+                ["add", "-d", file_to_add], fanfic
             )
 
             # Parse output for "Added book ids: 123"
@@ -214,7 +224,7 @@ class CalibreDBClient:
             ff_logging.log_failure("\tCannot remove story: no calibre_id")
             return
 
-        self._execute_command(f"remove {fanfic.calibre_id}", fanfic)
+        self._execute_command(["remove", str(fanfic.calibre_id)], fanfic)
         fanfic.calibre_id = None
 
     def export_story(self, fanfic: fanfic_info.FanficInfo, location: str) -> None:
@@ -228,7 +238,15 @@ class CalibreDBClient:
             ff_logging.log_failure("\tCannot export story: no calibre_id")
             return
 
-        command = f'export {fanfic.calibre_id} --dont-save-cover --dont-write-opf --single-dir --to-dir "{location}"'
+        command = [
+            "export",
+            str(fanfic.calibre_id),
+            "--dont-save-cover",
+            "--dont-write-opf",
+            "--single-dir",
+            "--to-dir",
+            location,
+        ]
         self._execute_command(command, fanfic)
 
     def add_format_to_existing_story(
@@ -260,25 +278,12 @@ class CalibreDBClient:
             # add_format takes the ID as a positional argument BEFORE the file path in some versions,
             # or the command is `add_format ID file`.
             # Let's check the CLI usage. `calibredb add_format [options] id file`
-            full_command_args = (
-                f'add_format --replace {fanfic.calibre_id} "{file_to_add}"'
-            )
-
-            # Since _execute_command appends calibre_info which usually contains credentials,
-            # we need to ensure the ID is placed correctly.
-            # My previous implementation in calibredb_utils.py had:
-            # f'add_format --replace "{file_to_add}"' and passed fanfic_info.id via call_calibre_db helper logic.
-            # The helper logic was: f"calibredb {command} {fanfic_info.calibre_id if fanfic_info else ''} {calibre_info}"
-            # So `add_format --replace "file" ID credentials`
-            # This order (COMMAND FILE ID) is unusual for CLI tools but if it worked, it worked.
-            # Wait, `calibredb add_format 123 file.epub` is the standard syntax.
-            # The previous code constructed: `calibredb add_format --replace "file" 123 --with-library ...`
-            # Let's replicate strict CLI usage: `calibredb add_format [opts] id file [opts]`
-
-            # Ideally we construct the specific string here.
-            # My _execute_command appends {self.cdb_info} at the end.
-            # It does NOT append the ID automatically anymore with my new signature.
-            # I removed the auto-ID injection to be more explicit.
+            full_command_args = [
+                "add_format",
+                "--replace",
+                str(fanfic.calibre_id),
+                file_to_add,
+            ]
 
             self._execute_command(full_command_args, fanfic)
 
@@ -306,7 +311,12 @@ class CalibreDBClient:
         try:
             # We search by ID to get the specific record
             output = self._execute_command_with_output(
-                f'list --for-machine --fields=all --search="id:{fanfic.calibre_id}"',
+                [
+                    "list",
+                    "--for-machine",
+                    "--fields=all",
+                    f"--search=id:{fanfic.calibre_id}",
+                ],
                 fanfic,
             )
 
@@ -375,16 +385,12 @@ class CalibreDBClient:
                 else:
                     value_str = str(field_value)
 
-                # Command: set_custom col_name value id
-                # usage: calibredb set_custom [options] column value id1 id2 ...
-
-                # Careful with quoting complexity in shell=True
-                # Using triple quotes or careful escaping might be needed if values contain quotes.
-                # Ideally we'd avoid shell=True, but existing architecture is shell-based.
-                # For now, simplistic escaping.
-                value_str_escaped = value_str.replace('"', '\\"')
-
-                command = f'set_custom "{field_name}" "{value_str_escaped}" {fanfic.calibre_id}'
+                command = [
+                    "set_custom",
+                    field_name,
+                    value_str,
+                    str(fanfic.calibre_id),
+                ]
                 self._execute_command(command, fanfic)
 
                 restored_count += 1

@@ -129,6 +129,14 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
 
         self.assertFalse(self.coordinator.running)
 
+    def test_process_single_ingress_item_blocks_when_timeout_none(self):
+        """Coordinator should perform a blocking get when timeout is None."""
+        self.mock_ingress.get.return_value = None
+
+        self.coordinator._process_single_ingress_item(timeout=None)
+
+        self.mock_ingress.get.assert_called_once_with()
+
     @patch("services.coordinator.ff_logging")
     def test_invalid_ingress_item(self, mock_logging):
         """Test handling of invalid item type in ingress queue."""
