@@ -128,32 +128,24 @@ class Coordinator:
                 ff_logging.log_debug("Coordinator received shutdown signal")
                 break
 
-            # Adaptive timeout: shorter when backlog exists, longer when idle
-            has_backlog = bool(self.state.backlog)
-            has_idle_workers = bool(self.state.idle_workers)
-
-            # Use short timeout if we have work and workers to assign it to
-            if has_backlog and has_idle_workers:
-                timeout = 0.05  # Fast response when work is pending
-            elif has_backlog or not has_idle_workers:
-                timeout = 0.5  # Medium timeout when partially busy
-            else:
-                timeout = 1.0  # Longer timeout when fully idle
-
             try:
-                self._process_single_ingress_item(timeout=timeout)
+                self._process_single_ingress_item(timeout=None)
             except Exception as e:
                 ff_logging.log_failure(f"Coordinator: Error in main loop: {e}")
 
-    def _process_single_ingress_item(self, timeout: float):
+    def _process_single_ingress_item(self, timeout: float | None = None):
         """
         Wait for and handle a single item from the ingress queue.
 
         Args:
-            timeout (float): Max seconds to wait for an item.
+            timeout (float | None): Max seconds to wait for an item.
+                When None, performs a blocking wait.
         """
         try:
-            item = self.ingress_queue.get(timeout=timeout)
+            if timeout is None:
+                item = self.ingress_queue.get()
+            else:
+                item = self.ingress_queue.get(timeout=timeout)
 
             if item is None:
                 # Poison pill received
@@ -176,11 +168,11 @@ class Coordinator:
                     f"Coordinator: Received invalid item type {type(item)}"
                 )
 
-        except Empty:
-            # Timeout reached, just return so main loop can check running state
-            pass
         except OSError as e:
             ff_logging.log_failure(f"Coordinator: Error processing ingress: {e}")
+        except Empty:
+            # Timeout path used by targeted tests and optional timeout callers.
+            pass
 
     def _handle_new_task(self, task: FanficInfo):
         """Route new task to appropriate worker or backlog."""
