@@ -23,21 +23,31 @@ class TestWebSocketDashboard(unittest.TestCase):
             data = ws.receive_json()
             self.assertIn("timestamp", data)
             self.assertIn("active_downloads", data)
+            self.assertIn("queued_downloads", data)
             self.assertIn("queues", data)
             self.assertIn("processes", data)
             self.assertIn("recent_downloads", data)
             self.assertIn("recent_activity", data)
 
     def test_snapshot_with_active_urls(self):
-        """Snapshot includes active URL data when available."""
+        """Snapshot separates queued (no status) vs processing (status=processing) URLs."""
         self.state.active_urls = {
-            "https://ao3.org/works/1": {"site": "archiveofourown"}
+            "https://ao3.org/works/1": {
+                "site": "archiveofourown",
+                "status": "processing",
+            },
+            "https://ao3.org/works/2": {"site": "archiveofourown", "status": "queued"},
         }
         with self.client.websocket_connect("/ws/dashboard") as ws:
             data = ws.receive_json()
+            # Only status=processing appears in active_downloads
             self.assertEqual(data["active_downloads"]["count"], 1)
-            urls = [item["url"] for item in data["active_downloads"]["items"]]
-            self.assertIn("https://ao3.org/works/1", urls)
+            active_urls = [item["url"] for item in data["active_downloads"]["items"]]
+            self.assertIn("https://ao3.org/works/1", active_urls)
+            # status=queued appears in queued_downloads
+            self.assertEqual(data["queued_downloads"]["count"], 1)
+            queued_urls = [item["url"] for item in data["queued_downloads"]["items"]]
+            self.assertIn("https://ao3.org/works/2", queued_urls)
 
     def test_snapshot_with_queues(self):
         """Snapshot includes queue sizes when available."""

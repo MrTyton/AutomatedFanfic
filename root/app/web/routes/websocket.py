@@ -45,8 +45,18 @@ async def _build_snapshot(state: Any) -> dict:
         except Exception:
             pass
 
-    processing_urls = [
-        {"url": u, **url_metadata.get(u, {})} for u in urls if u not in waiting_url_map
+    # Separate into: truly processing (worker thread active), queued (accepted but not yet dispatched), and waiting (retry backoff)
+    active_urls_list = [
+        {"url": u, **url_metadata.get(u, {})}
+        for u in urls
+        if u not in waiting_url_map
+        and url_metadata.get(u, {}).get("status") == "processing"
+    ]
+    queued_urls = [
+        {"url": u, **url_metadata.get(u, {})}
+        for u in urls
+        if u not in waiting_url_map
+        and url_metadata.get(u, {}).get("status") != "processing"
     ]
     waiting_urls = [
         {"url": u, "updated_at": waiting_url_map.get(u, ""), **url_metadata.get(u, {})}
@@ -55,8 +65,12 @@ async def _build_snapshot(state: Any) -> dict:
     ]
 
     snapshot["active_downloads"] = {
-        "items": processing_urls,
-        "count": len(processing_urls),
+        "items": active_urls_list,
+        "count": len(active_urls_list),
+    }
+    snapshot["queued_downloads"] = {
+        "items": queued_urls,
+        "count": len(queued_urls),
     }
     snapshot["waiting_downloads"] = {
         "items": waiting_urls,

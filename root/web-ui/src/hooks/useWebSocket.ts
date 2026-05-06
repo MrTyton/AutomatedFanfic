@@ -9,6 +9,7 @@ export interface ActiveDownload {
 export interface DashboardSnapshot {
     timestamp: number
     active_downloads: { items: ActiveDownload[]; count: number }
+    queued_downloads?: { items: ActiveDownload[]; count: number }
     queues: Record<string, number | Record<string, number>>
     processes: Record<string, string>
     recent_downloads: unknown[]

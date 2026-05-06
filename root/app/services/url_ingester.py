@@ -338,6 +338,9 @@ def email_watcher(
 
         # Process each URL found in email messages
         for url in urls:
+            # Normalize URL: add https:// if no protocol present (parsers require it for site detection)
+            if url and not url.startswith(("http://", "https://")):
+                url = "https://" + url
             # Parse URL to identify site and normalize format
             fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
 
@@ -369,7 +372,7 @@ def email_watcher(
 
             # Mark as active
             if active_urls is not None:
-                active_urls[fanfic.url] = {"site": fanfic.site}
+                active_urls[fanfic.url] = {"site": fanfic.site, "status": "queued"}
 
         # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:

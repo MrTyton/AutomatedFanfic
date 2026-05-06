@@ -73,6 +73,7 @@ def _process_task(
                         active_urls[fanfic.url] = {
                             "site": fanfic.site,
                             "title": fanfic.title,
+                            "status": "processing",
                         }
                     except Exception:
                         pass
@@ -261,6 +262,16 @@ def url_worker(
 
             # Track which site we're processing
             current_site = fanfic.site
+
+            # Mark as actively being processed by this worker thread
+            if active_urls is not None:
+                try:
+                    existing = dict(active_urls.get(fanfic.url, {}))
+                    existing.setdefault("site", fanfic.site)
+                    existing["status"] = "processing"
+                    active_urls[fanfic.url] = existing
+                except Exception:
+                    pass
 
             # Process Task
             should_remove = True

@@ -106,7 +106,9 @@ export default function Dashboard({ data }: Props) {
 
     const activeUrls: ActiveDownload[] = data.active_downloads.items
     const activeCount = data.active_downloads.count
-    const ingressDepth = typeof data.queues.ingress === 'number' ? data.queues.ingress : 0
+    const queuedData = data.queued_downloads ?? { items: [], count: 0 }
+    const queuedItems: ActiveDownload[] = queuedData.items ?? []
+    const queuedCount = queuedData.count ?? 0
     const waitingData = data.waiting_downloads ?? { items: [], count: 0 }
     const waitingItems: WaitingUrl[] = typeof waitingData === 'object' && waitingData !== null
         ? (waitingData as { items: WaitingUrl[]; count: number }).items ?? []
@@ -143,8 +145,8 @@ export default function Dashboard({ data }: Props) {
                     <div className="stat">{activeCount}</div>
                 </div>
                 <div className="card">
-                    <h2>Ingress Queue</h2>
-                    <div className="stat">{ingressDepth}</div>
+                    <h2>Queued</h2>
+                    <div className="stat">{queuedCount}</div>
                 </div>
                 <div className="card">
                     <h2>Waiting Queue</h2>
@@ -198,10 +200,32 @@ export default function Dashboard({ data }: Props) {
                         </tr>
                     </thead>
                     <tbody>
-                        {/* Active downloads (truly processing) */}
+                        {/* Active downloads (truly processing by a worker thread) */}
                         {activeUrls.map((dl) => (
                             <tr key={`active-${dl.url}`}>
                                 <td><span className="badge badge-warning">processing</span></td>
+                                <td>{dl.site || extractSite(dl.url)}</td>
+                                <td>
+                                    {dl.title ? (
+                                        <><strong>{dl.title}</strong>{' '}
+                                            <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                {dl.url}
+                                            </a>
+                                        </>
+                                    ) : (
+                                        <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer">
+                                            {dl.url}
+                                        </a>
+                                    )}
+                                </td>
+                                <td>—</td>
+                                <td></td>
+                            </tr>
+                        ))}
+                        {/* Queued downloads (accepted, waiting for coordinator/worker assignment) */}
+                        {queuedItems.map((dl) => (
+                            <tr key={`queued-${dl.url}`}>
+                                <td><span className="badge badge-info">queued</span></td>
                                 <td>{dl.site || extractSite(dl.url)}</td>
                                 <td>
                                     {dl.title ? (
