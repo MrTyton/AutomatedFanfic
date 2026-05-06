@@ -6,6 +6,7 @@ export function statusBadgeClass(status: string | undefined): string {
         case 'abandoned': return 'badge badge-abandoned'
         case 'pending':
         case 'processing': return 'badge badge-warning'
+        case 'queued': return 'badge badge-info'
         case 'waiting': return 'badge badge-info'
         case 'retry': return 'badge badge-warning'
         case 'hail_mary': return 'badge badge-error'

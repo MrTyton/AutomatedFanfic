@@ -42,11 +42,16 @@ async def add_url(request: Request, body: AddUrlRequest):
     from parsers import regex_parsing
     from parsers import auto_url_parsers
 
+    # Normalize URL: add https:// if no protocol present (parsers require it for site detection)
+    raw_url = body.url.strip()
+    if raw_url and not raw_url.startswith(("http://", "https://")):
+        raw_url = "https://" + raw_url
+
     # Parse the URL to create a FanficInfo
     url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
-    fanfic = regex_parsing.generate_FanficInfo_from_url(body.url, url_parsers)
+    fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
 
-    # Check for duplicates
+    # Check for duplicates (use normalized fanfic.url, not raw_url)
     if state.active_urls is not None and fanfic.url in state.active_urls:
         return AddUrlResponse(
             accepted=False, message=f"URL already in queue: {fanfic.url}"
@@ -54,7 +59,7 @@ async def add_url(request: Request, body: AddUrlRequest):
 
     # Add to active_urls and queue
     if state.active_urls is not None:
-        state.active_urls[fanfic.url] = {"site": fanfic.site}
+        state.active_urls[fanfic.url] = {"site": fanfic.site, "status": "queued"}
 
     state.ingress_queue.put(fanfic)
 
@@ -92,6 +97,9 @@ async def add_urls(request: Request, body: AddUrlsRequest):
         raw_url = raw_url.strip()
         if not raw_url:
             continue
+        # Normalize URL: add https:// if no protocol present
+        if not raw_url.startswith(("http://", "https://")):
+            raw_url = "https://" + raw_url
         try:
             fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
 
@@ -105,7 +113,10 @@ async def add_urls(request: Request, body: AddUrlsRequest):
                 continue
 
             if state.active_urls is not None:
-                state.active_urls[fanfic.url] = {"site": fanfic.site}
+                state.active_urls[fanfic.url] = {
+                    "site": fanfic.site,
+                    "status": "queued",
+                }
 
             state.ingress_queue.put(fanfic)
 
