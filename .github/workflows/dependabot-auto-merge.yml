@@ -120,10 +120,10 @@ jobs:
             while [ $elapsed -lt $timeout ]; do
               # Get the status of this specific check
               status=$(gh api repos/${{ github.repository }}/commits/$PR_SHA/check-runs \
-                --jq ".check_runs[] | select(.name == \"$check\") | .status" 2>/dev/null || echo "")
+                --jq ".check_runs[] | select(.name | contains(\"$check\")) | .status" 2>/dev/null || echo "")
 
               conclusion=$(gh api repos/${{ github.repository }}/commits/$PR_SHA/check-runs \
-                --jq ".check_runs[] | select(.name == \"$check\") | .conclusion" 2>/dev/null || echo "")
+                --jq ".check_runs[] | select(.name | contains(\"$check\")) | .conclusion" 2>/dev/null || echo "")
 
               if [ "$status" = "completed" ]; then
                 if [ "$conclusion" = "success" ]; then
@@ -247,12 +247,12 @@ jobs:
           echo "ℹ️  Version bump committed. CI checks won't run on this commit due to GitHub Actions security."
           echo "ℹ️  This is expected - the version bump itself doesn't require separate validation."
 
-      - name: Enable auto-merge for Dependabot PRs
+      - name: Merge Dependabot PR
         if: steps.check-pr.outputs.skip != 'true'
         run: |
-          # Enable auto-merge on the PR
-          gh pr merge --auto --squash "${{ github.event.pull_request.number }}"
-          echo "✅ Auto-merge enabled for PR #${{ github.event.pull_request.number }}"
+          # Directly merge the PR now that CI has passed
+          gh pr merge --squash "${{ github.event.pull_request.number }}"
+          echo "✅ Merged PR #${{ github.event.pull_request.number }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -318,16 +318,14 @@ jobs:
           - ℹ️  No CI checks required for this change (YAML-only update)"
           fi
 
-          gh pr comment "${{ github.event.pull_request.number }}" --body "🤖 **Auto-merge enabled**
+          gh pr comment "${{ github.event.pull_request.number }}" --body "🤖 **Auto-merged**
 
-          This Dependabot PR will be automatically merged once all required checks pass.
+          This Dependabot PR has been automatically merged after all required checks passed.
 
           **Version Update:**
           $VERSION_INFO
 
-          $CHECKS_INFO
-
-          If you need to make changes or prevent auto-merge, disable auto-merge on this PR."
+          $CHECKS_INFO"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -104,11 +104,16 @@ services:
 1. Make sure that you have calibre, and more importantly [calibredb](https://manual.calibre-ebook.com/generated/en/calibredb.html) installed on the system that you're running the script on. `calibredb` should be installed standard when you install calibre.
 2. Install [Python3](https://www.python.org/downloads/)
 3. Clone the Repo
-4. For production use: `python -m pip install -r requirements.txt`
+4. Create a virtual environment: `python3 -m venv /path/to/repo/.venv`
+5. Activate the virtual environment: `source /path/to/repo/.venv/bin/activate` (Linux/macOS) or `.venv\Scripts\activate` (Windows)
+6. For production use: `python -m pip install -r requirements.txt`
    For development (includes testing tools): `python -m pip install -r requirements-dev.txt`
-5. Install [FanficFare](https://github.com/JimmXinu/FanFicFare/wiki#command-line-interface-cli-version)
-6. Fill out the config.toml file
-7. Navigate to `root/app` and run `python fanficdownload.py`
+7. Install [FanficFare](https://github.com/JimmXinu/FanFicFare/wiki#command-line-interface-cli-version): `pip install FanFicFare`
+8. Fill out the config.toml file
+9. Navigate to `root/app` and run `python fanficdownload.py`
+10. To exit the virtual environment when done: `deactivate`
+
+A `run.sh` example script is included in the repo root for running the app from a virtual environment on Linux/macOS.
 
 ## Configuration
 
