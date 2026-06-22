@@ -41,6 +41,11 @@ function extractSite(url: string): string {
     }
 }
 
+/**
+ * Normalizes user-provided URLs for external links while rejecting unsafe schemes.
+ * This intentionally allows only http/https so dashboard data cannot render
+ * javascript:, data:, file:, or other executable/non-web protocols as links.
+ */
 function getSafeExternalHref(url: string): string | null {
     try {
         const candidate = url.startsWith('http') ? url : `https://${url}`
