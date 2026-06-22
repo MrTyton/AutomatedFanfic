@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useRef, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
 import { addUrls, type AddUrlResult } from '../api'
 import { statusBadgeClass } from '../statusColors'
@@ -46,6 +46,10 @@ function urlLink(url: string): ReactNode {
     return <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)' }}>{url}</a>
 }
 
+function makeExpandableRowKey(prefix: string, url: string | undefined, timestamp?: string): string {
+    return `${prefix}-${url ?? 'unknown'}-${timestamp ?? 'unknown'}`
+}
+
 function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: string; sortKey: number } | null {
     const rawTs = evt.timestamp || evt.completed_at
     const time = rawTs ? new Date(rawTs).toLocaleTimeString() : ''
@@ -55,8 +59,8 @@ function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: s
         const title = evt.title || evt.url || 'Unknown'
         const site = evt.site || '—'
         if (evt.status === 'success') return { icon: '✓', text: <>({site}) {title}</>, time, sortKey }
-        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time, sortKey }
-        if (evt.status === 'abandoned') return { icon: '✗', text: <>({site}) Abandoned: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time, sortKey }
+        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}</>, time, sortKey }
+        if (evt.status === 'abandoned') return { icon: '✗', text: <>({site}) Abandoned: {title}</>, time, sortKey }
         if (evt.status === 'pending') return { icon: '↓', text: <>({site}) Processing {evt.url ? urlLink(evt.url) : title}</>, time, sortKey }
         return { icon: '↓', text: <>({site}) {title}</>, time, sortKey }
     }
@@ -64,7 +68,7 @@ function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: s
         const site = evt.site || '—'
         return {
             icon: '↻',
-            text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : null}</>,
+            text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}</>,
             time,
             sortKey,
         }
@@ -79,6 +83,7 @@ export default function Dashboard({ data }: Props) {
     const [urlText, setUrlText] = useState('')
     const [results, setResults] = useState<AddUrlResult[]>([])
     const [loading, setLoading] = useState(false)
+    const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
     const resultTimer = useRef<number>(0)
 
     // Clear results after 5 seconds
@@ -106,6 +111,10 @@ export default function Dashboard({ data }: Props) {
         } finally {
             setLoading(false)
         }
+    }
+
+    const toggleExpandedError = (rowKey: string) => {
+        setExpandedErrors(prev => ({ ...prev, [rowKey]: !prev[rowKey] }))
     }
 
     if (!data) return <p>Waiting for data…</p>
@@ -252,65 +261,115 @@ export default function Dashboard({ data }: Props) {
                         ))}
                         {/* Waiting downloads (retry backoff) */}
                         {waitingItems.map((w) => (
-                            <tr key={`waiting-${w.url}`}>
-                                <td><span className="badge badge-info">waiting</span></td>
-                                <td>{w.site || extractSite(w.url)}</td>
-                                <td>
-                                    {w.title ? (
-                                        <><strong>{w.title}</strong>{' '}
-                                            <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {w.url}
-                                            </a>
-                                        </>
-                                    ) : (
-                                        <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
-                                            {w.url}
-                                        </a>
-                                    )}
-                                    {w.error_message && (
-                                        <div style={{ color: 'var(--error)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
-                                            {w.error_message}
-                                        </div>
-                                    )}
-                                </td>
-                                <td>—</td>
-                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
-                                </td>
-                            </tr>
+                            (() => {
+                                const rowKey = makeExpandableRowKey('waiting', w.url, w.updated_at)
+                                const isExpanded = !!expandedErrors[rowKey]
+
+                                return (
+                                    <Fragment key={rowKey}>
+                                        <tr key={rowKey}>
+                                            <td><span className="badge badge-info">waiting</span></td>
+                                            <td>{w.site || extractSite(w.url)}</td>
+                                            <td>
+                                                {w.title ? (
+                                                    <><strong>{w.title}</strong>{' '}
+                                                        <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                            {w.url}
+                                                        </a>
+                                                    </>
+                                                ) : (
+                                                    <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
+                                                        {w.url}
+                                                    </a>
+                                                )}
+                                                {w.error_message && (
+                                                    <div style={{ marginTop: '0.35rem' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="secondary"
+                                                            onClick={() => toggleExpandedError(rowKey)}
+                                                            aria-expanded={isExpanded}
+                                                            style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                                        >
+                                                            {isExpanded ? 'Hide error' : 'Show error'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td>—</td>
+                                            <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                                {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
+                                            </td>
+                                        </tr>
+                                        {w.error_message && isExpanded && (
+                                            <tr key={`${rowKey}-error`}>
+                                                <td></td>
+                                                <td colSpan={4} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                    {w.error_message}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </Fragment>
+                                )
+                            })()
                         ))}
                         {/* Recent completed downloads */}
                         {recentDownloads.map((dl, i) => (
-                            <tr key={`dl-${i}`}>
-                                <td>
-                                    <span className={statusBadgeClass(dl.status)}>
-                                        {dl.status}
-                                    </span>
-                                </td>
-                                <td>{dl.site || extractSite(dl.url || '')}</td>
-                                <td>
-                                    {dl.title ? (
-                                        <><strong>{dl.title}</strong>{' '}
-                                            <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {dl.url}
-                                            </a>
-                                        </>
-                                    ) : (
-                                        <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer">
-                                            {dl.url}
-                                        </a>
-                                    )}
-                                    {dl.error_message && (
-                                        <div style={{ color: 'var(--error)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
-                                            {dl.error_message}
-                                        </div>
-                                    )}
-                                </td>
-                                <td>{dl.calibre_id ?? '—'}</td>
-                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
-                                </td>
-                            </tr>
+                            (() => {
+                                const rowKey = makeExpandableRowKey('download', dl.url, dl.completed_at ?? dl.timestamp ?? String(i))
+                                const isExpanded = !!expandedErrors[rowKey]
+
+                                return (
+                                    <Fragment key={rowKey}>
+                                        <tr key={rowKey}>
+                                            <td>
+                                                <span className={statusBadgeClass(dl.status)}>
+                                                    {dl.status}
+                                                </span>
+                                            </td>
+                                            <td>{dl.site || extractSite(dl.url || '')}</td>
+                                            <td>
+                                                {dl.title ? (
+                                                    <><strong>{dl.title}</strong>{' '}
+                                                        <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                                            {dl.url}
+                                                        </a>
+                                                    </>
+                                                ) : (
+                                                    <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer">
+                                                        {dl.url}
+                                                    </a>
+                                                )}
+                                                {dl.error_message && (
+                                                    <div style={{ marginTop: '0.35rem' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="secondary"
+                                                            onClick={() => toggleExpandedError(rowKey)}
+                                                            aria-expanded={isExpanded}
+                                                            style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                                        >
+                                                            {isExpanded ? 'Hide error' : 'Show error'}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td>{dl.calibre_id ?? '—'}</td>
+                                            <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                                {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
+                                            </td>
+                                        </tr>
+                                        {dl.error_message && isExpanded && (
+                                            <tr key={`${rowKey}-error`}>
+                                                <td></td>
+                                                <td colSpan={4} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                    {dl.error_message}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </Fragment>
+                                )
+                            })()
                         ))}
                         {activeUrls.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
                             <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
