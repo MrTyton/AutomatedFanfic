@@ -93,16 +93,8 @@ class CalibreDBClient:
         if isinstance(exc, CalledProcessError):
             details.append(f"exit code {exc.returncode}")
 
-            stderr = (
-                exc.stderr.decode("utf-8", errors="replace")
-                if exc.stderr and isinstance(exc.stderr, bytes)
-                else (exc.stderr or "")
-            )
-            stdout = (
-                exc.output.decode("utf-8", errors="replace")
-                if exc.output and isinstance(exc.output, bytes)
-                else (exc.output or "")
-            )
+            stderr = CalibreDBClient._decode_output(exc.stderr)
+            stdout = CalibreDBClient._decode_output(exc.output)
 
             if stderr and stderr.strip():
                 details.append(f"stderr: {stderr.strip()}")
@@ -114,6 +106,13 @@ class CalibreDBClient:
             details.append(str(exc))
 
         return " | ".join(details)
+
+    @staticmethod
+    def _decode_output(data: str | bytes | None) -> str:
+        """Normalize subprocess output to text."""
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return data or ""
 
     def _execute_command(
         self,
@@ -143,7 +142,6 @@ class CalibreDBClient:
             with self.cdb_info.lock:
                 run(
                     full_command,
-                    stdin=PIPE,
                     capture_output=True,
                     text=True,
                     timeout=timeout,
@@ -180,8 +178,8 @@ class CalibreDBClient:
         try:
             with self.cdb_info.lock:
                 output = check_output(
-                    full_command, stderr=PIPE, stdin=PIPE, timeout=timeout
-                ).decode("utf-8")
+                    full_command, stderr=PIPE, timeout=timeout, text=True
+                )
             return output
         except (CalledProcessError, OSError, TimeoutExpired) as e:
             message = self._format_command_error(full_command, e)

@@ -93,7 +93,7 @@ class TestCalibreDBClient(unittest.TestCase):
     @patch("calibre_integration.calibredb_utils.check_output")
     def test_execute_command_with_output_uses_argument_list(self, mock_check_output):
         """_execute_command_with_output should invoke check_output with arg list."""
-        mock_check_output.return_value = b"ok"
+        mock_check_output.return_value = "ok"
 
         result = self.client._execute_command_with_output("list")
 
@@ -375,7 +375,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
         mock_fanfic.site = "fanfiction.net"
-        mock_check_output.return_value = b"[]"
+        mock_check_output.return_value = "[]"
 
         result = self.client.get_metadata(mock_fanfic)
 
@@ -387,7 +387,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
         mock_fanfic.site = "fanfiction.net"
-        mock_check_output.return_value = b"invalid json{"
+        mock_check_output.return_value = "invalid json{"
 
         result = self.client.get_metadata(mock_fanfic)
 
@@ -586,7 +586,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic.site = "site"
 
         # Mock search output: comma-separated list of IDs
-        mock_check_output.return_value = b"123, 124\n"
+        mock_check_output.return_value = "123, 124\n"
 
         result = self.client.get_story_id(mock_fanfic)
 
@@ -606,7 +606,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic = MagicMock()
         mock_fanfic.url = "http://example.com/story"
 
-        mock_check_output.return_value = b"\n"
+        mock_check_output.return_value = "\n"
 
         result = self.client.get_story_id(mock_fanfic)
 
@@ -655,7 +655,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
         mock_fanfic.calibre_id = None
 
         # Return output without expected "Added book ids:" pattern
-        mock_check_output.return_value = b"Some unexpected output\n"
+        mock_check_output.return_value = "Some unexpected output\n"
 
         with patch.object(
             self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
@@ -783,7 +783,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
         mock_fanfic.calibre_id = "123"
 
         # Empty list result
-        mock_check_output.return_value = b"[]"
+        mock_check_output.return_value = "[]"
 
         result = self.client.get_metadata(mock_fanfic)
 
