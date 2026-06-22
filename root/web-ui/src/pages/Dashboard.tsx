@@ -64,7 +64,7 @@ function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: s
         const site = evt.site || '—'
         return {
             icon: '↻',
-            text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>,
+            text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : null}</>,
             time,
             sortKey,
         }

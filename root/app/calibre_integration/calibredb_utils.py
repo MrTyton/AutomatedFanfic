@@ -110,6 +110,8 @@ class CalibreDBClient:
     @staticmethod
     def _decode_output(data: str | bytes | None) -> str:
         """Normalize subprocess output to text."""
+        if isinstance(data, str):
+            return data
         if isinstance(data, bytes):
             return data.decode("utf-8", errors="replace")
         return data or ""
