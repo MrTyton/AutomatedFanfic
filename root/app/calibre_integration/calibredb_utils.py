@@ -93,8 +93,16 @@ class CalibreDBClient:
         if isinstance(exc, CalledProcessError):
             details.append(f"exit code {exc.returncode}")
 
-            stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr
-            stdout = exc.output.decode("utf-8", errors="replace") if isinstance(exc.output, bytes) else exc.output
+            stderr = (
+                exc.stderr.decode("utf-8", errors="replace")
+                if exc.stderr and isinstance(exc.stderr, bytes)
+                else (exc.stderr or "")
+            )
+            stdout = (
+                exc.output.decode("utf-8", errors="replace")
+                if exc.output and isinstance(exc.output, bytes)
+                else (exc.output or "")
+            )
 
             if stderr and stderr.strip():
                 details.append(f"stderr: {stderr.strip()}")

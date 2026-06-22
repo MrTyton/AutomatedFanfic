@@ -63,8 +63,8 @@ class TestCalibreDBClient(unittest.TestCase):
             mock_run.side_effect = subprocess.CalledProcessError(
                 1,
                 ["calibredb", command],
-                output="stdout details",
-                stderr="stderr details",
+                output=b"stdout details",
+                stderr=b"stderr details",
             )
             with self.assertRaises(CalibreCommandError):
                 self.client._execute_command(command, fanfic)
