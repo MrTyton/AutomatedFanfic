@@ -702,6 +702,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 retry_config,
                 self.mock_cdb,
                 history_recorder=None,
+                error_message="Force update requested but update method is 'update_no_force'",
             )
 
     @patch("workers.command.execute_command")
@@ -762,6 +763,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 retry_config,
                 self.mock_cdb,
                 history_recorder=None,
+                error_message="Command execution failed",
             )
 
     @patch("workers.command.execute_command")
@@ -819,6 +821,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             retry_config,
             self.mock_cdb,
             history_recorder=None,
+            error_message="FanFicFare reported a permanent failure condition.",
         )
 
     @patch("workers.command.execute_command")

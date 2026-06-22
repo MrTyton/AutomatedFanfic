@@ -540,7 +540,9 @@ class AsyncHistoryDB:
         conn = await self._get_conn()
         try:
             cursor = await conn.execute(
-                "SELECT url, updated_at FROM download_events WHERE status = 'waiting'"
+                """SELECT url, updated_at, error_message
+                   FROM download_events
+                   WHERE status = 'waiting'"""
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]

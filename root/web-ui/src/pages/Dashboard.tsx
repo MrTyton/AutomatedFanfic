@@ -28,6 +28,7 @@ interface WaitingUrl {
     updated_at?: string
     site?: string
     title?: string
+    error_message?: string
 }
 
 function extractSite(url: string): string {
@@ -61,7 +62,12 @@ function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: s
     }
     if (evt.event_type === 'retry') {
         const site = evt.site || '—'
-        return { icon: '↻', text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}</>, time, sortKey }
+        return {
+            icon: '↻',
+            text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>,
+            time,
+            sortKey,
+        }
     }
     if (evt.event_type === 'notification') {
         return { icon: '🔔', text: <>{evt.title}: {evt.body || ''}</>, time, sortKey }
@@ -260,6 +266,11 @@ export default function Dashboard({ data }: Props) {
                                         <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
                                             {w.url}
                                         </a>
+                                    )}
+                                    {w.error_message && (
+                                        <div style={{ color: 'var(--error)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                                            {w.error_message}
+                                        </div>
                                     )}
                                 </td>
                                 <td>—</td>

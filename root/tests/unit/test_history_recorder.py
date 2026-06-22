@@ -63,6 +63,15 @@ class TestHistoryRecorder(unittest.TestCase):
         msg = HistoryMessage(**raw)
         self.assertEqual(msg.payload["status"], "abandoned")
 
+    def test_record_download_waiting_with_error(self):
+        self.recorder.record_download_waiting(
+            url="u", site="s", error_message="calibredb stderr"
+        )
+        raw = self._get_msg()
+        msg = HistoryMessage(**raw)
+        self.assertEqual(msg.payload["status"], "waiting")
+        self.assertEqual(msg.payload["error_message"], "calibredb stderr")
+
     def test_record_retry(self):
         self.recorder.record_retry(
             url="u",

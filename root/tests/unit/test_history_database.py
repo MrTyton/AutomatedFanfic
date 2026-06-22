@@ -264,6 +264,19 @@ class TestAsyncHistoryDB(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["status"], "success")
 
+    def test_get_waiting_urls_includes_error_message(self):
+        self.sync_db.insert_download(DownloadEvent(url="u1", site="s"))
+        self.sync_db.update_download(
+            url="u1",
+            status=DownloadStatus.WAITING,
+            error_message="calibredb stderr",
+        )
+
+        results = self._run(self.async_db.get_waiting_urls())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["url"], "u1")
+        self.assertEqual(results[0]["error_message"], "calibredb stderr")
+
     def test_get_download_count(self):
         self.sync_db.insert_download(DownloadEvent(url="u1", site="s"))
         self.sync_db.insert_download(DownloadEvent(url="u2", site="s"))

@@ -21,6 +21,7 @@ def handle_failure(
     retry_config: config_models.RetryConfig,
     cdb: calibre_info.CalibreInfo | None = None,
     history_recorder=None,
+    error_message: str | None = None,
 ) -> None:
     """
     Handle failure of a fanfiction download/update task.
@@ -67,7 +68,8 @@ def handle_failure(
         if history_recorder:
             history_recorder.record_download_abandoned(
                 fanfic.url,
-                f"Maximum retries reached after {fanfic.repeats} attempts",
+                error_message
+                or f"Maximum retries reached after {fanfic.repeats} attempts",
                 site=fanfic.site,
             )
         return
@@ -98,8 +100,13 @@ def handle_failure(
             attempt_number=fanfic.repeats or 0,
             action=decision.action.value,
             delay_minutes=decision.delay_minutes,
+            error_message=error_message,
         )
-        history_recorder.record_download_waiting(url=fanfic.url, site=fanfic.site)
+        history_recorder.record_download_waiting(
+            url=fanfic.url,
+            site=fanfic.site,
+            error_message=error_message,
+        )
 
     # Send to waiting queue with decision information attached
     waiting_queue.put(fanfic)
@@ -215,4 +222,5 @@ def process_fanfic_addition(
             retry_config,
             calibre_client.cdb_info,
             history_recorder=history_recorder,
+            error_message=str(e),
         )
