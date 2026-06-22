@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
 import { addUrls, type AddUrlResult } from '../api'
 import { statusBadgeClass } from '../statusColors'
@@ -41,9 +41,26 @@ function extractSite(url: string): string {
     }
 }
 
+function getSafeExternalHref(url: string): string | null {
+    try {
+        const candidate = url.startsWith('http') ? url : `https://${url}`
+        const parsed = new URL(candidate)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null
+    } catch {
+        return null
+    }
+}
+
+function renderUrl(url: string, style?: CSSProperties): ReactNode {
+    const href = getSafeExternalHref(url)
+    if (!href) {
+        return <span style={style}>{url}</span>
+    }
+    return <a href={href} target="_blank" rel="noreferrer" style={style}>{url}</a>
+}
+
 function urlLink(url: string): ReactNode {
-    const href = url.startsWith('http') ? url : `https://${url}`
-    return <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)' }}>{url}</a>
+    return renderUrl(url, { color: 'var(--text-muted)' })
 }
 
 function makeExpandableRowKey(prefix: string, url: string | undefined, timestamp?: string): string {
@@ -267,20 +284,14 @@ export default function Dashboard({ data }: Props) {
 
                                 return (
                                     <Fragment key={rowKey}>
-                                        <tr key={rowKey}>
+                                        <tr>
                                             <td><span className="badge badge-info">waiting</span></td>
                                             <td>{w.site || extractSite(w.url)}</td>
                                             <td>
                                                 {w.title ? (
-                                                    <><strong>{w.title}</strong>{' '}
-                                                        <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                            {w.url}
-                                                        </a>
-                                                    </>
+                                                    <><strong>{w.title}</strong>{' '}{renderUrl(w.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
                                                 ) : (
-                                                    <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
-                                                        {w.url}
-                                                    </a>
+                                                    renderUrl(w.url)
                                                 )}
                                                 {w.error_message && (
                                                     <div style={{ marginTop: '0.35rem' }}>
@@ -321,7 +332,7 @@ export default function Dashboard({ data }: Props) {
 
                                 return (
                                     <Fragment key={rowKey}>
-                                        <tr key={rowKey}>
+                                        <tr>
                                             <td>
                                                 <span className={statusBadgeClass(dl.status)}>
                                                     {dl.status}
@@ -330,15 +341,9 @@ export default function Dashboard({ data }: Props) {
                                             <td>{dl.site || extractSite(dl.url || '')}</td>
                                             <td>
                                                 {dl.title ? (
-                                                    <><strong>{dl.title}</strong>{' '}
-                                                        <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                            {dl.url}
-                                                        </a>
-                                                    </>
+                                                    <><strong>{dl.title}</strong>{' '}{dl.url ? renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' }) : null}</>
                                                 ) : (
-                                                    <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer">
-                                                        {dl.url}
-                                                    </a>
+                                                    dl.url ? renderUrl(dl.url) : '—'
                                                 )}
                                                 {dl.error_message && (
                                                     <div style={{ marginTop: '0.35rem' }}>
