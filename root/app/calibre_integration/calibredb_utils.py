@@ -151,7 +151,9 @@ class CalibreDBClient:
                 )
         except (CalledProcessError, OSError, TimeoutExpired) as e:
             message = self._format_command_error(full_command, e)
-            ff_logging.log_failure(f'\tCommand "{command_args} {id_str}" failed: {message}')
+            ff_logging.log_failure(
+                f'\tCommand "{command_args} {id_str}" failed: {message}'
+            )
             raise CalibreCommandError(message) from e
 
     def _execute_command_with_output(
