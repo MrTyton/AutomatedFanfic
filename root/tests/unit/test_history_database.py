@@ -292,6 +292,39 @@ class TestAsyncHistoryDB(unittest.TestCase):
         results = self._run(self.async_db.get_retries_for_url("u1"))
         self.assertEqual(len(results), 2)
 
+    def test_get_retries_includes_title(self):
+        self.sync_db.insert_download(DownloadEvent(url="u1", site="ao3", title="Story One"))
+        self.sync_db.insert_retry(
+            RetryEvent(url="u1", site="ao3", attempt_number=1, action=RetryAction.RETRY)
+        )
+
+        results = self._run(self.async_db.get_retries(limit=10, offset=0))
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Story One")
+
+    def test_get_waiting_urls_includes_title_and_site(self):
+        self.sync_db.insert_download(
+            DownloadEvent(url="u1", site="ao3", title="Story One", status=DownloadStatus.WAITING)
+        )
+
+        results = self._run(self.async_db.get_waiting_urls())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["url"], "u1")
+        self.assertEqual(results[0]["site"], "ao3")
+        self.assertEqual(results[0]["title"], "Story One")
+
+    def test_get_latest_download_returns_most_recent_row(self):
+        self.sync_db.insert_download(
+            DownloadEvent(url="u1", site="ao3", title="Old Title")
+        )
+        self.sync_db.insert_download(
+            DownloadEvent(url="u1", site="ao3", title="New Title")
+        )
+
+        result = self._run(self.async_db.get_latest_download("u1"))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["title"], "New Title")
+
     def test_get_email_checks(self):
         self.sync_db.insert_email_check(EmailCheckEvent(urls_found=5, urls_new=3))
         results = self._run(self.async_db.get_email_checks())

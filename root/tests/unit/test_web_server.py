@@ -1,6 +1,7 @@
 """Tests for the web server routes and app factory."""
 
 import unittest
+from queue import Empty, Queue
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -223,6 +224,92 @@ class TestControlRoutes(unittest.TestCase):
         data = resp.json()
         self.assertFalse(data["accepted"])
         self.assertIn("already in queue", data["message"])
+
+    def test_retry_now_requeues_waiting_item(self):
+        """retry-now should pull waiting item and enqueue immediately."""
+        from models.fanfic_info import FanficInfo
+
+        self.state.ingress_queue = Queue()
+        self.state.waiting_queue = Queue()
+        self.state.active_urls = {}
+        self.state.waiting_queue.put(
+            FanficInfo(url="https://ao3.org/works/1", site="ao3", title="Story")
+        )
+
+        resp = self.client.post(
+            "/api/controls/retry-now", json={"url": "https://ao3.org/works/1"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+        queued = self.state.ingress_queue.get_nowait()
+        self.assertIn(queued.url, {"https://ao3.org/works/1", "ao3.org/works/1"})
+        self.assertEqual(queued.title, "Story")
+
+    def test_cancel_retry_removes_waiting_entry(self):
+        """cancel-retry should remove pending waiting/ingress queue entries."""
+        from models.fanfic_info import FanficInfo
+
+        self.state.ingress_queue = Queue()
+        self.state.waiting_queue = Queue()
+        self.state.worker_queues = {"worker_1": Queue()}
+        self.state.active_urls = {"https://ao3.org/works/1": {"status": "waiting"}}
+
+        self.state.waiting_queue.put(FanficInfo(url="https://ao3.org/works/1", site="ao3"))
+        self.state.ingress_queue.put(FanficInfo(url="https://ao3.org/works/1", site="ao3"))
+        self.state.worker_queues["worker_1"].put(
+            FanficInfo(url="https://ao3.org/works/1", site="ao3")
+        )
+
+        resp = self.client.post(
+            "/api/controls/cancel-retry", json={"url": "https://ao3.org/works/1"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+        with self.assertRaises(Empty):
+            self.state.waiting_queue.get_nowait()
+        with self.assertRaises(Empty):
+            self.state.ingress_queue.get_nowait()
+
+    def test_redownload_scratch_rejects_processing_item(self):
+        """redownload should be blocked while actively processing."""
+        self.state.ingress_queue = Queue()
+        self.state.active_urls = {"https://ao3.org/works/1": {"status": "processing"}}
+
+        resp = self.client.post(
+            "/api/controls/redownload-scratch", json={"url": "https://ao3.org/works/1"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["ok"])
+
+    @patch("web.routes.controls._remove_from_calibre_if_possible")
+    @patch("parsers.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
+    def test_redownload_scratch_queues_force_task(
+        self, mock_generate, mock_parsers, mock_remove
+    ):
+        """redownload should queue a fresh force task when safe."""
+        from models.fanfic_info import FanficInfo
+
+        mock_parsers.return_value = {}
+        mock_generate.return_value = FanficInfo(
+            url="https://ao3.org/works/1", site="ao3", title="Story"
+        )
+        mock_remove.return_value = (True, "Removed from Calibre and queued fresh download.")
+
+        self.state.ingress_queue = Queue()
+        self.state.waiting_queue = Queue()
+        self.state.active_urls = {"https://ao3.org/works/1": {"status": "queued"}}
+
+        resp = self.client.post(
+            "/api/controls/redownload-scratch",
+            json={"url": "https://ao3.org/works/1", "site": "ao3", "title": "Story"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+
+        queued = self.state.ingress_queue.get_nowait()
+        self.assertEqual(queued.url, "https://ao3.org/works/1")
+        self.assertEqual(queued.behavior, "force")
 
 
 class TestConfigRoutes(unittest.TestCase):

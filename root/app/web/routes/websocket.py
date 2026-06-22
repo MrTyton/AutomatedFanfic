@@ -37,11 +37,11 @@ async def _build_snapshot(state: Any) -> dict:
     urls = list(url_metadata.keys())
 
     # Split active URLs into truly-processing vs waiting-for-retry
-    waiting_url_map: dict[str, str] = {}  # url -> updated_at
+    waiting_url_map: dict[str, dict] = {}  # url -> waiting row metadata
     if state.history_db is not None:
         try:
             for row in await state.history_db.get_waiting_urls():
-                waiting_url_map[row["url"]] = row.get("updated_at", "")
+                waiting_url_map[row["url"]] = row
         except Exception:
             pass
 
@@ -59,7 +59,15 @@ async def _build_snapshot(state: Any) -> dict:
         and url_metadata.get(u, {}).get("status") != "processing"
     ]
     waiting_urls = [
-        {"url": u, "updated_at": waiting_url_map.get(u, ""), **url_metadata.get(u, {})}
+        {
+            "url": u,
+            "updated_at": waiting_url_map.get(u, {}).get("updated_at", ""),
+            "site": url_metadata.get(u, {}).get("site")
+            or waiting_url_map.get(u, {}).get("site"),
+            "title": url_metadata.get(u, {}).get("title")
+            or waiting_url_map.get(u, {}).get("title"),
+            **url_metadata.get(u, {}),
+        }
         for u in urls
         if u in waiting_url_map
     ]

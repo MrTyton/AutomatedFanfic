@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
-import { addUrls, type AddUrlResult } from '../api'
+import { addUrls, cancelRetry, redownloadScratch, retryNow, type AddUrlResult } from '../api'
 import { statusBadgeClass } from '../statusColors'
 
 interface Props {
@@ -28,6 +28,7 @@ interface WaitingUrl {
     updated_at?: string
     site?: string
     title?: string
+    calibre_id?: string
 }
 
 function extractSite(url: string): string {
@@ -73,6 +74,7 @@ export default function Dashboard({ data }: Props) {
     const [urlText, setUrlText] = useState('')
     const [results, setResults] = useState<AddUrlResult[]>([])
     const [loading, setLoading] = useState(false)
+    const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({})
     const resultTimer = useRef<number>(0)
 
     // Clear results after 5 seconds
@@ -103,6 +105,21 @@ export default function Dashboard({ data }: Props) {
     }
 
     if (!data) return <p>Waiting for data…</p>
+
+    const runAction = async (
+        key: string,
+        action: () => Promise<{ message: string }>,
+    ) => {
+        setActionBusy((s) => ({ ...s, [key]: true }))
+        try {
+            const res = await action()
+            setResults([{ accepted: true, message: res.message }])
+        } catch (err) {
+            setResults([{ accepted: false, message: String(err) }])
+        } finally {
+            setActionBusy((s) => ({ ...s, [key]: false }))
+        }
+    }
 
     const activeUrls: ActiveDownload[] = data.active_downloads.items
     const activeCount = data.active_downloads.count
@@ -197,6 +214,7 @@ export default function Dashboard({ data }: Props) {
                             <th>Title / URL</th>
                             <th>Story ID</th>
                             <th>Time</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -220,6 +238,11 @@ export default function Dashboard({ data }: Props) {
                                 </td>
                                 <td>—</td>
                                 <td></td>
+                                <td>
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                        Redownload unavailable while processing
+                                    </span>
+                                </td>
                             </tr>
                         ))}
                         {/* Queued downloads (accepted, waiting for coordinator/worker assignment) */}
@@ -242,6 +265,15 @@ export default function Dashboard({ data }: Props) {
                                 </td>
                                 <td>—</td>
                                 <td></td>
+                                <td>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`redl-${dl.url}`]}
+                                        onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url, site: dl.site, title: dl.title }))}
+                                    >
+                                        Redownload
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                         {/* Waiting downloads (retry backoff) */}
@@ -265,6 +297,29 @@ export default function Dashboard({ data }: Props) {
                                 <td>—</td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                                     {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
+                                </td>
+                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`retry-${w.url}`]}
+                                        onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
+                                    >
+                                        Retry now
+                                    </button>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`cancel-${w.url}`]}
+                                        onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
+                                    >
+                                        Cancel retry
+                                    </button>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`redl-${w.url}`]}
+                                        onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
+                                    >
+                                        Redownload
+                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -299,10 +354,32 @@ export default function Dashboard({ data }: Props) {
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                                     {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
                                 </td>
+                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                    {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`retry-${dl.url}`]}
+                                            onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
+                                        >
+                                            Retry now
+                                        </button>
+                                    )}
+                                    {dl.url ? (
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`redl-${dl.url}`]}
+                                            onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
+                                        >
+                                            Redownload
+                                        </button>
+                                    ) : (
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
+                                    )}
+                                </td>
                             </tr>
                         ))}
-                        {activeUrls.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
-                            <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
+                        {activeUrls.length === 0 && queuedItems.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
+                            <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
                         )}
                     </tbody>
                 </table>
