@@ -293,7 +293,9 @@ class TestAsyncHistoryDB(unittest.TestCase):
         self.assertEqual(len(results), 2)
 
     def test_get_retries_includes_title(self):
-        self.sync_db.insert_download(DownloadEvent(url="u1", site="ao3", title="Story One"))
+        self.sync_db.insert_download(
+            DownloadEvent(url="u1", site="ao3", title="Story One")
+        )
         self.sync_db.insert_retry(
             RetryEvent(url="u1", site="ao3", attempt_number=1, action=RetryAction.RETRY)
         )
@@ -304,7 +306,9 @@ class TestAsyncHistoryDB(unittest.TestCase):
 
     def test_get_waiting_urls_includes_title_and_site(self):
         self.sync_db.insert_download(
-            DownloadEvent(url="u1", site="ao3", title="Story One", status=DownloadStatus.WAITING)
+            DownloadEvent(
+                url="u1", site="ao3", title="Story One", status=DownloadStatus.WAITING
+            )
         )
 
         results = self._run(self.async_db.get_waiting_urls())

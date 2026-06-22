@@ -254,8 +254,12 @@ class TestControlRoutes(unittest.TestCase):
         self.state.worker_queues = {"worker_1": Queue()}
         self.state.active_urls = {"https://ao3.org/works/1": {"status": "waiting"}}
 
-        self.state.waiting_queue.put(FanficInfo(url="https://ao3.org/works/1", site="ao3"))
-        self.state.ingress_queue.put(FanficInfo(url="https://ao3.org/works/1", site="ao3"))
+        self.state.waiting_queue.put(
+            FanficInfo(url="https://ao3.org/works/1", site="ao3")
+        )
+        self.state.ingress_queue.put(
+            FanficInfo(url="https://ao3.org/works/1", site="ao3")
+        )
         self.state.worker_queues["worker_1"].put(
             FanficInfo(url="https://ao3.org/works/1", site="ao3")
         )
@@ -294,7 +298,10 @@ class TestControlRoutes(unittest.TestCase):
         mock_generate.return_value = FanficInfo(
             url="https://ao3.org/works/1", site="ao3", title="Story"
         )
-        mock_remove.return_value = (True, "Removed from Calibre and queued fresh download.")
+        mock_remove.return_value = (
+            True,
+            "Removed from Calibre and queued fresh download.",
+        )
 
         self.state.ingress_queue = Queue()
         self.state.waiting_queue = Queue()

@@ -109,7 +109,9 @@ async def _load_latest_metadata(state, url: str) -> dict:
         return {}
 
 
-def _build_fanfic(raw_url: str, site: str | None = None, title: str | None = None) -> FanficInfo:
+def _build_fanfic(
+    raw_url: str, site: str | None = None, title: str | None = None
+) -> FanficInfo:
     """Create a FanficInfo using parser normalization when possible."""
     from parsers import auto_url_parsers
     from parsers import regex_parsing
@@ -200,6 +202,7 @@ def _remove_from_calibre_if_possible(state, fanfic: FanficInfo) -> tuple[bool, s
 
     try:
         from calibre_integration import calibre_info, calibredb_utils
+
         cdb_info = calibre_info.CalibreInfo(state.config_path, _LockFactory())
         client = calibredb_utils.CalibreDBClient(cdb_info)
         client.remove_story(fanfic)
@@ -426,7 +429,9 @@ async def redownload_scratch(request: Request, body: QueueActionRequest):
     if raw_url != canonical_url:
         candidate_urls.append(raw_url)
 
-    existing_meta, can_remove = _remove_from_active_url_candidates(state, candidate_urls)
+    existing_meta, can_remove = _remove_from_active_url_candidates(
+        state, candidate_urls
+    )
     if not can_remove:
         return ActionResponse(
             ok=False,
