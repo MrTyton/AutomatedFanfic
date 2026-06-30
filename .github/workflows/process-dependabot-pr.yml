@@ -205,51 +205,73 @@ jobs:
       - name: Merge PR
         if: steps.eligibility.outputs.skip != 'true' && steps.ready.outputs.can_merge == 'true'
         id: merge
+        timeout-minutes: 30
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: |
-          for attempt in 1 2 3; do
+          transient_count=0
+          while true; do
             set +e
             merge_output=$(gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER" 2>&1)
             merge_exit=$?
             set -e
             echo "$merge_output"
+
             if [ $merge_exit -eq 0 ]; then
-              echo "Merged on attempt $attempt"
               echo "merge_result=success" >> $GITHUB_OUTPUT
               break
+
             elif echo "$merge_output" | grep -qi "merge conflict"; then
-              echo "merge_result=conflict" >> $GITHUB_OUTPUT
-              break
-            elif [ $attempt -lt 3 ]; then
-              echo "Merge attempt $attempt failed (transient), retrying in 30s..."
+              # Post Copilot comment once (deduped)
+              existing=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-conflict-fix]" || true)
+              if [ -z "$existing" ]; then
+                COMMENT="[auto-copilot-conflict-fix]"$'\n\n'"🤖 **Merge conflict detected**"$'\n\n'"@copilot Please resolve the merge conflicts in this Dependabot PR so it can be auto-merged."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
+                gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
+              fi
+
+              # Poll until Copilot pushes a fix (HEAD SHA changes) or timeout
+              current_sha=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')
+              echo "Conflict detected. Waiting up to 10 minutes for Copilot fix (HEAD: ${current_sha})..."
+              waited=0
+              fixed=false
+              while [ $waited -lt 600 ]; do
+                sleep 30
+                waited=$((waited + 30))
+                pr_state=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
+                if [ "$pr_state" != "OPEN" ]; then
+                  echo "PR is no longer open, skipping."
+                  echo "merge_result=skipped" >> $GITHUB_OUTPUT
+                  exit 0
+                fi
+                new_sha=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')
+                if [ "$new_sha" != "$current_sha" ]; then
+                  echo "New commit detected (${new_sha}), retrying merge..."
+                  fixed=true
+                  break
+                fi
+                echo "  Still waiting for Copilot fix... (${waited}s elapsed)"
+              done
+              if [ "$fixed" = "false" ]; then
+                echo "Timed out waiting for Copilot to resolve conflict."
+                echo "merge_result=conflict_timeout" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+
+            elif echo "$merge_output" | grep -qiE "base branch was modified|try the merge again"; then
+              transient_count=$((transient_count + 1))
+              if [ $transient_count -ge 3 ]; then
+                echo "merge_result=failed" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+              echo "Transient error (attempt $transient_count/3), retrying in 30s..."
               sleep 30
+
             else
               echo "merge_result=failed" >> $GITHUB_OUTPUT
+              exit 1
             fi
           done
-
-      - name: Request Copilot fix for merge conflict
-        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'conflict'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ inputs.pr_number }}
-        run: |
-          existing=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-conflict-fix]" || true)
-          if [ -n "$existing" ]; then
-            exit 0
-          fi
-          COMMENT="[auto-copilot-conflict-fix]"$'\n\n'"🤖 **Merge conflict detected**"$'\n\n'"@copilot Please resolve the merge conflict in this Dependabot PR so it can be auto-merged."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
-          gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
-
-      - name: Fail on unresolved merge conflict
-        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'conflict'
-        run: exit 1
-
-      - name: Fail on persistent merge error
-        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'failed'
-        run: exit 1
 
       - name: Add merge comment
         if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'success'
