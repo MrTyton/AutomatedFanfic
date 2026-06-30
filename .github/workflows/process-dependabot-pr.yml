@@ -207,7 +207,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
-        run: gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER"
+        run: |
+          for attempt in 1 2 3; do
+            if gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER"; then
+              echo "Merged on attempt $attempt"
+              break
+            elif [ $attempt -lt 3 ]; then
+              echo "Merge attempt $attempt failed (Base branch modified?), retrying in 30s..."
+              sleep 30
+            else
+              echo "Merge failed after $attempt attempts"
+              exit 1
+            fi
+          done
 
       - name: Add merge comment
         if: steps.eligibility.outputs.skip != 'true' && steps.ready.outputs.can_merge == 'true'
