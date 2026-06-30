@@ -2,9 +2,9 @@
 # These are the core dependencies needed to run the application
 
 # Core notification and configuration libraries
-apprise==1.10.0
+apprise==1.11.0
 pydantic==2.13.4
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
 
 # HTTP requests and web scraping
 requests==2.34.2
@@ -14,7 +14,7 @@ cloudscraper==1.2.71
 pushbullet.py==0.12.0
 
 # HTML parsing and processing
-beautifulsoup4==4.14.3
+beautifulsoup4==4.15.0
 html2text==2025.4.15
 html5lib==1.1
 soupsieve==2.8.4
@@ -25,8 +25,8 @@ charset-normalizer==3.4.7
 webencodings==0.5.1
 
 # Network and security
-certifi==2026.5.20
-idna==3.16
+certifi==2026.6.17
+idna==3.18
 urllib3==2.7.0
 websocket-client==1.9.0
 
@@ -43,15 +43,15 @@ six==1.17.0
 pyparsing==3.3.2
 
 # Web server and API
-fastapi==0.136.3
-uvicorn[standard]==0.48.0
+fastapi==0.138.2
+uvicorn[standard]==0.49.0
 websockets==16.0
 
 # Async SQLite for history database
 aiosqlite==0.22.1
 
 # SQLite wrapper for FanFicFare browser cache
-apsw==3.46.1.0
+apsw==3.53.2.0
 
 # TOML writing (stdlib tomllib is read-only)
 tomlkit>=0.15.0
