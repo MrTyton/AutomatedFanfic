@@ -154,8 +154,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: |
+          set +e
           output=$(gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 30 2>&1)
           exit_code=$?
+          set -e
           echo "$output"
           if [ $exit_code -ne 0 ] && echo "$output" | grep -q "no required checks"; then
             echo "checks_status=none" >> $GITHUB_OUTPUT
