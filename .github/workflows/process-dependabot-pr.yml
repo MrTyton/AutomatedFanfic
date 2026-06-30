@@ -21,6 +21,8 @@ concurrency:
 jobs:
     process-pr:
         runs-on: ubuntu-latest
+        env:
+            GH_REPO: "${{ github.repository }}"
 
         steps:
             - name: Setup GitHub CLI
@@ -32,14 +34,14 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   PR_NUMBER: ${{ inputs.pr_number }}
               run: |
-                  AUTHOR=$(gh pr view "$PR_NUMBER" --json author --jq '.author.login')
-                  HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
-                  BASE_REF=$(gh pr view "$PR_NUMBER" --json baseRefName --jq '.baseRefName')
-                  PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
-                  IS_DRAFT=$(gh pr view "$PR_NUMBER" --json isDraft --jq '.isDraft')
-                  MERGE_STATE=$(gh pr view "$PR_NUMBER" --json mergeStateStatus --jq '.mergeStateStatus')
-                  PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title')
-                  PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body // ""')
+                  AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json author --jq '.author.login')
+                  HEAD_REF=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefName --jq '.headRefName')
+                  BASE_REF=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json baseRefName --jq '.baseRefName')
+                  PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
+                  IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
+                  MERGE_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeStateStatus --jq '.mergeStateStatus')
+                  PR_TITLE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json title --jq '.title')
+                  PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json body --jq '.body // ""')
 
                   if echo "$PR_TITLE $PR_BODY" | grep -Eiq "security|vulnerability|CVE"; then
                     IS_SECURITY=true
@@ -151,7 +153,7 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   PR_NUMBER: ${{ inputs.pr_number }}
-              run: gh pr checks "$PR_NUMBER" --required --watch --interval 30
+              run: gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 30
 
             - name: Request Copilot fix for failed checks
               if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outcome != 'success'
@@ -159,13 +161,13 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   PR_NUMBER: ${{ inputs.pr_number }}
               run: |
-                  existing_request=$(gh pr view "$PR_NUMBER" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-fix-requested]" || true)
+                  existing_request=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-fix-requested]" || true)
                   if [ -n "$existing_request" ]; then
                     exit 0
                   fi
 
                   COPILOT_COMMENT="[auto-copilot-fix-requested]"$'\n\n'"🤖 **Required checks failed**"$'\n\n'"@copilot Please fix this Dependabot PR so all required checks pass."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
-                  gh pr comment "$PR_NUMBER" --body "$COPILOT_COMMENT"
+                  gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COPILOT_COMMENT"
 
             - name: Stop when checks fail
               if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outcome != 'success'
@@ -178,9 +180,9 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   PR_NUMBER: ${{ inputs.pr_number }}
               run: |
-                  PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
-                  IS_DRAFT=$(gh pr view "$PR_NUMBER" --json isDraft --jq '.isDraft')
-                  MERGE_STATE=$(gh pr view "$PR_NUMBER" --json mergeStateStatus --jq '.mergeStateStatus')
+                  PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
+                  IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
+                  MERGE_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeStateStatus --jq '.mergeStateStatus')
 
                   if [ "$IS_DRAFT" = "true" ] || [ "$PR_STATE" != "OPEN" ] || [ "$MERGE_STATE" = "DIRTY" ]; then
                     echo "can_merge=false" >> $GITHUB_OUTPUT
@@ -193,7 +195,7 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   PR_NUMBER: ${{ inputs.pr_number }}
-              run: gh pr merge --squash --delete-branch "$PR_NUMBER"
+              run: gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER"
 
             - name: Add merge comment
               if: steps.eligibility.outputs.skip != 'true' && steps.ready.outputs.can_merge == 'true'
@@ -231,7 +233,7 @@ jobs:
                   fi
 
                   MERGE_COMMENT="🤖 **Auto-merged**"$'\n\n'"This Dependabot PR has been automatically merged because all branch-protection required checks passed."$'\n\n'"Version handling:"$'\n'"$VERSION_INFO"$'\n\n'"Decision:"$'\n'"- $DECISION_REASON"
-                  gh pr comment "$PR_NUMBER" --body "$MERGE_COMMENT"
+                  gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$MERGE_COMMENT"
 
             - name: Add skip notification
               if: steps.eligibility.outputs.skip == 'true'
