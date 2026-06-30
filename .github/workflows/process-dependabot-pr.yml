@@ -159,7 +159,7 @@ jobs:
           exit_code=$?
           set -e
           echo "$output"
-          if [ $exit_code -ne 0 ] && echo "$output" | grep -q "no required checks"; then
+          if [ $exit_code -ne 0 ] && echo "$output" | grep -qE "no (required )?checks reported"; then
             echo "checks_status=none" >> $GITHUB_OUTPUT
           elif [ $exit_code -eq 0 ]; then
             echo "checks_status=passed" >> $GITHUB_OUTPUT
