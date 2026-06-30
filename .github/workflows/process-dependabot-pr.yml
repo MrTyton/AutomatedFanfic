@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: dependabot-pr-${{ inputs.pr_number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   process-pr:
@@ -197,7 +197,7 @@ jobs:
           IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
           MERGE_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeStateStatus --jq '.mergeStateStatus')
 
-          if [ "$IS_DRAFT" = "true" ] || [ "$PR_STATE" != "OPEN" ] || [ "$MERGE_STATE" = "DIRTY" ]; then
+          if [ "$IS_DRAFT" = "true" ] || [ "$PR_STATE" != "OPEN" ]; then
             echo "can_merge=false" >> $GITHUB_OUTPUT
           else
             echo "can_merge=true" >> $GITHUB_OUTPUT
@@ -215,7 +215,7 @@ jobs:
           transient_count=0
           while true; do
             set +e
-            merge_output=$(gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER" 2>&1)
+            merge_output=$(GH_TOKEN="$COPILOT_TOKEN" gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER" 2>&1)
             merge_exit=$?
             set -e
             echo "$merge_output"
