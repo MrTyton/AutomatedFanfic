@@ -62,13 +62,14 @@ jobs:
         run: |
           SKIP=false
           REASON=""
+          AUTHOR="${{ steps.pr-meta.outputs.author }}"
 
-          if [ "${{ steps.pr-meta.outputs.author }}" != "dependabot[bot]" ]; then
-            SKIP=true
-            REASON="PR author is not dependabot[bot]"
-          elif [ "${{ steps.pr-meta.outputs.pr_state }}" != "OPEN" ]; then
+          if [ "${{ steps.pr-meta.outputs.pr_state }}" != "OPEN" ]; then
             SKIP=true
             REASON="PR is no longer open"
+          elif ! echo "$AUTHOR" | grep -Eiq 'dependabot'; then
+            SKIP=true
+            REASON="PR author is not dependabot (author=$AUTHOR)"
           fi
 
           echo "skip=$SKIP" >> $GITHUB_OUTPUT
