@@ -76,7 +76,7 @@ jobs:
 
       - name: Checkout PR branch
         if: steps.eligibility.outputs.skip != 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.pr-meta.outputs.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
