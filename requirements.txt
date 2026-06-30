@@ -4,7 +4,7 @@
 # Core notification and configuration libraries
 apprise==1.11.0
 pydantic==2.13.4
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
 
 # HTTP requests and web scraping
 requests==2.34.2
@@ -25,7 +25,7 @@ charset-normalizer==3.4.7
 webencodings==0.5.1
 
 # Network and security
-certifi==2026.5.20
+certifi==2026.6.17
 idna==3.18
 urllib3==2.7.0
 websocket-client==1.9.0
@@ -43,7 +43,7 @@ six==1.17.0
 pyparsing==3.3.2
 
 # Web server and API
-fastapi==0.137.1
+fastapi==0.138.2
 uvicorn[standard]==0.49.0
 websockets==16.0
 
