@@ -59,6 +59,7 @@ jobs:
     if: needs.discover-open-prs.outputs.has_prs == 'true'
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         pr_number: ${{ fromJson(needs.discover-open-prs.outputs.pr_numbers_json) }}
     uses: ./.github/workflows/process-dependabot-pr.yml
