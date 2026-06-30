@@ -224,7 +224,7 @@ jobs:
               echo "merge_result=success" >> $GITHUB_OUTPUT
               break
 
-            elif echo "$merge_output" | grep -qi "merge conflict"; then
+            elif echo "$merge_output" | grep -qiE "merge conflict|not mergeable|cannot be cleanly created|has merge conflicts"; then
               # Post Copilot comment once (deduped)
               existing=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-conflict-fix]" || true)
               if [ -z "$existing" ]; then
