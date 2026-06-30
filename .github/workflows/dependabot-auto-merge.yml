@@ -36,8 +36,10 @@ jobs:
         id: find-prs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           PR_NUMBERS_JSON=$(gh pr list \
+            --repo "$GH_REPO" \
             --state open \
             --search "is:pr is:open author:app/dependabot" \
             --json number \
