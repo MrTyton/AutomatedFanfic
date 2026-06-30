@@ -204,25 +204,55 @@ jobs:
 
       - name: Merge PR
         if: steps.eligibility.outputs.skip != 'true' && steps.ready.outputs.can_merge == 'true'
+        id: merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: |
           for attempt in 1 2 3; do
-            if gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER"; then
+            set +e
+            merge_output=$(gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER" 2>&1)
+            merge_exit=$?
+            set -e
+            echo "$merge_output"
+            if [ $merge_exit -eq 0 ]; then
               echo "Merged on attempt $attempt"
+              echo "merge_result=success" >> $GITHUB_OUTPUT
+              break
+            elif echo "$merge_output" | grep -qi "merge conflict"; then
+              echo "merge_result=conflict" >> $GITHUB_OUTPUT
               break
             elif [ $attempt -lt 3 ]; then
-              echo "Merge attempt $attempt failed (Base branch modified?), retrying in 30s..."
+              echo "Merge attempt $attempt failed (transient), retrying in 30s..."
               sleep 30
             else
-              echo "Merge failed after $attempt attempts"
-              exit 1
+              echo "merge_result=failed" >> $GITHUB_OUTPUT
             fi
           done
 
+      - name: Request Copilot fix for merge conflict
+        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'conflict'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          existing=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-conflict-fix]" || true)
+          if [ -n "$existing" ]; then
+            exit 0
+          fi
+          COMMENT="[auto-copilot-conflict-fix]"$'\n\n'"🤖 **Merge conflict detected**"$'\n\n'"@copilot Please resolve the merge conflict in this Dependabot PR so it can be auto-merged."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
+          gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
+
+      - name: Fail on unresolved merge conflict
+        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'conflict'
+        run: exit 1
+
+      - name: Fail on persistent merge error
+        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'failed'
+        run: exit 1
+
       - name: Add merge comment
-        if: steps.eligibility.outputs.skip != 'true' && steps.ready.outputs.can_merge == 'true'
+        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
