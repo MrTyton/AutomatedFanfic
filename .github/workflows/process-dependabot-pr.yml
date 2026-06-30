@@ -171,6 +171,7 @@ jobs:
         if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TRIGGER_PAT }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: |
           existing_request=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-fix-requested]" || true)
@@ -179,7 +180,7 @@ jobs:
           fi
 
           COPILOT_COMMENT="[auto-copilot-fix-requested]"$'\n\n'"🤖 **Required checks failed**"$'\n\n'"@copilot Please fix this Dependabot PR so all required checks pass."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
-          gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COPILOT_COMMENT"
+          GH_TOKEN="$COPILOT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COPILOT_COMMENT"
 
       - name: Stop when checks fail
         if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
@@ -208,6 +209,7 @@ jobs:
         timeout-minutes: 30
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TRIGGER_PAT }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: |
           transient_count=0
@@ -227,7 +229,7 @@ jobs:
               existing=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-conflict-fix]" || true)
               if [ -z "$existing" ]; then
                 COMMENT="[auto-copilot-conflict-fix]"$'\n\n'"🤖 **Merge conflict detected**"$'\n\n'"@copilot Please resolve the merge conflicts in this Dependabot PR so it can be auto-merged."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
-                gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
+                GH_TOKEN="$COPILOT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
               fi
 
               # Poll until Copilot pushes a fix (HEAD SHA changes) or timeout
