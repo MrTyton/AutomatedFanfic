@@ -1,0 +1,319 @@
+name: Process Dependabot PR
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: Pull request number to process
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  actions: write
+
+concurrency:
+  group: dependabot-pr-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  process-pr:
+    runs-on: ubuntu-latest
+    env:
+      GH_REPO: "${{ github.repository }}"
+
+    steps:
+      - name: Setup GitHub CLI
+        run: gh --version
+
+      - name: Read PR metadata
+        id: pr-meta
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json author --jq '.author.login')
+          HEAD_REF=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefName --jq '.headRefName')
+          BASE_REF=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json baseRefName --jq '.baseRefName')
+          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
+          IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
+          MERGE_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeStateStatus --jq '.mergeStateStatus')
+          PR_TITLE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json title --jq '.title')
+          PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json body --jq '.body // ""')
+
+          if echo "$PR_TITLE $PR_BODY" | grep -Eiq "security|vulnerability|CVE"; then
+            IS_SECURITY=true
+          else
+            IS_SECURITY=false
+          fi
+
+          echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+          echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+          echo "pr_state=$PR_STATE" >> $GITHUB_OUTPUT
+          echo "is_draft=$IS_DRAFT" >> $GITHUB_OUTPUT
+          echo "merge_state=$MERGE_STATE" >> $GITHUB_OUTPUT
+          echo "is_security=$IS_SECURITY" >> $GITHUB_OUTPUT
+
+      - name: Evaluate processing eligibility
+        id: eligibility
+        run: |
+          SKIP=false
+          REASON=""
+          AUTHOR="${{ steps.pr-meta.outputs.author }}"
+
+          if [ "${{ steps.pr-meta.outputs.pr_state }}" != "OPEN" ]; then
+            SKIP=true
+            REASON="PR is no longer open"
+          elif ! echo "$AUTHOR" | grep -Eiq 'dependabot'; then
+            SKIP=true
+            REASON="PR author is not dependabot (author=$AUTHOR)"
+          fi
+
+          echo "skip=$SKIP" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+
+      - name: Checkout PR branch
+        if: steps.eligibility.outputs.skip != 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pr-meta.outputs.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Determine version bump type
+        if: steps.eligibility.outputs.skip != 'true'
+        id: bump-type
+        run: |
+          if [ "${{ steps.pr-meta.outputs.is_security }}" = "true" ]; then
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "bump_reason=security" >> $GITHUB_OUTPUT
+          else
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "bump_reason=dependency" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Decide whether version bump is needed
+        if: steps.eligibility.outputs.skip != 'true'
+        id: bump-decision
+        run: |
+          current_version=$(cat release-versions/latest.txt)
+          git fetch origin "${{ steps.pr-meta.outputs.base_ref }}"
+          base_version=$(git show "origin/${{ steps.pr-meta.outputs.base_ref }}:release-versions/latest.txt" 2>/dev/null || echo "")
+
+          echo "current_version=$current_version" >> $GITHUB_OUTPUT
+          echo "base_version=$base_version" >> $GITHUB_OUTPUT
+
+          if [ -z "$base_version" ]; then
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            echo "decision_reason=Base version not found" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          lowest=$(printf '%s\n%s\n' "$current_version" "$base_version" | sort -V | head -n1)
+          if [ "$current_version" = "$base_version" ] || [ "$lowest" = "$current_version" ]; then
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            echo "decision_reason=PR version is behind or equal to base" >> $GITHUB_OUTPUT
+          else
+            echo "should_bump=false" >> $GITHUB_OUTPUT
+            echo "decision_reason=PR version already ahead of base" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bump version
+        if: steps.eligibility.outputs.skip != 'true' && steps.bump-decision.outputs.should_bump == 'true'
+        id: version-bump
+        uses: ./.github/actions/bump-version
+        with:
+          bump-type: ${{ steps.bump-type.outputs.bump_type }}
+          reason: ${{ steps.bump-type.outputs.bump_reason }}
+
+      - name: Commit version bump
+        if: steps.eligibility.outputs.skip != 'true' && steps.bump-decision.outputs.should_bump == 'true' && steps.version-bump.outputs.version-changed == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          BUMP_REASON="${{ steps.bump-type.outputs.bump_reason }}"
+          NEW_VERSION="${{ steps.version-bump.outputs.new-version }}"
+          if [ "$BUMP_REASON" = "security" ]; then
+            COMMIT_MSG="chore: bump version to $NEW_VERSION for security updates"
+          else
+            COMMIT_MSG="chore: bump version to $NEW_VERSION for dependency updates"
+          fi
+
+          git add release-versions/latest.txt root/app/fanficdownload.py
+          git commit -m "$COMMIT_MSG"
+          git push origin HEAD
+
+      - name: Wait for required checks
+        if: steps.eligibility.outputs.skip != 'true'
+        id: wait-checks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set +e
+          output=$(gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 30 2>&1)
+          exit_code=$?
+          set -e
+          echo "$output"
+          if [ $exit_code -ne 0 ] && echo "$output" | grep -qE "no (required )?checks reported"; then
+            echo "checks_status=none" >> $GITHUB_OUTPUT
+          elif [ $exit_code -eq 0 ]; then
+            echo "checks_status=passed" >> $GITHUB_OUTPUT
+          else
+            echo "checks_status=failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Request Copilot fix for failed checks
+        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TRIGGER_PAT }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          existing_request=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-fix-requested]" || true)
+          if [ -n "$existing_request" ]; then
+            exit 0
+          fi
+
+          COPILOT_COMMENT="[auto-copilot-fix-requested]"$'\n\n'"🤖 **Required checks failed**"$'\n\n'"@copilot Please fix this Dependabot PR so all required checks pass."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
+          GH_TOKEN="$COPILOT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COPILOT_COMMENT"
+
+      - name: Stop when checks fail
+        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
+        run: exit 1
+
+      - name: Re-check merge readiness
+        if: steps.eligibility.outputs.skip != 'true'
+        id: ready
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
+          IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
+          MERGE_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeStateStatus --jq '.mergeStateStatus')
+
+          if [ "$IS_DRAFT" = "true" ] || [ "$PR_STATE" != "OPEN" ]; then
+            echo "can_merge=false" >> $GITHUB_OUTPUT
+          else
+            echo "can_merge=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Merge PR
+        if: steps.eligibility.outputs.skip != 'true' && steps.ready.outputs.can_merge == 'true'
+        id: merge
+        timeout-minutes: 30
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TRIGGER_PAT }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          transient_count=0
+          while true; do
+            set +e
+            merge_output=$(GH_TOKEN="$COPILOT_TOKEN" gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER" 2>&1)
+            merge_exit=$?
+            set -e
+            echo "$merge_output"
+
+            if [ $merge_exit -eq 0 ]; then
+              echo "merge_result=success" >> $GITHUB_OUTPUT
+              break
+
+            elif echo "$merge_output" | grep -qiE "merge conflict|not mergeable|cannot be cleanly created|has merge conflicts"; then
+              # Post Copilot comment once (deduped)
+              existing=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-conflict-fix]" || true)
+              if [ -z "$existing" ]; then
+                COMMENT="[auto-copilot-conflict-fix]"$'\n\n'"🤖 **Merge conflict detected**"$'\n\n'"@copilot Please resolve the merge conflicts in this Dependabot PR so it can be auto-merged."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
+                GH_TOKEN="$COPILOT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
+              fi
+
+              # Poll until Copilot pushes a fix (HEAD SHA changes) or timeout
+              current_sha=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')
+              echo "Conflict detected. Waiting up to 10 minutes for Copilot fix (HEAD: ${current_sha})..."
+              waited=0
+              fixed=false
+              while [ $waited -lt 600 ]; do
+                sleep 30
+                waited=$((waited + 30))
+                pr_state=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
+                if [ "$pr_state" != "OPEN" ]; then
+                  echo "PR is no longer open, skipping."
+                  echo "merge_result=skipped" >> $GITHUB_OUTPUT
+                  exit 0
+                fi
+                new_sha=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')
+                if [ "$new_sha" != "$current_sha" ]; then
+                  echo "New commit detected (${new_sha}), retrying merge..."
+                  fixed=true
+                  break
+                fi
+                echo "  Still waiting for Copilot fix... (${waited}s elapsed)"
+              done
+              if [ "$fixed" = "false" ]; then
+                echo "Timed out waiting for Copilot to resolve conflict."
+                echo "merge_result=conflict_timeout" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+
+            elif echo "$merge_output" | grep -qiE "base branch was modified|try the merge again"; then
+              transient_count=$((transient_count + 1))
+              if [ $transient_count -ge 3 ]; then
+                echo "merge_result=failed" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+              echo "Transient error (attempt $transient_count/3), retrying in 30s..."
+              sleep 30
+
+            else
+              echo "merge_result=failed" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          done
+
+      - name: Add merge comment
+        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          BUMP_REASON="${{ steps.bump-type.outputs.bump_reason }}"
+          SHOULD_BUMP="${{ steps.bump-decision.outputs.should_bump }}"
+          DECISION_REASON="${{ steps.bump-decision.outputs.decision_reason }}"
+          BASE_VERSION="${{ steps.bump-decision.outputs.base_version }}"
+          OLD_VERSION="${{ steps.version-bump.outputs.old-version }}"
+          NEW_VERSION="${{ steps.version-bump.outputs.new-version }}"
+          VERSION_CHANGED="${{ steps.version-bump.outputs.version-changed }}"
+
+          if [ -z "$OLD_VERSION" ]; then
+            OLD_VERSION="${{ steps.bump-decision.outputs.current_version }}"
+          fi
+          if [ -z "$NEW_VERSION" ]; then
+            NEW_VERSION="$OLD_VERSION"
+          fi
+
+          if [ "$BUMP_REASON" = "security" ]; then
+            BUMP_DESC="Security update"
+          else
+            BUMP_DESC="Dependency update"
+          fi
+
+          if [ "$SHOULD_BUMP" = "false" ]; then
+            VERSION_INFO="- $BUMP_DESC: no bump needed (PR already ahead of base $BASE_VERSION)"
+          elif [ "$VERSION_CHANGED" = "true" ]; then
+            VERSION_INFO="- $BUMP_DESC: version bumped from $OLD_VERSION to $NEW_VERSION"
+          else
+            VERSION_INFO="- $BUMP_DESC: version unchanged at $OLD_VERSION"
+          fi
+
+          MERGE_COMMENT="🤖 **Auto-merged**"$'\n\n'"This Dependabot PR has been automatically merged because all branch-protection required checks passed."$'\n\n'"Version handling:"$'\n'"$VERSION_INFO"$'\n\n'"Decision:"$'\n'"- $DECISION_REASON"
+          gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$MERGE_COMMENT"
+
+      - name: Add skip notification
+        if: steps.eligibility.outputs.skip == 'true'
+        run: |
+          echo "Skipping PR processing: ${{ steps.eligibility.outputs.reason }}"
