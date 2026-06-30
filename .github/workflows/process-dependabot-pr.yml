@@ -150,14 +150,23 @@ jobs:
       - name: Wait for required checks
         if: steps.eligibility.outputs.skip != 'true'
         id: wait-checks
-        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
-        run: gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 30
+        run: |
+          output=$(gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 30 2>&1)
+          exit_code=$?
+          echo "$output"
+          if [ $exit_code -ne 0 ] && echo "$output" | grep -q "no required checks"; then
+            echo "checks_status=none" >> $GITHUB_OUTPUT
+          elif [ $exit_code -eq 0 ]; then
+            echo "checks_status=passed" >> $GITHUB_OUTPUT
+          else
+            echo "checks_status=failed" >> $GITHUB_OUTPUT
+          fi
 
       - name: Request Copilot fix for failed checks
-        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outcome != 'success'
+        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
@@ -171,7 +180,7 @@ jobs:
           gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COPILOT_COMMENT"
 
       - name: Stop when checks fail
-        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outcome != 'success'
+        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
         run: exit 1
 
       - name: Re-check merge readiness
