@@ -6,7 +6,7 @@ from typing import NamedTuple, Optional
 
 from models import fanfic_info
 from calibre_integration import calibre_info
-from calibre_integration.calibredb_utils import CalibreDBClient
+from calibre_integration.calibredb_utils import CalibreCommandError, CalibreDBClient
 
 
 class TestCalibreDBClient(unittest.TestCase):
@@ -45,7 +45,7 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
         ]
     )
-    @patch("calibre_integration.calibredb_utils.call", return_value=None)
+    @patch("calibre_integration.calibredb_utils.run", return_value=None)
     @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
     @patch("calibre_integration.calibredb_utils.ff_logging.log_debug")
     def test_execute_command(
@@ -56,14 +56,21 @@ class TestCalibreDBClient(unittest.TestCase):
         should_raise_exception,
         mock_log_debug,
         mock_log_failure,
-        mock_call,
+        mock_run,
     ):
         """Test the internal _execute_command method."""
         if should_raise_exception:
-            mock_call.side_effect = OSError("Test exception")
-
-        # Accessing private method for testing purpose
-        self.client._execute_command(command, fanfic)
+            mock_run.side_effect = subprocess.CalledProcessError(
+                1,
+                ["calibredb", command],
+                output=b"stdout details",
+                stderr=b"stderr details",
+            )
+            with self.assertRaises(CalibreCommandError):
+                self.client._execute_command(command, fanfic)
+        else:
+            # Accessing private method for testing purpose
+            self.client._execute_command(command, fanfic)
 
         # The internal log uses {command_args} {id_str}
         id_str = fanfic.calibre_id if fanfic and fanfic.calibre_id else ""
@@ -77,16 +84,16 @@ class TestCalibreDBClient(unittest.TestCase):
         else:
             mock_log_failure.assert_not_called()
 
-        called_args = mock_call.call_args[0][0]
+        called_args = mock_run.call_args[0][0]
         self.assertIsInstance(called_args, list)
         self.assertEqual(called_args[0], "calibredb")
         self.assertEqual(called_args[1], command)
-        self.assertNotIn("shell", mock_call.call_args.kwargs)
+        self.assertNotIn("shell", mock_run.call_args.kwargs)
 
     @patch("calibre_integration.calibredb_utils.check_output")
     def test_execute_command_with_output_uses_argument_list(self, mock_check_output):
         """_execute_command_with_output should invoke check_output with arg list."""
-        mock_check_output.return_value = b"ok"
+        mock_check_output.return_value = "ok"
 
         result = self.client._execute_command_with_output("list")
 
@@ -96,6 +103,22 @@ class TestCalibreDBClient(unittest.TestCase):
         self.assertEqual(called_args[0], "calibredb")
         self.assertEqual(called_args[1], "list")
         self.assertNotIn("shell", mock_check_output.call_args.kwargs)
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    def test_execute_command_with_output_includes_stderr(self, mock_check_output):
+        """Raised error should include captured stderr/stdout details."""
+        mock_check_output.side_effect = subprocess.CalledProcessError(
+            1,
+            ["calibredb", "list"],
+            output=b"stdout details",
+            stderr=b"stderr details",
+        )
+
+        with self.assertRaises(CalibreCommandError) as ctx:
+            self.client._execute_command_with_output("list")
+
+        self.assertIn("stderr details", str(ctx.exception))
+        self.assertIn("stdout details", str(ctx.exception))
 
     class ExportStoryParams(NamedTuple):
         fanfic: fanfic_info.FanficInfo
@@ -352,7 +375,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
         mock_fanfic.site = "fanfiction.net"
-        mock_check_output.return_value = b"[]"
+        mock_check_output.return_value = "[]"
 
         result = self.client.get_metadata(mock_fanfic)
 
@@ -364,7 +387,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic = MagicMock()
         mock_fanfic.calibre_id = 123
         mock_fanfic.site = "fanfiction.net"
-        mock_check_output.return_value = b"invalid json{"
+        mock_check_output.return_value = "invalid json{"
 
         result = self.client.get_metadata(mock_fanfic)
 
@@ -540,9 +563,9 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_get_files.return_value = ["/fake/dir/story.epub"]
 
         with patch.object(self.client, "_execute_command") as mock_execute:
-            mock_execute.side_effect = OSError("Command failed")
-            result = self.client.add_format_to_existing_story("/fake/dir", mock_fanfic)
-            self.assertFalse(result)
+            mock_execute.side_effect = CalibreCommandError("Command failed")
+            with self.assertRaises(CalibreCommandError):
+                self.client.add_format_to_existing_story("/fake/dir", mock_fanfic)
 
     @patch("utils.system_utils.get_files")
     def test_add_format_no_epub_files(self, mock_get_files):
@@ -563,7 +586,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic.site = "site"
 
         # Mock search output: comma-separated list of IDs
-        mock_check_output.return_value = b"123, 124\n"
+        mock_check_output.return_value = "123, 124\n"
 
         result = self.client.get_story_id(mock_fanfic)
 
@@ -583,7 +606,7 @@ class TestCalibreDBClient(unittest.TestCase):
         mock_fanfic = MagicMock()
         mock_fanfic.url = "http://example.com/story"
 
-        mock_check_output.return_value = b"\n"
+        mock_check_output.return_value = "\n"
 
         result = self.client.get_story_id(mock_fanfic)
 
@@ -632,7 +655,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
         mock_fanfic.calibre_id = None
 
         # Return output without expected "Added book ids:" pattern
-        mock_check_output.return_value = b"Some unexpected output\n"
+        mock_check_output.return_value = "Some unexpected output\n"
 
         with patch.object(
             self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
@@ -652,11 +675,11 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
             self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
         ):
             with patch.object(self.client, "_execute_command_with_output") as mock_exec:
-                mock_exec.side_effect = OSError("Add failed")
+                mock_exec.side_effect = CalibreCommandError("Add failed")
 
-                self.client.add_story("/fake/location", mock_fanfic)
+                with self.assertRaises(CalibreCommandError):
+                    self.client.add_story("/fake/location", mock_fanfic)
 
-                # Should log failure
                 mock_log_failure.assert_called()
                 failure_msg = mock_log_failure.call_args[0][0]
                 self.assertIn("Failed to add story", failure_msg)
@@ -727,13 +750,13 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
             self.client, "_find_epub_in_directory", return_value="/fake/path.epub"
         ):
             with patch.object(self.client, "_execute_command") as mock_exec:
-                mock_exec.side_effect = OSError("Replace failed")
+                mock_exec.side_effect = CalibreCommandError("Replace failed")
 
-                result = self.client.add_format_to_existing_story(
-                    "/fake/location", mock_fanfic
-                )
+                with self.assertRaises(CalibreCommandError):
+                    self.client.add_format_to_existing_story(
+                        "/fake/location", mock_fanfic
+                    )
 
-                self.assertFalse(result)
                 mock_log_failure.assert_called()
                 failure_msg = mock_log_failure.call_args[0][0]
                 self.assertIn("Failed to replace EPUB format", failure_msg)
@@ -760,7 +783,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
         mock_fanfic.calibre_id = "123"
 
         # Empty list result
-        mock_check_output.return_value = b"[]"
+        mock_check_output.return_value = "[]"
 
         result = self.client.get_metadata(mock_fanfic)
 

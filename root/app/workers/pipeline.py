@@ -103,6 +103,7 @@ def _process_task(
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
+                error_message=str(e),
             )
             return handlers.check_active_removal(fanfic)
 
@@ -160,6 +161,7 @@ def _process_task(
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
+                error_message=error_msg,
             )
             return handlers.check_active_removal(fanfic)
 
@@ -172,6 +174,7 @@ def _process_task(
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
+                error_message="FanFicFare reported a permanent failure condition.",
             )
             return handlers.check_active_removal(fanfic)
 
@@ -299,7 +302,9 @@ def url_worker(
                     retry_config,
                     calibre_client.cdb_info,
                     history_recorder=history_recorder,
+                    error_message=str(e),
                 )
+                should_remove = handlers.check_active_removal(fanfic)
             finally:
                 # Update active_urls
                 if active_urls is not None and should_remove:

@@ -11,11 +11,11 @@ import re
 import shlex
 from subprocess import (
     check_output,
-    call,
     PIPE,
     DEVNULL,
     CalledProcessError,
     TimeoutExpired,
+    run,
 )
 from typing import Any
 
@@ -24,6 +24,10 @@ from models import fanfic_info
 from utils import ff_logging
 from parsers import regex_parsing
 from utils import system_utils
+
+
+class CalibreCommandError(OSError):
+    """Raised when a calibredb subprocess fails with captured output."""
 
 
 class CalibreDBClient:
@@ -77,6 +81,41 @@ class CalibreDBClient:
         # CalibreInfo currently exposes CLI args via __str__.
         return [*cmd, *shlex.split(str(self.cdb_info))]
 
+    @staticmethod
+    def _format_command_error(
+        full_command: list[str],
+        exc: Exception,
+    ) -> str:
+        """Build a readable calibredb error including captured stdout/stderr."""
+        command_text = shlex.join(full_command)
+        details = [f"Command failed: {command_text}"]
+
+        if isinstance(exc, CalledProcessError):
+            details.append(f"exit code {exc.returncode}")
+
+            stderr = CalibreDBClient._decode_output(exc.stderr)
+            stdout = CalibreDBClient._decode_output(exc.output)
+
+            if stderr and stderr.strip():
+                details.append(f"stderr: {stderr.strip()}")
+            if stdout and stdout.strip():
+                details.append(f"stdout: {stdout.strip()}")
+        elif isinstance(exc, TimeoutExpired):
+            details.append(f"timed out after {exc.timeout} seconds")
+        else:
+            details.append(str(exc))
+
+        return " | ".join(details)
+
+    @staticmethod
+    def _decode_output(data: str | bytes | None) -> str:
+        """Normalize subprocess output to text."""
+        if isinstance(data, str):
+            return data
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return data or ""
+
     def _execute_command(
         self,
         command_args: str | list[str],
@@ -86,7 +125,8 @@ class CalibreDBClient:
         """Execute a calibredb command with locking and error logging.
 
         This method executes a command solely for its side effects (return code).
-        Stdout and Stderr are suppressed.
+        Stdout and stderr are captured so failures can surface the real calibre
+        error text in logs and history records.
 
         Args:
             command_args: The arguments to pass to calibredb (e.g., 'add "/path/to/file"').
@@ -102,15 +142,19 @@ class CalibreDBClient:
 
         try:
             with self.cdb_info.lock:
-                call(
+                run(
                     full_command,
-                    stdin=PIPE,
-                    stdout=DEVNULL,
-                    stderr=DEVNULL,
+                    capture_output=True,
+                    text=True,
                     timeout=timeout,
+                    check=True,
                 )
-        except (OSError, TimeoutExpired) as e:
-            ff_logging.log_failure(f'\tCommand "{command_args} {id_str}" failed: {e}')
+        except (CalledProcessError, OSError, TimeoutExpired) as e:
+            message = self._format_command_error(full_command, e)
+            ff_logging.log_failure(
+                f'\tCommand "{command_args} {id_str}" failed: {message}'
+            )
+            raise CalibreCommandError(message) from e
 
     def _execute_command_with_output(
         self,
@@ -129,17 +173,22 @@ class CalibreDBClient:
             str: The command output (stdout).
 
         Raises:
-            subprocess.CalledProcessError: If the command fails.
+            CalibreCommandError: If the command fails.
         """
         full_command = self._build_calibredb_command(command_args)
 
         ff_logging.log_debug(f'\tCalling calibredb with command: \t"{command_args}"')
 
-        with self.cdb_info.lock:
-            output = check_output(
-                full_command, stderr=PIPE, stdin=PIPE, timeout=timeout
-            ).decode("utf-8")
-        return output
+        try:
+            with self.cdb_info.lock:
+                output = check_output(
+                    full_command, stderr=PIPE, timeout=timeout, text=True
+                )
+            return output
+        except (CalledProcessError, OSError, TimeoutExpired) as e:
+            message = self._format_command_error(full_command, e)
+            ff_logging.log_failure(f'\tCommand "{command_args}" failed: {message}')
+            raise CalibreCommandError(message) from e
 
     def get_story_id(self, fanfic: fanfic_info.FanficInfo) -> str | None:
         """Check if a story exists in Calibre and return its ID.
@@ -213,6 +262,7 @@ class CalibreDBClient:
 
         except (CalledProcessError, OSError) as e:
             ff_logging.log_failure(f"\t({fanfic.site}) Failed to add story: {e}")
+            raise
 
     def remove_story(self, fanfic: fanfic_info.FanficInfo) -> None:
         """Remove a story from Calibre.
@@ -293,7 +343,7 @@ class CalibreDBClient:
             ff_logging.log_failure(
                 f"\t({fanfic.site}) Failed to replace EPUB format: {e}"
             )
-            return False
+            raise
 
     def get_metadata(self, fanfic: fanfic_info.FanficInfo) -> dict[str, Any]:
         """Get all metadata for a story.

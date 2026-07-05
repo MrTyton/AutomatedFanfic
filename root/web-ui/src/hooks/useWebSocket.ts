@@ -14,7 +14,7 @@ export interface DashboardSnapshot {
     processes: Record<string, string>
     recent_downloads: unknown[]
     recent_activity: unknown[]
-    waiting_downloads?: { items: { url: string; updated_at?: string; site?: string; title?: string; calibre_id?: string }[]; count: number }
+    waiting_downloads?: { items: { url: string; updated_at?: string; site?: string; title?: string; calibre_id?: string; error_message?: string }[]; count: number }
 }
 
 export function useDashboardSocket() {
