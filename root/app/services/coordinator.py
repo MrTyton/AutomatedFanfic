@@ -270,9 +270,11 @@ class Coordinator:
         ff_logging.log(
             f"Coordinator: Assigned {len(tasks_pushed)} task(s) for {site} to {worker_id}:"
         )
-        for i, task in enumerate(tasks_pushed):
+        for offset, task in enumerate(tasks_pushed):
             pos_info = (
-                f"Pos: {start_pos + i}" if start_pos is not None else "Pos: Unknown"
+                f"Pos: {start_pos + offset}"
+                if start_pos is not None
+                else "Pos: Unknown"
             )
             ff_logging.log(f"  - {task.url} ({pos_info})")
 
