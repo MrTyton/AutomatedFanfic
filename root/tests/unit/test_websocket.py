@@ -89,7 +89,11 @@ class TestWebSocketDashboard(unittest.TestCase):
                 return []
 
         self.state.active_urls = {
-            "https://ao3.org/works/1": {"site": "ao3", "title": "Story One", "status": "waiting"}
+            "https://ao3.org/works/1": {
+                "site": "ao3",
+                "title": "Story One",
+                "status": "waiting",
+            }
         }
         self.state.history_db = StubHistoryDB()
 
