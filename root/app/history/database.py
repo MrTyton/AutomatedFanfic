@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS download_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_download_events_url ON download_events(url);
+CREATE INDEX IF NOT EXISTS idx_download_events_url_started_at ON download_events(url, started_at);
 CREATE INDEX IF NOT EXISTS idx_download_events_site ON download_events(site);
 CREATE INDEX IF NOT EXISTS idx_download_events_status ON download_events(status);
 CREATE INDEX IF NOT EXISTS idx_download_events_started_at ON download_events(started_at);
@@ -425,8 +426,25 @@ class AsyncHistoryDB:
         conn = await self._get_conn()
         try:
             cursor = await conn.execute(
-                """SELECT * FROM retry_events
-                   ORDER BY scheduled_at DESC LIMIT ? OFFSET ?""",
+                """WITH latest_downloads AS (
+                       SELECT d1.url, d1.title
+                       FROM download_events d1
+                       JOIN (
+                           SELECT url, MAX(started_at) AS max_started_at
+                           FROM download_events
+                           GROUP BY url
+                       ) latest
+                       ON latest.url = d1.url AND latest.max_started_at = d1.started_at
+                   )
+                   SELECT r.*,
+                          COALESCE(
+                              d.title,
+                              ld.title
+                          ) AS title
+                   FROM retry_events r
+                   LEFT JOIN download_events d ON d.id = r.download_event_id
+                   LEFT JOIN latest_downloads ld ON ld.url = r.url
+                   ORDER BY r.scheduled_at DESC LIMIT ? OFFSET ?""",
                 (limit, offset),
             )
             rows = await cursor.fetchall()
@@ -540,10 +558,28 @@ class AsyncHistoryDB:
         conn = await self._get_conn()
         try:
             cursor = await conn.execute(
-                "SELECT url, updated_at FROM download_events WHERE status = 'waiting'"
+                "SELECT url, site, title, updated_at FROM download_events WHERE status = 'waiting'"
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
+        finally:
+            await conn.close()
+
+    async def get_latest_download(self, url: str) -> dict | None:
+        """Get latest known download row for URL."""
+        conn = await self._get_conn()
+        try:
+            cursor = await conn.execute(
+                """SELECT url, site, title, calibre_id, status, behavior,
+                          started_at, completed_at, updated_at
+                   FROM download_events
+                   WHERE url = ?
+                   ORDER BY started_at DESC
+                   LIMIT 1""",
+                (url,),
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
         finally:
             await conn.close()
 

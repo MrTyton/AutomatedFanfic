@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/statuscolors.ts","./src/vite-env.d.ts","./src/hooks/usewebsocket.ts","./src/pages/config.tsx","./src/pages/dashboard.tsx","./src/pages/history.tsx","./src/pages/stats.tsx"],"version":"5.8.3"}
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/statusColors.ts","./src/vite-env.d.ts","./src/hooks/useWebSocket.ts","./src/pages/Config.tsx","./src/pages/Dashboard.tsx","./src/pages/History.tsx","./src/pages/Stats.tsx"],"version":"5.8.3"}
