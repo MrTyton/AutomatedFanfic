@@ -116,9 +116,9 @@ class TestUrlWorker(unittest.TestCase):
         matched = any(
             expected_log_message in str(c) for c in mock_log_failure.call_args_list
         )
-        assert matched, (
-            f"Expected log containing '{expected_log_message}' not found in {log_calls}"
-        )
+        assert (
+            matched
+        ), f"Expected log containing '{expected_log_message}' not found in {log_calls}"
 
         if expected_notification_call:
             mock_notification_info.send_notification.assert_called_once_with(
@@ -274,18 +274,16 @@ class TestUrlWorker(unittest.TestCase):
         )
 
         # Assertions - should log retry and queue the fanfic
-        mock_log_failure.assert_any_call(
-            unittest.mock.ANY
-        )
+        mock_log_failure.assert_any_call(unittest.mock.ANY)
         # Check that a matching log was emitted
         log_calls = [str(c) for c in mock_log_failure.call_args_list]
         matched = any(
             "Sending Test Story to waiting queue for retry. Attempt 4, delay" in str(c)
             for c in mock_log_failure.call_args_list
         )
-        assert matched, (
-            f"Expected log containing retry message not found in {log_calls}"
-        )
+        assert (
+            matched
+        ), f"Expected log containing retry message not found in {log_calls}"
         mock_notification_info.send_notification.assert_not_called()
         mock_waiting_queue.put.assert_called_once_with(mock_fanfic)
 

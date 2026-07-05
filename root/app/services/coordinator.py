@@ -271,9 +271,6 @@ class Coordinator:
             f"Coordinator: Assigned {len(tasks_pushed)} task(s) for {site} to {worker_id}:"
         )
         for i, task in enumerate(tasks_pushed):
-            if i >= 10:
-                ff_logging.log(f"  ... and {len(tasks_pushed) - i} more")
-                break
             pos_info = (
                 f"Pos: {start_pos + i}" if start_pos is not None else "Pos: Unknown"
             )
