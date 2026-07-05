@@ -99,7 +99,9 @@ def handle_failure(
             action=decision.action.value,
             delay_minutes=decision.delay_minutes,
         )
-        history_recorder.record_download_waiting(url=fanfic.url, site=fanfic.site)
+        history_recorder.record_download_waiting(
+            url=fanfic.url, site=fanfic.site, title=fanfic.title
+        )
 
     # Send to waiting queue with decision information attached
     waiting_queue.put(fanfic)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getDownloads, getEmails, getNotifications, getRetries, type DownloadRow, type EmailRow, type NotificationRow, type RetryRow } from '../api'
+import { cancelRetry, getDownloads, getEmails, getNotifications, getRetries, redownloadScratch, retryNow, type DownloadRow, type EmailRow, type NotificationRow, type RetryRow } from '../api'
 import { statusBadgeClass } from '../statusColors'
 
 function ExpandableError({ text }: { text: string }) {
@@ -26,6 +26,7 @@ export default function History() {
     const [page, setPage] = useState(1)
     const [search, setSearch] = useState('')
     const [debouncedSearch, setDebouncedSearch] = useState('')
+    const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({})
 
     const [downloads, setDownloads] = useState<DownloadRow[]>([])
     const [downloadTotal, setDownloadTotal] = useState(0)
@@ -54,6 +55,19 @@ export default function History() {
             getNotifications(page).then(d => setNotifications(d.items)).catch(() => { })
         }
     }, [page, tab, debouncedSearch])
+
+    const runAction = async (
+        key: string,
+        action: () => Promise<{ message: string }>,
+    ) => {
+        setActionBusy((s) => ({ ...s, [key]: true }))
+        try {
+            await action()
+            fetchData()
+        } finally {
+            setActionBusy((s) => ({ ...s, [key]: false }))
+        }
+    }
 
     // Initial fetch + auto-refresh every 10s
     useEffect(() => {
@@ -100,11 +114,12 @@ export default function History() {
                                 <th>Error</th>
                                 <th>Started</th>
                                 <th>Completed</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {downloads.length === 0 ? (
-                                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads recorded yet</td></tr>
+                                <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads recorded yet</td></tr>
                             ) : downloads.map((r, i) => (
                                 <tr key={i}>
                                     <td>
@@ -121,6 +136,24 @@ export default function History() {
                                     <td>{r.error_message ? <ExpandableError text={r.error_message} /> : '—'}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{new Date(r.started_at).toLocaleString()}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{r.completed_at ? new Date(r.completed_at).toLocaleString() : '—'}</td>
+                                    <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                        {(r.status === 'failed' || r.status === 'abandoned') && (
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`retry-${r.url}`]}
+                                                onClick={() => runAction(`retry-${r.url}`, () => retryNow({ url: r.url, site: r.site, title: r.title }))}
+                                            >
+                                                Retry now
+                                            </button>
+                                        )}
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`redl-${r.url}`]}
+                                            onClick={() => runAction(`redl-${r.url}`, () => redownloadScratch({ url: r.url, site: r.site, title: r.title, calibre_id: r.calibre_id }))}
+                                        >
+                                            Redownload
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -142,17 +175,19 @@ export default function History() {
                             <tr>
                                 <th>Action</th>
                                 <th>Site</th>
+                                <th>Title</th>
                                 <th>URL</th>
                                 <th>Attempt</th>
                                 <th>Delay</th>
                                 <th>Error</th>
                                 <th>Scheduled</th>
                                 <th>Fired</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {retries.length === 0 ? (
-                                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No retry events recorded yet</td></tr>
+                                <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No retry events recorded yet</td></tr>
                             ) : retries.map(r => (
                                 <tr key={r.id}>
                                     <td>
@@ -161,6 +196,7 @@ export default function History() {
                                         </span>
                                     </td>
                                     <td>{r.site}</td>
+                                    <td>{r.title ?? '—'}</td>
                                     <td style={{ maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                         <a href={r.url.startsWith('http') ? r.url : `https://${r.url}`} target="_blank" rel="noreferrer">{r.url}</a>
                                     </td>
@@ -169,6 +205,33 @@ export default function History() {
                                     <td>{r.error_message ? <ExpandableError text={r.error_message} /> : '—'}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{new Date(r.scheduled_at).toLocaleString()}</td>
                                     <td style={{ fontSize: '0.85rem' }}>{r.fired_at ? new Date(r.fired_at).toLocaleString() : '—'}</td>
+                                    <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                        {!r.fired_at && (
+                                            <>
+                                                <button
+                                                    className="secondary"
+                                                    disabled={!!actionBusy[`retry-${r.url}`]}
+                                                    onClick={() => runAction(`retry-${r.url}`, () => retryNow({ url: r.url, site: r.site, title: r.title }))}
+                                                >
+                                                    Retry now
+                                                </button>
+                                                <button
+                                                    className="secondary"
+                                                    disabled={!!actionBusy[`cancel-${r.url}`]}
+                                                    onClick={() => runAction(`cancel-${r.url}`, () => cancelRetry({ url: r.url, site: r.site }))}
+                                                >
+                                                    Cancel retry
+                                                </button>
+                                            </>
+                                        )}
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`redl-${r.url}`]}
+                                            onClick={() => runAction(`redl-${r.url}`, () => redownloadScratch({ url: r.url, site: r.site, title: r.title }))}
+                                        >
+                                            Redownload
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

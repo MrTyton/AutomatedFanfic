@@ -110,7 +110,9 @@ class HistoryRecorder:
             )
         )
 
-    def record_download_waiting(self, url: str, site: Optional[str] = None) -> None:
+    def record_download_waiting(
+        self, url: str, site: Optional[str] = None, title: Optional[str] = None
+    ) -> None:
         """Called when download is queued for retry with backoff delay."""
         self._put(
             HistoryMessage(
@@ -119,6 +121,7 @@ class HistoryRecorder:
                     "url": url,
                     "status": DownloadStatus.WAITING.value,
                     "site": site,
+                    "title": title,
                 },
             )
         )
