@@ -460,6 +460,24 @@ class TestConfigRoutes(unittest.TestCase):
                 self.assertEqual(data["path"], expected_path)
                 self.assertIsNone(data["error"])
 
+    def test_get_ini_resolves_directory_without_file(self):
+        """INI endpoint returns empty when directory exists but file doesn't."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_config = MagicMock()
+            # Directory exists but personal.ini / defaults.ini do not
+            mock_config.calibre.personal_ini = tmp_dir
+            mock_config.calibre.default_ini = tmp_dir
+            self.state.config = mock_config
+
+            for ini_type in ("personal", "defaults"):
+                resp = self.client.get(f"/api/config/ini/{ini_type}")
+                self.assertEqual(resp.status_code, 200)
+                data = resp.json()
+                self.assertEqual(data["content"], "")
+                self.assertIsNone(data["error"])
+
     def test_put_ini_no_config(self):
         """PUT INI endpoint returns error when no config is loaded."""
         resp = self.client.put("/api/config/ini/personal", json={"content": "[test]"})
