@@ -11,6 +11,7 @@ Key Features:
     - Timestamp formatting for all log messages
     - Specialized logging functions for failures and debug output
     - Multiprocessing-compatible shared state management
+    - In-memory log ring buffer for web UI access
 
 Classes:
     bcolors: Terminal color code constants for different logging levels
@@ -30,12 +31,20 @@ Example:
 """
 
 import ctypes
+import collections
 import datetime
 from multiprocessing import Value
 import threading
 
 # Thread-local storage for worker-specific logging context
 _thread_local = threading.local()
+
+# ── In-memory log ring buffer ───────────────────────────────────
+# Stores the most recent log entries for the web UI log viewer.
+# Each entry is a dict with keys: timestamp, level, message.
+_LOG_BUFFER_MAX = 2000
+_log_buffer: collections.deque = collections.deque(maxlen=_LOG_BUFFER_MAX)
+_log_buffer_lock = threading.Lock()
 
 
 class bcolors:
@@ -158,6 +167,13 @@ def log(msg: str, color: str = "") -> None:
     elif hasattr(_thread_local, "color"):
         using_col = _thread_local.color
 
+    # Determine log level for the ring buffer
+    level = "info"
+    if color == "FAIL":
+        level = "error"
+    elif color == "WARNING":
+        level = "warning"
+
     # Generate current timestamp in standardized format
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
     # Output formatted message with timestamp and color codes
@@ -165,6 +181,11 @@ def log(msg: str, color: str = "") -> None:
         f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}",
         flush=True,
     )
+
+    # Store in ring buffer for web UI consumption
+    entry = {"timestamp": timestamp, "level": level, "message": msg}
+    with _log_buffer_lock:
+        _log_buffer.append(entry)
 
 
 def log_failure(msg: str) -> None:
@@ -218,3 +239,19 @@ def log_debug(msg: str) -> None:
     if verbose.value:
         # Use the core log function without explicit color to allow thread-local color
         log(msg)
+
+
+def get_recent_logs(limit: int = 500) -> list[dict]:
+    """Return the most recent log entries from the in-memory ring buffer.
+
+    Args:
+        limit: Maximum number of entries to return (most recent first).
+
+    Returns:
+        List of log entry dicts with keys: timestamp, level, message.
+    """
+    with _log_buffer_lock:
+        # Return most recent entries, newest first
+        entries = list(_log_buffer)
+    entries.reverse()
+    return entries[:limit]

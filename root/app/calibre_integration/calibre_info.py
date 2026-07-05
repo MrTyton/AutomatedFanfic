@@ -205,7 +205,7 @@ class CalibreInfo:
         if self.default_ini and Path(self.default_ini).is_file():
             path = str(Path(temp_dir) / "defaults.ini")
             shutil.copyfile(self.default_ini, path)
-            ff_logging.log_debug(f"\tCopied defaults.ini to {path}")
+            ff_logging.log(f"\tCopied defaults.ini to {path}")
         else:
             ff_logging.log_debug("\tNo defaults.ini found to copy")
 
@@ -213,6 +213,6 @@ class CalibreInfo:
         if self.personal_ini and Path(self.personal_ini).is_file():
             path = str(Path(temp_dir) / "personal.ini")
             shutil.copyfile(self.personal_ini, path)
-            ff_logging.log_debug(f"\tCopied personal.ini to {path}")
+            ff_logging.log(f"\tCopied personal.ini to {path}")
         else:
             ff_logging.log_debug("\tNo personal.ini found to copy")

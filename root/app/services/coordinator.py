@@ -184,16 +184,15 @@ class Coordinator:
             queue = self.worker_queues[worker_id]
             queue.put(task)
 
-            if ff_logging.is_verbose():
-                pos_str = self._get_queue_position_string(queue)
-                ff_logging.log_debug(
-                    f"Coordinator: Active assignment push: {task.url} to {worker_id} (Site: {site}, {pos_str})"
-                )
+            pos_str = self._get_queue_position_string(queue)
+            ff_logging.log(
+                f"Coordinator: Routed {task.url} to {worker_id} (Site: {site}, {pos_str})"
+            )
             return
 
         # 2. Site is not active. Add to backlog.
         self.state.backlog[site].append(task)
-        ff_logging.log_debug(f"Coordinator: Added {task.url} to backlog (Site: {site})")
+        ff_logging.log(f"Coordinator: Added {task.url} to backlog (Site: {site})")
 
         # 3. Try to assign immediately if we have waiting workers
         self._assign_work_if_possible()
@@ -219,7 +218,7 @@ class Coordinator:
             # Verify this worker actually owns it (paranoia check)
             if self.state.assignments[finished_site] == worker_id:
                 del self.state.assignments[finished_site]
-                ff_logging.log_debug(
+                ff_logging.log(
                     f"Coordinator: Worker {worker_id} finished site {finished_site}. Lock released.",
                 )
             else:
@@ -254,9 +253,6 @@ class Coordinator:
         self, site: str, worker_id: str, queue: mp.Queue, tasks_pushed: list
     ):
         """Log detailed information about the assignment."""
-        if not ff_logging.is_verbose():
-            return
-
         # Get final queue size to calculate positions
         if self.state.qsize_supported:
             try:
@@ -271,14 +267,14 @@ class Coordinator:
             start_pos = None
 
         # Detailed logging of what was pushed
-        ff_logging.log_debug(
-            f"Coordinator: Initial assignment push: Pushed {len(tasks_pushed)} tasks for {site} to {worker_id}:"
+        ff_logging.log(
+            f"Coordinator: Assigned {len(tasks_pushed)} task(s) for {site} to {worker_id}:"
         )
         for i, task in enumerate(tasks_pushed):
             pos_info = (
                 f"Pos: {start_pos + i}" if start_pos is not None else "Pos: Unknown"
             )
-            ff_logging.log_debug(f"  - {task.url} ({pos_info})")
+            ff_logging.log(f"  - {task.url} ({pos_info})")
 
     def _assign_work_if_possible(self):
         """Assign pending backlog items to idle workers."""
@@ -297,8 +293,8 @@ class Coordinator:
                 # Assign site to worker
                 self.state.assignments[candidate_site] = worker_id
                 self.state.idle_workers.remove(worker_id)
-                ff_logging.log_debug(
-                    f"Coordinator: Assigned {candidate_site} to {worker_id}",
+                ff_logging.log(
+                    f"Coordinator: Assigned site {candidate_site} to {worker_id}",
                 )
 
                 # Drain ENTIRE backlog for this site to the worker
