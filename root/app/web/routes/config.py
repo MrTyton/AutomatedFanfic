@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from config.config_store import ConfigStore, ReloadBehavior, FIELD_RELOAD_MAP
 from config.toml_writer import TomlWriter
+from utils.system_utils import resolve_ini_path
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -178,13 +179,18 @@ def _resolve_ini_path(state, ini_type: str) -> tuple[str | None, str | None]:
     # Use explicit branches so the path is provably derived from server config,
     # not from the user-supplied ini_type string.
     if ini_type == "personal":
-        path = state.config.calibre.personal_ini
+        raw_path = state.config.calibre.personal_ini
+        default_filename = "personal.ini"
     elif ini_type == "defaults":
-        path = state.config.calibre.default_ini
+        raw_path = state.config.calibre.default_ini
+        default_filename = "defaults.ini"
     else:
         return None, f"Unknown ini type '{ini_type}'. Valid: personal, defaults"
-    if not path:
+    if not raw_path:
         return None, f"No path configured for {ini_type}.ini"
+
+    # Resolve directory paths to full file paths using the shared utility
+    path = resolve_ini_path(raw_path, default_filename)
     return path, None
 
 

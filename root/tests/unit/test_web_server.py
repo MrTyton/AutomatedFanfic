@@ -394,24 +394,28 @@ class TestConfigRoutes(unittest.TestCase):
         import os
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
-            f.write("[defaults]\nsite:www.fanfiction.net\n")
-            tmp_path = f.name
-        try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            personal_path = os.path.join(tmp_dir, "personal.ini")
+            defaults_path = os.path.join(tmp_dir, "defaults.ini")
+            for p in (personal_path, defaults_path):
+                with open(p, "w") as f:
+                    f.write("[defaults]\nsite:www.fanfiction.net\n")
+
             mock_config = MagicMock()
-            mock_config.calibre.personal_ini = tmp_path
-            mock_config.calibre.default_ini = tmp_path
+            mock_config.calibre.personal_ini = personal_path
+            mock_config.calibre.default_ini = defaults_path
             self.state.config = mock_config
 
-            for ini_type in ("personal", "defaults"):
+            for ini_type, expected_path in (
+                ("personal", personal_path),
+                ("defaults", defaults_path),
+            ):
                 resp = self.client.get(f"/api/config/ini/{ini_type}")
                 self.assertEqual(resp.status_code, 200)
                 data = resp.json()
                 self.assertIn("[defaults]", data["content"])
-                self.assertEqual(data["path"], tmp_path)
+                self.assertEqual(data["path"], expected_path)
                 self.assertIsNone(data["error"])
-        finally:
-            os.unlink(tmp_path)
 
     def test_get_ini_file_missing(self):
         """INI endpoint returns empty content when file does not exist."""
@@ -427,6 +431,35 @@ class TestConfigRoutes(unittest.TestCase):
             self.assertEqual(data["content"], "")
             self.assertIsNone(data["error"])
 
+    def test_get_ini_resolves_directory_path(self):
+        """INI endpoint resolves a directory path to the correct ini file."""
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            personal_path = os.path.join(tmp_dir, "personal.ini")
+            defaults_path = os.path.join(tmp_dir, "defaults.ini")
+            for p in (personal_path, defaults_path):
+                with open(p, "w") as f:
+                    f.write("[resolved]\nfrom_dir = true\n")
+
+            mock_config = MagicMock()
+            # Config points to the directory, not the file
+            mock_config.calibre.personal_ini = tmp_dir
+            mock_config.calibre.default_ini = tmp_dir
+            self.state.config = mock_config
+
+            for ini_type, expected_path in (
+                ("personal", personal_path),
+                ("defaults", defaults_path),
+            ):
+                resp = self.client.get(f"/api/config/ini/{ini_type}")
+                self.assertEqual(resp.status_code, 200)
+                data = resp.json()
+                self.assertIn("[resolved]", data["content"])
+                self.assertEqual(data["path"], expected_path)
+                self.assertIsNone(data["error"])
+
     def test_put_ini_no_config(self):
         """PUT INI endpoint returns error when no config is loaded."""
         resp = self.client.put("/api/config/ini/personal", json={"content": "[test]"})
@@ -440,12 +473,15 @@ class TestConfigRoutes(unittest.TestCase):
         import os
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
-            tmp_path = f.name
-        try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            personal_path = os.path.join(tmp_dir, "personal.ini")
+            # Create the file so the path exists
+            with open(personal_path, "w") as f:
+                f.write("")
+
             mock_config = MagicMock()
-            mock_config.calibre.personal_ini = tmp_path
-            mock_config.calibre.default_ini = tmp_path
+            mock_config.calibre.personal_ini = personal_path
+            mock_config.calibre.default_ini = personal_path
             self.state.config = mock_config
 
             new_content = "[story]\nsome_option:value\n"
@@ -456,10 +492,8 @@ class TestConfigRoutes(unittest.TestCase):
             data = resp.json()
             self.assertTrue(data["applied"])
 
-            with open(tmp_path, encoding="utf-8") as fh:
+            with open(personal_path, encoding="utf-8") as fh:
                 self.assertEqual(fh.read(), new_content)
-        finally:
-            os.unlink(tmp_path)
 
 
 class TestWidgetRoute(unittest.TestCase):
