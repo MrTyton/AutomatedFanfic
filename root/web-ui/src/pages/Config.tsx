@@ -1,7 +1,24 @@
 import { useEffect, useState } from 'react'
-import { getConfig, updateConfigSection, type ConfigResponse, type ConfigUpdateResult } from '../api'
+import { getConfig, updateConfigSection, getIniFile, updateIniFile, type ConfigResponse, type ConfigUpdateResult, type IniFileResponse, type IniUpdateResult } from '../api'
 
 type SectionData = Record<string, unknown>
+
+type IniType = 'personal' | 'defaults'
+
+interface IniState {
+    content: string
+    path: string | null
+    error: string | null
+    loading: boolean
+    editing: boolean
+    editContent: string
+    saveResult: IniUpdateResult | null
+}
+
+const INI_LABELS: Record<IniType, string> = {
+    personal: 'personal.ini',
+    defaults: 'defaults.ini',
+}
 
 export default function Config() {
     const [configData, setConfigData] = useState<Record<string, SectionData>>({})
@@ -9,6 +26,11 @@ export default function Config() {
     const [editValues, setEditValues] = useState<Record<string, string>>({})
     const [saveResult, setSaveResult] = useState<ConfigUpdateResult | null>(null)
     const [loading, setLoading] = useState(true)
+
+    const [iniStates, setIniStates] = useState<Record<IniType, IniState>>({
+        personal: { content: '', path: null, error: null, loading: true, editing: false, editContent: '', saveResult: null },
+        defaults: { content: '', path: null, error: null, loading: true, editing: false, editContent: '', saveResult: null },
+    })
 
     useEffect(() => {
         getConfig()
@@ -23,6 +45,28 @@ export default function Config() {
             })
             .catch(() => { })
             .finally(() => setLoading(false))
+
+        Promise.all(
+            (['personal', 'defaults'] as IniType[]).map(t =>
+                getIniFile(t)
+                    .then((res: IniFileResponse) => ({ t, res, error: null as string | null }))
+                    .catch(() => ({ t, res: null, error: 'Failed to load' }))
+            )
+        ).then(results => {
+            setIniStates(prev => {
+                const next = { ...prev }
+                for (const { t, res, error } of results) {
+                    next[t] = {
+                        ...prev[t],
+                        content: res?.content ?? '',
+                        path: res?.path ?? null,
+                        error: error ?? res?.error ?? null,
+                        loading: false,
+                    }
+                }
+                return next
+            })
+        })
     }, [])
 
     const startEdit = (section: string) => {
@@ -67,6 +111,37 @@ export default function Config() {
             setSaveResult({ applied: false, error: String(err) })
         } finally {
             setLoading(false)
+        }
+    }
+
+    const startIniEdit = (t: IniType) => {
+        setIniStates(prev => ({
+            ...prev,
+            [t]: { ...prev[t], editing: true, editContent: prev[t].content, saveResult: null },
+        }))
+    }
+
+    const cancelIniEdit = (t: IniType) => {
+        setIniStates(prev => ({
+            ...prev,
+            [t]: { ...prev[t], editing: false, saveResult: null },
+        }))
+    }
+
+    const saveIni = async (t: IniType) => {
+        const editContent = iniStates[t].editContent
+        setIniStates(prev => ({ ...prev, [t]: { ...prev[t], loading: true } }))
+        try {
+            const res = await updateIniFile(t, editContent)
+            setIniStates(prev => ({
+                ...prev,
+                [t]: { ...prev[t], loading: false, saveResult: res, editing: !res.applied, content: res.applied ? editContent : prev[t].content },
+            }))
+        } catch (err) {
+            setIniStates(prev => ({
+                ...prev,
+                [t]: { ...prev[t], loading: false, saveResult: { applied: false, error: String(err) } },
+            }))
         }
     }
 
@@ -138,6 +213,50 @@ export default function Config() {
                     )}
                 </div>
             ))}
+
+            <h2 style={{ margin: '1.5rem 0 0.75rem' }}>FanFicFare Configuration Files</h2>
+
+            {(['personal', 'defaults'] as IniType[]).map(t => {
+                const ini = iniStates[t]
+                const label = INI_LABELS[t]
+                return (
+                    <div className="card" key={t}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2>{label}{ini.path && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', marginLeft: '0.5rem', opacity: 0.6 }}>{ini.path}</span>}</h2>
+                            {!ini.editing && !ini.error && (
+                                <button className="secondary" onClick={() => startIniEdit(t)} disabled={ini.loading}>Edit</button>
+                            )}
+                        </div>
+
+                        {ini.saveResult && (
+                            <p style={{ color: ini.saveResult.applied ? 'var(--success)' : 'var(--error)' }}>
+                                {ini.saveResult.applied ? 'Changes saved.' : `Error: ${ini.saveResult.error}`}
+                            </p>
+                        )}
+
+                        {ini.error && !ini.editing ? (
+                            <p style={{ color: 'var(--error)', fontStyle: 'italic' }}>{ini.error}</p>
+                        ) : ini.editing ? (
+                            <div>
+                                <textarea
+                                    value={ini.editContent}
+                                    onChange={e => setIniStates(prev => ({ ...prev, [t]: { ...prev[t], editContent: e.target.value } }))}
+                                    rows={20}
+                                    style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'vertical', boxSizing: 'border-box' }}
+                                />
+                                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                                    <button onClick={() => saveIni(t)} disabled={ini.loading}>Save</button>
+                                    <button className="secondary" onClick={() => cancelIniEdit(t)}>Cancel</button>
+                                </div>
+                            </div>
+                        ) : (
+                            ini.content
+                                ? <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.85rem', margin: 0 }}>{ini.content}</pre>
+                                : <p style={{ fontStyle: 'italic', opacity: 0.5, margin: 0 }}>File is empty</p>
+                        )}
+                    </div>
+                )
+            })}
         </>
     )
 }
