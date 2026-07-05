@@ -1,5 +1,7 @@
 """Configuration API routes — view and edit config."""
 
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
@@ -147,3 +149,75 @@ async def update_config_section(
 async def get_reload_map():
     """Return the full field → reload-behaviour mapping for the UI."""
     return {key: behavior.value for key, behavior in FIELD_RELOAD_MAP.items()}
+
+
+# ── INI file endpoints ──────────────────────────────────────────
+
+class IniUpdateRequest(BaseModel):
+    """Request body for updating an INI file."""
+
+    content: str
+
+
+def _resolve_ini_path(state, ini_type: str) -> tuple[str | None, str | None]:
+    """Resolve the filesystem path for the given ini_type.
+
+    Args:
+        state: The WebState instance holding the loaded config.
+        ini_type: Either ``"personal"`` (personal.ini) or ``"defaults"``
+            (defaults.ini).
+
+    Returns:
+        A ``(path, error)`` tuple.  Exactly one of the two values will be
+        non-``None``: ``path`` on success, ``error`` when the type is
+        unknown, no config is loaded, or the path is not configured.
+    """
+    if state.config is None:
+        return None, "No config loaded"
+    # Use explicit branches so the path is provably derived from server config,
+    # not from the user-supplied ini_type string.
+    if ini_type == "personal":
+        path = state.config.calibre.personal_ini
+    elif ini_type == "defaults":
+        path = state.config.calibre.default_ini
+    else:
+        return None, f"Unknown ini type '{ini_type}'. Valid: personal, defaults"
+    if not path:
+        return None, f"No path configured for {ini_type}.ini"
+    return path, None
+
+
+@router.get("/ini/{ini_type}")
+async def get_ini_file(ini_type: str, request: Request):
+    """Return the raw content of personal.ini or defaults.ini."""
+    state = request.app.state.web_state
+    path, err = _resolve_ini_path(state, ini_type)
+    if err:
+        return {"content": None, "path": None, "error": err}
+
+    ini_path = Path(path)
+    if not ini_path.is_file():
+        return {"content": "", "path": path, "error": None}
+
+    try:
+        content = ini_path.read_text(encoding="utf-8")
+        return {"content": content, "path": path, "error": None}
+    except OSError:
+        return {"content": None, "path": path, "error": "Failed to read file"}
+
+
+@router.put("/ini/{ini_type}")
+async def update_ini_file(ini_type: str, request: Request, body: IniUpdateRequest):
+    """Overwrite personal.ini or defaults.ini with the supplied content."""
+    state = request.app.state.web_state
+    path, err = _resolve_ini_path(state, ini_type)
+    if err:
+        return {"applied": False, "error": err}
+
+    ini_path = Path(path)
+    try:
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(body.content, encoding="utf-8")
+        return {"applied": True}
+    except OSError:
+        return {"applied": False, "error": "Failed to write file"}

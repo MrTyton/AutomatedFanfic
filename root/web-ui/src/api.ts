@@ -153,6 +153,29 @@ export function updateConfigSection(section: string, values: Record<string, unkn
     })
 }
 
+// ── INI files ──────────────────────────────────────────────────
+export interface IniFileResponse {
+    content: string | null
+    path: string | null
+    error?: string | null
+}
+
+export interface IniUpdateResult {
+    applied: boolean
+    error?: string
+}
+
+export function getIniFile(iniType: 'personal' | 'defaults') {
+    return apiFetch<IniFileResponse>(`/api/config/ini/${iniType}`)
+}
+
+export function updateIniFile(iniType: 'personal' | 'defaults', content: string) {
+    return apiFetch<IniUpdateResult>(`/api/config/ini/${iniType}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content }),
+    })
+}
+
 // ── Stats ──────────────────────────────────────────────────────
 export interface SiteStats {
     site: string
