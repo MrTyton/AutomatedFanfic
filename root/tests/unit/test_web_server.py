@@ -356,6 +356,105 @@ class TestConfigRoutes(unittest.TestCase):
         resp = self.client.post("/api/config/validate", json={"values": {}})
         self.assertEqual(resp.status_code, 200)
 
+    def test_get_ini_no_config(self):
+        """INI endpoints return error when no config is loaded."""
+        for ini_type in ("personal", "defaults"):
+            resp = self.client.get(f"/api/config/ini/{ini_type}")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertIsNone(data["content"])
+            self.assertIn("error", data)
+
+    def test_get_ini_unknown_type(self):
+        """Unknown ini_type returns an error."""
+        resp = self.client.get("/api/config/ini/unknown")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIsNone(data["content"])
+        self.assertIn("Unknown ini type", data["error"])
+
+    def test_get_ini_no_path_configured(self):
+        """INI endpoint returns error when path is not configured."""
+        mock_config = MagicMock()
+        mock_config.calibre.personal_ini = None
+        mock_config.calibre.default_ini = None
+        self.state.config = mock_config
+
+        for ini_type in ("personal", "defaults"):
+            resp = self.client.get(f"/api/config/ini/{ini_type}")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertIsNone(data["content"])
+            self.assertIsNotNone(data["error"])
+
+    def test_get_ini_file_content(self):
+        """INI endpoint returns file content when file exists."""
+        import os
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
+            f.write("[defaults]\nsite:www.fanfiction.net\n")
+            tmp_path = f.name
+        try:
+            mock_config = MagicMock()
+            mock_config.calibre.personal_ini = tmp_path
+            mock_config.calibre.default_ini = tmp_path
+            self.state.config = mock_config
+
+            for ini_type in ("personal", "defaults"):
+                resp = self.client.get(f"/api/config/ini/{ini_type}")
+                self.assertEqual(resp.status_code, 200)
+                data = resp.json()
+                self.assertIn("[defaults]", data["content"])
+                self.assertEqual(data["path"], tmp_path)
+                self.assertIsNone(data["error"])
+        finally:
+            os.unlink(tmp_path)
+
+    def test_get_ini_file_missing(self):
+        """INI endpoint returns empty content when file does not exist."""
+        mock_config = MagicMock()
+        mock_config.calibre.personal_ini = "/nonexistent/path/personal.ini"
+        mock_config.calibre.default_ini = "/nonexistent/path/defaults.ini"
+        self.state.config = mock_config
+
+        for ini_type in ("personal", "defaults"):
+            resp = self.client.get(f"/api/config/ini/{ini_type}")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["content"], "")
+            self.assertIsNone(data["error"])
+
+    def test_put_ini_no_config(self):
+        """PUT INI endpoint returns error when no config is loaded."""
+        resp = self.client.put("/api/config/ini/personal", json={"content": "[test]"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["applied"])
+        self.assertIn("error", data)
+
+    def test_put_ini_writes_file(self):
+        """PUT INI endpoint writes content to the configured path."""
+        import os
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
+            tmp_path = f.name
+        try:
+            mock_config = MagicMock()
+            mock_config.calibre.personal_ini = tmp_path
+            mock_config.calibre.default_ini = tmp_path
+            self.state.config = mock_config
+
+            new_content = "[story]\nsome_option:value\n"
+            resp = self.client.put("/api/config/ini/personal", json={"content": new_content})
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data["applied"])
+
+            with open(tmp_path, encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), new_content)
+        finally:
+            os.unlink(tmp_path)
+
 
 class TestWidgetRoute(unittest.TestCase):
     """Tests for /api/widget endpoint (Homepage dashboard integration)."""

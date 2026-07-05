@@ -1,5 +1,7 @@
 """Configuration API routes — view and edit config."""
 
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
@@ -7,6 +9,12 @@ from config.config_store import ConfigStore, ReloadBehavior, FIELD_RELOAD_MAP
 from config.toml_writer import TomlWriter
 
 router = APIRouter(prefix="/api/config", tags=["config"])
+
+# Maps URL parameter names to AppConfig.calibre attribute names
+_INI_ATTR_MAP = {
+    "personal": "personal_ini",
+    "defaults": "default_ini",
+}
 
 # Fields that contain sensitive data and should be masked in GET responses
 _SENSITIVE_FIELDS = {"password", "api_key", "apikey", "token", "secret"}
@@ -147,3 +155,60 @@ async def update_config_section(
 async def get_reload_map():
     """Return the full field → reload-behaviour mapping for the UI."""
     return {key: behavior.value for key, behavior in FIELD_RELOAD_MAP.items()}
+
+
+# ── INI file endpoints ──────────────────────────────────────────
+
+class IniUpdateRequest(BaseModel):
+    """Request body for updating an INI file."""
+
+    content: str
+
+
+def _resolve_ini_path(state, ini_type: str) -> tuple[str | None, str | None]:
+    """Return (path, error) for the given ini_type ('personal' or 'defaults')."""
+    attr = _INI_ATTR_MAP.get(ini_type)
+    if attr is None:
+        return None, f"Unknown ini type '{ini_type}'. Valid: {list(_INI_ATTR_MAP)}"
+    if state.config is None:
+        return None, "No config loaded"
+    path = getattr(state.config.calibre, attr, None)
+    if not path:
+        return None, f"No path configured for {ini_type}.ini"
+    return path, None
+
+
+@router.get("/ini/{ini_type}")
+async def get_ini_file(ini_type: str, request: Request):
+    """Return the raw content of personal.ini or defaults.ini."""
+    state = request.app.state.web_state
+    path, err = _resolve_ini_path(state, ini_type)
+    if err:
+        return {"content": None, "path": None, "error": err}
+
+    ini_path = Path(path)
+    if not ini_path.is_file():
+        return {"content": "", "path": path, "error": None}
+
+    try:
+        content = ini_path.read_text(encoding="utf-8")
+        return {"content": content, "path": path, "error": None}
+    except Exception as e:
+        return {"content": None, "path": path, "error": f"Failed to read file: {e}"}
+
+
+@router.put("/ini/{ini_type}")
+async def update_ini_file(ini_type: str, request: Request, body: IniUpdateRequest):
+    """Overwrite personal.ini or defaults.ini with the supplied content."""
+    state = request.app.state.web_state
+    path, err = _resolve_ini_path(state, ini_type)
+    if err:
+        return {"applied": False, "error": err}
+
+    ini_path = Path(path)
+    try:
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(body.content, encoding="utf-8")
+        return {"applied": True}
+    except Exception as e:
+        return {"applied": False, "error": f"Failed to write file: {e}"}
