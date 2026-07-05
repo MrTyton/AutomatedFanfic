@@ -393,6 +393,7 @@ class TestConfigRoutes(unittest.TestCase):
         """INI endpoint returns file content when file exists."""
         import os
         import tempfile
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write("[defaults]\nsite:www.fanfiction.net\n")
             tmp_path = f.name
@@ -438,6 +439,7 @@ class TestConfigRoutes(unittest.TestCase):
         """PUT INI endpoint writes content to the configured path."""
         import os
         import tempfile
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             tmp_path = f.name
         try:
@@ -447,7 +449,9 @@ class TestConfigRoutes(unittest.TestCase):
             self.state.config = mock_config
 
             new_content = "[story]\nsome_option:value\n"
-            resp = self.client.put("/api/config/ini/personal", json={"content": new_content})
+            resp = self.client.put(
+                "/api/config/ini/personal", json={"content": new_content}
+            )
             self.assertEqual(resp.status_code, 200)
             data = resp.json()
             self.assertTrue(data["applied"])
