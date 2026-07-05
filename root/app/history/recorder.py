@@ -131,6 +131,26 @@ class HistoryRecorder:
             )
         )
 
+    def record_download_requeued(
+        self, url: str, site: Optional[str] = None, title: Optional[str] = None
+    ) -> None:
+        """Move an existing 'waiting' download row back to 'pending' status.
+
+        Used when a user manually retries a URL from the web UI. Updates the
+        existing row rather than inserting a duplicate.
+        """
+        self._put(
+            HistoryMessage(
+                event_type=HistoryEventType.DOWNLOAD_UPDATED,
+                payload={
+                    "url": url,
+                    "status": DownloadStatus.PENDING.value,
+                    "site": site,
+                    "title": title,
+                },
+            )
+        )
+
     def record_download_title_update(
         self, url: str, title: str, site: Optional[str] = None
     ) -> None:

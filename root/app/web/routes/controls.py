@@ -404,7 +404,23 @@ async def retry_now(request: Request, body: QueueActionRequest):
         fanfic.title = title
 
     _remove_from_active_url_candidates(state, candidate_urls)
-    _enqueue_fanfic(state, fanfic)
+
+    # Enqueue the fanfic but update the existing DB row instead of creating a
+    # new one.  _enqueue_fanfic inserts a fresh download event which leaves the
+    # old 'waiting' row intact — causing the UI to incorrectly show the URL in
+    # the waiting queue even after it's been requeued.
+    if state.active_urls is not None:
+        state.active_urls[fanfic.url] = {
+            "site": fanfic.site,
+            "title": fanfic.title,
+            "status": "queued",
+            "calibre_id": fanfic.calibre_id,
+        }
+    state.ingress_queue.put(fanfic)
+    if state.history_recorder:
+        state.history_recorder.record_download_requeued(
+            fanfic.url, site=fanfic.site, title=fanfic.title
+        )
     return ActionResponse(ok=True, message=f"Requeued {fanfic.url} for immediate retry")
 
 

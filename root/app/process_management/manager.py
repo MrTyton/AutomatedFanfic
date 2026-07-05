@@ -501,12 +501,7 @@ class ProcessManager:
             if self.process_config.auto_restart:
                 self.restart_process(name)
 
-        # Log health status periodically
-        if process_info.is_alive():
-            uptime = process_info.get_uptime()
-            ff_logging.log_debug(
-                f"Process '{name}' health check OK (uptime: {uptime:.1f}s)"
-            )
+        # Only log when the health check needs to take action.
 
     def setup_signal_handlers(self) -> None:
         """

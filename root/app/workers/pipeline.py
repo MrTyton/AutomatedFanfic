@@ -124,9 +124,7 @@ def _process_task(
 
             # Run command in temp_dir
             output = command.execute_command(cmd_args, cwd=temp_dir)
-            ff_logging.log_debug(
-                f"\t({site}) FanFicFare output preview: {output[:100]}..."
-            )
+            ff_logging.log(f"\t({site}) FanFicFare output:\n{output}")
 
         except (subprocess.CalledProcessError, Exception) as e:
             # Handle execution failure
@@ -142,17 +140,13 @@ def _process_task(
                     error_output = e.output
                     if isinstance(error_output, bytes):
                         error_output = error_output.decode("utf-8", errors="replace")
-                    ff_logging.log_debug(
-                        f"\t({site}) FanFicFare output:\n{error_output}"
-                    )
+                    ff_logging.log(f"\t({site}) FanFicFare output:\n{error_output}")
 
                 if e.stderr:
                     error_stderr = e.stderr
                     if isinstance(error_stderr, bytes):
                         error_stderr = error_stderr.decode("utf-8", errors="replace")
-                    ff_logging.log_debug(
-                        f"\t({site}) FanFicFare STDERR:\n{error_stderr}"
-                    )
+                    ff_logging.log(f"\t({site}) FanFicFare STDERR:\n{error_stderr}")
 
             handlers.handle_failure(
                 fanfic,
@@ -229,7 +223,7 @@ def url_worker(
     worker_color = ff_logging.get_color_for_worker(w_index)
     ff_logging.set_thread_color(worker_color)
 
-    ff_logging.log_debug(f"Starting Worker {worker_id}")
+    ff_logging.log(f"Worker {worker_id} started")
 
     # Track current site being processed
     current_site = None
@@ -249,7 +243,7 @@ def url_worker(
                 # Queue is empty - signal idle if we were processing a site
                 if current_site is not None:
                     ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
-                    ff_logging.log_debug(
+                    ff_logging.log(
                         f"Worker {worker_id} signaling idle after draining {current_site} queue"
                     )
                     current_site = None

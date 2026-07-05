@@ -82,7 +82,7 @@ class TestPipeline(unittest.TestCase):
             self.worker_id,
         )
 
-        calls = mock_logging.log_debug.call_args_list
+        calls = mock_logging.log.call_args_list
         output_logged = any("Bytes Output" in str(c) for c in calls)
         self.assertTrue(output_logged, "Decoded output not logged")
 
@@ -262,7 +262,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
         # Should not crash, defaults to index 0
         # Verify worker started and stopped cleanly
-        self.assertTrue(mock_logging.log_debug.called)
+        self.assertTrue(mock_logging.log.called)
 
 
 if __name__ == "__main__":

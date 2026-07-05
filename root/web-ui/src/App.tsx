@@ -2,6 +2,7 @@ import { Routes, Route, NavLink } from 'react-router-dom'
 import { useDashboardSocket } from './hooks/useWebSocket'
 import Dashboard from './pages/Dashboard'
 import History from './pages/History'
+import Logs from './pages/Logs'
 import Stats from './pages/Stats'
 import Config from './pages/Config'
 
@@ -18,6 +19,9 @@ export default function App() {
                 <NavLink to="/history" className={({ isActive }) => isActive ? 'active' : ''}>
                     History
                 </NavLink>
+                <NavLink to="/logs" className={({ isActive }) => isActive ? 'active' : ''}>
+                    Logs
+                </NavLink>
                 <NavLink to="/stats" className={({ isActive }) => isActive ? 'active' : ''}>
                     Stats
                 </NavLink>
@@ -33,6 +37,7 @@ export default function App() {
                 <Routes>
                     <Route path="/" element={<Dashboard data={data} />} />
                     <Route path="/history" element={<History />} />
+                    <Route path="/logs" element={<Logs />} />
                     <Route path="/stats" element={<Stats />} />
                     <Route path="/config" element={<Config />} />
                 </Routes>

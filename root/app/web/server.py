@@ -25,6 +25,7 @@ from web.routes import (
     controls,
     health,
     history,
+    logs,
     monitoring,
     stats,
     websocket,
@@ -80,6 +81,7 @@ def create_app(web_state: WebState) -> FastAPI:
     # Register route modules
     app.include_router(health.router)
     app.include_router(history.router)
+    app.include_router(logs.router)
     app.include_router(monitoring.router)
     app.include_router(controls.router)
     app.include_router(config.router)

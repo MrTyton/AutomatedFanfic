@@ -1,4 +1,5 @@
 import unittest
+import unittest.mock
 from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
@@ -34,7 +35,7 @@ class TestUrlWorker(unittest.TestCase):
                 retry_count=3,  # Will become 4 after increment, less than max_normal_retries (11)
                 max_normal_retries=11,
                 hail_mary_enabled=True,
-                expected_log_message="Sending Test Story to waiting queue for retry. Attempt 4",
+                expected_log_message="Sending Test Story to waiting queue for retry. Attempt 4, delay",
                 expected_notification_call=False,
                 expected_notification_title=None,
                 expected_queue_put_call=True,
@@ -45,7 +46,7 @@ class TestUrlWorker(unittest.TestCase):
                 retry_count=10,  # Will become 11 after increment, equals max_normal_retries
                 max_normal_retries=11,
                 hail_mary_enabled=True,
-                expected_log_message="Sending Test Story to waiting queue for hail_mary. Attempt 11",
+                expected_log_message="Sending Test Story to waiting queue for hail_mary. Attempt 11, delay 720.0 min",
                 expected_notification_call=True,
                 expected_notification_title="Fanfiction Download Failed, trying Hail-Mary in 12.00 hours.",
                 expected_queue_put_call=True,
@@ -109,8 +110,15 @@ class TestUrlWorker(unittest.TestCase):
         )
 
         # Assertions
-        # log_failure should be called with the expected message
-        mock_log_failure.assert_called_with(expected_log_message)
+        # log_failure should be called with the expected message prefix
+        # Delay values include random jitter, so we check the prefix
+        log_calls = [str(c) for c in mock_log_failure.call_args_list]
+        matched = any(
+            expected_log_message in str(c) for c in mock_log_failure.call_args_list
+        )
+        assert (
+            matched
+        ), f"Expected log containing '{expected_log_message}' not found in {log_calls}"
 
         if expected_notification_call:
             mock_notification_info.send_notification.assert_called_once_with(
@@ -266,9 +274,16 @@ class TestUrlWorker(unittest.TestCase):
         )
 
         # Assertions - should log retry and queue the fanfic
-        mock_log_failure.assert_called_once_with(
-            "Sending Test Story to waiting queue for retry. Attempt 4"
+        mock_log_failure.assert_any_call(unittest.mock.ANY)
+        # Check that a matching log was emitted
+        log_calls = [str(c) for c in mock_log_failure.call_args_list]
+        matched = any(
+            "Sending Test Story to waiting queue for retry. Attempt 4, delay" in str(c)
+            for c in mock_log_failure.call_args_list
         )
+        assert (
+            matched
+        ), f"Expected log containing retry message not found in {log_calls}"
         mock_notification_info.send_notification.assert_not_called()
         mock_waiting_queue.put.assert_called_once_with(mock_fanfic)
 

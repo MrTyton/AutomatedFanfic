@@ -89,8 +89,8 @@ def handle_failure(
             )
 
     ff_logging.log_failure(
-        f"Sending {fanfic.title} to waiting queue for {decision.action.value}. "
-        f"Attempt {fanfic.repeats}"
+        f"Sending {fanfic.title or fanfic.url} to waiting queue for {decision.action.value}. "
+        f"Attempt {fanfic.repeats}, delay {decision.delay_minutes:.1f} min"
     )
 
     # Record retry event in history and update download status to waiting
