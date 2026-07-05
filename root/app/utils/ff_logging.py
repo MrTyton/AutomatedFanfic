@@ -151,7 +151,7 @@ def get_color_for_worker(index: int) -> str:
     return f"\033[38;5;{color_code}m"
 
 
-def log(msg: str, color: str = "") -> None:
+def log(msg: str, color: str = "", *, _level: str = "") -> None:
     """Logs a timestamped message to console with optional color formatting."""
 
     # Determine color:
@@ -168,13 +168,14 @@ def log(msg: str, color: str = "") -> None:
         using_col = _thread_local.color
 
     # Determine log level for the ring buffer
-    level = "info"
-    if color == "FAIL":
+    if _level:
+        level = _level
+    elif color == "FAIL":
         level = "error"
     elif color == "WARNING":
         level = "warning"
-    elif color == "OKBLUE":
-        level = "debug"
+    else:
+        level = "info"
 
     # Generate current timestamp in standardized format
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
@@ -239,8 +240,8 @@ def log_debug(msg: str) -> None:
     """
     # Only log debug messages when verbose mode is globally enabled
     if verbose.value:
-        # Use the core log function with OKBLUE color to identify as debug
-        log(msg, "OKBLUE")
+        # Use _level to tag as debug in ring buffer without overriding thread color
+        log(msg, _level="debug")
 
 
 def get_recent_logs(limit: int = 500) -> list[dict]:
