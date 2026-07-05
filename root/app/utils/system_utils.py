@@ -52,6 +52,35 @@ from tempfile import mkdtemp
 # from calibre_integration import calibre_info
 
 
+def resolve_ini_path(path: str | None, default_filename: str) -> str:
+    """Resolve an INI file path, appending the filename if the path is a directory.
+
+    This utility ensures that a configured path pointing to a directory is
+    resolved to the full file path by appending the expected filename.  If the
+    path already ends with the filename it is returned unchanged.  This is the
+    single source of truth for INI path resolution used by both CalibreInfo
+    initialization and the web configuration routes.
+
+    Args:
+        path: The configured path which may be a directory, a full file path,
+            or None/empty.
+        default_filename: The standard filename to append when the path is a
+            directory (e.g., "defaults.ini", "personal.ini").
+
+    Returns:
+        The resolved file path, or an empty string if the input path was
+        None or empty.
+    """
+    if not path:
+        return ""
+
+    # If path doesn't already end with the expected filename, append it
+    if not path.endswith(default_filename):
+        return str(Path(path) / default_filename)
+
+    return path
+
+
 @contextmanager
 def temporary_directory():
     """
