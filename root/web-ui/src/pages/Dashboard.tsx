@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
 import { addUrls, cancelRetry, redownloadScratch, retryNow, type AddUrlResult } from '../api'
 import { statusBadgeClass } from '../statusColors'
@@ -28,6 +28,7 @@ interface WaitingUrl {
     updated_at?: string
     site?: string
     title?: string
+    error_message?: string
     calibre_id?: string
 }
 
@@ -41,9 +42,35 @@ function extractSite(url: string): string {
     }
 }
 
+/**
+ * Normalizes user-provided URLs for external links while rejecting unsafe schemes.
+ * This intentionally allows only http/https so dashboard data cannot render
+ * javascript:, data:, file:, or other executable/non-web protocols as links.
+ */
+function getSafeExternalHref(url: string): string | null {
+    try {
+        const candidate = url.startsWith('http') ? url : `https://${url}`
+        const parsed = new URL(candidate)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null
+    } catch {
+        return null
+    }
+}
+
+function renderUrl(url: string, style?: CSSProperties): ReactNode {
+    const href = getSafeExternalHref(url)
+    if (!href) {
+        return <span style={style}>{url}</span>
+    }
+    return <a href={href} target="_blank" rel="noreferrer" style={style}>{url}</a>
+}
+
 function urlLink(url: string): ReactNode {
-    const href = url.startsWith('http') ? url : `https://${url}`
-    return <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)' }}>{url}</a>
+    return renderUrl(url, { color: 'var(--text-muted)' })
+}
+
+function makeExpandableRowKey(prefix: string, url: string | undefined, timestamp?: string): string {
+    return `${prefix}-${url ?? 'unknown'}-${timestamp ?? 'unknown'}`
 }
 
 function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: string; sortKey: number } | null {
@@ -55,14 +82,19 @@ function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: s
         const title = evt.title || evt.url || 'Unknown'
         const site = evt.site || '—'
         if (evt.status === 'success') return { icon: '✓', text: <>({site}) {title}</>, time, sortKey }
-        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time, sortKey }
-        if (evt.status === 'abandoned') return { icon: '✗', text: <>({site}) Abandoned: {title}{evt.error_message ? <> — <span style={{ color: 'var(--error)' }}>{evt.error_message}</span></> : ''}</>, time, sortKey }
+        if (evt.status === 'failed') return { icon: '✗', text: <>({site}) Failed: {title}</>, time, sortKey }
+        if (evt.status === 'abandoned') return { icon: '✗', text: <>({site}) Abandoned: {title}</>, time, sortKey }
         if (evt.status === 'pending') return { icon: '↓', text: <>({site}) Processing {evt.url ? urlLink(evt.url) : title}</>, time, sortKey }
         return { icon: '↓', text: <>({site}) {title}</>, time, sortKey }
     }
     if (evt.event_type === 'retry') {
         const site = evt.site || '—'
-        return { icon: '↻', text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}</>, time, sortKey }
+        return {
+            icon: '↻',
+            text: <>({site}) Retry #{evt.attempt_number ?? '?'} — {evt.action ?? 'requeue'} — {evt.url ? urlLink(evt.url) : site}</>,
+            time,
+            sortKey,
+        }
     }
     if (evt.event_type === 'notification') {
         return { icon: '🔔', text: <>{evt.title}: {evt.body || ''}</>, time, sortKey }
@@ -74,6 +106,7 @@ export default function Dashboard({ data }: Props) {
     const [urlText, setUrlText] = useState('')
     const [results, setResults] = useState<AddUrlResult[]>([])
     const [loading, setLoading] = useState(false)
+    const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
     const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({})
     const resultTimer = useRef<number>(0)
 
@@ -102,6 +135,10 @@ export default function Dashboard({ data }: Props) {
         } finally {
             setLoading(false)
         }
+    }
+
+    const toggleExpandedError = (rowKey: string) => {
+        setExpandedErrors(prev => ({ ...prev, [rowKey]: !prev[rowKey] }))
     }
 
     if (!data) return <p>Waiting for data…</p>
@@ -225,15 +262,9 @@ export default function Dashboard({ data }: Props) {
                                 <td>{dl.site || extractSite(dl.url)}</td>
                                 <td>
                                     {dl.title ? (
-                                        <><strong>{dl.title}</strong>{' '}
-                                            <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {dl.url}
-                                            </a>
-                                        </>
+                                        <><strong>{dl.title}</strong>{' '}{renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
                                     ) : (
-                                        <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer">
-                                            {dl.url}
-                                        </a>
+                                        renderUrl(dl.url)
                                     )}
                                 </td>
                                 <td>—</td>
@@ -252,15 +283,9 @@ export default function Dashboard({ data }: Props) {
                                 <td>{dl.site || extractSite(dl.url)}</td>
                                 <td>
                                     {dl.title ? (
-                                        <><strong>{dl.title}</strong>{' '}
-                                            <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {dl.url}
-                                            </a>
-                                        </>
+                                        <><strong>{dl.title}</strong>{' '}{renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
                                     ) : (
-                                        <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer">
-                                            {dl.url}
-                                        </a>
+                                        renderUrl(dl.url)
                                     )}
                                 </td>
                                 <td>—</td>
@@ -277,107 +302,150 @@ export default function Dashboard({ data }: Props) {
                             </tr>
                         ))}
                         {/* Waiting downloads (retry backoff) */}
-                        {waitingItems.map((w) => (
-                            <tr key={`waiting-${w.url}`}>
-                                <td><span className="badge badge-info">waiting</span></td>
-                                <td>{w.site || extractSite(w.url)}</td>
-                                <td>
-                                    {w.title ? (
-                                        <><strong>{w.title}</strong>{' '}
-                                            <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {w.url}
-                                            </a>
-                                        </>
-                                    ) : (
-                                        <a href={w.url.startsWith('http') ? w.url : `https://${w.url}`} target="_blank" rel="noreferrer">
-                                            {w.url}
-                                        </a>
+                        {waitingItems.map((w) => {
+                            const rowKey = makeExpandableRowKey('waiting', w.url, w.updated_at)
+                            const isExpanded = !!expandedErrors[rowKey]
+
+                            return (
+                                <Fragment key={rowKey}>
+                                    <tr>
+                                        <td><span className="badge badge-info">waiting</span></td>
+                                        <td>{w.site || extractSite(w.url)}</td>
+                                        <td>
+                                            {w.title ? (
+                                                <><strong>{w.title}</strong>{' '}{renderUrl(w.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
+                                            ) : (
+                                                renderUrl(w.url)
+                                            )}
+                                            {w.error_message && (
+                                                <div style={{ marginTop: '0.35rem' }}>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary"
+                                                        onClick={() => toggleExpandedError(rowKey)}
+                                                        aria-expanded={isExpanded}
+                                                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                                    >
+                                                        {isExpanded ? 'Hide error' : 'Show error'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td>—</td>
+                                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                            {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
+                                        </td>
+                                        <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`retry-${w.url}`]}
+                                                onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
+                                            >
+                                                Retry now
+                                            </button>
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`cancel-${w.url}`]}
+                                                onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
+                                            >
+                                                Cancel retry
+                                            </button>
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`redl-${w.url}`]}
+                                                onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
+                                            >
+                                                Redownload
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {w.error_message && isExpanded && (
+                                        <tr>
+                                            <td></td>
+                                            <td colSpan={5} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                {w.error_message}
+                                            </td>
+                                        </tr>
                                     )}
-                                </td>
-                                <td>—</td>
-                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
-                                </td>
-                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`retry-${w.url}`]}
-                                        onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
-                                    >
-                                        Retry now
-                                    </button>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`cancel-${w.url}`]}
-                                        onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
-                                    >
-                                        Cancel retry
-                                    </button>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`redl-${w.url}`]}
-                                        onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
-                                    >
-                                        Redownload
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
+                                </Fragment>
+                            )
+                        })}
                         {/* Recent completed downloads */}
-                        {recentDownloads.map((dl, i) => (
-                            <tr key={`dl-${i}`}>
-                                <td>
-                                    <span className={statusBadgeClass(dl.status)}>
-                                        {dl.status}
-                                    </span>
-                                </td>
-                                <td>{dl.site || extractSite(dl.url || '')}</td>
-                                <td>
-                                    {dl.title ? (
-                                        <><strong>{dl.title}</strong>{' '}
-                                            <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {dl.url}
-                                            </a>
-                                        </>
-                                    ) : (
-                                        <a href={(dl.url || '').startsWith('http') ? dl.url! : `https://${dl.url}`} target="_blank" rel="noreferrer">
-                                            {dl.url}
-                                        </a>
+                        {recentDownloads.map((dl, i) => {
+                            const rowKey = makeExpandableRowKey(
+                                'download',
+                                dl.url,
+                                dl.completed_at ?? dl.timestamp ?? String(i),
+                            )
+                            const isExpanded = !!expandedErrors[rowKey]
+
+                            return (
+                                <Fragment key={rowKey}>
+                                    <tr>
+                                        <td>
+                                            <span className={statusBadgeClass(dl.status)}>
+                                                {dl.status}
+                                            </span>
+                                        </td>
+                                        <td>{dl.site || extractSite(dl.url || '')}</td>
+                                        <td>
+                                            {dl.title ? (
+                                                <><strong>{dl.title}</strong>{' '}{dl.url ? renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' }) : null}</>
+                                            ) : (
+                                                dl.url ? renderUrl(dl.url) : '—'
+                                            )}
+                                            {dl.error_message && (
+                                                <div style={{ marginTop: '0.35rem' }}>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary"
+                                                        onClick={() => toggleExpandedError(rowKey)}
+                                                        aria-expanded={isExpanded}
+                                                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                                    >
+                                                        {isExpanded ? 'Hide error' : 'Show error'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td>{dl.calibre_id ?? '—'}</td>
+                                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                            {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
+                                        </td>
+                                        <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                            {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
+                                                <button
+                                                    className="secondary"
+                                                    disabled={!!actionBusy[`retry-${dl.url}`]}
+                                                    onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
+                                                >
+                                                    Retry now
+                                                </button>
+                                            )}
+                                            {dl.url ? (
+                                                <button
+                                                    className="secondary"
+                                                    disabled={!!actionBusy[`redl-${dl.url}`]}
+                                                    onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
+                                                >
+                                                    Redownload
+                                                </button>
+                                            ) : (
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                    {dl.error_message && isExpanded && (
+                                        <tr>
+                                            <td></td>
+                                            <td colSpan={5} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                {dl.error_message}
+                                            </td>
+                                        </tr>
                                     )}
-                                    {dl.error_message && (
-                                        <div style={{ color: 'var(--error)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
-                                            {dl.error_message}
-                                        </div>
-                                    )}
-                                </td>
-                                <td>{dl.calibre_id ?? '—'}</td>
-                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
-                                </td>
-                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                    {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
-                                        <button
-                                            className="secondary"
-                                            disabled={!!actionBusy[`retry-${dl.url}`]}
-                                            onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
-                                        >
-                                            Retry now
-                                        </button>
-                                    )}
-                                    {dl.url ? (
-                                        <button
-                                            className="secondary"
-                                            disabled={!!actionBusy[`redl-${dl.url}`]}
-                                            onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
-                                        >
-                                            Redownload
-                                        </button>
-                                    ) : (
-                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
-                                    )}
-                                </td>
-                            </tr>
-                        ))}
+                                </Fragment>
+                            )
+                        })}
                         {activeUrls.length === 0 && queuedItems.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
                             <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
                         )}

@@ -66,6 +66,10 @@ async def _build_snapshot(state: Any) -> dict:
             or waiting_url_map.get(u, {}).get("site"),
             "title": url_metadata.get(u, {}).get("title")
             or waiting_url_map.get(u, {}).get("title"),
+            "calibre_id": url_metadata.get(u, {}).get("calibre_id")
+            or waiting_url_map.get(u, {}).get("calibre_id"),
+            "error_message": url_metadata.get(u, {}).get("error_message")
+            or waiting_url_map.get(u, {}).get("error_message"),
             **url_metadata.get(u, {}),
         }
         for u in urls

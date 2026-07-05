@@ -198,6 +198,28 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
         self.assertEqual(call_kwargs.kwargs["url"], "https://ao3.org/works/1")
         self.assertEqual(call_kwargs.kwargs["action"], "retry")
 
+    def test_records_error_message_on_retry(self):
+        """handle_failure stores the detailed failure text on retry records."""
+        from workers.handlers import handle_failure
+
+        handle_failure(
+            self.fanfic,
+            self.notification_info,
+            self.waiting_queue,
+            self.retry_config,
+            history_recorder=self.recorder,
+            error_message="calibredb: duplicate format",
+        )
+
+        self.assertEqual(
+            self.recorder.record_retry.call_args.kwargs["error_message"],
+            "calibredb: duplicate format",
+        )
+        self.assertEqual(
+            self.recorder.record_download_waiting.call_args.kwargs["error_message"],
+            "calibredb: duplicate format",
+        )
+
     def test_records_abandon_event(self):
         """handle_failure records download_abandoned when retries exhausted."""
         from workers.handlers import handle_failure

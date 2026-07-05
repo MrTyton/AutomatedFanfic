@@ -264,6 +264,19 @@ class TestAsyncHistoryDB(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["status"], "success")
 
+    def test_get_waiting_urls_includes_error_message(self):
+        self.sync_db.insert_download(DownloadEvent(url="u1", site="s"))
+        self.sync_db.update_download(
+            url="u1",
+            status=DownloadStatus.WAITING,
+            error_message="calibredb stderr",
+        )
+
+        results = self._run(self.async_db.get_waiting_urls())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["url"], "u1")
+        self.assertEqual(results[0]["error_message"], "calibredb stderr")
+
     def test_get_download_count(self):
         self.sync_db.insert_download(DownloadEvent(url="u1", site="s"))
         self.sync_db.insert_download(DownloadEvent(url="u2", site="s"))
@@ -307,7 +320,11 @@ class TestAsyncHistoryDB(unittest.TestCase):
     def test_get_waiting_urls_includes_title_and_site(self):
         self.sync_db.insert_download(
             DownloadEvent(
-                url="u1", site="ao3", title="Story One", status=DownloadStatus.WAITING
+                url="u1",
+                site="ao3",
+                title="Story One",
+                calibre_id="42",
+                status=DownloadStatus.WAITING,
             )
         )
 
@@ -316,6 +333,7 @@ class TestAsyncHistoryDB(unittest.TestCase):
         self.assertEqual(results[0]["url"], "u1")
         self.assertEqual(results[0]["site"], "ao3")
         self.assertEqual(results[0]["title"], "Story One")
+        self.assertEqual(results[0]["calibre_id"], "42")
 
     def test_get_latest_download_returns_most_recent_row(self):
         self.sync_db.insert_download(
