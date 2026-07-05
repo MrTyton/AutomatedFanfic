@@ -106,6 +106,7 @@ def handle_failure(
         history_recorder.record_download_waiting(
             url=fanfic.url,
             site=fanfic.site,
+            title=fanfic.title,
             error_message=error_message,
         )
 

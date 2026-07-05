@@ -66,6 +66,40 @@ class TestWebSocketDashboard(unittest.TestCase):
             data = ws.receive_json()
             self.assertIn("supervisor", data["processes"])
 
+    def test_snapshot_includes_waiting_error_details(self):
+        """Waiting rows include history metadata needed by dashboard actions."""
+
+        class StubHistoryDB:
+            async def get_waiting_urls(self):
+                return [
+                    {
+                        "url": "https://ao3.org/works/1",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                        "site": "ao3",
+                        "title": "Story One",
+                        "calibre_id": "42",
+                        "error_message": "calibredb stderr",
+                    }
+                ]
+
+            async def get_recent_downloads(self, limit=20):
+                return []
+
+            async def get_recent_activity(self, limit=20):
+                return []
+
+        self.state.active_urls = {
+            "https://ao3.org/works/1": {"site": "ao3", "title": "Story One", "status": "waiting"}
+        }
+        self.state.history_db = StubHistoryDB()
+
+        with self.client.websocket_connect("/ws/dashboard") as ws:
+            data = ws.receive_json()
+            self.assertEqual(data["waiting_downloads"]["count"], 1)
+            waiting = data["waiting_downloads"]["items"][0]
+            self.assertEqual(waiting["calibre_id"], "42")
+            self.assertEqual(waiting["error_message"], "calibredb stderr")
+
     def test_snapshot_empty_state(self):
         """Snapshot handles completely empty state gracefully."""
         with self.client.websocket_connect("/ws/dashboard") as ws:

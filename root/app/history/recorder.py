@@ -114,6 +114,7 @@ class HistoryRecorder:
         self,
         url: str,
         site: Optional[str] = None,
+        title: Optional[str] = None,
         error_message: Optional[str] = None,
     ) -> None:
         """Called when download is queued for retry with backoff delay."""
@@ -124,6 +125,7 @@ class HistoryRecorder:
                     "url": url,
                     "status": DownloadStatus.WAITING.value,
                     "site": site,
+                    "title": title,
                     "error_message": error_message,
                 },
             )

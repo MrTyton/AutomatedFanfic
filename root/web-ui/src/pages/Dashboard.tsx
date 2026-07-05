@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
-import { addUrls, type AddUrlResult } from '../api'
+import { addUrls, cancelRetry, redownloadScratch, retryNow, type AddUrlResult } from '../api'
 import { statusBadgeClass } from '../statusColors'
 
 interface Props {
@@ -29,6 +29,7 @@ interface WaitingUrl {
     site?: string
     title?: string
     error_message?: string
+    calibre_id?: string
 }
 
 function extractSite(url: string): string {
@@ -106,6 +107,7 @@ export default function Dashboard({ data }: Props) {
     const [results, setResults] = useState<AddUrlResult[]>([])
     const [loading, setLoading] = useState(false)
     const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
+    const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({})
     const resultTimer = useRef<number>(0)
 
     // Clear results after 5 seconds
@@ -140,6 +142,21 @@ export default function Dashboard({ data }: Props) {
     }
 
     if (!data) return <p>Waiting for data…</p>
+
+    const runAction = async (
+        key: string,
+        action: () => Promise<{ message: string }>,
+    ) => {
+        setActionBusy((s) => ({ ...s, [key]: true }))
+        try {
+            const res = await action()
+            setResults([{ accepted: true, message: res.message }])
+        } catch (err) {
+            setResults([{ accepted: false, message: String(err) }])
+        } finally {
+            setActionBusy((s) => ({ ...s, [key]: false }))
+        }
+    }
 
     const activeUrls: ActiveDownload[] = data.active_downloads.items
     const activeCount = data.active_downloads.count
@@ -234,6 +251,7 @@ export default function Dashboard({ data }: Props) {
                             <th>Title / URL</th>
                             <th>Story ID</th>
                             <th>Time</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -244,19 +262,18 @@ export default function Dashboard({ data }: Props) {
                                 <td>{dl.site || extractSite(dl.url)}</td>
                                 <td>
                                     {dl.title ? (
-                                        <><strong>{dl.title}</strong>{' '}
-                                            <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {dl.url}
-                                            </a>
-                                        </>
+                                        <><strong>{dl.title}</strong>{' '}{renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
                                     ) : (
-                                        <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer">
-                                            {dl.url}
-                                        </a>
+                                        renderUrl(dl.url)
                                     )}
                                 </td>
                                 <td>—</td>
                                 <td></td>
+                                <td>
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                        Redownload unavailable while processing
+                                    </span>
+                                </td>
                             </tr>
                         ))}
                         {/* Queued downloads (accepted, waiting for coordinator/worker assignment) */}
@@ -266,123 +283,171 @@ export default function Dashboard({ data }: Props) {
                                 <td>{dl.site || extractSite(dl.url)}</td>
                                 <td>
                                     {dl.title ? (
-                                        <><strong>{dl.title}</strong>{' '}
-                                            <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                                {dl.url}
-                                            </a>
-                                        </>
+                                        <><strong>{dl.title}</strong>{' '}{renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
                                     ) : (
-                                        <a href={dl.url.startsWith('http') ? dl.url : `https://${dl.url}`} target="_blank" rel="noreferrer">
-                                            {dl.url}
-                                        </a>
+                                        renderUrl(dl.url)
                                     )}
                                 </td>
                                 <td>—</td>
                                 <td></td>
+                                <td>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`redl-${dl.url}`]}
+                                        onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url, site: dl.site, title: dl.title }))}
+                                    >
+                                        Redownload
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                         {/* Waiting downloads (retry backoff) */}
-                        {waitingItems.map((w) => (
-                            (() => {
-                                const rowKey = makeExpandableRowKey('waiting', w.url, w.updated_at)
-                                const isExpanded = !!expandedErrors[rowKey]
+                        {waitingItems.map((w) => {
+                            const rowKey = makeExpandableRowKey('waiting', w.url, w.updated_at)
+                            const isExpanded = !!expandedErrors[rowKey]
 
-                                return (
-                                    <Fragment key={rowKey}>
+                            return (
+                                <Fragment key={rowKey}>
+                                    <tr>
+                                        <td><span className="badge badge-info">waiting</span></td>
+                                        <td>{w.site || extractSite(w.url)}</td>
+                                        <td>
+                                            {w.title ? (
+                                                <><strong>{w.title}</strong>{' '}{renderUrl(w.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
+                                            ) : (
+                                                renderUrl(w.url)
+                                            )}
+                                            {w.error_message && (
+                                                <div style={{ marginTop: '0.35rem' }}>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary"
+                                                        onClick={() => toggleExpandedError(rowKey)}
+                                                        aria-expanded={isExpanded}
+                                                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                                    >
+                                                        {isExpanded ? 'Hide error' : 'Show error'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td>—</td>
+                                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                            {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
+                                        </td>
+                                        <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`retry-${w.url}`]}
+                                                onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
+                                            >
+                                                Retry now
+                                            </button>
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`cancel-${w.url}`]}
+                                                onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
+                                            >
+                                                Cancel retry
+                                            </button>
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`redl-${w.url}`]}
+                                                onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
+                                            >
+                                                Redownload
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {w.error_message && isExpanded && (
                                         <tr>
-                                            <td><span className="badge badge-info">waiting</span></td>
-                                            <td>{w.site || extractSite(w.url)}</td>
-                                            <td>
-                                                {w.title ? (
-                                                    <><strong>{w.title}</strong>{' '}{renderUrl(w.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
-                                                ) : (
-                                                    renderUrl(w.url)
-                                                )}
-                                                {w.error_message && (
-                                                    <div style={{ marginTop: '0.35rem' }}>
-                                                        <button
-                                                            type="button"
-                                                            className="secondary"
-                                                            onClick={() => toggleExpandedError(rowKey)}
-                                                            aria-expanded={isExpanded}
-                                                            style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
-                                                        >
-                                                            {isExpanded ? 'Hide error' : 'Show error'}
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td>—</td>
-                                            <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                                {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
+                                            <td></td>
+                                            <td colSpan={5} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                {w.error_message}
                                             </td>
                                         </tr>
-                                        {w.error_message && isExpanded && (
-                                            <tr key={`${rowKey}-error`}>
-                                                <td></td>
-                                                <td colSpan={4} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                    {w.error_message}
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </Fragment>
-                                )
-                            })()
-                        ))}
+                                    )}
+                                </Fragment>
+                            )
+                        })}
                         {/* Recent completed downloads */}
-                        {recentDownloads.map((dl, i) => (
-                            (() => {
-                                const rowKey = makeExpandableRowKey('download', dl.url, dl.completed_at ?? dl.timestamp ?? String(i))
-                                const isExpanded = !!expandedErrors[rowKey]
+                        {recentDownloads.map((dl, i) => {
+                            const rowKey = makeExpandableRowKey(
+                                'download',
+                                dl.url,
+                                dl.completed_at ?? dl.timestamp ?? String(i),
+                            )
+                            const isExpanded = !!expandedErrors[rowKey]
 
-                                return (
-                                    <Fragment key={rowKey}>
+                            return (
+                                <Fragment key={rowKey}>
+                                    <tr>
+                                        <td>
+                                            <span className={statusBadgeClass(dl.status)}>
+                                                {dl.status}
+                                            </span>
+                                        </td>
+                                        <td>{dl.site || extractSite(dl.url || '')}</td>
+                                        <td>
+                                            {dl.title ? (
+                                                <><strong>{dl.title}</strong>{' '}{dl.url ? renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' }) : null}</>
+                                            ) : (
+                                                dl.url ? renderUrl(dl.url) : '—'
+                                            )}
+                                            {dl.error_message && (
+                                                <div style={{ marginTop: '0.35rem' }}>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary"
+                                                        onClick={() => toggleExpandedError(rowKey)}
+                                                        aria-expanded={isExpanded}
+                                                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                                                    >
+                                                        {isExpanded ? 'Hide error' : 'Show error'}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td>{dl.calibre_id ?? '—'}</td>
+                                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                            {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
+                                        </td>
+                                        <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                            {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
+                                                <button
+                                                    className="secondary"
+                                                    disabled={!!actionBusy[`retry-${dl.url}`]}
+                                                    onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
+                                                >
+                                                    Retry now
+                                                </button>
+                                            )}
+                                            {dl.url ? (
+                                                <button
+                                                    className="secondary"
+                                                    disabled={!!actionBusy[`redl-${dl.url}`]}
+                                                    onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
+                                                >
+                                                    Redownload
+                                                </button>
+                                            ) : (
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                    {dl.error_message && isExpanded && (
                                         <tr>
-                                            <td>
-                                                <span className={statusBadgeClass(dl.status)}>
-                                                    {dl.status}
-                                                </span>
-                                            </td>
-                                            <td>{dl.site || extractSite(dl.url || '')}</td>
-                                            <td>
-                                                {dl.title ? (
-                                                    <><strong>{dl.title}</strong>{' '}{dl.url ? renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' }) : null}</>
-                                                ) : (
-                                                    dl.url ? renderUrl(dl.url) : '—'
-                                                )}
-                                                {dl.error_message && (
-                                                    <div style={{ marginTop: '0.35rem' }}>
-                                                        <button
-                                                            type="button"
-                                                            className="secondary"
-                                                            onClick={() => toggleExpandedError(rowKey)}
-                                                            aria-expanded={isExpanded}
-                                                            style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
-                                                        >
-                                                            {isExpanded ? 'Hide error' : 'Show error'}
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td>{dl.calibre_id ?? '—'}</td>
-                                            <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                                {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
+                                            <td></td>
+                                            <td colSpan={5} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                {dl.error_message}
                                             </td>
                                         </tr>
-                                        {dl.error_message && isExpanded && (
-                                            <tr key={`${rowKey}-error`}>
-                                                <td></td>
-                                                <td colSpan={4} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                    {dl.error_message}
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </Fragment>
-                                )
-                            })()
-                        ))}
-                        {activeUrls.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
-                            <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
+                                    )}
+                                </Fragment>
+                            )
+                        })}
+                        {activeUrls.length === 0 && queuedItems.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
+                            <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
                         )}
                     </tbody>
                 </table>

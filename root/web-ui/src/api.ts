@@ -45,6 +45,7 @@ export interface RetryRow {
     download_event_id: number | null
     url: string
     site: string
+    title?: string | null
     attempt_number: number
     action: string
     delay_minutes: number
@@ -91,6 +92,39 @@ export function addUrls(urls: string[]) {
     return apiFetch<{ results: AddUrlResult[] }>('/api/controls/add-urls', {
         method: 'POST',
         body: JSON.stringify({ urls }),
+    })
+}
+
+export interface QueueActionRequest {
+    url: string
+    site?: string | null
+    title?: string | null
+    calibre_id?: string | null
+}
+
+export interface QueueActionResponse {
+    ok: boolean
+    message: string
+}
+
+export function retryNow(payload: QueueActionRequest) {
+    return apiFetch<QueueActionResponse>('/api/controls/retry-now', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    })
+}
+
+export function cancelRetry(payload: QueueActionRequest) {
+    return apiFetch<QueueActionResponse>('/api/controls/cancel-retry', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    })
+}
+
+export function redownloadScratch(payload: QueueActionRequest) {
+    return apiFetch<QueueActionResponse>('/api/controls/redownload-scratch', {
+        method: 'POST',
+        body: JSON.stringify(payload),
     })
 }
 

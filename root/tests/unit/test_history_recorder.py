@@ -65,11 +65,12 @@ class TestHistoryRecorder(unittest.TestCase):
 
     def test_record_download_waiting_with_error(self):
         self.recorder.record_download_waiting(
-            url="u", site="s", error_message="calibredb stderr"
+            url="u", site="s", title="Story", error_message="calibredb stderr"
         )
         raw = self._get_msg()
         msg = HistoryMessage(**raw)
         self.assertEqual(msg.payload["status"], "waiting")
+        self.assertEqual(msg.payload["title"], "Story")
         self.assertEqual(msg.payload["error_message"], "calibredb stderr")
 
     def test_record_retry(self):
