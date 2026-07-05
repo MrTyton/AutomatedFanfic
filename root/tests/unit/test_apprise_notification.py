@@ -135,6 +135,7 @@ class TestAppriseNotification(unittest.TestCase):
             ("different_token", True, "different_token", "", "pbul://different_token"),
         ]
     )
+    @patch("notifications.apprise_notification.requests")
     @patch("notifications.apprise_notification.apprise.Apprise")
     @patch("models.config_models.ConfigManager.load_config")
     @patch("notifications.apprise_notification.ff_logging")
@@ -148,6 +149,7 @@ class TestAppriseNotification(unittest.TestCase):
         mock_ff_logging,
         mock_load_config,
         MockGlobalApprise,
+        mock_requests,
     ):
         # Setup mock config with enabled pushbullet
         mock_config = AppConfig(
@@ -157,6 +159,11 @@ class TestAppriseNotification(unittest.TestCase):
             pushbullet=PushbulletConfig(enabled=enabled, api_key=token, device=device),
         )
         mock_load_config.return_value = mock_config
+
+        # Mock requests.get to return empty devices (device not found)
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"devices": []}
+        mock_requests.get.return_value = mock_response
 
         mock_apprise_obj = MockGlobalApprise.return_value
         mock_apprise_obj.add.return_value = True  # Simulate successful add
