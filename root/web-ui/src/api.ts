@@ -176,6 +176,19 @@ export function updateIniFile(iniType: 'personal' | 'defaults', content: string)
     })
 }
 
+// ── Logs ───────────────────────────────────────────────────────
+export interface LogEntry {
+    timestamp: string
+    level: string
+    message: string
+}
+
+export function getLogs(limit = 500) {
+    return apiFetch<{ items: LogEntry[]; count: number }>(
+        `/api/logs?limit=${limit}`,
+    )
+}
+
 // ── Stats ──────────────────────────────────────────────────────
 export interface SiteStats {
     site: string
