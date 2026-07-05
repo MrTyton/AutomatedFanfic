@@ -26,6 +26,7 @@ from pathlib import Path
 from subprocess import call
 import shutil
 from utils import ff_logging  # Custom logging module for failure logging
+from utils.system_utils import resolve_ini_path
 from models.config_models import ConfigManager, ConfigError, ConfigValidationError
 
 
@@ -115,44 +116,13 @@ class CalibreInfo:
                 does not exist or cannot be located.
         """
         # Combine the config path with default filename if needed
-        ini_file = self._append_filename(config_path, default_filename)
+        ini_file = resolve_ini_path(config_path, default_filename)
 
         # Verify the file exists before returning the path
         if ini_file and not Path(ini_file).is_file():
             ff_logging.log_failure(f"File {ini_file} does not exist.")
             return ""
         return ini_file
-
-    @staticmethod
-    def _append_filename(path: str | None, filename: str) -> str:
-        """Appends the filename to the path if it's not already included.
-
-        This utility method ensures that a given filename is properly appended to a
-        directory path. If the path already ends with the filename, it returns the
-        path unchanged. This prevents double-appending and ensures consistent file
-        path construction for INI configuration files.
-
-        Args:
-            path (str | None): The base directory path where the file should be located.
-                Can be None, in which case an empty string is returned.
-            filename (str): The filename to append to the path. Should include the
-                file extension (e.g., "defaults.ini", "personal.ini").
-
-        Returns:
-            str: The complete file path with filename appended, or an empty string
-                if the input path was None or empty.
-        """
-        # Handle None or empty path cases
-        if not path:
-            return ""
-
-        # Check if filename is already at the end of the path
-        if not path.endswith(filename):
-            # Safely join path and filename using os.path.join
-            return str(Path(path) / filename)
-
-        # Return original path if filename already present
-        return path
 
     @staticmethod
     def check_installed() -> bool:
