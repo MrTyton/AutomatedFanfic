@@ -46,21 +46,27 @@ export default function Config() {
             .catch(() => { })
             .finally(() => setLoading(false))
 
-        for (const t of ['personal', 'defaults'] as IniType[]) {
-            getIniFile(t)
-                .then((res: IniFileResponse) => {
-                    setIniStates(prev => ({
-                        ...prev,
-                        [t]: { ...prev[t], content: res.content ?? '', path: res.path ?? null, error: res.error ?? null, loading: false },
-                    }))
-                })
-                .catch(() => {
-                    setIniStates(prev => ({
-                        ...prev,
-                        [t]: { ...prev[t], error: 'Failed to load', loading: false },
-                    }))
-                })
-        }
+        Promise.all(
+            (['personal', 'defaults'] as IniType[]).map(t =>
+                getIniFile(t)
+                    .then((res: IniFileResponse) => ({ t, res, error: null as string | null }))
+                    .catch(() => ({ t, res: null, error: 'Failed to load' }))
+            )
+        ).then(results => {
+            setIniStates(prev => {
+                const next = { ...prev }
+                for (const { t, res, error } of results) {
+                    next[t] = {
+                        ...prev[t],
+                        content: res?.content ?? '',
+                        path: res?.path ?? null,
+                        error: error ?? res?.error ?? null,
+                        loading: false,
+                    }
+                }
+                return next
+            })
+        })
     }, [])
 
     const startEdit = (section: string) => {
@@ -244,9 +250,9 @@ export default function Config() {
                                 </div>
                             </div>
                         ) : (
-                            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.85rem', margin: 0 }}>
-                                {ini.content || <em style={{ opacity: 0.5 }}>File is empty</em>}
-                            </pre>
+                            ini.content
+                                ? <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.85rem', margin: 0 }}>{ini.content}</pre>
+                                : <p style={{ fontStyle: 'italic', opacity: 0.5, margin: 0 }}>File is empty</p>
                         )}
                     </div>
                 )

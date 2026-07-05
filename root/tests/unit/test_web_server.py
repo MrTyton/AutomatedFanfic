@@ -367,6 +367,8 @@ class TestConfigRoutes(unittest.TestCase):
 
     def test_get_ini_unknown_type(self):
         """Unknown ini_type returns an error."""
+        mock_config = MagicMock()
+        self.state.config = mock_config
         resp = self.client.get("/api/config/ini/unknown")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()

@@ -10,12 +10,6 @@ from config.toml_writer import TomlWriter
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
-# Maps URL parameter names to AppConfig.calibre attribute names
-_INI_ATTR_MAP = {
-    "personal": "personal_ini",
-    "defaults": "default_ini",
-}
-
 # Fields that contain sensitive data and should be masked in GET responses
 _SENSITIVE_FIELDS = {"password", "api_key", "apikey", "token", "secret"}
 
@@ -166,13 +160,28 @@ class IniUpdateRequest(BaseModel):
 
 
 def _resolve_ini_path(state, ini_type: str) -> tuple[str | None, str | None]:
-    """Return (path, error) for the given ini_type ('personal' or 'defaults')."""
-    attr = _INI_ATTR_MAP.get(ini_type)
-    if attr is None:
-        return None, f"Unknown ini type '{ini_type}'. Valid: {list(_INI_ATTR_MAP)}"
+    """Resolve the filesystem path for the given ini_type.
+
+    Args:
+        state: The WebState instance holding the loaded config.
+        ini_type: Either ``"personal"`` (personal.ini) or ``"defaults"``
+            (defaults.ini).
+
+    Returns:
+        A ``(path, error)`` tuple.  Exactly one of the two values will be
+        non-``None``: ``path`` on success, ``error`` when the type is
+        unknown, no config is loaded, or the path is not configured.
+    """
     if state.config is None:
         return None, "No config loaded"
-    path = getattr(state.config.calibre, attr, None)
+    # Use explicit branches so the path is provably derived from server config,
+    # not from the user-supplied ini_type string.
+    if ini_type == "personal":
+        path = state.config.calibre.personal_ini
+    elif ini_type == "defaults":
+        path = state.config.calibre.default_ini
+    else:
+        return None, f"Unknown ini type '{ini_type}'. Valid: personal, defaults"
     if not path:
         return None, f"No path configured for {ini_type}.ini"
     return path, None
@@ -193,8 +202,8 @@ async def get_ini_file(ini_type: str, request: Request):
     try:
         content = ini_path.read_text(encoding="utf-8")
         return {"content": content, "path": path, "error": None}
-    except Exception as e:
-        return {"content": None, "path": path, "error": f"Failed to read file: {e}"}
+    except OSError:
+        return {"content": None, "path": path, "error": "Failed to read file"}
 
 
 @router.put("/ini/{ini_type}")
@@ -210,5 +219,5 @@ async def update_ini_file(ini_type: str, request: Request, body: IniUpdateReques
         ini_path.parent.mkdir(parents=True, exist_ok=True)
         ini_path.write_text(body.content, encoding="utf-8")
         return {"applied": True}
-    except Exception as e:
-        return {"applied": False, "error": f"Failed to write file: {e}"}
+    except OSError:
+        return {"applied": False, "error": "Failed to write file"}
