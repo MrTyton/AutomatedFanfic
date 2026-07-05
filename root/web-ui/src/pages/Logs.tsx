@@ -119,7 +119,7 @@ export default function Logs() {
                 )}
                 {/* Render in reverse (oldest first, newest at bottom) */}
                 {[...filteredLogs].reverse().map((entry, i) => (
-                    <div key={i} style={{ color: levelColor(entry.level), marginBottom: '2px' }}>
+                    <div key={`${entry.timestamp}-${entry.level}-${i}`} style={{ color: levelColor(entry.level), marginBottom: '2px' }}>
                         <span style={{ color: 'var(--text-muted)', marginRight: '0.5rem' }}>
                             {entry.timestamp}
                         </span>

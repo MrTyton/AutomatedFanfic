@@ -173,6 +173,8 @@ def log(msg: str, color: str = "") -> None:
         level = "error"
     elif color == "WARNING":
         level = "warning"
+    elif color == "OKBLUE":
+        level = "debug"
 
     # Generate current timestamp in standardized format
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
@@ -237,8 +239,8 @@ def log_debug(msg: str) -> None:
     """
     # Only log debug messages when verbose mode is globally enabled
     if verbose.value:
-        # Use the core log function without explicit color to allow thread-local color
-        log(msg)
+        # Use the core log function with OKBLUE color to identify as debug
+        log(msg, "OKBLUE")
 
 
 def get_recent_logs(limit: int = 500) -> list[dict]:
