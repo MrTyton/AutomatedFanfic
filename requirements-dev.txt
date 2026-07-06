@@ -15,4 +15,4 @@ black>=26.5.1
 ruff>=0.15.16
 
 # Build tools (may be needed for some development scenarios)
-setuptools==82.0.1
+setuptools==83.0.0
