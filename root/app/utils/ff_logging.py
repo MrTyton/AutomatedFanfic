@@ -125,12 +125,15 @@ def start_log_drain_thread(queue: Any) -> threading.Thread:
     """
 
     def _drain() -> None:
+        # Runs as a daemon thread; it exits naturally when the process dies or
+        # when the underlying manager queue raises an exception (e.g. because
+        # the Manager server process has shut down).
         while True:
             try:
                 entry = queue.get(timeout=0.5)
                 with _log_buffer_lock:
                     _log_buffer.append(entry)
-            except (Empty, TimeoutError):
+            except Empty:
                 continue
             except Exception:
                 # Queue closed or manager gone — stop draining.
