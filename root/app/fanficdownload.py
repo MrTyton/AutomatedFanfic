@@ -218,6 +218,11 @@ def register_processes(
     waiting_queue = manager.Queue()
     active_urls = manager.dict()
 
+    # Cross-process log forwarding queue: all non-web-server processes push
+    # log entries here; the web server drains it into its own ring buffer so
+    # /api/logs shows logs from every process, not just the web server's own.
+    log_queue = manager.Queue()
+
     # Initialize Calibre components
     cdb_info = calibre_info.CalibreInfo(args.config, manager)
     cdb_info.check_installed()
@@ -242,6 +247,12 @@ def register_processes(
     # Initialize ConfigStore for hot-reloadable settings
     config_store = ConfigStore(manager.dict())
     config_store.initialize_from_config(config)
+
+    # Arm the cross-process log-forwarding queue BEFORE processes are started
+    # so that all forked child processes inherit the reference and push their
+    # log entries here.  The web server will clear its own copy and instead
+    # drain the queue into its ring buffer.
+    ff_logging.set_log_forward_queue(log_queue)
 
     # Register Supervisor Process (Hosts Email, Waiter, Coordinator)
     process_manager.register_process(
@@ -299,6 +310,7 @@ def register_processes(
                 config_store,
                 history_recorder,
                 args.verbose,
+                log_queue,
             ),
         )
 

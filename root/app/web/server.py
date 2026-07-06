@@ -125,6 +125,7 @@ def run_web_server(
     config_store: Any = None,
     history_recorder: Any = None,
     verbose: bool = False,
+    log_queue: Any = None,
 ) -> None:
     """Process entry point for the web server.
 
@@ -133,6 +134,14 @@ def run_web_server(
     """
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[95m")  # Magenta for web server
+
+    # This process should NOT forward its own log() calls back onto the queue
+    # (it would cause duplicates since the drain thread below also appends them
+    # to _log_buffer).  Clear the inherited forward-queue reference first, then
+    # start the drain thread so entries from all OTHER processes flow in.
+    ff_logging.set_log_forward_queue(None)
+    if log_queue is not None:
+        ff_logging.start_log_drain_thread(log_queue)
 
     shutdown_event = threading.Event()
 
