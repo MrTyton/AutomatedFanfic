@@ -34,7 +34,9 @@ import ctypes
 import collections
 import datetime
 from multiprocessing import Value
+from queue import Empty
 import threading
+from typing import Any, Optional
 
 # Thread-local storage for worker-specific logging context
 _thread_local = threading.local()
@@ -45,6 +47,12 @@ _thread_local = threading.local()
 _LOG_BUFFER_MAX = 2000
 _log_buffer: collections.deque = collections.deque(maxlen=_LOG_BUFFER_MAX)
 _log_buffer_lock = threading.Lock()
+
+# ── Cross-process log forwarding ────────────────────────────────
+# When set, log() also puts entries into this queue so the web
+# server process (which runs in a separate subprocess) can drain
+# it and show logs from ALL processes, not just its own.
+_log_forward_queue: Optional[Any] = None
 
 
 class bcolors:
@@ -79,6 +87,61 @@ verbose = Value(ctypes.c_bool, False)
 def set_verbose(value: bool) -> None:
     """Sets the global verbose logging flag for debug output control."""
     verbose.value = value
+
+
+def set_log_forward_queue(queue: Optional[Any]) -> None:
+    """Set (or clear) the cross-process log-forwarding queue.
+
+    Call this once per process at startup.  When *queue* is not None
+    every subsequent :func:`log` call will also put the entry onto the
+    queue so the web-server process (which has a separate copy of
+    ``_log_buffer``) can drain it and display logs from all processes.
+
+    Pass ``None`` to disable forwarding (e.g. inside the web-server
+    process itself so it does not re-push its own entries).
+
+    Args:
+        queue: A :class:`multiprocessing.Queue`-compatible object, or
+               ``None`` to disable forwarding.
+    """
+    global _log_forward_queue
+    _log_forward_queue = queue
+
+
+def start_log_drain_thread(queue: Any) -> threading.Thread:
+    """Start a daemon thread that drains *queue* into the local ring buffer.
+
+    Intended to be called once inside the web-server process so that log
+    entries produced by all other processes (supervisor, worker pool, main)
+    end up in this process's ``_log_buffer`` and are therefore returned by
+    :func:`get_recent_logs`.
+
+    Args:
+        queue: The same queue that was passed to :func:`set_log_forward_queue`
+               in every other process.
+
+    Returns:
+        The started daemon :class:`threading.Thread`.
+    """
+
+    def _drain() -> None:
+        # Runs as a daemon thread; it exits naturally when the process dies or
+        # when the underlying manager queue raises an exception (e.g. because
+        # the Manager server process has shut down).
+        while True:
+            try:
+                entry = queue.get(timeout=0.5)
+                with _log_buffer_lock:
+                    _log_buffer.append(entry)
+            except Empty:
+                continue
+            except Exception:
+                # Queue closed or manager gone — stop draining.
+                break
+
+    t = threading.Thread(target=_drain, daemon=True, name="log-drain")
+    t.start()
+    return t
 
 
 def is_verbose() -> bool:
@@ -189,6 +252,13 @@ def log(msg: str, color: str = "", *, _level: str = "") -> None:
     entry = {"timestamp": timestamp, "level": level, "message": msg}
     with _log_buffer_lock:
         _log_buffer.append(entry)
+
+    # Forward to the cross-process queue when running outside the web server
+    if _log_forward_queue is not None:
+        try:
+            _log_forward_queue.put_nowait(entry)
+        except Exception:
+            pass
 
 
 def log_failure(msg: str) -> None:
