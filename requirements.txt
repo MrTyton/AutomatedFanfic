@@ -21,7 +21,7 @@ soupsieve==2.8.4
 
 # Text encoding and character detection
 chardet==7.4.3
-charset-normalizer==3.4.7
+charset-normalizer==3.4.9
 webencodings==0.5.1
 
 # Network and security
@@ -44,8 +44,8 @@ pyparsing==3.3.2
 
 # Web server and API
 fastapi==0.139.0
-uvicorn[standard]==0.50.2
-websockets==16.0
+uvicorn[standard]==0.51.0
+websockets==16.1
 
 # Async SQLite for history database
 aiosqlite==0.22.1
