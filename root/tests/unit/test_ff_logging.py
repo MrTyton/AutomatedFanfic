@@ -135,7 +135,11 @@ class TestLogForwarding(unittest.TestCase):
     def test_start_log_drain_thread_populates_buffer(self, _mock_print):
         """start_log_drain_thread() must move queue entries into _log_buffer."""
         q: queue.Queue = queue.Queue()
-        entry = {"timestamp": "2026-01-01 12:00:00 PM", "level": "info", "message": "drained"}
+        entry = {
+            "timestamp": "2026-01-01 12:00:00 PM",
+            "level": "info",
+            "message": "drained",
+        }
         q.put(entry)
 
         drain_thread = ff_logging.start_log_drain_thread(q)
