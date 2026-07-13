@@ -313,6 +313,23 @@ jobs:
           MERGE_COMMENT="🤖 **Auto-merged**"$'\n\n'"This Dependabot PR has been automatically merged because all branch-protection required checks passed."$'\n\n'"Version handling:"$'\n'"$VERSION_INFO"$'\n\n'"Decision:"$'\n'"- $DECISION_REASON"
           gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$MERGE_COMMENT"
 
+      - name: Trigger Docker build after successful merge
+        # Dispatch the Docker workflow using GITHUB_TOKEN (workflow_dispatch events
+        # are not subject to the anti-recursion restriction that blocks push-triggered
+        # workflows from firing when GITHUB_TOKEN merges a PR).  This ensures a
+        # release and Docker image are built even when COPILOT_TRIGGER_PAT is unset.
+        # We dispatch whenever a version bump was attempted (should_bump == true),
+        # covering both the case where the squash includes the version change and the
+        # case where the bump was absorbed (master already at the same version) — in
+        # the latter case the dispatch rebuilds the current version with the new deps.
+        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'success' && steps.bump-decision.outputs.should_bump == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Dispatching Docker build workflow for release..."
+          gh workflow run docker-image.yml --repo "$GH_REPO" --ref master
+          echo "Docker workflow dispatch triggered successfully."
+
       - name: Add skip notification
         if: steps.eligibility.outputs.skip == 'true'
         run: |
