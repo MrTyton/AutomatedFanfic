@@ -7,6 +7,13 @@ on:
     - cron: "17 */6 * * *"
   workflow_dispatch:
 
+# Serialize pull_request-triggered runs so concurrent Dependabot PRs don't race
+# to bump the same version. Scheduled/dispatch runs each get a unique group and
+# are never queued behind each other.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && 'dependabot-pr-processing' || format('{0}-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
