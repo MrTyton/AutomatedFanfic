@@ -330,7 +330,6 @@ class CalibreDBClient:
             # Let's check the CLI usage. `calibredb add_format [options] id file`
             full_command_args = [
                 "add_format",
-                "--replace",
                 str(fanfic.calibre_id),
                 file_to_add,
             ]
