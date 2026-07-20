@@ -17,7 +17,7 @@ pushbullet.py==0.12.0
 beautifulsoup4==4.15.0
 html2text==2025.4.15
 html5lib==1.1
-soupsieve==2.8.4
+soupsieve==2.9
 
 # Text encoding and character detection
 chardet==7.4.3
@@ -43,9 +43,9 @@ six==1.17.0
 pyparsing==3.3.2
 
 # Web server and API
-fastapi==0.139.0
+fastapi==0.139.2
 uvicorn[standard]==0.51.0
-websockets==16.1
+websockets==16.1.1
 
 # Async SQLite for history database
 aiosqlite==0.22.1
