@@ -54,4 +54,4 @@ aiosqlite==0.22.1
 apsw==3.53.3.1
 
 # TOML writing (stdlib tomllib is read-only)
-tomlkit>=0.15.0
+tomlkit>=0.15.1
