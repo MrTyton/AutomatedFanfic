@@ -126,6 +126,22 @@ jobs:
             echo "::warning::Test results XML was not generated"
           fi
 
+      - name: Repeatability gate for flaky-prone modules
+        run: |
+          echo "Running repeatability gate (3 iterations) for historically flaky modules..."
+          MODULES=(
+            "root/tests/unit/test_process_manager.py"
+            "root/tests/integration/test_signal_handling_integration.py"
+            "root/tests/unit/test_history_recorder.py"
+            "root/tests/unit/test_url_ingester.py"
+          )
+          REPEAT_COUNT=3
+
+          for run in $(seq 1 "$REPEAT_COUNT"); do
+            echo "Repeatability run $run/$REPEAT_COUNT"
+            pytest --tb=short -q "${MODULES[@]}" || exit 1
+          done
+
       - name: Upload pytest test results
         uses: actions/upload-artifact@v7
         with:

@@ -2,7 +2,7 @@ from parameterized import parameterized
 import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
-import time
+from queue import Empty
 
 
 from services.url_ingester import EmailInfo, email_watcher
@@ -155,8 +155,12 @@ class TestEmailWatcher(unittest.TestCase):
             "other": (MagicMock(), ""),
         }
 
+    def tearDown(self):
+        self.ingress_queue.close()
+        self.ingress_queue.join_thread()
+
     def assert_ingress_has_item(self, expected_fanfic=None, timeout=1.0):
-        """Assert that ingress queue has an item, with retry logic for race conditions.
+        """Assert that ingress queue has an item within timeout.
 
         Args:
             expected_fanfic (FanficInfo, optional): Expected fanfic object to compare
@@ -165,25 +169,27 @@ class TestEmailWatcher(unittest.TestCase):
         Returns:
             FanficInfo: The retrieved fanfic object
         """
-        queue = self.ingress_queue
-        start_time = time.time()
+        try:
+            retrieved_fanfic = self.ingress_queue.get(timeout=timeout)
+        except Empty as exc:
+            self.fail(f"Ingress queue did not contain an item within {timeout}s: {exc}")
 
-        while time.time() - start_time < timeout:
-            if not queue.empty():
-                try:
-                    retrieved_fanfic = queue.get_nowait()
-                    if expected_fanfic is not None:
-                        self.assertEqual(
-                            retrieved_fanfic,
-                            expected_fanfic,
-                            "Retrieved fanfic should equal expected fanfic",
-                        )
-                    return retrieved_fanfic
-                except Exception:
-                    pass
-            time.sleep(0.001)
+        if expected_fanfic is not None:
+            self.assertEqual(
+                retrieved_fanfic,
+                expected_fanfic,
+                "Retrieved fanfic should equal expected fanfic",
+            )
+        return retrieved_fanfic
 
-        self.fail(f"Ingress queue was empty after {timeout}s timeout.")
+    def assert_ingress_empty(self):
+        """Assert ingress queue is empty without relying on queue.empty()."""
+        try:
+            unexpected = self.ingress_queue.get_nowait()
+            self.fail(f"Expected empty ingress queue, but found item: {unexpected}")
+        except Empty:
+            # Expected success path: queue had no pending items.
+            pass
 
     @patch("services.url_ingester.time.sleep")
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -261,7 +267,7 @@ class TestEmailWatcher(unittest.TestCase):
         )
 
         # Verify fanfic was NOT added to ingress queue
-        self.assertTrue(self.ingress_queue.empty())
+        self.assert_ingress_empty()
 
     @patch("services.url_ingester.time.sleep")
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -332,7 +338,7 @@ class TestEmailWatcher(unittest.TestCase):
             )
 
         # Verify ingress queue remain empty
-        self.assertTrue(self.ingress_queue.empty())
+        self.assert_ingress_empty()
 
         # Verify no notifications were sent
         self.mock_notification_info.send_notification.assert_not_called()

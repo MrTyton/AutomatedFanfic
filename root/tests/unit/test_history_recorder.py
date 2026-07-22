@@ -131,6 +131,9 @@ class TestHistoryRecorder(unittest.TestCase):
 class TestHistoryWriter(unittest.TestCase):
     """Tests that HistoryWriter drains the queue and persists events."""
 
+    THREAD_START_TIMEOUT = 5.0
+    POLL_INTERVAL = 0.05
+
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
@@ -147,8 +150,13 @@ class TestHistoryWriter(unittest.TestCase):
 
     def _start_writer(self):
         self.writer.start()
-        # Give the writer thread time to start and create tables
-        time.sleep(0.3)
+        deadline = time.time() + self.THREAD_START_TIMEOUT
+        while time.time() < deadline:
+            thread = getattr(self.writer, "_thread", None)
+            if thread and thread.is_alive():
+                return
+            time.sleep(self.POLL_INTERVAL)
+        self.fail("HistoryWriter thread did not start within timeout")
 
     def _verify_db(self) -> SyncHistoryDB:
         db = SyncHistoryDB(self.tmp.name)
@@ -159,8 +167,6 @@ class TestHistoryWriter(unittest.TestCase):
         self._start_writer()
         recorder = HistoryRecorder(self.queue)
         recorder.record_download_created(url="https://ao3.org/works/1", site="ao3")
-
-        time.sleep(0.5)  # Let writer drain
         self.shutdown.set()
         self.writer.stop()
 
@@ -176,9 +182,7 @@ class TestHistoryWriter(unittest.TestCase):
         self._start_writer()
         recorder = HistoryRecorder(self.queue)
         recorder.record_download_created(url="u", site="s")
-        time.sleep(0.3)
         recorder.record_download_success(url="u", title="T", calibre_id="1")
-        time.sleep(0.5)
         self.shutdown.set()
         self.writer.stop()
 
@@ -199,7 +203,6 @@ class TestHistoryWriter(unittest.TestCase):
             action="retry",
             delay_minutes=2.0,
         )
-        time.sleep(0.5)
         self.shutdown.set()
         self.writer.stop()
 
@@ -217,7 +220,6 @@ class TestHistoryWriter(unittest.TestCase):
         self._start_writer()
         recorder = HistoryRecorder(self.queue)
         recorder.record_email_check(urls_found=5, urls_new=2)
-        time.sleep(0.5)
         self.shutdown.set()
         self.writer.stop()
 
@@ -232,7 +234,6 @@ class TestHistoryWriter(unittest.TestCase):
         self._start_writer()
         recorder = HistoryRecorder(self.queue)
         recorder.record_notification(title="t", body="b", provider="apprise")
-        time.sleep(0.5)
         self.shutdown.set()
         self.writer.stop()
 
@@ -252,7 +253,6 @@ class TestHistoryWriter(unittest.TestCase):
         for i in range(5):
             recorder.record_download_created(url=f"u{i}", site="s")
 
-        time.sleep(0.5)
         self.shutdown.set()
         self.writer.stop()
 
@@ -273,7 +273,6 @@ class TestHistoryWriter(unittest.TestCase):
         recorder = HistoryRecorder(self.queue)
         recorder.record_download_created(url="u", site="s")
 
-        time.sleep(0.5)
         self.shutdown.set()
         self.writer.stop()
 
