@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
-import { getLogs, type LogEntry } from '../api'
+import { getLogs, getStartupLogs, type LogEntry } from '../api'
 
-const DEFAULT_LEVEL_FILTER = 'info' // Default to non-debug logs unless user opts in.
+const DEFAULT_LEVEL_FILTER = 'error'
 const UNKNOWN_LEVEL_FALLBACK = 40
 
 export default function Logs() {
     const [logs, setLogs] = useState<LogEntry[]>([])
+    const [startupLogs, setStartupLogs] = useState<LogEntry[]>([])
     const [autoRefresh, setAutoRefresh] = useState(true)
     const [filter, setFilter] = useState('')
     const [levelFilter, setLevelFilter] = useState<string>(DEFAULT_LEVEL_FILTER)
+    const [activeView, setActiveView] = useState<'runtime' | 'startup'>('runtime')
+    const [startupLoaded, setStartupLoaded] = useState(false)
     const bottomRef = useRef<HTMLDivElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
     const [isAtBottom, setIsAtBottom] = useState(true)
@@ -32,6 +35,18 @@ export default function Logs() {
         return () => { if (interval) clearInterval(interval) }
     }, [autoRefresh])
 
+    useEffect(() => {
+        if (activeView !== 'startup' || startupLoaded) return
+        getStartupLogs(2000)
+            .then(data => {
+                setStartupLogs(data.items)
+                setStartupLoaded(true)
+            })
+            .catch(() => {
+                setStartupLoaded(true)
+            })
+    }, [activeView, startupLoaded])
+
     // Auto-scroll to bottom when new logs arrive (if user was already at bottom)
     useEffect(() => {
         if (isAtBottom && bottomRef.current) {
@@ -54,7 +69,9 @@ export default function Logs() {
         error: 40,
     }
 
-    const filteredLogs = logs.filter(entry => {
+    const visibleLogs = activeView === 'startup' ? startupLogs : logs
+
+    const filteredLogs = visibleLogs.filter(entry => {
         if (levelFilter !== 'all') {
             const minLevel = levelRank[levelFilter] ?? 0
             // Unknown levels are intentionally treated as high severity so they stay visible.
@@ -127,11 +144,26 @@ export default function Logs() {
 
             {/* Controls */}
             <div className="card" style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        className={activeView === 'runtime' ? '' : 'secondary'}
+                        onClick={() => setActiveView('runtime')}
+                    >
+                        Runtime
+                    </button>
+                    <button
+                        className={activeView === 'startup' ? '' : 'secondary'}
+                        onClick={() => setActiveView('startup')}
+                    >
+                        Startup
+                    </button>
+                </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <input
                         type="checkbox"
                         checked={autoRefresh}
                         onChange={e => setAutoRefresh(e.target.checked)}
+                        disabled={activeView !== 'runtime'}
                     />
                     Auto-refresh
                 </label>

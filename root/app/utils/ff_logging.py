@@ -48,11 +48,39 @@ _LOG_BUFFER_MAX = 2000
 _log_buffer: collections.deque = collections.deque(maxlen=_LOG_BUFFER_MAX)
 _log_buffer_lock = threading.Lock()
 
+_STARTUP_LOG_BUFFER_MAX = 2000
+_startup_log_buffer: collections.deque = collections.deque(maxlen=_STARTUP_LOG_BUFFER_MAX)
+_startup_capture_enabled = True
+_STARTUP_COMPLETE_MARKERS = (
+    "All processes started successfully",
+    "Processes running. Press Ctrl+C to stop gracefully.",
+)
+
 # ── Cross-process log forwarding ────────────────────────────────
 # When set, log() also puts entries into this queue so the web
 # server process (which runs in a separate subprocess) can drain
 # it and show logs from ALL processes, not just its own.
 _log_forward_queue: Optional[Any] = None
+
+
+def _append_log_entry(entry: dict) -> None:
+    """Append an entry to runtime/startup buffers in a single critical section."""
+    global _startup_capture_enabled
+    message = str(entry.get("message", ""))
+
+    with _log_buffer_lock:
+        _log_buffer.append(entry)
+        if _startup_capture_enabled:
+            _startup_log_buffer.append(entry)
+            if any(marker in message for marker in _STARTUP_COMPLETE_MARKERS):
+                _startup_capture_enabled = False
+
+
+def mark_startup_complete() -> None:
+    """Stop collecting startup log entries in this process."""
+    global _startup_capture_enabled
+    with _log_buffer_lock:
+        _startup_capture_enabled = False
 
 
 class bcolors:
@@ -131,8 +159,7 @@ def start_log_drain_thread(queue: Any) -> threading.Thread:
         while True:
             try:
                 entry = queue.get(timeout=0.5)
-                with _log_buffer_lock:
-                    _log_buffer.append(entry)
+                _append_log_entry(entry)
             except Empty:
                 continue
             except Exception:
@@ -252,8 +279,7 @@ def log(msg: str, color: str = "", *, _level: str = "") -> None:
     entry = {"timestamp": timestamp, "level": level, "message": msg}
     if hasattr(_thread_local, "color"):
         entry["thread_color"] = _thread_local.color
-    with _log_buffer_lock:
-        _log_buffer.append(entry)
+    _append_log_entry(entry)
 
     # Forward to the cross-process queue when running outside the web server
     if _log_forward_queue is not None:
@@ -328,5 +354,13 @@ def get_recent_logs(limit: int = 500) -> list[dict]:
     with _log_buffer_lock:
         # Return most recent entries, newest first
         entries = list(_log_buffer)
+    entries.reverse()
+    return entries[:limit]
+
+
+def get_startup_logs(limit: int = 500) -> list[dict]:
+    """Return startup-phase log entries from the in-memory startup buffer."""
+    with _log_buffer_lock:
+        entries = list(_startup_log_buffer)
     entries.reverse()
     return entries[:limit]

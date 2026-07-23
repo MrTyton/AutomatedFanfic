@@ -190,6 +190,12 @@ export function getLogs(limit = 500) {
     )
 }
 
+export function getStartupLogs(limit = 500) {
+    return apiFetch<{ items: LogEntry[]; count: number }>(
+        `/api/logs/startup?limit=${limit}`,
+    )
+}
+
 // ── Stats ──────────────────────────────────────────────────────
 export interface SiteStats {
     site: string
