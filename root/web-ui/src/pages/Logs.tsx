@@ -73,7 +73,7 @@ export default function Logs() {
 
     const filteredLogs = visibleLogs.filter(entry => {
         if (levelFilter !== 'all') {
-            const minLevel = levelRank[levelFilter] ?? 0
+            const minLevel = levelRank[levelFilter] ?? UNKNOWN_LEVEL_FALLBACK
             // Unknown levels are intentionally treated as high severity so they stay visible.
             const currentLevel = levelRank[entry.level] ?? UNKNOWN_LEVEL_FALLBACK
             if (currentLevel < minLevel) return false
