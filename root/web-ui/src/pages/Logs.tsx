@@ -5,7 +5,7 @@ export default function Logs() {
     const [logs, setLogs] = useState<LogEntry[]>([])
     const [autoRefresh, setAutoRefresh] = useState(true)
     const [filter, setFilter] = useState('')
-    const [levelFilter, setLevelFilter] = useState<string>('all')
+    const [levelFilter, setLevelFilter] = useState<string>('info')
     const bottomRef = useRef<HTMLDivElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
     const [isAtBottom, setIsAtBottom] = useState(true)
@@ -44,11 +44,57 @@ export default function Logs() {
         setIsAtBottom(atBottom)
     }
 
+    const levelRank: Record<string, number> = {
+        debug: 10,
+        info: 20,
+        warning: 30,
+        error: 40,
+    }
+
     const filteredLogs = logs.filter(entry => {
-        if (levelFilter !== 'all' && entry.level !== levelFilter) return false
+        if (levelFilter !== 'all') {
+            const minLevel = levelRank[levelFilter] ?? 0
+            const currentLevel = levelRank[entry.level] ?? levelRank.info
+            if (currentLevel < minLevel) return false
+        }
         if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase())) return false
         return true
     })
+
+    const ansiToCssColor = (ansi?: string): string | null => {
+        if (!ansi) return null
+
+        const xtermMatch = ansi.match(/\x1b\[38;5;(\d+)m/)
+        if (xtermMatch) {
+            const code = Number(xtermMatch[1])
+            if (code >= 16 && code <= 231) {
+                const index = code - 16
+                const r = Math.floor(index / 36)
+                const g = Math.floor((index % 36) / 6)
+                const b = index % 6
+                const toRgb = (n: number) => (n === 0 ? 0 : 55 + n * 40)
+                return `rgb(${toRgb(r)}, ${toRgb(g)}, ${toRgb(b)})`
+            }
+            if (code >= 232 && code <= 255) {
+                const v = 8 + (code - 232) * 10
+                return `rgb(${v}, ${v}, ${v})`
+            }
+        }
+
+        const basicMatch = ansi.match(/\x1b\[(\d+)m/)
+        if (basicMatch) {
+            switch (Number(basicMatch[1])) {
+                case 91: return '#f44336'
+                case 92: return '#4caf50'
+                case 93: return '#ff9800'
+                case 94: return '#64b5f6'
+                case 95: return '#ce93d8'
+                default: return null
+            }
+        }
+
+        return null
+    }
 
     const levelColor = (level: string): string => {
         switch (level) {
@@ -57,6 +103,15 @@ export default function Logs() {
             case 'debug': return 'var(--text-muted, #888)'
             default: return 'var(--text, #e0e0e0)'
         }
+    }
+
+    const entryColor = (entry: LogEntry): string => {
+        if (entry.level === 'error' || entry.level === 'warning') {
+            return levelColor(entry.level)
+        }
+        const workerColor = ansiToCssColor(entry.thread_color)
+        if (workerColor) return workerColor
+        return levelColor(entry.level)
     }
 
     return (
@@ -79,10 +134,10 @@ export default function Logs() {
                     style={{ padding: '0.3rem 0.5rem' }}
                 >
                     <option value="all">All levels</option>
-                    <option value="info">Info</option>
-                    <option value="warning">Warning</option>
-                    <option value="error">Error</option>
-                    <option value="debug">Debug</option>
+                    <option value="debug">Debug and above</option>
+                    <option value="info">Info and above</option>
+                    <option value="warning">Warning and above</option>
+                    <option value="error">Error only</option>
                 </select>
                 <input
                     type="text"
@@ -119,7 +174,7 @@ export default function Logs() {
                 )}
                 {/* Render in reverse (oldest first, newest at bottom) */}
                 {[...filteredLogs].reverse().map((entry, i) => (
-                    <div key={`${entry.timestamp}-${entry.level}-${i}`} style={{ color: levelColor(entry.level), marginBottom: '2px' }}>
+                    <div key={`${entry.timestamp}-${entry.level}-${i}`} style={{ color: entryColor(entry), marginBottom: '2px' }}>
                         <span style={{ color: 'var(--text-muted)', marginRight: '0.5rem' }}>
                             {entry.timestamp}
                         </span>

@@ -250,6 +250,8 @@ def log(msg: str, color: str = "", *, _level: str = "") -> None:
 
     # Store in ring buffer for web UI consumption
     entry = {"timestamp": timestamp, "level": level, "message": msg}
+    if hasattr(_thread_local, "color"):
+        entry["thread_color"] = _thread_local.color
     with _log_buffer_lock:
         _log_buffer.append(entry)
 
