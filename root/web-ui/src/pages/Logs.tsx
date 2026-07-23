@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { getLogs, type LogEntry } from '../api'
 
+const DEFAULT_LEVEL_FILTER = 'info' // Default to non-debug logs unless user opts in.
+const UNKNOWN_LEVEL_FALLBACK = 40
+
 export default function Logs() {
     const [logs, setLogs] = useState<LogEntry[]>([])
     const [autoRefresh, setAutoRefresh] = useState(true)
     const [filter, setFilter] = useState('')
-    const [levelFilter, setLevelFilter] = useState<string>('info')
+    const [levelFilter, setLevelFilter] = useState<string>(DEFAULT_LEVEL_FILTER)
     const bottomRef = useRef<HTMLDivElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
     const [isAtBottom, setIsAtBottom] = useState(true)
@@ -54,7 +57,8 @@ export default function Logs() {
     const filteredLogs = logs.filter(entry => {
         if (levelFilter !== 'all') {
             const minLevel = levelRank[levelFilter] ?? 0
-            const currentLevel = levelRank[entry.level] ?? levelRank.info
+            // Unknown levels are intentionally treated as high severity so they stay visible.
+            const currentLevel = levelRank[entry.level] ?? UNKNOWN_LEVEL_FALLBACK
             if (currentLevel < minLevel) return false
         }
         if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase())) return false
@@ -72,11 +76,14 @@ export default function Logs() {
                 const r = Math.floor(index / 36)
                 const g = Math.floor((index % 36) / 6)
                 const b = index % 6
-                const toRgb = (n: number) => (n === 0 ? 0 : 55 + n * 40)
-                return `rgb(${toRgb(r)}, ${toRgb(g)}, ${toRgb(b)})`
+                // Standard xterm 6x6x6 cube intensity mapping: 0, 95, 135, 175, 215, 255.
+                const mapXtermCubeToRgbIntensity = (n: number) => (n === 0 ? 0 : 55 + n * 40)
+                return `rgb(${mapXtermCubeToRgbIntensity(r)}, ${mapXtermCubeToRgbIntensity(g)}, ${mapXtermCubeToRgbIntensity(b)})`
             }
             if (code >= 232 && code <= 255) {
-                const v = 8 + (code - 232) * 10
+                // Standard xterm grayscale ramp: 24 levels (232-255), intensity 8..238.
+                // Step size is total range (238 - 8 = 230) divided by 23 intervals.
+                const v = Math.round(8 + (code - 232) * (230 / 23))
                 return `rgb(${v}, ${v}, ${v})`
             }
         }
