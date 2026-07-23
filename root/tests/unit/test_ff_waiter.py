@@ -187,8 +187,8 @@ class TestWaitProcessor(unittest.TestCase):
         ff_waiter.wait_processor(ingress_queue, waiting_queue)
 
         urls = []
-        while not ingress_queue.empty():
-            urls.append(ingress_queue.get(timeout=1).url)
+        for _ in range(3):
+            urls.append(ingress_queue.get(timeout=2).url)
         self.assertEqual(sorted(urls), ["url1", "url2", "url3"])
 
     @patch("services.ff_waiter._get_delay_seconds")
