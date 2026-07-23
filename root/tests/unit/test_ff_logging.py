@@ -88,12 +88,18 @@ class TestLogForwarding(unittest.TestCase):
         ff_logging.set_log_forward_queue(None)
         if hasattr(ff_logging._thread_local, "color"):
             del ff_logging._thread_local.color
+        with ff_logging._log_buffer_lock:
+            ff_logging._log_buffer.clear()
+            ff_logging._startup_log_buffer.clear()
+            ff_logging._startup_capture_enabled = True
 
     def tearDown(self):
         # Restore clean state so other tests are not affected.
         ff_logging.set_log_forward_queue(None)
         if hasattr(ff_logging._thread_local, "color"):
             del ff_logging._thread_local.color
+        with ff_logging._log_buffer_lock:
+            ff_logging._startup_capture_enabled = True
 
     @patch("builtins.print")
     def test_log_puts_entry_to_forward_queue_when_set(self, _mock_print):
@@ -170,6 +176,20 @@ class TestLogForwarding(unittest.TestCase):
             time.sleep(0.05)
 
         self.assertTrue(found, "Drain thread did not populate _log_buffer in time")
+
+    @patch("builtins.print")
+    def test_startup_log_buffer_stops_after_startup_marker(self, _mock_print):
+        """Startup buffer should freeze once startup-complete marker is logged."""
+        ff_logging.log("before marker")
+        ff_logging.log("All processes started successfully")
+        ff_logging.log("after marker")
+
+        startup_entries = ff_logging.get_startup_logs(limit=50)
+        startup_messages = [entry["message"] for entry in startup_entries]
+
+        self.assertIn("before marker", startup_messages)
+        self.assertIn("All processes started successfully", startup_messages)
+        self.assertNotIn("after marker", startup_messages)
 
 
 if __name__ == "__main__":
