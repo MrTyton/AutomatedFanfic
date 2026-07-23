@@ -49,7 +49,9 @@ _log_buffer: collections.deque = collections.deque(maxlen=_LOG_BUFFER_MAX)
 _log_buffer_lock = threading.Lock()
 
 _STARTUP_LOG_BUFFER_MAX = 2000
-_startup_log_buffer: collections.deque = collections.deque(maxlen=_STARTUP_LOG_BUFFER_MAX)
+_startup_log_buffer: collections.deque = collections.deque(
+    maxlen=_STARTUP_LOG_BUFFER_MAX
+)
 _startup_capture_enabled = True
 _STARTUP_COMPLETE_MARKERS = (
     "All processes started successfully",

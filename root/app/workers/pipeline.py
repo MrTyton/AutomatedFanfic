@@ -140,13 +140,17 @@ def _process_task(
                     error_output = e.output
                     if isinstance(error_output, bytes):
                         error_output = error_output.decode("utf-8", errors="replace")
-                    ff_logging.log_debug(f"\t({site}) FanFicFare output:\n{error_output}")
+                    ff_logging.log_debug(
+                        f"\t({site}) FanFicFare output:\n{error_output}"
+                    )
 
                 if e.stderr:
                     error_stderr = e.stderr
                     if isinstance(error_stderr, bytes):
                         error_stderr = error_stderr.decode("utf-8", errors="replace")
-                    ff_logging.log_debug(f"\t({site}) FanFicFare STDERR:\n{error_stderr}")
+                    ff_logging.log_debug(
+                        f"\t({site}) FanFicFare STDERR:\n{error_stderr}"
+                    )
 
             handlers.handle_failure(
                 fanfic,
