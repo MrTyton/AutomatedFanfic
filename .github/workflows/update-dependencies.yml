@@ -131,29 +131,28 @@ jobs:
           fi
 
           LATEST_RELEASE_URL="https://api.github.com/repos/kovidgoyal/calibre/releases/latest"
-          LATEST_RELEASE_INFO=$(curl -sSfL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" "$LATEST_RELEASE_URL")
+          LATEST_RELEASE_INFO=$(curl -sSfL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" "$LATEST_RELEASE_URL" 2>/dev/null) || true
 
+          LATEST_CALIBRE_VERSION="$CURRENT_CALIBRE_VERSION"
           if [ -z "$LATEST_RELEASE_INFO" ]; then
-            echo "::error::Failed to fetch latest Calibre release info"
-            exit 1
-          fi
-
-          LATEST_CALIBRE_TAG=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
-          if [ "$LATEST_CALIBRE_TAG" == "null" ] || [ -z "$LATEST_CALIBRE_TAG" ]; then
-            echo "::error::Could not parse tag_name from Calibre release info"
-            exit 1
-          fi
-
-          LATEST_CALIBRE_VERSION=${LATEST_CALIBRE_TAG#v} # Remove leading 'v'
-          echo "Latest Calibre version: $LATEST_CALIBRE_VERSION (tag: $LATEST_CALIBRE_TAG)"
-
-          if [ "$LATEST_CALIBRE_VERSION" != "$CURRENT_CALIBRE_VERSION" ]; then
-            echo "Calibre update detected: $CURRENT_CALIBRE_VERSION -> $LATEST_CALIBRE_VERSION"
-            echo "$LATEST_CALIBRE_VERSION" > release-versions/calibre.txt
-            echo "calibre_changed=true" >> $GITHUB_OUTPUT
-            echo "calibre_new_version=$LATEST_CALIBRE_VERSION" >> $GITHUB_OUTPUT
+            echo "::warning::Failed to fetch latest Calibre release info; skipping Calibre version check this run"
           else
-            echo "Calibre is up to date"
+            LATEST_CALIBRE_TAG=$(echo "$LATEST_RELEASE_INFO" | jq -r '.tag_name')
+            if [ "$LATEST_CALIBRE_TAG" == "null" ] || [ -z "$LATEST_CALIBRE_TAG" ]; then
+              echo "::warning::Could not parse tag_name from Calibre release info; skipping Calibre version check this run"
+            else
+              LATEST_CALIBRE_VERSION=${LATEST_CALIBRE_TAG#v} # Remove leading 'v'
+              echo "Latest Calibre version: $LATEST_CALIBRE_VERSION (tag: $LATEST_CALIBRE_TAG)"
+
+              if [ "$LATEST_CALIBRE_VERSION" != "$CURRENT_CALIBRE_VERSION" ]; then
+                echo "Calibre update detected: $CURRENT_CALIBRE_VERSION -> $LATEST_CALIBRE_VERSION"
+                echo "$LATEST_CALIBRE_VERSION" > release-versions/calibre.txt
+                echo "calibre_changed=true" >> $GITHUB_OUTPUT
+                echo "calibre_new_version=$LATEST_CALIBRE_VERSION" >> $GITHUB_OUTPUT
+              else
+                echo "Calibre is up to date"
+              fi
+            fi
           fi
 
           # Set combined flag

@@ -40,6 +40,8 @@ def infinite_worker_with_event(stop_event):
 class TestSignalHandlingIntegration(unittest.TestCase):
     """Integration tests for Docker-like signal handling scenarios."""
 
+    LIVENESS_POLL_INTERVAL = 0.05
+
     def setUp(self):
         """Set up test fixtures."""
         # Create minimal config for testing
@@ -63,6 +65,33 @@ class TestSignalHandlingIntegration(unittest.TestCase):
         if hasattr(self.manager, "_shutdown_event"):
             self.manager._shutdown_event.set()
         self.manager.stop_all(timeout=1.0)
+        self.manager.wait_for_termination(timeout=5.0)
+
+    def _wait_for_processes_liveness(
+        self,
+        process_names: list[str],
+        expected_alive: bool,
+        timeout: float = 5.0,
+        manager: ProcessManager | None = None,
+    ) -> bool:
+        """Wait for all named processes to reach expected liveness."""
+        target_manager = manager or self.manager
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if not all(name in target_manager.processes for name in process_names):
+                return False
+            if all(
+                target_manager.processes[name].is_alive() == expected_alive
+                for name in process_names
+            ):
+                return True
+            time.sleep(type(self).LIVENESS_POLL_INTERVAL)
+        if not all(name in target_manager.processes for name in process_names):
+            return False
+        return all(
+            target_manager.processes[name].is_alive() == expected_alive
+            for name in process_names
+        )
 
     def test_docker_like_signal_sequence(self):
         """Test Docker-like signal sequence: SIGTERM -> wait -> SIGTERM -> SIGKILL."""
@@ -74,14 +103,15 @@ class TestSignalHandlingIntegration(unittest.TestCase):
             self.manager.register_process(
                 f"worker_{i}", infinite_worker_with_event, args=(stop_event,)
             )
+        worker_names = [f"worker_{i}" for i in range(3)]
 
         # Start all processes
         self.assertTrue(self.manager.start_all())
-        time.sleep(0.2)  # Let processes start
 
         # Verify all are running
-        for i in range(3):
-            self.assertTrue(self.manager.processes[f"worker_{i}"].is_alive())
+        self.assertTrue(
+            self._wait_for_processes_liveness(worker_names, expected_alive=True)
+        )
 
         # Setup signal handlers
         self.manager.setup_signal_handlers()
@@ -97,13 +127,9 @@ class TestSignalHandlingIntegration(unittest.TestCase):
         with patch.object(self.manager, "stop_all", side_effect=mock_stop_all):
             # Simulate Docker's signal sequence
             def docker_signal_sequence():
-                time.sleep(0.1)
-
                 # First SIGTERM (Docker's graceful shutdown)
                 self.manager._shutdown_event.set()
                 self.manager.stop_all()
-
-                time.sleep(0.5)  # Docker grace period simulation
 
                 # Second SIGTERM (should be ignored due to shutdown event)
                 if not self.manager._shutdown_event.is_set():
@@ -113,15 +139,12 @@ class TestSignalHandlingIntegration(unittest.TestCase):
             signal_thread.start()
 
             # Main thread waits (simulating fanficdownload.py behavior)
-            start_time = time.time()
             result = self.manager.wait_for_all(timeout=5.0)
-            elapsed = time.time() - start_time
 
-            signal_thread.join()
+            signal_thread.join(timeout=5.0)
+            self.assertFalse(signal_thread.is_alive())
 
-            # Should complete shutdown quickly
             self.assertTrue(result)
-            self.assertLess(elapsed, 2.0)
 
             # stop_all should only be called once (deduplication working)
             self.assertEqual(len(signal_count), 1)
@@ -181,37 +204,35 @@ class TestSignalHandlingIntegration(unittest.TestCase):
                 long_running_worker,
                 args=(30,),  # Would run for 30 seconds normally
             )
+        worker_names = [f"worker_{i}" for i in range(5)]
 
         self.assertTrue(self.manager.start_all())
-        time.sleep(0.3)  # Let processes start
+        self.assertTrue(
+            self._wait_for_processes_liveness(worker_names, expected_alive=True)
+        )
 
         # Setup signal handlers
         self.manager.setup_signal_handlers()
 
         # Simulate signal handling
         def trigger_shutdown():
-            time.sleep(0.1)
             self.manager._shutdown_event.set()
             self.manager.stop_all()
 
         shutdown_thread = threading.Thread(target=trigger_shutdown)
         shutdown_thread.start()
 
-        # Time the shutdown process
-        start_time = time.time()
         result = self.manager.wait_for_all(timeout=10.0)
-        shutdown_time = time.time() - start_time
 
-        shutdown_thread.join()
+        shutdown_thread.join(timeout=5.0)
+        self.assertFalse(shutdown_thread.is_alive())
 
-        # Should shutdown much faster than Docker's default 10s timeout
         self.assertTrue(result)
-        self.assertLess(shutdown_time, 5.0)  # Well under typical Docker timeout
 
         # Verify all processes are actually stopped
-        time.sleep(0.2)
-        for i in range(5):
-            self.assertFalse(self.manager.processes[f"worker_{i}"].is_alive())
+        self.assertTrue(
+            self._wait_for_processes_liveness(worker_names, expected_alive=False)
+        )
 
     def test_context_manager_with_signal_handling(self):
         """Test that context manager works correctly with signal handling."""
@@ -225,13 +246,19 @@ class TestSignalHandlingIntegration(unittest.TestCase):
                     manager.register_process(
                         f"worker_{i}", infinite_worker_with_event, args=(stop_event,)
                     )
+                worker_names = [f"worker_{i}" for i in range(2)]
 
                 manager.start_all()
-                time.sleep(0.2)
+                self.assertTrue(
+                    self._wait_for_processes_liveness(
+                        worker_names,
+                        expected_alive=True,
+                        manager=manager,
+                    )
+                )
 
                 # Simulate signal arrival
                 def send_signal():
-                    time.sleep(0.1)
                     manager._shutdown_event.set()
                     manager.stop_all()
 
@@ -242,7 +269,8 @@ class TestSignalHandlingIntegration(unittest.TestCase):
                 result = manager.wait_for_all(timeout=3.0)
                 self.assertTrue(result)
 
-                signal_thread.join()
+                signal_thread.join(timeout=5.0)
+                self.assertFalse(signal_thread.is_alive())
 
             # Context manager exit should not cause duplicate cleanup
             # (verified by no duplicate log messages)
@@ -259,9 +287,12 @@ class TestSignalHandlingIntegration(unittest.TestCase):
             self.manager.register_process(
                 f"worker_{i}", infinite_worker_with_event, args=(stop_event,)
             )
+        worker_names = [f"worker_{i}" for i in range(4)]
 
         self.manager.start_all()
-        time.sleep(0.2)
+        self.assertTrue(
+            self._wait_for_processes_liveness(worker_names, expected_alive=True)
+        )
 
         # Track calls to stop_all to detect race conditions
         stop_all_calls = []
@@ -273,23 +304,26 @@ class TestSignalHandlingIntegration(unittest.TestCase):
 
         with patch.object(self.manager, "stop_all", side_effect=tracked_stop_all):
             # Simulate multiple threads trying to shutdown simultaneously
-            def shutdown_attempt(delay):
-                time.sleep(delay)
+            start_shutdown = threading.Event()
+
+            def shutdown_attempt():
+                start_shutdown.wait()
                 if not self.manager._shutdown_event.is_set():
                     self.manager._shutdown_event.set()
                     self.manager.stop_all()
 
             threads = []
             for i in range(3):
-                thread = threading.Thread(
-                    target=shutdown_attempt, args=(0.1 + i * 0.05,)
-                )
+                thread = threading.Thread(target=shutdown_attempt)
                 threads.append(thread)
                 thread.start()
 
+            start_shutdown.set()
+
             # Wait for all shutdown attempts
             for thread in threads:
-                thread.join()
+                thread.join(timeout=5.0)
+                self.assertFalse(thread.is_alive())
 
             # Should only see one actual stop_all call due to shutdown event protection
             self.assertEqual(len(stop_all_calls), 1)

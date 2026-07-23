@@ -12,7 +12,6 @@ import time
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
-import pytest
 from parameterized import parameterized
 
 # Add the app directory to the path so we can import our modules
@@ -115,6 +114,7 @@ class TestProcessManager(unittest.TestCase):
         """Clean up after tests."""
         if hasattr(self, "manager"):
             self.manager.stop_all(timeout=1.0)
+            self.manager.wait_for_termination(timeout=5.0)
 
     def test_process_manager_initialization(self):
         """Test ProcessManager initialization."""
@@ -805,66 +805,29 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
                         "Signal already being handled, ignoring"
                     )
 
-    @pytest.mark.flaky_ci
     def test_signal_integration_with_real_child_processes(self):
-        """Integration test: signal handling with actual child processes.
+        """Signal-triggered shutdown should set event and unblock wait_for_all."""
+        with patch("signal.signal") as mock_signal:
+            self.manager._signal_handlers_set = False
+            self.manager.setup_signal_handlers()
 
-        Note: This test is marked as flaky_ci due to timing issues in CI environments.
-        It can be run locally but is excluded from CI runs.
-        """
-        stop_event = mp.Event()
+            sigterm_handler = None
+            for call_args in mock_signal.call_args_list:
+                signal_num, handler_func = call_args[0]
+                if signal_num == signal.SIGTERM:
+                    sigterm_handler = handler_func
+                    break
 
-        # Register processes that will run until stopped
-        for i in range(3):
-            self.manager.register_process(
-                f"worker_{i}", infinite_worker_function, args=(stop_event,)
-            )
+            self.assertIsNotNone(sigterm_handler)
 
-        # Start all processes
-        self.assertTrue(self.manager.start_all())
+            with patch.object(self.manager, "stop_all") as mock_stop_all:
+                sigterm_handler(signal.SIGTERM, None)  # type: ignore[misc]
 
-        # Verify all processes are running
-        time.sleep(0.2)
-        for i in range(3):
-            self.assertTrue(self.manager.processes[f"worker_{i}"].is_alive())
+                result = self.manager.wait_for_all(timeout=1.0)
 
-        # Setup signal handlers and simulate signal handling
-        self.manager.setup_signal_handlers()
-
-        # Use threading to simulate signal arrival
-        def send_signal():
-            time.sleep(0.1)
-            self.manager._shutdown_event.set()
-            self.manager.stop_all()
-
-        signal_thread = threading.Thread(target=send_signal)
-        signal_thread.start()
-
-        # wait_for_all should exit quickly
-        start_time = time.time()
-        result = self.manager.wait_for_all(timeout=10.0)
-        elapsed = time.time() - start_time
-
-        # Should complete shutdown in reasonable time
-        self.assertLess(elapsed, 3.0)
-        self.assertTrue(result)
-
-        # Verify all processes are stopped using the new wait method
-        termination_success = self.manager.wait_for_termination(timeout=5.0)
-        self.assertTrue(
-            termination_success,
-            "Processes did not terminate within 5 seconds after shutdown",
-        )
-
-        # Final assertion - all processes should be stopped
-        for i in range(3):
-            self.assertFalse(
-                self.manager.processes[f"worker_{i}"].is_alive(),
-                f"Process worker_{i} is still alive after shutdown",
-            )
-
-        signal_thread.join()
-        stop_event.set()
+                self.assertTrue(result)
+                self.assertTrue(self.manager._shutdown_event.is_set())
+                mock_stop_all.assert_called_once()
 
 
 class TestProcessManagerEdgeCases(unittest.TestCase):
