@@ -43,9 +43,9 @@ six==1.17.0
 pyparsing==3.3.2
 
 # Web server and API
-fastapi==0.140.1
-uvicorn[standard]==0.51.0
-websockets==16.1.1
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+websockets==17.0.1
 
 # Async SQLite for history database
 aiosqlite==0.22.1
