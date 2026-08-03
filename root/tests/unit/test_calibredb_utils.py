@@ -539,7 +539,7 @@ class TestCalibreDBClient(unittest.TestCase):
             call_args = mock_execute.call_args
             command = call_args[0][0]
             self.assertIn("add_format", command)
-            self.assertIn("--replace", command)
+            self.assertNotIn("--replace", command)
             # fanfic object is passed as second arg
             self.assertEqual(call_args[0][1], mock_fanfic)
 
