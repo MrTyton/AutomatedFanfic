@@ -181,11 +181,18 @@ export interface LogEntry {
     timestamp: string
     level: string
     message: string
+    thread_color?: string
 }
 
 export function getLogs(limit = 500) {
     return apiFetch<{ items: LogEntry[]; count: number }>(
         `/api/logs?limit=${limit}`,
+    )
+}
+
+export function getStartupLogs(limit = 500) {
+    return apiFetch<{ items: LogEntry[]; count: number }>(
+        `/api/logs/startup?limit=${limit}`,
     )
 }
 

@@ -86,10 +86,20 @@ class TestLogForwarding(unittest.TestCase):
     def setUp(self):
         # Always start each test with forwarding disabled.
         ff_logging.set_log_forward_queue(None)
+        if hasattr(ff_logging._thread_local, "color"):
+            del ff_logging._thread_local.color
+        with ff_logging._log_buffer_lock:
+            ff_logging._log_buffer.clear()
+            ff_logging._startup_log_buffer.clear()
+            ff_logging._startup_capture_enabled = True
 
     def tearDown(self):
         # Restore clean state so other tests are not affected.
         ff_logging.set_log_forward_queue(None)
+        if hasattr(ff_logging._thread_local, "color"):
+            del ff_logging._thread_local.color
+        with ff_logging._log_buffer_lock:
+            ff_logging._startup_capture_enabled = True
 
     @patch("builtins.print")
     def test_log_puts_entry_to_forward_queue_when_set(self, _mock_print):
@@ -101,6 +111,17 @@ class TestLogForwarding(unittest.TestCase):
         entry = q.get_nowait()
         self.assertEqual(entry["message"], "hello forward")
         self.assertEqual(entry["level"], "info")
+        self.assertNotIn("thread_color", entry)
+
+    @patch("builtins.print")
+    def test_log_includes_thread_color_when_set(self, _mock_print):
+        """log() includes thread color metadata for worker differentiation."""
+        q: queue.Queue = queue.Queue()
+        ff_logging.set_log_forward_queue(q)
+        ff_logging.set_thread_color("\033[38;5;210m")
+        ff_logging.log("worker color entry")
+        entry = q.get_nowait()
+        self.assertEqual(entry["thread_color"], "\033[38;5;210m")
 
     @patch("builtins.print")
     def test_log_does_not_put_when_queue_is_none(self, _mock_print):
@@ -155,6 +176,20 @@ class TestLogForwarding(unittest.TestCase):
             time.sleep(0.05)
 
         self.assertTrue(found, "Drain thread did not populate _log_buffer in time")
+
+    @patch("builtins.print")
+    def test_startup_log_buffer_stops_after_startup_marker(self, _mock_print):
+        """Startup buffer should freeze once startup-complete marker is logged."""
+        ff_logging.log("before marker")
+        ff_logging.log("All processes started successfully")
+        ff_logging.log("after marker")
+
+        startup_entries = ff_logging.get_startup_logs(limit=50)
+        startup_messages = [entry["message"] for entry in startup_entries]
+
+        self.assertIn("before marker", startup_messages)
+        self.assertIn("All processes started successfully", startup_messages)
+        self.assertNotIn("after marker", startup_messages)
 
 
 if __name__ == "__main__":
