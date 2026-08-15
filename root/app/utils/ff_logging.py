@@ -78,6 +78,23 @@ def _append_log_entry(entry: dict) -> None:
                 _startup_capture_enabled = False
 
 
+def _store_log_entry(
+    timestamp: str, level: str, message: str, *, forward: bool
+) -> None:
+    """Store a log entry in memory and optionally forward it cross-process."""
+    entry = {"timestamp": timestamp, "level": level, "message": message}
+    if hasattr(_thread_local, "color"):
+        entry["thread_color"] = _thread_local.color
+
+    _append_log_entry(entry)
+
+    if forward and _log_forward_queue is not None:
+        try:
+            _log_forward_queue.put_nowait(entry)
+        except Exception:
+            pass
+
+
 def mark_startup_complete() -> None:
     """Stop collecting startup log entries in this process."""
     global _startup_capture_enabled
@@ -281,18 +298,7 @@ def log(
             flush=True,
         )
 
-    # Store in ring buffer for web UI consumption
-    entry = {"timestamp": timestamp, "level": level, "message": msg}
-    if hasattr(_thread_local, "color"):
-        entry["thread_color"] = _thread_local.color
-    _append_log_entry(entry)
-
-    # Forward to the cross-process queue when running outside the web server
-    if not _ring_buffer_only and _log_forward_queue is not None:
-        try:
-            _log_forward_queue.put_nowait(entry)
-        except Exception:
-            pass
+    _store_log_entry(timestamp, level, msg, forward=not _ring_buffer_only)
 
 
 def log_failure(msg: str) -> None:
@@ -343,8 +349,17 @@ def log_debug(msg: str) -> None:
         >>> log_debug("This will not be displayed")  # Silent
     """
     # Always store in ring buffer so the web UI can show debug entries.
-    # Only print to stdout when verbose mode is enabled.
-    log(msg, _level="debug", _ring_buffer_only=not verbose.value)
+    # Only print and forward cross-process when verbose mode is enabled.
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+
+    if verbose.value:
+        using_col = getattr(_thread_local, "color", bcolors.BOLD)
+        print(
+            f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}",
+            flush=True,
+        )
+
+    _store_log_entry(timestamp, "debug", msg, forward=verbose.value)
 
 
 def get_recent_logs(limit: int = 500) -> list[dict]:
