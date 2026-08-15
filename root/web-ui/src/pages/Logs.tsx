@@ -66,9 +66,9 @@ export default function Logs() {
     // Each filter value is a cumulative set: selecting a level shows that level
     // plus all less-noisy levels below it. Debug ("all") shows everything.
     const levelSets: Record<string, Set<string>> = {
-        info:    new Set(['info']),
+        info: new Set(['info']),
         warning: new Set(['info', 'warning']),
-        error:   new Set(['info', 'warning', 'error']),
+        error: new Set(['info', 'warning', 'error']),
     }
 
     const visibleLogs = activeView === 'startup' ? startupLogs : logs
