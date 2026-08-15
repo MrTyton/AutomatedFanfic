@@ -247,7 +247,7 @@ def url_worker(
                 # Queue is empty - signal idle if we were processing a site
                 if current_site is not None:
                     ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
-                    ff_logging.log(
+                    ff_logging.log_debug(
                         f"Worker {worker_id} signaling idle after draining {current_site} queue"
                     )
                     current_site = None

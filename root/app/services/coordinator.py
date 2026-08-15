@@ -185,14 +185,14 @@ class Coordinator:
             queue.put(task)
 
             pos_str = self._get_queue_position_string(queue)
-            ff_logging.log(
+            ff_logging.log_debug(
                 f"Coordinator: Routed {task.url} to {worker_id} (Site: {site}, {pos_str})"
             )
             return
 
         # 2. Site is not active. Add to backlog.
         self.state.backlog[site].append(task)
-        ff_logging.log(f"Coordinator: Added {task.url} to backlog (Site: {site})")
+        ff_logging.log_debug(f"Coordinator: Added {task.url} to backlog (Site: {site})")
 
         # 3. Try to assign immediately if we have waiting workers
         self._assign_work_if_possible()
@@ -218,7 +218,7 @@ class Coordinator:
             # Verify this worker actually owns it (paranoia check)
             if self.state.assignments[finished_site] == worker_id:
                 del self.state.assignments[finished_site]
-                ff_logging.log(
+                ff_logging.log_debug(
                     f"Coordinator: Worker {worker_id} finished site {finished_site}. Lock released.",
                 )
             else:
@@ -267,7 +267,7 @@ class Coordinator:
             start_pos = None
 
         # Detailed logging of what was pushed
-        ff_logging.log(
+        ff_logging.log_debug(
             f"Coordinator: Assigned {len(tasks_pushed)} task(s) for {site} to {worker_id}:"
         )
         for offset, task in enumerate(tasks_pushed):
@@ -276,7 +276,7 @@ class Coordinator:
                 if start_pos is not None
                 else "Pos: Unknown"
             )
-            ff_logging.log(f"  - {task.url} ({pos_info})")
+            ff_logging.log_debug(f"  - {task.url} ({pos_info})")
 
     def _assign_work_if_possible(self):
         """Assign pending backlog items to idle workers."""
@@ -295,7 +295,7 @@ class Coordinator:
                 # Assign site to worker
                 self.state.assignments[candidate_site] = worker_id
                 self.state.idle_workers.remove(worker_id)
-                ff_logging.log(
+                ff_logging.log_debug(
                     f"Coordinator: Assigned site {candidate_site} to {worker_id}",
                 )
 
