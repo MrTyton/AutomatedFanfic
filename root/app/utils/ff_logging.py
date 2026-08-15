@@ -243,7 +243,9 @@ def get_color_for_worker(index: int) -> str:
     return f"\033[38;5;{color_code}m"
 
 
-def log(msg: str, color: str = "", *, _level: str = "") -> None:
+def log(
+    msg: str, color: str = "", *, _level: str = "", _ring_buffer_only: bool = False
+) -> None:
     """Logs a timestamped message to console with optional color formatting."""
 
     # Determine color:
@@ -271,11 +273,13 @@ def log(msg: str, color: str = "", *, _level: str = "") -> None:
 
     # Generate current timestamp in standardized format
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-    # Output formatted message with timestamp and color codes
-    print(
-        f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}",
-        flush=True,
-    )
+
+    if not _ring_buffer_only:
+        # Output formatted message with timestamp and color codes
+        print(
+            f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}",
+            flush=True,
+        )
 
     # Store in ring buffer for web UI consumption
     entry = {"timestamp": timestamp, "level": level, "message": msg}
@@ -284,7 +288,7 @@ def log(msg: str, color: str = "", *, _level: str = "") -> None:
     _append_log_entry(entry)
 
     # Forward to the cross-process queue when running outside the web server
-    if _log_forward_queue is not None:
+    if not _ring_buffer_only and _log_forward_queue is not None:
         try:
             _log_forward_queue.put_nowait(entry)
         except Exception:
@@ -338,10 +342,9 @@ def log_debug(msg: str) -> None:
         >>> set_verbose(False)
         >>> log_debug("This will not be displayed")  # Silent
     """
-    # Only log debug messages when verbose mode is globally enabled
-    if verbose.value:
-        # Use _level to tag as debug in ring buffer without overriding thread color
-        log(msg, _level="debug")
+    # Always store in ring buffer so the web UI can show debug entries.
+    # Only print to stdout when verbose mode is enabled.
+    log(msg, _level="debug", _ring_buffer_only=not verbose.value)
 
 
 def get_recent_logs(limit: int = 500) -> list[dict]:

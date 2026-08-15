@@ -2,14 +2,15 @@ import { useState, useEffect, useRef } from 'react'
 import { getLogs, getStartupLogs, type LogEntry } from '../api'
 
 const DEFAULT_LEVEL_FILTER = 'error'
-const UNKNOWN_LEVEL_FALLBACK = 40
 
 export default function Logs() {
     const [logs, setLogs] = useState<LogEntry[]>([])
     const [startupLogs, setStartupLogs] = useState<LogEntry[]>([])
     const [autoRefresh, setAutoRefresh] = useState(true)
     const [filter, setFilter] = useState('')
-    const [levelFilter, setLevelFilter] = useState<string>(DEFAULT_LEVEL_FILTER)
+    const [levelFilter, setLevelFilter] = useState<string>(
+        () => localStorage.getItem('logs-level-filter') ?? DEFAULT_LEVEL_FILTER
+    )
     const [activeView, setActiveView] = useState<'runtime' | 'startup'>('runtime')
     const [startupLoaded, setStartupLoaded] = useState(false)
     const bottomRef = useRef<HTMLDivElement>(null)
@@ -62,21 +63,20 @@ export default function Logs() {
         setIsAtBottom(atBottom)
     }
 
-    const levelRank: Record<string, number> = {
-        debug: 10,
-        info: 20,
-        warning: 30,
-        error: 40,
+    // Each filter value is a cumulative set: selecting a level shows that level
+    // plus all less-noisy levels below it. Debug ("all") shows everything.
+    const levelSets: Record<string, Set<string>> = {
+        info:    new Set(['info']),
+        warning: new Set(['info', 'warning']),
+        error:   new Set(['info', 'warning', 'error']),
     }
 
     const visibleLogs = activeView === 'startup' ? startupLogs : logs
 
     const filteredLogs = visibleLogs.filter(entry => {
         if (levelFilter !== 'all') {
-            const minLevel = levelRank[levelFilter] ?? UNKNOWN_LEVEL_FALLBACK
-            // Unknown levels are intentionally treated as high severity so they stay visible.
-            const currentLevel = levelRank[entry.level] ?? UNKNOWN_LEVEL_FALLBACK
-            if (currentLevel < minLevel) return false
+            const allowed = levelSets[levelFilter]
+            if (allowed && !allowed.has(entry.level)) return false
         }
         if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase())) return false
         return true
@@ -167,17 +167,22 @@ export default function Logs() {
                     />
                     Auto-refresh
                 </label>
-                <select
-                    value={levelFilter}
-                    onChange={e => setLevelFilter(e.target.value)}
-                    style={{ padding: '0.3rem 0.5rem' }}
-                >
-                    <option value="all">All levels</option>
-                    <option value="debug">Debug and above</option>
-                    <option value="info">Info and above</option>
-                    <option value="warning">Warning and above</option>
-                    <option value="error">Error only</option>
-                </select>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                    Show:
+                    <select
+                        value={levelFilter}
+                        onChange={e => {
+                            setLevelFilter(e.target.value)
+                            localStorage.setItem('logs-level-filter', e.target.value)
+                        }}
+                        style={{ padding: '0.3rem 0.5rem' }}
+                    >
+                        <option value="info">Info</option>
+                        <option value="warning">Info + Warnings</option>
+                        <option value="error">Info + Warnings + Errors</option>
+                        <option value="all">All (incl. Debug)</option>
+                    </select>
+                </label>
                 <input
                     type="text"
                     placeholder="Filter logs…"
