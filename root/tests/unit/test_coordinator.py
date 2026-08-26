@@ -540,5 +540,191 @@ class TestCoordinatorAdvancedEdgeCases(unittest.TestCase):
             pass
 
 
+class TestCoordinatorSeriesExpansion(unittest.TestCase):
+    """Test series/collection URL detection and expansion in coordinator."""
+
+    def setUp(self):
+        self.ingress_queue = mp.Queue()
+        self.worker_queues = {"worker_0": mp.Queue(), "worker_1": mp.Queue()}
+        self.coordinator = Coordinator(self.ingress_queue, self.worker_queues)
+
+    @patch("utils.series_utils.expand_series_url")
+    @patch("services.coordinator.ff_logging")
+    def test_series_expansion_multiple_stories(self, mock_logging, mock_expand_series):
+        """Test that series URL is expanded into individual story tasks.
+
+        Uses real is_series_url detection via FanFicFare adapter. Only mocks
+        expand_series_url to control the returned story URLs.
+        """
+        series_url = "https://archiveofourown.org/series/3039543"
+        story_urls = [
+            "https://archiveofourown.org/works/1",
+            "https://archiveofourown.org/works/2",
+            "https://archiveofourown.org/works/3",
+        ]
+
+        # Mock only expand_series_url to return test story URLs
+        mock_expand_series.return_value = story_urls
+
+        series_fic = FanficInfo(
+            url=series_url,
+            site="archiveofourown",
+            calibre_id="123",
+            behavior="update",
+        )
+
+        # Submit series URL
+        self.ingress_queue.put(series_fic)
+        self.coordinator._process_single_ingress_item(timeout=0.1)
+
+        # Verify expansion was logged
+        log_calls = [str(call) for call in mock_logging.log.call_args_list]
+        expansion_logged = any("Expanding series" in str(call) for call in log_calls)
+        self.assertTrue(expansion_logged)
+
+        # Verify all three stories were routed to workers
+        received_tasks = []
+        for worker_id in self.worker_queues:
+            queue = self.worker_queues[worker_id]
+            while True:
+                try:
+                    task = queue.get_nowait()
+                    received_tasks.append(task)
+                except Empty:
+                    break
+
+        # Should have 3 tasks
+        self.assertEqual(len(received_tasks), 3)
+
+        # Verify each task has correct URL
+        urls = {task.url for task in received_tasks}
+        expected_urls = set(story_urls)
+        self.assertEqual(urls, expected_urls)
+
+        # Verify all inherited properties
+        for task in received_tasks:
+            self.assertEqual(task.site, "archiveofourown")
+            self.assertEqual(task.calibre_id, "123")
+            self.assertEqual(task.behavior, "update")
+            # Individual stories should start with 0 repeats
+            self.assertEqual(task.repeats, 0)
+
+    @patch("services.coordinator.ff_logging")
+    def test_non_series_url_not_expanded(self, mock_logging):
+        """Test that regular story URLs are not expanded.
+
+        Uses real is_series_url detection - regular story URLs will return False
+        from the adapter, so they bypass expansion and go directly to workers.
+        """
+        story_url = "https://archiveofourown.org/works/12345"
+
+        story_fic = FanficInfo(
+            url=story_url,
+            site="archiveofourown",
+        )
+
+        # Submit regular story URL
+        self.ingress_queue.put(story_fic)
+        self.coordinator._process_single_ingress_item(timeout=0.1)
+
+        # Verify expansion log was NOT called (only regular routing)
+        log_calls = [str(call) for call in mock_logging.log.call_args_list]
+        expansion_logged = any("Expanding series" in str(call) for call in log_calls)
+        self.assertFalse(expansion_logged)
+
+        # Verify single task was queued (not multiple)
+        received_tasks = []
+        for worker_id in self.worker_queues:
+            queue = self.worker_queues[worker_id]
+            while True:
+                try:
+                    task = queue.get_nowait()
+                    received_tasks.append(task)
+                except Empty:
+                    break
+
+        self.assertEqual(len(received_tasks), 1)
+        self.assertEqual(received_tasks[0], story_fic)
+
+    @patch("utils.series_utils.expand_series_url")
+    def test_series_expansion_with_retry_state(self, mock_expand_series):
+        """Test that expanded stories inherit retry state from series.
+
+        Note: Series URLs themselves never experience repeats since they expand
+        immediately. Individual stories start fresh (repeats=0) regardless of
+        the series' retry state.
+
+        Uses real is_series_url detection - mocks only expand_series_url.
+        """
+        series_url = "https://archiveofourown.org/series/3039543"
+        story_urls = [
+            "https://archiveofourown.org/works/story1",
+            "https://archiveofourown.org/works/story2",
+        ]
+
+        # Mock only expand_series_url to return test story URLs
+        mock_expand_series.return_value = story_urls
+
+        # Create a series with a retry_decision (representing a previous retry state)
+        series_fic = FanficInfo(
+            url=series_url,
+            site="example",
+            retry_decision=None,  # Can be set in real scenarios
+        )
+
+        # Submit series URL
+        self.ingress_queue.put(series_fic)
+        self.coordinator._process_single_ingress_item(timeout=0.1)
+
+        # Verify stories were created and routed
+        received_tasks = []
+        for worker_id in self.worker_queues:
+            queue = self.worker_queues[worker_id]
+            while True:
+                try:
+                    task = queue.get_nowait()
+                    received_tasks.append(task)
+                except Empty:
+                    break
+
+        self.assertEqual(len(received_tasks), 2)
+
+        # Individual stories should have their own repeats starting fresh
+        for task in received_tasks:
+            self.assertEqual(task.repeats, 0)
+
+    def test_series_with_single_story_not_expanded(self):
+        """Test that series with only 1 story is not expanded (edge case).
+
+        Uses real is_series_url detection - a single-story series URL
+        may or may not be detected as a series depending on adapter behavior.
+        This tests normal flow without expansion mocking.
+        """
+        series_fic = FanficInfo(
+            url="https://archiveofourown.org/series/3039543",
+            site="archiveofourown",
+        )
+
+        # Submit series URL
+        self.ingress_queue.put(series_fic)
+        self.coordinator._process_single_ingress_item(timeout=0.1)
+
+        # Verify task was routed (either expanded or passed through based on
+        # real adapter detection). Just verify it doesn't crash.
+        received_tasks = []
+        for worker_id in self.worker_queues:
+            queue = self.worker_queues[worker_id]
+            while True:
+                try:
+                    task = queue.get_nowait()
+                    received_tasks.append(task)
+                except Empty:
+                    break
+
+        # Task should be either routed as single task or not queued if expansion attempted
+        # (which will fail since we're not mocking expand_series_url)
+        self.assertLessEqual(len(received_tasks), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

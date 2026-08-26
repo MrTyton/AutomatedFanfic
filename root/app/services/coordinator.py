@@ -175,8 +175,38 @@ class Coordinator:
             pass
 
     def _handle_new_task(self, task: FanficInfo):
-        """Route new task to appropriate worker or backlog."""
+        """Route new task to appropriate worker or backlog.
+
+        Automatically detects and expands series/collection URLs into individual
+        story tasks before routing.
+        """
+        from utils import series_utils
+
         site = task.site
+
+        # Check if this is a series/collection URL
+        expansion_result = series_utils.process_url(task.url)
+
+        if expansion_result["is_series"] and expansion_result["count"] > 1:
+            # Expand series into individual story tasks
+            ff_logging.log(
+                f"Coordinator: Expanding series ({expansion_result['count']} stories): {task.url}"
+            )
+
+            for story_url in expansion_result["urls"]:
+                story_task = FanficInfo(
+                    url=story_url,
+                    site=site,
+                    calibre_id=task.calibre_id,
+                    behavior=task.behavior,
+                    title=None,
+                    repeats=0,  # Individual stories start fresh, never inherit series repeats
+                    retry_decision=task.retry_decision,
+                )
+                # Recursively handle each story
+                self._handle_new_task(story_task)
+
+            return
 
         # 1. If site is already assigned to a worker, push directly
         if site in self.state.assignments:
@@ -237,7 +267,7 @@ class Coordinator:
                 return site
         return None
 
-    def _drain_site_backlog(self, site: str, worker_id: str, queue: mp.Queue) -> list:
+    def _drain_site_backlog(self, site: str, queue: mp.Queue) -> list:
         """Drain all tasks for a site from backlog to worker queue."""
         tasks_pushed = []
         while self.state.backlog[site]:
@@ -301,9 +331,7 @@ class Coordinator:
 
                 # Drain ENTIRE backlog for this site to the worker
                 queue = self.worker_queues[worker_id]
-                tasks_pushed = self._drain_site_backlog(
-                    candidate_site, worker_id, queue
-                )
+                tasks_pushed = self._drain_site_backlog(candidate_site, queue)
 
                 # Log assignment details
                 self._log_assignment_details(
