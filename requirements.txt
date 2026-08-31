@@ -45,7 +45,7 @@ pyparsing==3.3.2
 # Web server and API
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
-websockets==17.0.1
+websockets==17.1
 
 # Async SQLite for history database
 aiosqlite==0.22.1
