@@ -548,13 +548,17 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         self.worker_queues = {"worker_0": mp.Queue(), "worker_1": mp.Queue()}
         self.coordinator = Coordinator(self.ingress_queue, self.worker_queues)
 
+    @patch("utils.series_utils.is_series_url")
     @patch("utils.series_utils.expand_series_url")
     @patch("services.coordinator.ff_logging")
-    def test_series_expansion_multiple_stories(self, mock_logging, mock_expand_series):
+    def test_series_expansion_multiple_stories(
+        self, mock_logging, mock_expand_series, mock_is_series_url
+    ):
         """Test that series URL is expanded into individual story tasks.
 
-        Uses real is_series_url detection via FanFicFare adapter. Only mocks
-        expand_series_url to control the returned story URLs.
+        Only the original series URL should be treated as a series; child story
+        URLs must behave like standalone stories so recursive expansion does not
+        loop back into the same path during the test.
         """
         series_url = "https://archiveofourown.org/series/3039543"
         story_urls = [
@@ -563,8 +567,10 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
             "https://archiveofourown.org/works/3",
         ]
 
-        # Mock only expand_series_url to return test story URLs
-        mock_expand_series.return_value = story_urls
+        mock_is_series_url.side_effect = lambda url, config=None: url == series_url
+        mock_expand_series.side_effect = lambda url, config=None: (
+            story_urls if url == series_url else []
+        )
 
         series_fic = FanficInfo(
             url=series_url,
@@ -609,12 +615,13 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
             # Individual stories should start with 0 repeats
             self.assertEqual(task.repeats, 0)
 
+    @patch("utils.series_utils.is_series_url", return_value=False)
     @patch("services.coordinator.ff_logging")
-    def test_non_series_url_not_expanded(self, mock_logging):
+    def test_non_series_url_not_expanded(self, mock_logging, _mock_is_series_url):
         """Test that regular story URLs are not expanded.
 
-        Uses real is_series_url detection - regular story URLs will return False
-        from the adapter, so they bypass expansion and go directly to workers.
+        Mock the series detection boundary so the test stays deterministic and
+        does not issue live network requests to AO3.
         """
         story_url = "https://archiveofourown.org/works/12345"
 
@@ -646,15 +653,16 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         self.assertEqual(len(received_tasks), 1)
         self.assertEqual(received_tasks[0], story_fic)
 
+    @patch("utils.series_utils.is_series_url")
     @patch("utils.series_utils.expand_series_url")
-    def test_series_expansion_with_retry_state(self, mock_expand_series):
+    def test_series_expansion_with_retry_state(
+        self, mock_expand_series, mock_is_series_url
+    ):
         """Test that expanded stories inherit retry state from series.
 
-        Note: Series URLs themselves never experience repeats since they expand
-        immediately. Individual stories start fresh (repeats=0) regardless of
-        the series' retry state.
-
-        Uses real is_series_url detection - mocks only expand_series_url.
+        Only the series URL should trigger expansion; once the stories are
+        created, they should be treated as standalone tasks without re-entering
+        the series branch.
         """
         series_url = "https://archiveofourown.org/series/3039543"
         story_urls = [
@@ -662,8 +670,10 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
             "https://archiveofourown.org/works/story2",
         ]
 
-        # Mock only expand_series_url to return test story URLs
-        mock_expand_series.return_value = story_urls
+        mock_is_series_url.side_effect = lambda url, config=None: url == series_url
+        mock_expand_series.side_effect = lambda url, config=None: (
+            story_urls if url == series_url else []
+        )
 
         # Create a series with a retry_decision (representing a previous retry state)
         series_fic = FanficInfo(
@@ -693,24 +703,23 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         for task in received_tasks:
             self.assertEqual(task.repeats, 0)
 
-    def test_series_with_single_story_not_expanded(self):
-        """Test that series with only 1 story is not expanded (edge case).
+    @patch("utils.series_utils.is_series_url", return_value=False)
+    def test_series_with_single_story_not_expanded(self, _mock_is_series_url):
+        """Test that a single-story URL is treated as a normal story.
 
-        Uses real is_series_url detection - a single-story series URL
-        may or may not be detected as a series depending on adapter behavior.
-        This tests normal flow without expansion mocking.
+        Keep this unit test isolated from the external series adapter and verify
+        the coordinator's fallback behavior without live network access.
         """
         series_fic = FanficInfo(
             url="https://archiveofourown.org/series/3039543",
             site="archiveofourown",
         )
 
-        # Submit series URL
+        # Submit URL; detector is mocked to avoid external network calls
         self.ingress_queue.put(series_fic)
         self.coordinator._process_single_ingress_item(timeout=0.1)
 
-        # Verify task was routed (either expanded or passed through based on
-        # real adapter detection). Just verify it doesn't crash.
+        # Verify task was routed as a single story without expansion.
         received_tasks = []
         for worker_id in self.worker_queues:
             queue = self.worker_queues[worker_id]
