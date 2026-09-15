@@ -1,5 +1,5 @@
 name: "Bump Version"
-description: "Bump project version in latest.txt and fanficdownload.py"
+description: "Bump project version in latest.txt, pyproject.toml, and fanficdownload.py"
 inputs:
   bump-type:
     description: "Type of version bump (patch, minor, major)"
@@ -86,6 +86,25 @@ runs:
           echo "Updating release-versions/latest.txt..."
           echo "$NEW_VERSION" > release-versions/latest.txt
 
+          echo "Updating pyproject.toml..."
+          PYPROJECT_FILE="pyproject.toml"
+          if [ ! -f "$PYPROJECT_FILE" ]; then
+            echo "::error::pyproject.toml not found"
+            exit 1
+          fi
+
+          if ! grep -q '^version = ' "$PYPROJECT_FILE"; then
+            echo "::error::No version line found in $PYPROJECT_FILE"
+            exit 1
+          fi
+
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" "$PYPROJECT_FILE"
+
+          if ! grep -q "^version = \"$NEW_VERSION\"" "$PYPROJECT_FILE"; then
+            echo "::error::Failed to update version in $PYPROJECT_FILE"
+            exit 1
+          fi
+
           echo "Updating __version__ in fanficdownload.py..."
           PYTHON_FILE="root/app/fanficdownload.py"
 
@@ -112,6 +131,7 @@ runs:
 
           echo "✅ Version updated successfully!"
           echo "Verification:"
+          grep "^version = \"$NEW_VERSION\"" "$PYPROJECT_FILE"
           grep "__version__" "$PYTHON_FILE"
         else
           echo "version-changed=false" >> $GITHUB_OUTPUT

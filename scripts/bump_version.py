@@ -72,6 +72,40 @@ def update_version_file(version_file: Path, new_version: str) -> None:
     print(f"✅ Updated {version_file}")
 
 
+def update_pyproject_version(pyproject_file: Path, new_version: str) -> None:
+    """Update the project version in pyproject.toml."""
+    print(f"📝 Updating {pyproject_file}...")
+
+    with open(pyproject_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if not re.search(r"(?m)^version\s*=\s*\".*\"", content):
+        raise ValueError(f"No version line found in {pyproject_file}")
+
+    new_content = re.sub(
+        r'(?m)^version\s*=\s*".*"',
+        f'version = "{new_version}"',
+        content,
+        count=1,
+    )
+
+    with open(pyproject_file, "w", encoding="utf-8") as f:
+        f.write(new_content)
+
+    with open(pyproject_file, "r", encoding="utf-8") as f:
+        verify_content = f.read()
+
+    if f'version = "{new_version}"' not in verify_content:
+        raise ValueError(f"Failed to update version in {pyproject_file}")
+
+    print(f"✅ Updated {pyproject_file}")
+
+    for line_num, line in enumerate(verify_content.splitlines(), 1):
+        if line.startswith("version = "):
+            print(f"🔍 Verification: Line {line_num}: {line}")
+            break
+
+
 def update_python_version(python_file: Path, new_version: str) -> None:
     """Update the __version__ in fanficdownload.py."""
     print(f"📝 Updating {python_file}...")
@@ -147,7 +181,11 @@ def check_git_status(repo_dir: Path) -> bool:
         if line
         and not any(
             path in line
-            for path in ["release-versions/latest.txt", "root/app/fanficdownload.py"]
+            for path in [
+                "release-versions/latest.txt",
+                "root/app/fanficdownload.py",
+                "pyproject.toml",
+            ]
         )
     ]
 
@@ -170,7 +208,11 @@ def commit_and_push_changes(
     print("📦 Committing and pushing changes...")
 
     # Stage the version files
-    files_to_add = ["release-versions/latest.txt", "root/app/fanficdownload.py"]
+    files_to_add = [
+        "release-versions/latest.txt",
+        "root/app/fanficdownload.py",
+        "pyproject.toml",
+    ]
 
     for file_path in files_to_add:
         success, output = run_git_command(["git", "add", file_path], repo_dir)
@@ -250,6 +292,7 @@ Examples:
     script_dir = Path(__file__).parent.parent
     version_file = script_dir / "release-versions" / "latest.txt"
     python_file = script_dir / "root" / "app" / "fanficdownload.py"
+    pyproject_file = script_dir / "pyproject.toml"
 
     # Verify files exist
     if not version_file.exists():
@@ -258,6 +301,10 @@ Examples:
 
     if not python_file.exists():
         print(f"❌ Python file not found: {python_file}")
+        sys.exit(1)
+
+    if not pyproject_file.exists():
+        print(f"❌ pyproject.toml not found: {pyproject_file}")
         sys.exit(1)
 
     try:
@@ -292,6 +339,7 @@ Examples:
         # Update files
         update_version_file(version_file, new_version)
         update_python_version(python_file, new_version)
+        update_pyproject_version(pyproject_file, new_version)
 
         print()
         print("🎉 Version bump complete!")
@@ -315,7 +363,7 @@ Examples:
                     print("⚠️  Version bumped but git operations failed.")
                     print("💡 You may need to commit and push manually:")
                     print(
-                        "   git add release-versions/latest.txt root/app/fanficdownload.py"
+                        "   git add release-versions/latest.txt root/app/fanficdownload.py pyproject.toml"
                     )
                     print(
                         f'   git commit -m "bump: {args.bump_type} version to {new_version}"'
@@ -327,7 +375,9 @@ Examples:
             print()
             print("💡 Git operations skipped (--no-git flag used)")
             print("💡 To commit manually:")
-            print("   git add release-versions/latest.txt root/app/fanficdownload.py")
+            print(
+                "   git add release-versions/latest.txt root/app/fanficdownload.py pyproject.toml"
+            )
             print(f'   git commit -m "bump: {args.bump_type} version to {new_version}"')
             print("   git push")
 

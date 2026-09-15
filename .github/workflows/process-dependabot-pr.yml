@@ -143,7 +143,7 @@ jobs:
             COMMIT_MSG="chore: bump version to $NEW_VERSION for dependency updates"
           fi
 
-          git add release-versions/latest.txt root/app/fanficdownload.py
+          git add release-versions/latest.txt root/app/fanficdownload.py pyproject.toml
           git commit -m "$COMMIT_MSG"
           git push origin HEAD
 
