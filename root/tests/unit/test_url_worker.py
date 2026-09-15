@@ -1,5 +1,6 @@
 import unittest
 import unittest.mock
+import subprocess
 from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
@@ -780,6 +781,61 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 history_recorder=None,
                 error_message="Command execution failed",
             )
+
+    @patch("workers.command.execute_command")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    @patch("workers.command.construct_fanficfare_command")
+    @patch("workers.pipeline.ff_logging.log")
+    @patch("workers.handlers.handle_failure")
+    def test_url_worker_uses_fanfare_fault_details_in_failure_message(
+        self,
+        mock_handle_failure,
+        mock_log,
+        mock_construct_cmd,
+        mock_get_path,
+        mock_temp_dir,
+        mock_execute,
+    ):
+        """FanFicFare traceback output should survive the CalledProcessError wrapper."""
+        self.mock_queue.get.side_effect = [self.test_fanfic, KeyboardInterrupt]
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "test_file.epub"
+        mock_construct_cmd.return_value = ["fanficfare", "command"]
+
+        stderr = (
+            "Traceback (most recent call last):\n"
+            '  File "/tmp/adapter.py", line 431, in getChapterText\n'
+            '    raise exceptions.FailedToDownload("Error downloading Chapter: https://example.com/! Missing required element!")\n'
+            "fanficfare.exceptions.FailedToDownload: Error downloading Chapter: https://example.com/! Missing required element!"
+        )
+        mock_execute.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["fanficfare", "command"],
+            output="stdout was captured\n",
+            stderr=stderr,
+        )
+
+        retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
+        )
+
+        with patch("utils.ff_logging.log_failure"):
+            with patch("workers.pipeline.time.sleep"):
+                pipeline.url_worker(
+                    self.mock_queue,
+                    self.mock_client,
+                    self.mock_notification_info,
+                    self.mock_ingress_queue,
+                    self.mock_waiting_queue,
+                    retry_config,
+                    "worker_id",
+                    None,
+                )
+
+        _, kwargs = mock_handle_failure.call_args
+        self.assertIn("Missing required element!", kwargs["error_message"])
+        self.assertNotIn("returned non-zero exit status 1", kwargs["error_message"])
 
     @patch("workers.command.execute_command")
     @patch("workers.pipeline.system_utils.temporary_directory")

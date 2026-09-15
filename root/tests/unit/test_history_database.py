@@ -277,6 +277,33 @@ class TestAsyncHistoryDB(unittest.TestCase):
         self.assertEqual(results[0]["url"], "u1")
         self.assertEqual(results[0]["error_message"], "calibredb stderr")
 
+    def test_get_waiting_urls_uses_latest_waiting_row_per_url(self):
+        self.sync_db.insert_download(
+            DownloadEvent(
+                url="u1",
+                site="s",
+                status=DownloadStatus.WAITING,
+                started_at=datetime(2026, 1, 1, 8, 0, 0),
+                title="Old Title",
+                error_message="old failure",
+            )
+        )
+        self.sync_db.insert_download(
+            DownloadEvent(
+                url="u1",
+                site="s",
+                status=DownloadStatus.WAITING,
+                started_at=datetime(2026, 1, 1, 9, 0, 0),
+                title="New Title",
+                error_message="new failure",
+            )
+        )
+
+        results = self._run(self.async_db.get_waiting_urls())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "New Title")
+        self.assertEqual(results[0]["error_message"], "new failure")
+
     def test_get_download_count(self):
         self.sync_db.insert_download(DownloadEvent(url="u1", site="s"))
         self.sync_db.insert_download(DownloadEvent(url="u2", site="s"))

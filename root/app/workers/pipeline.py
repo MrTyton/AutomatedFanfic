@@ -32,6 +32,32 @@ from . import command
 from . import handlers
 
 
+def _exception_to_error_message(exc: BaseException) -> str:
+    """Return the most informative available failure text from a subprocess or Python exception."""
+    if isinstance(exc, subprocess.CalledProcessError):
+        candidate_sources = [
+            getattr(exc, "stderr", None),
+            getattr(exc, "stdout", None),
+            getattr(exc, "output", None),
+            str(exc),
+        ]
+    else:
+        candidate_sources = [str(exc)]
+
+    for source in candidate_sources:
+        if source is None:
+            continue
+        if isinstance(source, bytes):
+            text = source.decode("utf-8", errors="replace")
+        else:
+            text = str(source)
+        cleaned = text.strip()
+        if cleaned:
+            return cleaned
+
+    return str(exc)
+
+
 def _process_task(
     fanfic: fanfic_info.FanficInfo,
     calibre_client: calibredb_utils.CalibreDBClient,
@@ -128,7 +154,7 @@ def _process_task(
 
         except (subprocess.CalledProcessError, Exception) as e:
             # Handle execution failure
-            error_msg = str(e)
+            error_msg = _exception_to_error_message(e)
 
             ff_logging.log_failure(
                 f"\t({site}) Failed to update {path_or_url}: {error_msg}"

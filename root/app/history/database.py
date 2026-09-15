@@ -554,13 +554,27 @@ class AsyncHistoryDB:
             await conn.close()
 
     async def get_waiting_urls(self) -> list[dict]:
-        """Get URLs currently in 'waiting' status (retry backoff)."""
+        """Get URLs currently in 'waiting' status (retry backoff).
+
+        Only the latest waiting row per URL is shown, so older retry attempts do
+        not keep stale error messages visible after the story has since moved on.
+        """
         conn = await self._get_conn()
         try:
             cursor = await conn.execute(
-                """SELECT url, site, title, calibre_id, updated_at, error_message
-                   FROM download_events
-                   WHERE status = 'waiting'"""
+                """WITH latest_waiting AS (
+                       SELECT url,
+                              MAX(started_at) AS latest_started_at
+                       FROM download_events
+                       WHERE status = 'waiting'
+                       GROUP BY url
+                   )
+                   SELECT d.url, d.site, d.title, d.calibre_id, d.updated_at, d.error_message
+                   FROM download_events d
+                   JOIN latest_waiting lw
+                     ON d.url = lw.url
+                    AND d.started_at = lw.latest_started_at
+                   WHERE d.status = 'waiting'"""
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
