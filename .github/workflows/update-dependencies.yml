@@ -210,7 +210,7 @@ jobs:
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
           # Ensure latest.txt is committed along with dependency files
-          add: "release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py"
+          add: "release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py pyproject.toml"
 
       - name: Verify commit and set output
         id: verify_commit
