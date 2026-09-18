@@ -204,7 +204,18 @@ def check_failure_regexes(output: str) -> bool:
         This function returns True for success (no failures detected) to
         maintain backward compatibility with existing code that expects
         a success boolean. Each detected failure is logged via ff_logging.
+
+        Only the stdout portion of the combined output is checked. The STDERR
+        section (appended by execute_command with a "\\nSTDERR:\\n" separator)
+        contains FanFicFare debug/info logs that may include transient HTTP
+        errors (e.g. 403 on a cover image) that FanFicFare handles gracefully.
+        Actual story-level HTTP failures cause a non-zero exit code, which is
+        caught by CalledProcessError before this function is reached.
     """
+    # Only check stdout: STDERR debug logs may contain 403s from image loads
+    # that FanFicFare handles gracefully and still exits 0.
+    stdout_only = output.split("\nSTDERR:\n")[0]
+
     # Define permanent failure patterns and their user-friendly messages
     failure_regexes = [
         (
@@ -230,7 +241,7 @@ def check_failure_regexes(output: str) -> bool:
 
     # Return True if NO failures detected (success case)
     return not any(
-        check_regexes(output, regex, message) for regex, message in failure_regexes
+        check_regexes(stdout_only, regex, message) for regex, message in failure_regexes
     )
 
 

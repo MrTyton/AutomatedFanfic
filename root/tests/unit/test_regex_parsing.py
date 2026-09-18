@@ -111,6 +111,18 @@ class TestRegexParsing(unittest.TestCase):
             CheckRegexFailuresTestCase(
                 output="test output", expected=True, message=None
             ),
+            # Test case: 403 only in STDERR section (e.g. cover image load) - should NOT trigger failure
+            CheckRegexFailuresTestCase(
+                output="Updating story.epub, URL: https://www.royalroad.com/fiction/15935\nDo update - epub(261) vs url(262)\nSTDERR:\nFFF: INFO: story.py(1757): Failed to load or convert image,\nskipping:https://www.royalroadcdn.com/public/covers-large/15935.jpg\nException: HTTP Error in FFF '403 Client Error: Forbidden for url: https://www.royalroadcdn.com/public/covers-large/15935.jpg'(403)",
+                expected=True,
+                message=None,
+            ),
+            # Test case: 403 in stdout - should trigger failure
+            CheckRegexFailuresTestCase(
+                output="403 Client Error: Forbidden for url: https://www.royalroad.com/fiction/15935",
+                expected=False,
+                message="Forbidden client. Check the URL. If this is ff.net, check that you have Flaresolverr installed, or cry.",
+            ),
         ]
     )
     @patch("parsers.regex_parsing.ff_logging.log_failure")
