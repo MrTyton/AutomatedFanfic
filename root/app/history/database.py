@@ -168,7 +168,8 @@ class SyncHistoryDB:
                SET status = ?,
                    title = COALESCE(?, title),
                    calibre_id = COALESCE(?, calibre_id),
-                   error_message = COALESCE(?, error_message),
+                   error_message = CASE WHEN ? = 'success' THEN NULL
+                                        ELSE COALESCE(?, error_message) END,
                    completed_at = COALESCE(?, completed_at),
                    updated_at = ?
                WHERE id = (
@@ -180,6 +181,7 @@ class SyncHistoryDB:
                 status.value,
                 title,
                 calibre_id,
+                status.value,
                 error_message,
                 _dt_to_str(completed_at),
                 _dt_to_str(datetime.now()),
