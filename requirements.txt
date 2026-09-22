@@ -26,8 +26,8 @@ webencodings==0.6.1
 
 # Network and security
 certifi==2026.7.22
-idna==3.19
-urllib3==2.7.0
+idna==3.20
+urllib3==2.8.0
 websocket-client==1.9.2
 
 # Image processing (for cover images)
@@ -44,7 +44,7 @@ pyparsing==3.3.2
 
 # Web server and API
 fastapi==0.141.1
-uvicorn[standard]==0.52.4
+uvicorn[standard]==0.53.0
 websockets==17.1
 
 # Async SQLite for history database
