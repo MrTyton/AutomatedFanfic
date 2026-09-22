@@ -80,6 +80,33 @@ class TestSyncHistoryDB(unittest.TestCase):
         self.assertEqual(row[0], "abandoned")
         self.assertEqual(row[1], "Max retries exceeded")
 
+    def test_success_update_clears_prior_error_message(self):
+        """A success update must clear any error_message set by a prior failure."""
+        event = DownloadEvent(url="https://ao3.org/works/99", site="ao3")
+        self.db.insert_download(event)
+        # Simulate a retry setting an error on the waiting row
+        self.db.update_download(
+            url="https://ao3.org/works/99",
+            status=DownloadStatus.WAITING,
+            error_message="FanFicFare reported a permanent failure condition.",
+        )
+        # Now the download succeeds
+        self.db.update_download(
+            url="https://ao3.org/works/99",
+            status=DownloadStatus.SUCCESS,
+            title="Epic Story",
+        )
+
+        cur = self.db._conn.execute(
+            "SELECT status, error_message FROM download_events WHERE url = ?",
+            ("https://ao3.org/works/99",),
+        )
+        row = cur.fetchone()
+        self.assertEqual(row[0], "success")
+        self.assertIsNone(
+            row[1], "error_message should be NULL after a successful update"
+        )
+
     def test_update_targets_most_recent_pending(self):
         """If multiple downloads exist for same URL, update the latest pending one."""
         self.db.insert_download(
