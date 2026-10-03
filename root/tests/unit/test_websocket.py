@@ -1,10 +1,12 @@
 """Tests for WebSocket dashboard endpoint."""
 
+import asyncio
 import unittest
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
+import web.routes.websocket as ws_module
 from web.dependencies import WebState
 from web.server import create_app
 
@@ -16,6 +18,14 @@ class TestWebSocketDashboard(unittest.TestCase):
         self.state = WebState()
         self.app = create_app(self.state)
         self.client = TestClient(self.app)
+        # Reset shared module state between tests to prevent leakage
+        ws_module._latest_snapshot = None
+        ws_module._bg_task = None
+        ws_module._history_cache = {
+            "recent_downloads": [],
+            "recent_activity": [],
+            "expires_at": 0.0,
+        }
 
     def test_websocket_connect_receive_snapshot(self):
         """Client connects and receives at least one snapshot."""
@@ -175,3 +185,41 @@ class TestWebSocketDashboard(unittest.TestCase):
         finally:
             _connections.discard(fake)
             ws_module._last_broadcast_time = 0.0
+
+    def test_history_cache_avoids_repeat_queries(self):
+        """_build_snapshot should only refresh history queries when TTL expires."""
+        from web.routes.websocket import _build_snapshot
+
+        call_counts = {"downloads": 0, "activity": 0}
+
+        class StubHistoryDB:
+            async def get_waiting_urls(self):
+                return []
+
+            async def get_recent_downloads(self, limit=20):
+                call_counts["downloads"] += 1
+                return [{"id": 1}]
+
+            async def get_recent_activity(self, limit=20):
+                call_counts["activity"] += 1
+                return [{"id": 2}]
+
+        self.state.history_db = StubHistoryDB()
+        # Ensure cache is cold (expires_at=0.0 set in setUp)
+
+        async def run():
+            await _build_snapshot(self.state)  # cold cache → queries run
+            await _build_snapshot(self.state)  # hot cache → queries skipped
+
+        asyncio.run(run())
+        # Each history query should have been called exactly once despite two builds
+        self.assertEqual(
+            call_counts["downloads"],
+            1,
+            "get_recent_downloads called more than once within TTL",
+        )
+        self.assertEqual(
+            call_counts["activity"],
+            1,
+            "get_recent_activity called more than once within TTL",
+        )

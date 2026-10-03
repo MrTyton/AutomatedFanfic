@@ -21,6 +21,18 @@ _connections: set[WebSocket] = set()
 _BROADCAST_MIN_INTERVAL: float = 0.1
 _last_broadcast_time: float = 0.0
 
+# Shared background snapshot task state
+_latest_snapshot: dict | None = None
+_bg_task: asyncio.Task | None = None  # type: ignore[type-arg]
+
+# TTL cache for expensive historical DB queries (recent_downloads, recent_activity)
+_HISTORY_CACHE_TTL: float = 10.0
+_history_cache: dict[str, Any] = {
+    "recent_downloads": [],
+    "recent_activity": [],
+    "expires_at": 0.0,
+}
+
 
 async def _build_snapshot(state: Any) -> dict:
     """Build a JSON-serialisable dashboard snapshot from WebState."""
@@ -124,20 +136,29 @@ async def _build_snapshot(state: Any) -> dict:
     else:
         snapshot["processes"] = {}
 
-    # ── Recent history events (separate feeds) ─────────────────
+    # ── Recent history events (separate feeds, TTL-cached) ─────
+    # get_recent_downloads and get_recent_activity return historical records that
+    # rarely change more than once every few seconds. Cache them for
+    # _HISTORY_CACHE_TTL seconds to avoid hammering SQLite every snapshot cycle.
+    # get_waiting_urls() is NOT cached – it reflects live retry-backoff state.
     if state.history_db is not None:
-        try:
-            snapshot["recent_downloads"] = await state.history_db.get_recent_downloads(
-                limit=20
-            )
-        except Exception:
-            snapshot["recent_downloads"] = []
-        try:
-            snapshot["recent_activity"] = await state.history_db.get_recent_activity(
-                limit=20
-            )
-        except Exception:
-            snapshot["recent_activity"] = []
+        now_ts = snapshot["timestamp"]
+        if now_ts >= _history_cache["expires_at"]:
+            try:
+                _history_cache[
+                    "recent_downloads"
+                ] = await state.history_db.get_recent_downloads(limit=20)
+            except Exception:
+                _history_cache["recent_downloads"] = []
+            try:
+                _history_cache[
+                    "recent_activity"
+                ] = await state.history_db.get_recent_activity(limit=20)
+            except Exception:
+                _history_cache["recent_activity"] = []
+            _history_cache["expires_at"] = now_ts + _HISTORY_CACHE_TTL
+        snapshot["recent_downloads"] = _history_cache["recent_downloads"]
+        snapshot["recent_activity"] = _history_cache["recent_activity"]
     else:
         snapshot["recent_downloads"] = []
         snapshot["recent_activity"] = []
