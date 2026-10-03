@@ -166,19 +166,71 @@ async def _build_snapshot(state: Any) -> dict:
     return snapshot
 
 
+async def _build_and_push_snapshot(state: Any) -> dict:
+    """Build one snapshot and push it to every connected client.
+
+    Dead connections (those that raise on send) are removed from ``_connections``.
+    Returns the snapshot dict (also stored in ``_latest_snapshot``).
+    """
+    global _latest_snapshot
+    snapshot = await _build_snapshot(state)
+    _latest_snapshot = snapshot
+    dead: set[WebSocket] = set()
+    for ws in list(_connections):
+        try:
+            await ws.send_json(snapshot)
+        except Exception:
+            dead.add(ws)
+    _connections.difference_update(dead)
+    return snapshot
+
+
+async def _snapshot_loop(state: Any) -> None:
+    """Background task: build and push one snapshot per second indefinitely."""
+    while True:
+        try:
+            await _build_and_push_snapshot(state)
+        except Exception:
+            pass
+        await asyncio.sleep(1)
+
+
+def _ensure_snapshot_task(state: Any) -> None:
+    """Start the shared background snapshot task if it is not already running."""
+    global _bg_task
+    if _bg_task is None or _bg_task.done():
+        _bg_task = asyncio.get_running_loop().create_task(_snapshot_loop(state))
+
+
 @router.websocket("/ws/dashboard")
 async def dashboard_websocket(websocket: WebSocket):
-    """Accept a WebSocket connection and push periodic state snapshots."""
+    """Accept a WebSocket connection and stream periodic state snapshots.
+
+    A single shared background task (``_snapshot_loop``) builds one snapshot
+    per second and pushes it to all connected clients.  This handler registers
+    the client, sends the most-recent snapshot immediately (if one exists), then
+    simply waits for the client to disconnect.
+    """
     await websocket.accept()
     _connections.add(websocket)
 
     state = websocket.app.state.web_state
+    _ensure_snapshot_task(state)
+
+    # Deliver the cached snapshot immediately so the client gets data right away
+    # without waiting for the next background-task cycle.
+    if _latest_snapshot is not None:
+        try:
+            await websocket.send_json(_latest_snapshot)
+        except Exception:
+            _connections.discard(websocket)
+            return
 
     try:
+        # Keep the connection alive; the background task handles all sends.
+        # websocket.receive() will raise WebSocketDisconnect when the client leaves.
         while True:
-            snapshot = await _build_snapshot(state)
-            await websocket.send_json(snapshot)
-            await asyncio.sleep(1)
+            await websocket.receive()
     except WebSocketDisconnect:
         pass
     except Exception:
