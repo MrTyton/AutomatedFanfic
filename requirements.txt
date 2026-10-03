@@ -17,7 +17,7 @@ pushbullet.py==0.12.0
 beautifulsoup4==4.15.0
 html2text==2025.4.15
 html5lib==1.1
-soupsieve==2.9.2
+soupsieve==2.10
 
 # Text encoding and character detection
 chardet==7.6.0
@@ -40,11 +40,11 @@ Brotli==1.2.0
 # Date/time handling and utilities
 python-dateutil==2.9.0.post0
 six==1.17.0
-pyparsing==3.3.2
+pyparsing==3.3.3
 
 # Web server and API
 fastapi==0.141.1
-uvicorn[standard]==0.53.0
+uvicorn[standard]==0.54.0
 websockets==17.1
 
 # Async SQLite for history database
