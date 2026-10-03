@@ -17,6 +17,10 @@ router = APIRouter()
 # Active WebSocket connections
 _connections: set[WebSocket] = set()
 
+# Minimum interval between event-driven broadcast() calls (seconds).
+_BROADCAST_MIN_INTERVAL: float = 0.1
+_last_broadcast_time: float = 0.0
+
 
 async def _build_snapshot(state: Any) -> dict:
     """Build a JSON-serialisable dashboard snapshot from WebState."""
@@ -170,9 +174,17 @@ async def dashboard_websocket(websocket: WebSocket):
 async def broadcast(message: dict) -> None:
     """Push a message to all connected WebSocket clients.
 
+    Calls arriving within _BROADCAST_MIN_INTERVAL of the previous broadcast
+    are silently dropped to prevent flooding clients with high-frequency events.
     Useful for event-driven pushes (e.g. download completed) on top of the
     periodic polling.
     """
+    global _last_broadcast_time
+    now = time.time()
+    if now - _last_broadcast_time < _BROADCAST_MIN_INTERVAL:
+        return
+    _last_broadcast_time = now
+
     dead: set[WebSocket] = set()
     data = json.dumps(message)
     for ws in _connections:

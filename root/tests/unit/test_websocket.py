@@ -113,3 +113,65 @@ class TestWebSocketDashboard(unittest.TestCase):
             self.assertEqual(data["processes"], {})
             self.assertEqual(data["recent_downloads"], [])
             self.assertEqual(data["recent_activity"], [])
+
+    def test_broadcast_throttle_drops_rapid_calls(self):
+        """broadcast() should silently drop a second call within 100 ms."""
+        import asyncio
+        import json
+        import web.routes.websocket as ws_module
+        from web.routes.websocket import broadcast, _connections
+
+        # Reset module state
+        ws_module._last_broadcast_time = 0.0
+
+        sent_payloads = []
+
+        class FakeWS:
+            client_state = None
+
+            async def send_text(self, data):
+                sent_payloads.append(data)
+
+        fake = FakeWS()
+        _connections.add(fake)
+        try:
+
+            async def run():
+                await broadcast({"event": "first"})
+                # Immediately call again — should be throttled (no sleep between calls)
+                await broadcast({"event": "second"})
+
+            asyncio.get_event_loop().run_until_complete(run())
+            # Only the first message should have been delivered
+            self.assertEqual(len(sent_payloads), 1)
+            self.assertEqual(json.loads(sent_payloads[0])["event"], "first")
+        finally:
+            _connections.discard(fake)
+            ws_module._last_broadcast_time = 0.0
+
+    def test_broadcast_allows_call_after_interval(self):
+        """broadcast() should allow a call when last broadcast was 200+ ms ago."""
+        import asyncio
+        import time
+        import web.routes.websocket as ws_module
+        from web.routes.websocket import broadcast, _connections
+
+        # Pretend last broadcast was 200 ms ago (past the 100 ms window)
+        ws_module._last_broadcast_time = time.time() - 0.2
+
+        sent_payloads = []
+
+        class FakeWS:
+            client_state = None
+
+            async def send_text(self, data):
+                sent_payloads.append(data)
+
+        fake = FakeWS()
+        _connections.add(fake)
+        try:
+            asyncio.get_event_loop().run_until_complete(broadcast({"event": "ok"}))
+            self.assertEqual(len(sent_payloads), 1)
+        finally:
+            _connections.discard(fake)
+            ws_module._last_broadcast_time = 0.0
