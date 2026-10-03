@@ -109,6 +109,8 @@ class SyncHistoryDB:
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute("PRAGMA cache_size=-65536")  # 64 MB page cache
         self._conn.executescript(_SCHEMA)
         # Migrate: add updated_at if missing (existing databases)
         try:
@@ -330,6 +332,8 @@ class AsyncHistoryDB:
         await conn.execute("PRAGMA busy_timeout=5000")
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA foreign_keys=ON")
+        await conn.execute("PRAGMA synchronous=NORMAL")
+        await conn.execute("PRAGMA cache_size=-65536")  # 64 MB page cache
         return conn
 
     async def ensure_schema(self) -> None:
