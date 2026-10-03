@@ -141,7 +141,7 @@ class TestWebSocketDashboard(unittest.TestCase):
                 # Immediately call again — should be throttled (no sleep between calls)
                 await broadcast({"event": "second"})
 
-            asyncio.get_event_loop().run_until_complete(run())
+            asyncio.run(run())
             # Only the first message should have been delivered
             self.assertEqual(len(sent_payloads), 1)
             self.assertEqual(json.loads(sent_payloads[0])["event"], "first")
@@ -170,7 +170,7 @@ class TestWebSocketDashboard(unittest.TestCase):
         fake = FakeWS()
         _connections.add(fake)
         try:
-            asyncio.get_event_loop().run_until_complete(broadcast({"event": "ok"}))
+            asyncio.run(broadcast({"event": "ok"}))
             self.assertEqual(len(sent_payloads), 1)
         finally:
             _connections.discard(fake)
