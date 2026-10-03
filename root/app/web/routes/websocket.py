@@ -61,36 +61,32 @@ async def _build_snapshot(state: Any) -> dict:
         except Exception:
             pass
 
-    # Separate into: truly processing (worker thread active), queued (accepted but not yet dispatched), and waiting (retry backoff)
-    active_urls_list = [
-        {"url": u, **url_metadata.get(u, {})}
-        for u in urls
-        if u not in waiting_url_map
-        and url_metadata.get(u, {}).get("status") == "processing"
-    ]
-    queued_urls = [
-        {"url": u, **url_metadata.get(u, {})}
-        for u in urls
-        if u not in waiting_url_map
-        and url_metadata.get(u, {}).get("status") != "processing"
-    ]
-    waiting_urls = [
-        {
-            "url": u,
-            "updated_at": waiting_url_map.get(u, {}).get("updated_at", ""),
-            "site": url_metadata.get(u, {}).get("site")
-            or waiting_url_map.get(u, {}).get("site"),
-            "title": url_metadata.get(u, {}).get("title")
-            or waiting_url_map.get(u, {}).get("title"),
-            "calibre_id": url_metadata.get(u, {}).get("calibre_id")
-            or waiting_url_map.get(u, {}).get("calibre_id"),
-            "error_message": url_metadata.get(u, {}).get("error_message")
-            or waiting_url_map.get(u, {}).get("error_message"),
-            **url_metadata.get(u, {}),
-        }
-        for u in urls
-        if u in waiting_url_map
-    ]
+    # Separate into: truly processing (worker thread active), queued (accepted but not
+    # yet dispatched), and waiting (retry backoff).
+    # Single pass: cache per-URL dict lookups to avoid redundant .get() calls.
+    active_urls_list: list[dict] = []
+    queued_urls: list[dict] = []
+    waiting_urls: list[dict] = []
+    for u in urls:
+        meta = url_metadata.get(u, {})
+        if u in waiting_url_map:
+            w_meta = waiting_url_map[u]
+            waiting_urls.append(
+                {
+                    "url": u,
+                    "updated_at": w_meta.get("updated_at", ""),
+                    "site": meta.get("site") or w_meta.get("site"),
+                    "title": meta.get("title") or w_meta.get("title"),
+                    "calibre_id": meta.get("calibre_id") or w_meta.get("calibre_id"),
+                    "error_message": meta.get("error_message")
+                    or w_meta.get("error_message"),
+                    **meta,
+                }
+            )
+        elif meta.get("status") == "processing":
+            active_urls_list.append({"url": u, **meta})
+        else:
+            queued_urls.append({"url": u, **meta})
 
     snapshot["active_downloads"] = {
         "items": active_urls_list,
