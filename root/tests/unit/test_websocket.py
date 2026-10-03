@@ -223,3 +223,50 @@ class TestWebSocketDashboard(unittest.TestCase):
             1,
             "get_recent_activity called more than once within TTL",
         )
+
+    def test_build_and_push_snapshot_sends_to_all_clients(self):
+        """_build_and_push_snapshot should push identical snapshot to every connection."""
+        from web.routes.websocket import _build_and_push_snapshot, _connections
+
+        sent: dict[int, list] = {1: [], 2: []}
+
+        class FakeWS:
+            def __init__(self, n: int) -> None:
+                self.n = n
+
+            async def send_json(self, data: dict) -> None:
+                sent[self.n].append(data)
+
+        fake1, fake2 = FakeWS(1), FakeWS(2)
+        _connections.add(fake1)
+        _connections.add(fake2)
+        try:
+            asyncio.run(_build_and_push_snapshot(self.state))
+            # Both clients should have received exactly one snapshot
+            self.assertEqual(len(sent[1]), 1)
+            self.assertEqual(len(sent[2]), 1)
+            # Snapshots must be identical (same object built once)
+            self.assertEqual(sent[1][0]["timestamp"], sent[2][0]["timestamp"])
+            self.assertIn("active_downloads", sent[1][0])
+        finally:
+            _connections.discard(fake1)
+            _connections.discard(fake2)
+            ws_module._latest_snapshot = None
+
+    def test_build_and_push_snapshot_removes_dead_connections(self):
+        """_build_and_push_snapshot should drop connections that raise on send."""
+        from web.routes.websocket import _build_and_push_snapshot, _connections
+
+        class DeadWS:
+            async def send_json(self, data: dict) -> None:
+                raise RuntimeError("connection closed")
+
+        dead = DeadWS()
+        _connections.add(dead)
+        try:
+            asyncio.run(_build_and_push_snapshot(self.state))
+            # Dead connection should have been removed
+            self.assertNotIn(dead, _connections)
+        finally:
+            _connections.discard(dead)
+            ws_module._latest_snapshot = None
