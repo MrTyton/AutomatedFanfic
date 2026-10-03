@@ -344,7 +344,16 @@ async def cancel_retry(request: Request, body: QueueActionRequest):
         for candidate in candidate_urls:
             _dequeue_matching_fics(queue_obj, candidate)
 
-    _remove_from_active_url_candidates(state, candidate_urls)
+    # Force-remove from active_urls regardless of processing status — the URL is
+    # in the retry/waiting queue, not actively being worked on, so any stale
+    # "processing" status in active_urls should be cleared on cancellation.
+    if state.active_urls is not None:
+        for candidate in candidate_urls:
+            try:
+                if candidate in state.active_urls:
+                    del state.active_urls[candidate]
+            except Exception:
+                pass
 
     if state.history_recorder:
         state.history_recorder.record_download_abandoned(

@@ -864,7 +864,9 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_get_path.return_value = "test_file.epub"
         mock_construct_cmd.return_value = "fanficfare command"
         mock_execute.return_value = "output with failure indicators"
-        mock_check_failure.return_value = False  # Failure detected
+        mock_check_failure.return_value = (
+            "FanFicFare reported a permanent failure condition."  # Failure detected
+        )
 
         # Create retry config for testing
         retry_config = config_models.RetryConfig(
@@ -922,7 +924,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_get_path.return_value = "test_file.epub"
         mock_construct_cmd.return_value = "fanficfare command"
         mock_execute.return_value = "output with forceable condition"
-        mock_check_failure.return_value = True  # No permanent failure
+        mock_check_failure.return_value = None  # No permanent failure
         mock_check_forceable.return_value = True  # Force retry needed
 
         # Create retry config for testing
@@ -977,7 +979,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_get_path.return_value = "test_file.epub"
         mock_construct_cmd.return_value = "fanficfare command"
         mock_execute.return_value = "successful output"
-        mock_check_failure.return_value = True  # No failure
+        mock_check_failure.return_value = None  # No failure
         mock_check_forceable.return_value = False  # No force needed
 
         # Create retry config for testing
@@ -1831,7 +1833,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         mock_get_path.return_value = "https://archiveofourown.org/works/1"
         mock_construct_cmd.return_value = ["fanficfare", "command"]
         mock_execute.return_value = "successful output"
-        mock_check_failure.return_value = True  # No failure
+        mock_check_failure.return_value = None  # No failure
         mock_check_forceable.return_value = False  # No force needed
 
         # Run worker
@@ -1923,7 +1925,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         mock_get_path.return_value = "https://test.com/story"
         mock_construct_cmd.return_value = ["fanficfare", "command"]
         mock_execute.return_value = "successful output"
-        mock_check_failure.return_value = True
+        mock_check_failure.return_value = None
         mock_check_forceable.return_value = False
 
         # Run worker

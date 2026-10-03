@@ -90,48 +90,39 @@ class TestRegexParsing(unittest.TestCase):
 
     class CheckRegexFailuresTestCase(NamedTuple):
         output: str
-        expected: bool
-        message: Optional[str]
+        expected: Optional[str]  # None = success; string = the specific failure message
 
     @parameterized.expand(
         [
             # Test case: Output contains 5 chapters, expected failure, with a specific message
             CheckRegexFailuresTestCase(
                 output="test output already contains 5 chapters.",
-                expected=False,
-                message="Issue with story, site is broken. Story likely hasn't updated on site yet.",
+                expected="Issue with story, site is broken. Story likely hasn't updated on site yet.",
             ),
             # Test case: Output doesn't contain any recognizable chapters, expected failure, with a specific message
             CheckRegexFailuresTestCase(
                 output="test output doesn't contain any recognizable chapters, probably from a different source.  Not updating.",
-                expected=False,
-                message="Something is messed up with the site or the epub. No chapters found.",
+                expected="Something is messed up with the site or the epub. No chapters found.",
             ),
-            # Test case: Generic output, expected success, no specific message
-            CheckRegexFailuresTestCase(
-                output="test output", expected=True, message=None
-            ),
+            # Test case: Generic output, expected success (None)
+            CheckRegexFailuresTestCase(output="test output", expected=None),
             # Test case: 403 only in STDERR section (e.g. cover image load) - should NOT trigger failure
             CheckRegexFailuresTestCase(
                 output="Updating story.epub, URL: https://www.royalroad.com/fiction/15935\nDo update - epub(261) vs url(262)\nSTDERR:\nFFF: INFO: story.py(1757): Failed to load or convert image,\nskipping:https://www.royalroadcdn.com/public/covers-large/15935.jpg\nException: HTTP Error in FFF '403 Client Error: Forbidden for url: https://www.royalroadcdn.com/public/covers-large/15935.jpg'(403)",
-                expected=True,
-                message=None,
+                expected=None,
             ),
             # Test case: 403 in stdout - should trigger failure
             CheckRegexFailuresTestCase(
                 output="403 Client Error: Forbidden for url: https://www.royalroad.com/fiction/15935",
-                expected=False,
-                message="Forbidden client. Check the URL. If this is ff.net, check that you have Flaresolverr installed, or cry.",
+                expected="Forbidden client. Check the URL. If this is ff.net, check that you have Flaresolverr installed, or cry.",
             ),
         ]
     )
     @patch("parsers.regex_parsing.ff_logging.log_failure")
-    def test_check_failure_regexes(
-        self, input, expected, log_message, mock_log_failure
-    ):
+    def test_check_failure_regexes(self, input, expected, mock_log_failure):
         self.assertEqual(regex_parsing.check_failure_regexes(input), expected)
-        if log_message:
-            mock_log_failure.assert_called_once_with(log_message)
+        if expected:
+            mock_log_failure.assert_called_once_with(expected)
         else:
             mock_log_failure.assert_not_called()
 
