@@ -190,7 +190,8 @@ def _process_task(
             return handlers.check_active_removal(fanfic)
 
         # 4. Check outputs for permanent failure indications
-        if not regex_parsing.check_failure_regexes(output):
+        failure_message = regex_parsing.check_failure_regexes(output)
+        if failure_message is not None:
             handlers.handle_failure(
                 fanfic,
                 notification_info,
@@ -198,7 +199,7 @@ def _process_task(
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
-                error_message="FanFicFare reported a permanent failure condition.",
+                error_message=failure_message,
             )
             return handlers.check_active_removal(fanfic)
 

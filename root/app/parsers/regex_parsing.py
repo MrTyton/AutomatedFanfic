@@ -60,6 +60,7 @@ Note:
 
 from pathlib import Path
 import re
+from typing import Optional
 from models import fanfic_info
 from utils import ff_logging
 
@@ -165,7 +166,7 @@ def check_regexes(output: str, regex: re.Pattern, message: str) -> bool:
     return False
 
 
-def check_failure_regexes(output: str) -> bool:
+def check_failure_regexes(output: str) -> Optional[str]:
     """
     Test FanFicFare output for permanent failure conditions.
 
@@ -177,8 +178,8 @@ def check_failure_regexes(output: str) -> bool:
         output: The complete text output from a FanFicFare command execution
 
     Returns:
-        bool: True if NO failure patterns were detected (success case),
-              False if any permanent failure pattern was found
+        Optional[str]: None if NO failure patterns were detected (success case),
+                       or the specific failure message string if a failure was found
 
     Failure Categories Detected:
         - Chapter mismatch errors (story already contains X chapters)
@@ -239,10 +240,11 @@ def check_failure_regexes(output: str) -> bool:
         ),
     ]
 
-    # Return True if NO failures detected (success case)
-    return not any(
-        check_regexes(stdout_only, regex, message) for regex, message in failure_regexes
-    )
+    # Return the specific failure message, or None if no failures detected
+    for regex, message in failure_regexes:
+        if check_regexes(stdout_only, regex, message):
+            return message
+    return None
 
 
 def check_forceable_regexes(output: str) -> bool:
