@@ -232,6 +232,16 @@ class TestSyncHistoryDB(unittest.TestCase):
         self.db.close()
         self.db.connect()
 
+    def test_sync_db_synchronous_pragma(self):
+        """PRAGMA synchronous should be NORMAL (1)."""
+        row = self.db._conn.execute("PRAGMA synchronous").fetchone()
+        self.assertEqual(row[0], 1)  # 0=OFF, 1=NORMAL, 2=FULL
+
+    def test_sync_db_cache_size_pragma(self):
+        """PRAGMA cache_size should be -65536 (64 MB)."""
+        row = self.db._conn.execute("PRAGMA cache_size").fetchone()
+        self.assertEqual(row[0], -65536)
+
 
 class TestAsyncHistoryDB(unittest.TestCase):
     """Tests for the async reader used by the FastAPI web server."""
@@ -444,3 +454,33 @@ class TestAsyncHistoryDB(unittest.TestCase):
     def test_ensure_schema_idempotent(self):
         self._run(self.async_db.ensure_schema())
         self._run(self.async_db.ensure_schema())
+
+    def test_async_db_synchronous_pragma(self):
+        """PRAGMA synchronous should be NORMAL for async connection."""
+
+        async def _inner():
+            conn = await self.async_db._get_conn()
+            try:
+                async with conn.execute("PRAGMA synchronous") as cur:
+                    row = await cur.fetchone()
+                return row[0]
+            finally:
+                await conn.close()
+
+        result = self._run(_inner())
+        self.assertEqual(result, 1)  # 0=OFF, 1=NORMAL, 2=FULL
+
+    def test_async_db_cache_size_pragma(self):
+        """PRAGMA cache_size should be -65536 for async connection."""
+
+        async def _inner():
+            conn = await self.async_db._get_conn()
+            try:
+                async with conn.execute("PRAGMA cache_size") as cur:
+                    row = await cur.fetchone()
+                return row[0]
+            finally:
+                await conn.close()
+
+        result = self._run(_inner())
+        self.assertEqual(result, -65536)
