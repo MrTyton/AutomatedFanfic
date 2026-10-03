@@ -233,7 +233,7 @@ def register_processes(
     notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
 
     # Initialize history recording infrastructure
-    history_queue = manager.Queue()
+    history_queue = manager.Queue(maxsize=10000)
     history_recorder = HistoryRecorder(history_queue)
     history_db_path = config.web.history_db_path if config.web.enabled else None
 
