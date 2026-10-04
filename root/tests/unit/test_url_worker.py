@@ -1,6 +1,5 @@
 import unittest
 import unittest.mock
-import subprocess
 from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
@@ -661,19 +660,17 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
     @patch("workers.pipeline.config_models.ConfigManager.load_config")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
     @patch("workers.pipeline.ff_logging.log")
     @patch("workers.handlers.handle_failure")
     def test_url_worker_force_update_no_force_exception(
         self,
         mock_handle_failure,
         mock_log,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_load_config,
     ):
-        """Test exception handling for force request with update_no_force configuration."""
+        """Test early-return for force request with update_no_force configuration."""
         # Set up fanfic that requests force with update_no_force config
         self.test_fanfic.behavior = "force"
         self.mock_cdb.update_method = "update_no_force"
@@ -690,7 +687,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Set up temp directory and basic processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = ["fanficfare", "command"]
 
         # Mock logging failure to capture the specific error message
         with patch("utils.ff_logging.log_failure") as mock_log_failure:
@@ -707,9 +703,9 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     None,  # active_urls
                 )
 
-            # Verify that exception was triggered and failure handler called
+            # Verify failure handler called with the right error message
             mock_log_failure.assert_called_once_with(
-                "\t(test_site) Failed to update test_file.epub: Force update requested but update method is 'update_no_force'"
+                "(test_site) Force update requested but update method is 'update_no_force'"
             )
             mock_handle_failure.assert_called_once_with(
                 self.test_fanfic,
@@ -721,31 +717,31 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 error_message="Force update requested but update method is 'update_no_force'",
             )
 
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
     @patch("workers.pipeline.ff_logging.log")
     @patch("workers.handlers.handle_failure")
     def test_url_worker_execute_command_exception(
         self,
         mock_handle_failure,
         mock_log,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_execute,
     ):
-        """Test exception handling when execute_command fails."""
+        """Test failure handling when execute_fanficfare_direct returns a failure result."""
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
         self.mock_queue.get.side_effect = [self.test_fanfic, KeyboardInterrupt]
 
-        # Set up temp directory and processing until execute_command
+        # Set up temp directory and processing until execute_fanficfare_direct
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = ["fanficfare", "command"]
-        mock_execute.side_effect = Exception("Command execution failed")
+        fff_result = command.FanFicFareResult(
+            failure_messages=["Command execution failed"]
+        )
+        mock_execute.return_value = fff_result
 
         # Create retry config for testing
         retry_config = config_models.RetryConfig(
@@ -767,8 +763,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                     None,  # active_urls
                 )
 
-            # Verify that exception was caught and failure handler called
-
+            # Verify that failure handler called with the message
             mock_log_failure.assert_any_call(
                 "\t(test_site) Failed to update test_file.epub: Command execution failed"
             )
@@ -782,39 +777,29 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 error_message="Command execution failed",
             )
 
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
     @patch("workers.pipeline.ff_logging.log")
     @patch("workers.handlers.handle_failure")
     def test_url_worker_uses_fanfare_fault_details_in_failure_message(
         self,
         mock_handle_failure,
         mock_log,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_execute,
     ):
-        """FanFicFare traceback output should survive the CalledProcessError wrapper."""
+        """Failure message returned by execute_fanficfare_direct should reach handle_failure."""
         self.mock_queue.get.side_effect = [self.test_fanfic, KeyboardInterrupt]
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = ["fanficfare", "command"]
 
-        stderr = (
-            "Traceback (most recent call last):\n"
-            '  File "/tmp/adapter.py", line 431, in getChapterText\n'
-            '    raise exceptions.FailedToDownload("Error downloading Chapter: https://example.com/! Missing required element!")\n'
-            "fanficfare.exceptions.FailedToDownload: Error downloading Chapter: https://example.com/! Missing required element!"
+        error_text = (
+            "Error downloading Chapter: https://example.com/! Missing required element!"
         )
-        mock_execute.side_effect = subprocess.CalledProcessError(
-            returncode=1,
-            cmd=["fanficfare", "command"],
-            output="stdout was captured\n",
-            stderr=stderr,
-        )
+        fff_result = command.FanFicFareResult(failure_messages=[error_text])
+        mock_execute.return_value = fff_result
 
         retry_config = config_models.RetryConfig(
             hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
@@ -835,46 +820,37 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         _, kwargs = mock_handle_failure.call_args
         self.assertIn("Missing required element!", kwargs["error_message"])
-        self.assertNotIn("returned non-zero exit status 1", kwargs["error_message"])
 
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
-    @patch("workers.pipeline.regex_parsing.check_failure_regexes")
     @patch("workers.pipeline.ff_logging.log")
     @patch("workers.handlers.handle_failure")
     def test_url_worker_failure_regex_detection(
         self,
         mock_handle_failure,
         mock_log,
-        mock_check_failure,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_execute,
     ):
-        """Test failure detection via regex parsing."""
+        """Test failure detection via FanFicFareResult failure messages."""
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
         self.mock_queue.get.side_effect = [self.test_fanfic, KeyboardInterrupt]
 
-        # Set up successful execution but failure regex detection
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = "fanficfare command"
-        mock_execute.return_value = "output with failure indicators"
-        mock_check_failure.return_value = (
-            "FanFicFare reported a permanent failure condition."  # Failure detected
+        fff_result = command.FanFicFareResult(
+            failure_messages=["FanFicFare reported a permanent failure condition."]
         )
+        mock_execute.return_value = fff_result
 
         # Create retry config for testing
         retry_config = config_models.RetryConfig(
             hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
         )
 
-        # Run worker - will exit with KeyboardInterrupt after processing
-        # Run worker - will exit with KeyboardInterrupt after processing
         pipeline.url_worker(
             self.mock_queue,
             self.mock_client,
@@ -886,7 +862,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             None,  # active_urls
         )
 
-        # Verify failure handler was called due to regex detection
+        # Verify failure handler was called
         mock_handle_failure.assert_called_once_with(
             self.test_fanfic,
             self.mock_notification_info,
@@ -897,43 +873,32 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             error_message="FanFicFare reported a permanent failure condition.",
         )
 
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
-    @patch("workers.pipeline.regex_parsing.check_failure_regexes")
-    @patch("workers.pipeline.regex_parsing.check_forceable_regexes")
     @patch("workers.pipeline.ff_logging.log")
     def test_url_worker_force_retry_logic(
         self,
         mock_log,
-        mock_check_forceable,
-        mock_check_failure,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_execute,
     ):
-        """Test force retry logic when forceable conditions are detected."""
+        """Test force retry logic when execute_fanficfare_direct returns forceable result."""
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
         self.mock_queue.get.side_effect = [self.test_fanfic, KeyboardInterrupt]
 
-        # Set up successful execution with forceable condition
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = "fanficfare command"
-        mock_execute.return_value = "output with forceable condition"
-        mock_check_failure.return_value = None  # No permanent failure
-        mock_check_forceable.return_value = True  # Force retry needed
+        fff_result = command.FanFicFareResult(forceable_messages=["chapter difference"])
+        mock_execute.return_value = fff_result
 
         # Create retry config for testing
         retry_config = config_models.RetryConfig(
             hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
         )
 
-        # Run worker - will exit with KeyboardInterrupt after processing
-        # Run worker - will exit with KeyboardInterrupt after processing
         pipeline.url_worker(
             self.mock_queue,
             self.mock_client,
@@ -947,23 +912,16 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         # Verify fanfic was re-queued with force behavior
         self.assertEqual(self.test_fanfic.behavior, "force")
-        # Use assert_any_call because WORKER_IDLE might also be sent
         self.mock_ingress_queue.put.assert_any_call(self.test_fanfic)
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
-    @patch("workers.pipeline.regex_parsing.check_failure_regexes")
-    @patch("workers.pipeline.regex_parsing.check_forceable_regexes")
     @patch("workers.pipeline.ff_logging.log")
     def test_url_worker_successful_processing(
         self,
         mock_log,
-        mock_check_forceable,
-        mock_check_failure,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_execute,
@@ -977,10 +935,8 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Set up successful processing path
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        mock_construct_cmd.return_value = "fanficfare command"
-        mock_execute.return_value = "successful output"
-        mock_check_failure.return_value = None  # No failure
-        mock_check_forceable.return_value = False  # No force needed
+        # Return a clean FanFicFareResult (no failures, no forceable conditions)
+        mock_execute.return_value = command.FanFicFareResult()
 
         # Create retry config for testing
         retry_config = config_models.RetryConfig(
@@ -1783,17 +1739,11 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         )
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
-    @patch("workers.pipeline.regex_parsing.check_failure_regexes")
-    @patch("workers.pipeline.regex_parsing.check_forceable_regexes")
     def test_worker_signals_idle_only_when_queue_empty(
         self,
-        mock_check_forceable,
-        mock_check_failure,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_execute,
@@ -1831,10 +1781,9 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing path
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://archiveofourown.org/works/1"
-        mock_construct_cmd.return_value = ["fanficfare", "command"]
-        mock_execute.return_value = "successful output"
-        mock_check_failure.return_value = None  # No failure
-        mock_check_forceable.return_value = False  # No force needed
+        from workers.command import FanFicFareResult
+
+        mock_execute.return_value = FanFicFareResult()
 
         # Run worker
         pipeline.url_worker(
@@ -1874,17 +1823,11 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.assertEqual(mock_process_addition.call_count, 3)
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
-    @patch("workers.pipeline.regex_parsing.check_failure_regexes")
-    @patch("workers.pipeline.regex_parsing.check_forceable_regexes")
     def test_worker_signals_idle_for_different_sites(
         self,
-        mock_check_forceable,
-        mock_check_failure,
-        mock_construct_cmd,
         mock_get_path,
         mock_temp_dir,
         mock_execute,
@@ -1923,10 +1866,9 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://test.com/story"
-        mock_construct_cmd.return_value = ["fanficfare", "command"]
-        mock_execute.return_value = "successful output"
-        mock_check_failure.return_value = None
-        mock_check_forceable.return_value = False
+        from workers.command import FanFicFareResult
+
+        mock_execute.return_value = FanFicFareResult()
 
         # Run worker
         pipeline.url_worker(

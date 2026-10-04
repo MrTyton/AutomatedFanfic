@@ -128,6 +128,49 @@ def extract_filename(filename: str) -> str:
     return match.group(1).strip() if match else basenamed_filepath.strip()
 
 
+def check_failure_from_message(msg: str) -> bool:
+    """
+    Test a single message string against permanent failure patterns.
+
+    Used by the FanFicFare direct API integration to classify individual
+    warn/fail callback messages and captured stdout lines without needing
+    the full concatenated output string.
+
+    Args:
+        msg: A single message string to test.
+
+    Returns:
+        bool: True if the message matches any permanent failure pattern.
+    """
+    failure_patterns = [
+        equal_chapters,
+        bad_chapters,
+        no_url,
+        failed_login,
+        bad_request,
+        forbidden_client,
+        flaresolverr,
+    ]
+    return any(p.search(msg) for p in failure_patterns)
+
+
+def check_forceable_from_message(msg: str) -> bool:
+    """
+    Test a single message string against forceable (force-retry) patterns.
+
+    Used by the FanFicFare direct API integration to classify individual
+    warn callback messages.
+
+    Args:
+        msg: A single message string to test.
+
+    Returns:
+        bool: True if the message matches any forceable condition pattern.
+    """
+    forceable_patterns = [chapter_difference, more_chapters]
+    return any(p.search(msg) for p in forceable_patterns)
+
+
 def check_regexes(output: str, regex: re.Pattern, message: str) -> bool:
     """
     Test output against a regex pattern and log a failure message if matched.
