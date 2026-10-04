@@ -196,7 +196,7 @@ def execute_fanficfare_direct(
     # Parse argv-equivalent flags through FanFicFare's own option parser so
     # all defaults and validation logic are applied correctly.
     argv = _build_argv(cdb, fanfic)
-    parser = mkParser()
+    parser = mkParser(calibre=False)
     options, _ = parser.parse_args(argv)
     expandOptions(options)
 
@@ -267,24 +267,11 @@ def _build_argv(
 
 
 def get_fanficfare_version() -> str:
-    """Get the FanFicFare version by running python -m fanficfare.cli --version.
-
-    Returns:
-        str: FanFicFare version string or error message if unavailable.
-    """
+    """Return the installed FanFicFare version via importlib.metadata."""
     try:
-        # Use simple list args for safer execution
-        cmd = [sys.executable, "-m", "fanficfare.cli", "--version"]
-        version_output = execute_command(cmd)
+        from importlib.metadata import version as pkg_version
 
-        # Try to find version number pattern
-        import re
-
-        match = re.search(r"(\d+\.\d+\.\d+)", version_output)
-        if match:
-            return match.group(1)
-
-        return version_output.strip()
+        return pkg_version("fanficfare")
     except Exception as e:
         ff_logging.log(f"Failed to get FanFicFare version: {e}", "WARNING")
         return f"Error: {e}"
