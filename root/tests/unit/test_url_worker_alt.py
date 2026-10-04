@@ -333,11 +333,38 @@ class TestBuildArgvWithRealFanFicFareParser(unittest.TestCase):
         If FanFicFare renames or removes 'warn', 'fail', 'passed_defaultsini',
         or 'passed_personalini', this test will fail immediately rather than
         surfacing as a runtime error.
+
+        FanFicFare >=4.62.2 wraps do_download with @do_cprofile, a profiling
+        decorator that does NOT use functools.wraps.  inspect.signature() then
+        sees (*args, **kwargs) on the wrapper.  We walk the closure chain to
+        reach the underlying function before inspecting its parameters.
         """
         import inspect
         from fanficfare.cli import do_download
 
-        params = inspect.signature(do_download).parameters
+        # Unwrap any profiling/decorator closures that hide the real signature.
+        fn = do_download
+        seen: set[int] = set()
+        while fn.__closure__ and id(fn) not in seen:
+            seen.add(id(fn))
+            for cell in fn.__closure__:
+                try:
+                    inner = cell.cell_contents
+                    if callable(inner) and inner is not fn:
+                        sig = inspect.signature(inner)
+                        # If the inner function has explicit params, use it.
+                        if not all(
+                            p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+                            for p in sig.parameters.values()
+                        ):
+                            fn = inner
+                        break
+                except ValueError:
+                    pass
+            else:
+                break
+
+        params = inspect.signature(fn).parameters
         for name in ("warn", "fail", "passed_defaultsini", "passed_personalini"):
             self.assertIn(
                 name,
