@@ -246,6 +246,107 @@ class TestBuildArgv(unittest.TestCase):
         self.assertNotIn("http://test.com/story", argv)
 
 
+class TestBuildArgvWithRealFanFicFareParser(unittest.TestCase):
+    """
+    Integration-level tests for _build_argv().
+
+    These tests feed _build_argv()'s output through the *real* FanFicFare
+    option parser (mkParser + expandOptions) so that signature changes in
+    FanFicFare internals are caught immediately rather than only at runtime.
+    The tests that mock mkParser in TestExecuteFanficfareDirect would not
+    catch a missing/renamed parameter — these tests will.
+    """
+
+    def setUp(self):
+        from fanficfare.cli import expandOptions, mkParser
+
+        self.mkParser = mkParser
+        self.expandOptions = expandOptions
+        self.mock_cdb = MagicMock(spec=CalibreInfo)
+        self.mock_fanfic = MagicMock(spec=FanficInfo)
+        self.mock_fanfic.behavior = None
+
+    def _parse(self, update_method, behavior=None):
+        """Helper: build argv, parse through real FFF, return options object."""
+        self.mock_cdb.update_method = update_method
+        self.mock_fanfic.behavior = behavior
+        argv = _build_argv(self.mock_cdb, self.mock_fanfic)
+        parser = self.mkParser(calibre=False)
+        options, _ = parser.parse_args(argv)
+        self.expandOptions(options)
+        return options
+
+    def test_mkparser_callable_with_calibre_false(self):
+        """mkParser(calibre=False) must not raise — catches missing-arg regressions."""
+        parser = self.mkParser(calibre=False)
+        self.assertIsNotNone(parser)
+
+    def test_update_sets_update_flag(self):
+        options = self._parse("update")
+        self.assertTrue(options.update)
+        self.assertFalse(getattr(options, "updatealways", False))
+        self.assertFalse(getattr(options, "force", False))
+
+    def test_update_always_sets_updatealways_flag(self):
+        options = self._parse("update_always")
+        self.assertTrue(options.updatealways)
+        # expandOptions sets update=True whenever updatealways=True
+        self.assertTrue(options.update)
+
+    def test_force_method_sets_force_flag(self):
+        options = self._parse("force")
+        self.assertTrue(options.update)
+        self.assertTrue(options.force)
+
+    def test_force_behavior_sets_force_flag(self):
+        options = self._parse("update", behavior="force")
+        self.assertTrue(options.update)
+        self.assertTrue(options.force)
+
+    def test_update_no_force_with_force_behavior_does_not_force(self):
+        options = self._parse("update_no_force", behavior="force")
+        self.assertTrue(options.update)
+        self.assertFalse(getattr(options, "force", False))
+
+    def test_update_cover_always_set(self):
+        options = self._parse("update")
+        self.assertTrue(options.updatecover)
+
+    def test_non_interactive_always_set(self):
+        options = self._parse("update")
+        self.assertFalse(options.interactive)
+
+    @patch("workers.command.ff_logging.is_verbose", return_value=True)
+    def test_verbose_sets_debug_flag(self, _mock):
+        options = self._parse("update")
+        self.assertTrue(options.debug)
+
+    @patch("workers.command.ff_logging.is_verbose", return_value=False)
+    def test_non_verbose_omits_debug_flag(self, _mock):
+        options = self._parse("update")
+        self.assertFalse(options.debug)
+
+    def test_do_download_has_expected_signature(self):
+        """
+        do_download must accept the exact kwargs we pass — catches FFF API changes.
+
+        If FanFicFare renames or removes 'warn', 'fail', 'passed_defaultsini',
+        or 'passed_personalini', this test will fail immediately rather than
+        surfacing as a runtime error.
+        """
+        import inspect
+        from fanficfare.cli import do_download
+
+        params = inspect.signature(do_download).parameters
+        for name in ("warn", "fail", "passed_defaultsini", "passed_personalini"):
+            self.assertIn(
+                name,
+                params,
+                f"do_download is missing expected parameter '{name}' — "
+                f"update execute_fanficfare_direct() to match the new FFF API",
+            )
+
+
 class TestFanFicFareResult(unittest.TestCase):
     """Tests for the FanFicFareResult dataclass."""
 
@@ -344,12 +445,14 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
 
         with patch("workers.command.ff_logging.is_verbose", return_value=False), patch(
             "fanficfare.cli.mkParser", return_value=mock_parser
-        ), patch("fanficfare.cli.expandOptions"), patch(
+        ) as mock_mk, patch("fanficfare.cli.expandOptions"), patch(
             "fanficfare.cli.do_download", side_effect=do_download_side_effect
         ):
-            return execute_fanficfare_direct(
+            result = execute_fanficfare_direct(
                 self.mock_cdb, self.mock_fanfic, "http://example.com/story/1", temp_dir
             )
+            mock_mk.assert_called_once_with(calibre=False)
+            return result
 
     def test_success_returns_empty_result(self):
         result = self._run_direct()

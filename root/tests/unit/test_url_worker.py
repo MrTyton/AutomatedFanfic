@@ -1131,105 +1131,33 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 class GetFanficfareVersionTestCase(unittest.TestCase):
     """Test cases for get_fanficfare_version function."""
 
-    @parameterized.expand(
-        [
-            (
-                "standard_version",
-                "Version: 4.48.7\n",
-                "4.48.7",
-            ),
-            (
-                "older_version",
-                "Version: 4.30.12\n",
-                "4.30.12",
-            ),
-            (
-                "minimal_version",
-                "Version: 3.0.0\n",
-                "3.0.0",
-            ),
-            (
-                "version_with_extra_whitespace",
-                "Version:    4.48.7   \n",
-                "4.48.7",
-            ),
-        ]
-    )
-    @patch("workers.command.execute_command")
-    def test_get_fanficfare_version_success(
-        self, name, mock_output, expected_version, mock_execute
-    ):
-        """Test successful FanFicFare version extraction with various output formats."""
-        mock_execute.return_value = mock_output
+    @patch("workers.command.ff_logging.log")
+    def test_get_fanficfare_version_success(self, _mock_log):
+        """get_fanficfare_version returns the installed package version string."""
+        with patch("importlib.metadata.version", return_value="4.48.7"):
+            result = command.get_fanficfare_version()
+        self.assertEqual(result, "4.48.7")
 
-        result = command.get_fanficfare_version()
-
-        self.assertEqual(result, expected_version)
-        mock_execute.assert_called_once_with(
-            [sys.executable, "-m", "fanficfare.cli", "--version"]
+    @patch("workers.command.ff_logging.log")
+    def test_get_fanficfare_version_error(self, mock_log):
+        """get_fanficfare_version returns an error string and logs when metadata lookup fails."""
+        exc = Exception("package not found")
+        with patch("importlib.metadata.version", side_effect=exc):
+            result = command.get_fanficfare_version()
+        self.assertEqual(result, "Error: package not found")
+        mock_log.assert_called_once_with(
+            "Failed to get FanFicFare version: package not found", "WARNING"
         )
 
-    @parameterized.expand(
-        [
-            (
-                "command_execution_error",
-                Exception("Command failed"),
-                "Error: Command failed",
-            ),
-            (
-                "subprocess_error",
-                Exception(
-                    "subprocess.CalledProcessError: Command 'python' returned non-zero exit status 1"
-                ),
-                "Error: subprocess.CalledProcessError: Command 'python' returned non-zero exit status 1",
-            ),
-        ]
-    )
-    @patch("workers.command.execute_command")
-    def test_get_fanficfare_version_errors(
-        self, name, mock_exception, expected_message, mock_execute
-    ):
-        """Test error handling for various failure scenarios."""
-        mock_execute.side_effect = mock_exception
+    def test_get_fanficfare_version_returns_real_version(self):
+        """Smoke test: get_fanficfare_version actually resolves against the installed FFF."""
 
         result = command.get_fanficfare_version()
-
-        self.assertEqual(result, expected_message)
-
-    @parameterized.expand(
-        [
-            (
-                "unexpected_format",
-                "Some unexpected output\n",
-                "Some unexpected output",
-            ),
-            (
-                "no_version_keyword",
-                "4.48.7\n",
-                "4.48.7",
-            ),
-            (
-                "empty_output",
-                "",
-                "",
-            ),
-            (
-                "different_format",
-                "FanFicFare version 4.48.7\n",
-                "4.48.7",
-            ),
-        ]
-    )
-    @patch("workers.command.execute_command")
-    def test_get_fanficfare_version_unexpected_format(
-        self, name, mock_output, expected_result, mock_execute
-    ):
-        """Test handling of unexpected output formats."""
-        mock_execute.return_value = mock_output
-
-        result = command.get_fanficfare_version()
-
-        self.assertEqual(result, expected_result)
+        self.assertRegex(
+            result,
+            r"^\d+\.\d+",
+            f"Expected a version string, got: {result!r}",
+        )
 
     @parameterized.expand(
         [
