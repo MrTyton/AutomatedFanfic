@@ -82,8 +82,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.construct_fanficfare_command")
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     @patch("workers.handlers.process_fanfic_addition")
     @patch("workers.pipeline.ff_logging")
     def test_url_worker_removes_from_active_urls_on_success(
@@ -91,7 +90,6 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_logging,
         mock_process,
         mock_exec,
-        mock_construct,
         mock_get_path,
         mock_temp_dir,
         mock_copy_configs,
@@ -108,10 +106,12 @@ class TestDuplicatePrevention(unittest.TestCase):
         # Mocks for successful execution
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-        mock_construct.return_value = ["fanficfare", "-u", url]
-        mock_exec.return_value = "Download successful"
+        from workers.command import FanFicFareResult
+
+        mock_exec.return_value = FanFicFareResult()  # clean result = success
 
         cdb = MagicMock()
+        cdb.cdb_info.update_method = "update"
         retry_config = MagicMock(spec=RetryConfig)
         retry_config.max_normal_retries = 3
         ingress_queue = MagicMock()
@@ -140,7 +140,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
     @patch("workers.pipeline.ff_logging")
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     def test_url_worker_keeps_active_on_retry(
         self,
         mock_exec,
@@ -162,8 +162,10 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
 
-        # Simulate exception in execution (inside inner try block)
-        mock_exec.side_effect = Exception("Download failed")
+        # Return a failure result (keeps in active_urls via handle_failure)
+        from workers.command import FanFicFareResult
+
+        mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 
         # Mock handle_failure to set retry decision
         def side_effect_handle_failure(fanfic, *args, **kwargs):
@@ -201,7 +203,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
     @patch("workers.pipeline.ff_logging")
-    @patch("workers.command.execute_command")
+    @patch("workers.command.execute_fanficfare_direct")
     def test_url_worker_removes_active_on_abandon(
         self,
         mock_exec,
@@ -223,8 +225,10 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
 
-        # Simulate exception in execution
-        mock_exec.side_effect = Exception("Download failed")
+        # Return a failure result
+        from workers.command import FanFicFareResult
+
+        mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 
         # Mock handle_failure to set abandon decision
         def side_effect_handle_failure(fanfic, *args, **kwargs):

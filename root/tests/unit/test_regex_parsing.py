@@ -314,5 +314,71 @@ class TestRegexParsing(unittest.TestCase):
         )
 
 
+class TestCheckFailureFromMessage(unittest.TestCase):
+    """Tests for check_failure_from_message() single-message helper."""
+
+    class Case(NamedTuple):
+        msg: str
+        expected: bool
+
+    @parameterized.expand(
+        [
+            Case(msg="story already contains 5 chapters.", expected=True),
+            Case(
+                msg="story doesn't contain any recognizable chapters, probably from a different source.  Not updating.",
+                expected=True,
+            ),
+            Case(msg="No story URL found in epub to update.", expected=True),
+            Case(
+                msg="Login Failed on non-interactive process. Set username and password in personal.ini.",
+                expected=True,
+            ),
+            Case(
+                msg="400 Client Error: Bad Request for url: https://example.com",
+                expected=True,
+            ),
+            Case(
+                msg="403 Client Error: Forbidden for url: https://example.com",
+                expected=True,
+            ),
+            Case(
+                msg="Connection to flaresolverr proxy server failed",
+                expected=True,
+            ),
+            Case(msg="Download complete.", expected=False),
+            Case(msg="", expected=False),
+        ]
+    )
+    def test_check_failure_from_message(self, msg, expected):
+        self.assertEqual(regex_parsing.check_failure_from_message(msg), expected)
+
+
+class TestCheckForceableFromMessage(unittest.TestCase):
+    """Tests for check_forceable_from_message() single-message helper."""
+
+    class Case(NamedTuple):
+        msg: str
+        expected: bool
+
+    @parameterized.expand(
+        [
+            Case(
+                msg="story contains 5 chapters, more than source: 3.",
+                expected=True,
+            ),
+            Case(
+                msg="File(test.epub) Updated(2022-01-01) more recently than Story(2021-12-31) - Skipping",
+                expected=True,
+            ),
+            Case(msg="Download complete.", expected=False),
+            Case(msg="", expected=False),
+            # Failure patterns must NOT trigger forceable
+            Case(msg="story already contains 5 chapters.", expected=False),
+        ]
+    )
+    def test_check_forceable_from_message(self, msg, expected):
+        self.assertEqual(regex_parsing.check_forceable_from_message(msg), expected)
+
+
 if __name__ == "__main__":
     unittest.main()

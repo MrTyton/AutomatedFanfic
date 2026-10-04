@@ -14,7 +14,6 @@ Worker-Coordinator Communication:
 """
 
 import multiprocessing as mp
-import subprocess
 import time
 from queue import Empty
 
@@ -24,7 +23,6 @@ from models import config_models
 from notifications import notification_wrapper
 from utils import system_utils
 from models import fanfic_info
-from parsers import regex_parsing
 
 # Import from sibling modules
 from . import common
@@ -33,29 +31,8 @@ from . import handlers
 
 
 def _exception_to_error_message(exc: BaseException) -> str:
-    """Return the most informative available failure text from a subprocess or Python exception."""
-    if isinstance(exc, subprocess.CalledProcessError):
-        candidate_sources = [
-            getattr(exc, "stderr", None),
-            getattr(exc, "stdout", None),
-            getattr(exc, "output", None),
-            str(exc),
-        ]
-    else:
-        candidate_sources = [str(exc)]
-
-    for source in candidate_sources:
-        if source is None:
-            continue
-        if isinstance(source, bytes):
-            text = source.decode("utf-8", errors="replace")
-        else:
-            text = str(source)
-        cleaned = text.strip()
-        if cleaned:
-            return cleaned
-
-    return str(exc)
+    """Return the most informative available failure text from an exception."""
+    return str(exc).strip() or str(exc)
 
 
 def _process_task(
@@ -113,15 +90,16 @@ def _process_task(
             if ff_logging.is_verbose():
                 common.log_epub_metadata(path_or_url, site)
 
-        # 2. Construct FanFicFare command
+        # 2. Handle special case: force requested but update_no_force configured
         action = "Downloading" if path_or_url == fanfic.url else "Updating"
         ff_logging.log(f"\t({site}) {action} {path_or_url}")
-        try:
-            cmd_args = command.construct_fanficfare_command(
-                calibre_client.cdb_info, fanfic, path_or_url
+        if (
+            fanfic.behavior == "force"
+            and calibre_client.cdb_info.update_method == "update_no_force"
+        ):
+            ff_logging.log_failure(
+                f"({site}) Force update requested but update method is 'update_no_force'"
             )
-        except Exception as e:
-            ff_logging.log_failure(f"({site}) Failed to construct command: {e}")
             handlers.handle_failure(
                 fanfic,
                 notification_info,
@@ -129,55 +107,26 @@ def _process_task(
                 retry_config,
                 calibre_client.cdb_info,
                 history_recorder=history_recorder,
-                error_message=str(e),
+                error_message="Force update requested but update method is 'update_no_force'",
             )
             return handlers.check_active_removal(fanfic)
 
-        # 3. Execute FanFicFare command
-        try:
-            # Handle special case: force requested but update_no_force configured
-            if (
-                fanfic.behavior == "force"
-                and calibre_client.cdb_info.update_method == "update_no_force"
-            ):
-                # Force failure to trigger special notification via failure handler
-                raise Exception(
-                    "Force update requested but update method is 'update_no_force'"
-                )
+        # 3. Execute FanFicFare via direct Python API
+        fff_result = command.execute_fanficfare_direct(
+            calibre_client.cdb_info, fanfic, path_or_url, temp_dir
+        )
 
-            # Set up temporary workspace with configuration files
-            calibre_client.cdb_info.copy_configs_to_temp_dir(temp_dir)
-
-            # Run command in temp_dir
-            output = command.execute_command(cmd_args, cwd=temp_dir)
-            ff_logging.log_debug(f"\t({site}) FanFicFare output:\n{output}")
-
-        except (subprocess.CalledProcessError, Exception) as e:
-            # Handle execution failure
-            error_msg = _exception_to_error_message(e)
-
+        # 4. Evaluate result
+        if fff_result.has_failure:
+            error_msg = (
+                str(fff_result.exception)
+                if fff_result.exception is not None
+                else "; ".join(fff_result.failure_messages)
+                or "FanFicFare reported a permanent failure condition."
+            )
             ff_logging.log_failure(
                 f"\t({site}) Failed to update {path_or_url}: {error_msg}"
             )
-
-            # Log detailed output if available (for CalledProcessError)
-            if isinstance(e, subprocess.CalledProcessError):
-                if e.output:
-                    error_output = e.output
-                    if isinstance(error_output, bytes):
-                        error_output = error_output.decode("utf-8", errors="replace")
-                    ff_logging.log_debug(
-                        f"\t({site}) FanFicFare output:\n{error_output}"
-                    )
-
-                if e.stderr:
-                    error_stderr = e.stderr
-                    if isinstance(error_stderr, bytes):
-                        error_stderr = error_stderr.decode("utf-8", errors="replace")
-                    ff_logging.log_debug(
-                        f"\t({site}) FanFicFare STDERR:\n{error_stderr}"
-                    )
-
             handlers.handle_failure(
                 fanfic,
                 notification_info,
@@ -189,26 +138,11 @@ def _process_task(
             )
             return handlers.check_active_removal(fanfic)
 
-        # 4. Check outputs for permanent failure indications
-        failure_message = regex_parsing.check_failure_regexes(output)
-        if failure_message is not None:
-            handlers.handle_failure(
-                fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-                history_recorder=history_recorder,
-                error_message=failure_message,
-            )
-            return handlers.check_active_removal(fanfic)
-
-        # Check for conditions that can be resolved with force retry
-        if regex_parsing.check_forceable_regexes(output):
-            # Set force behavior and re-queue for immediate retry
+        if fff_result.is_forceable:
+            # Conditions that can be resolved by force-retrying
             fanfic.behavior = "force"
             ingress_queue.put(fanfic)
-            return False  # Don't remove from active urls as we are re-queueing
+            return False  # Keep in active_urls; re-queued for force retry
 
         # 5. Integrate with Calibre (Process Addition)
         handlers.process_fanfic_addition(

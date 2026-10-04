@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import multiprocessing as mp
-import subprocess
 
 from workers import pipeline
 from models.fanfic_info import FanficInfo
@@ -35,8 +34,12 @@ class TestPipeline(unittest.TestCase):
     ):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
-        mock_command.construct_fanficfare_command.side_effect = Exception(
-            "Construction Failed"
+        # Simulate a failure result from execute_fanficfare_direct
+        from workers.command import FanFicFareResult
+
+        mock_command.FanFicFareResult = FanFicFareResult
+        mock_command.execute_fanficfare_direct.return_value = FanFicFareResult(
+            failure_messages=["Construction Failed"]
         )
 
         pipeline._process_task(
@@ -49,9 +52,6 @@ class TestPipeline(unittest.TestCase):
             self.worker_id,
         )
 
-        mock_logging.log_failure.assert_called_with(
-            "(site) Failed to construct command: Construction Failed"
-        )
         mock_handlers.handle_failure.assert_called_once()
 
     @patch("workers.pipeline.command")
@@ -65,12 +65,12 @@ class TestPipeline(unittest.TestCase):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
 
-        error = subprocess.CalledProcessError(1, ["cmd"])
-        error.output = b"Bytes Output"
-        error.stderr = b"Bytes Error"
+        from workers.command import FanFicFareResult
 
-        mock_command.construct_fanficfare_command.return_value = ["cmd"]
-        mock_command.execute_command.side_effect = error
+        mock_command.FanFicFareResult = FanFicFareResult
+        mock_command.execute_fanficfare_direct.return_value = FanFicFareResult(
+            failure_messages=["Bytes Output"]
+        )
 
         pipeline._process_task(
             self.fanfic,
@@ -82,9 +82,9 @@ class TestPipeline(unittest.TestCase):
             self.worker_id,
         )
 
-        calls = mock_logging.log_debug.call_args_list
-        output_logged = any("Bytes Output" in str(c) for c in calls)
-        self.assertTrue(output_logged, "Decoded output not logged")
+        mock_handlers.handle_failure.assert_called_once()
+        _, kwargs = mock_handlers.handle_failure.call_args
+        self.assertIn("Bytes Output", kwargs["error_message"])
 
     @patch("workers.pipeline.command")
     @patch("workers.pipeline.handlers")
@@ -98,8 +98,10 @@ class TestPipeline(unittest.TestCase):
         mock_common.get_path_or_url.return_value = "file.epub"
         mock_common.extract_title_from_epub_path.return_value = "file.epub"
 
-        mock_command.construct_fanficfare_command.return_value = ["echo"]
-        mock_command.execute_command.return_value = "Output"
+        from workers.command import FanFicFareResult
+
+        mock_command.FanFicFareResult = FanFicFareResult
+        mock_command.execute_fanficfare_direct.return_value = FanFicFareResult()
 
         mock_logging.is_verbose.return_value = True
 
@@ -225,7 +227,10 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
-        mock_command.construct_fanficfare_command.return_value = ["cmd"]
+        # execute_fanficfare_direct should NOT be reached (early return)
+        from workers.command import FanFicFareResult
+
+        mock_command.FanFicFareResult = FanFicFareResult
 
         pipeline._process_task(
             self.fanfic,
@@ -242,6 +247,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
         # Should log failure
         mock_logging.log_failure.assert_called()
+        mock_command.execute_fanficfare_direct.assert_not_called()
 
     @patch("workers.pipeline.ff_logging")
     def test_url_worker_invalid_worker_id_format(self, mock_logging):
