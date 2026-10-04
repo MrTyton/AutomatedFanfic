@@ -84,7 +84,7 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
 FROM builder-tools AS python-deps
 COPY requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --prefix=/install --no-warn-script-location --no-cache-dir -r /tmp/requirements.txt
+    pip install --prefix=/install --no-warn-script-location -r /tmp/requirements.txt
 
 # FanFicFare Installer Stage
 FROM builder-tools AS fanficfare-installer
@@ -96,7 +96,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     else \
     PACKAGE_SPEC="FanFicFare"; \
     fi && \
-    pip install --prefix=/install --no-warn-script-location --no-cache-dir \
+    pip install --prefix=/install --no-warn-script-location \
     --extra-index-url https://test.pypi.org/simple/ "${PACKAGE_SPEC}"
 
 # Frontend Builder Stage: Build React SPA
@@ -112,13 +112,12 @@ FROM base AS runtime
 
 ARG PUID="911"
 ARG PGID="911"
-# Version ARGs for labels
-ARG VERSION
-ARG CALIBRE_RELEASE
-# Re-declare for runtime usage if needed (rare) or just for logic
+# TARGETPLATFORM declared early as it's used in apt-get conditional below
 ARG TARGETPLATFORM
 
 # Install minimalistic runtime deps
+# NOTE: ARG VERSION and ARG CALIBRE_RELEASE are declared AFTER these stable layers
+# so that a version bump does NOT invalidate these cached layers.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -128,24 +127,25 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # ARM builds might need calibre from apt
     $(if [ "${TARGETPLATFORM}" != "linux/amd64" ]; then echo "calibre"; fi) && \
     apt-get clean && \
-    rm -rf /tmp/* /var/tmp/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create user and data directory
 RUN groupadd --gid "$PGID" abc && \
     useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
     mkdir -p /data && chown abc:abc /data
 
-# Copy Python dependencies from builder
-COPY --from=python-deps /install /usr/local
-COPY --from=fanficfare-installer /install /usr/local
+# Copy Application Code - changes RARELY (manual commits, infrequent)
+# Placed first so the more frequent calibre/deps/FFF layers below are not
+# invalidated when code changes.
+COPY root/ /
+COPY --from=frontend-builder /build/dist /web-ui/dist
+RUN chmod -R +x /app/ && \
+    chown -R abc:abc /app/
 
-# Copy Calibre from builder (AMD64 only)
-# For ARM, this directory will be empty or not copied if we logic'd it right, but `COPY --from` fails if src missing.
-# We'll use a trick: Check if /opt/calibre exists in source.
-# Actually, simpler: We always create /opt/calibre in builder, even if empty.
+# Copy Calibre - changes MONTHLY (new Calibre releases)
 COPY --from=calibre-downloader /opt/calibre /opt/calibre
 
-# Final Setup
+# Final Setup (depends on Calibre being present)
 RUN echo "*** Setting up Env ***" && \
     # Fix library paths for Calibre (AMD64)
     if [ -d "/opt/calibre/lib" ]; then \
@@ -161,11 +161,17 @@ RUN echo "*** Setting up Env ***" && \
     # Verify calibredb works
     calibredb --version
 
-# Copy Application Code (Frequent changes)
-COPY root/ /
-COPY --from=frontend-builder /build/dist /web-ui/dist
-RUN chmod -R +x /app/ && \
-    chown -R abc:abc /app/
+# Copy Python dependencies - changes WEEKLY (dependabot)
+COPY --from=python-deps /install /usr/local
+
+# Copy FanFicFare - changes DAILY (automated updates)
+# Placed last so the most common update only invalidates this single layer.
+COPY --from=fanficfare-installer /install /usr/local
+
+# Version ARGs declared here (after all stable layers) so version bumps
+# do NOT invalidate the cached apt, user, pip, or calibre layers above.
+ARG VERSION
+ARG CALIBRE_RELEASE
 
 # Runtime Config
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"

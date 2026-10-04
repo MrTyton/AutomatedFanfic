@@ -36,25 +36,6 @@ env:
   IMAGE_NAME: automated-ffdl
 
 jobs:
-  # Debug job - always runs first to confirm workflow is called
-  debug_workflow_trigger:
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🔍 DEBUG - Docker Workflow Called Successfully
-        run: |
-          echo "======================================================================"
-          echo "🎉 SUCCESS: docker-image.yml workflow is running!"
-          echo "======================================================================"
-          echo "Event details:"
-          echo "  github.event_name: ${{ github.event_name }}"
-          echo "  github.event.workflow_run.conclusion: ${{ github.event.workflow_run.conclusion }}"
-          echo ""
-          echo "Input parameters:"
-          echo "  commit_sha: ${{ inputs.commit_sha || 'not provided' }}"
-          echo ""
-          echo "If you see this message, the Docker workflow trigger is working!"
-          echo "======================================================================"
-
   # Build matrix for parallel architecture builds
   build_matrix:
     # Run if dispatched OR if called OR if workflow_run succeeded OR if scheduled (but we'll check for version changes later)
@@ -123,7 +104,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.get_sha.outputs.commit_sha }}
-          fetch-depth: 0
+          fetch-depth: 2
 
       # Check if the specific file was changed (only relevant for workflow_run)
       - name: Check for changes in latest.txt (for workflow_run)
@@ -195,11 +176,6 @@ jobs:
           PLATFORM_ARCH=${PLATFORM_PAIR##*/}
           echo "arch=${PLATFORM_ARCH}" >> $GITHUB_OUTPUT
           echo "pair=${PLATFORM_PAIR}" >> $GITHUB_OUTPUT
-
-      # Set up QEMU
-      - name: Set up QEMU
-        if: steps.should_build.outputs.build == 'true'
-        uses: docker/setup-qemu-action@v4
 
       # Setup Docker Buildx
       - name: Setup Docker Buildx
@@ -281,36 +257,28 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ env.PLATFORM_TAG }}
-          # Optimized cache strategy for dependency-focused updates
-          # Order matters: stable layers FIRST (always reusable), then version-specific caches
-          # This ensures early layers (system-deps, user-setup, python-stable-deps) are always cached
+          # Cache strategy:
+          # - Registry cache (mode=max) is primary: persistent, no eviction, stores all stages
+          # - GHA cache is fallback: faster reads when registry is cold
+          # Stable layers (builder-tools, python-deps, runtime-base) use cache-stable.
+          # Version-specific layers (calibre, fanficfare) have dedicated scopes for
+          # cross-version reuse when only one dependency updates.
           cache-from: |
-            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
-            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }}
-            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
-            type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
-            type=gha,scope=calibre-fallback-${{ steps.platform.outputs.arch }}
-            type=gha,scope=fanficfare-fallback-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
+            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
           cache-to: |
-            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=buildkit-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=calibre-fallback-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=fanficfare-fallback-${{ steps.platform.outputs.arch }},mode=max
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
             FANFICFARE_VERSION=${{ env.FANFICFARE_VERSION }}
-            BUILDKIT_INLINE_CACHE=1
 
       # Store platform digest for manifest creation
       - name: Export platform digest
