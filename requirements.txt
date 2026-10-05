@@ -2,7 +2,7 @@
 # These are the core dependencies needed to run the application
 
 # Core notification and configuration libraries
-apprise==1.13.1
+apprise==2.0.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
 
@@ -21,7 +21,7 @@ soupsieve==2.10
 
 # Text encoding and character detection
 chardet==7.6.0
-charset-normalizer==3.5.1
+charset-normalizer==3.5.2
 webencodings==0.6.1
 
 # Network and security
@@ -43,7 +43,7 @@ six==1.17.0
 pyparsing==3.3.3
 
 # Web server and API
-fastapi==0.141.1
+fastapi==0.142.2
 uvicorn[standard]==0.54.0
 websockets==17.1
 
