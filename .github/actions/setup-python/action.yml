@@ -31,9 +31,7 @@ runs:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', '**/pyproject.toml', '**/setup.py', 'release-versions/fanficfare.txt') }}-${{ inputs.python-version }}
         restore-keys: |
-          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', '**/pyproject.toml', '**/setup.py') }}-${{ inputs.python-version }}
-          ${{ runner.os }}-pip-${{ inputs.python-version }}
-          ${{ runner.os }}-pip-
+          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', '**/pyproject.toml', '**/setup.py', 'release-versions/fanficfare.txt') }}-${{ inputs.python-version }}
 
     - name: Install base dependencies
       shell: bash

@@ -88,8 +88,8 @@ class TestUrlIngester(unittest.TestCase):
             ("empty_urls", []),
         ]
     )
-    @patch("services.url_ingester.geturls.get_urls_from_imap")
-    def test_email_info_get_urls(self, name, expected_urls, mock_get_urls_from_imap):
+    @patch("services.url_ingester.geturls.GetURLs")
+    def test_email_info_get_urls(self, name, expected_urls, mock_get_urls_class):
         # Create EmailConfig directly
         email_config = EmailConfig(
             email="testuser",
@@ -99,17 +99,17 @@ class TestUrlIngester(unittest.TestCase):
             sleep_time=10,
         )
 
-        # Setup mock URL return
-        mock_get_urls_from_imap.return_value = expected_urls
+        # Setup mock URL return via the class instance
+        mock_get_urls_class.return_value.get_urls_from_imap.return_value = expected_urls
 
         email_info = EmailInfo(email_config)
         result = email_info.get_urls()
 
         self.assertEqual(result, set(expected_urls))
-        mock_get_urls_from_imap.assert_called_once()
+        mock_get_urls_class.return_value.get_urls_from_imap.assert_called_once()
 
-    @patch("services.url_ingester.geturls.get_urls_from_imap")
-    def test_email_info_get_urls_exception_handling(self, mock_get_urls_from_imap):
+    @patch("services.url_ingester.geturls.GetURLs")
+    def test_email_info_get_urls_exception_handling(self, mock_get_urls_class):
         """Test that get_urls handles exceptions gracefully."""
         # Create EmailConfig directly
         email_config = EmailConfig(
@@ -121,7 +121,9 @@ class TestUrlIngester(unittest.TestCase):
         )
 
         # Setup mock to raise exception
-        mock_get_urls_from_imap.side_effect = Exception("Connection failed")
+        mock_get_urls_class.return_value.get_urls_from_imap.side_effect = Exception(
+            "Connection failed"
+        )
 
         email_info = EmailInfo(email_config)
 
