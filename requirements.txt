@@ -2,8 +2,8 @@
 # These are the core dependencies needed to run the application
 
 # Core notification and configuration libraries
-apprise==2.0.0
-pydantic==2.13.5
+apprise==2.0.1
+pydantic==2.14.0
 pydantic-settings==2.15.0
 
 # HTTP requests and web scraping
@@ -43,9 +43,9 @@ six==1.17.0
 pyparsing==3.3.3
 
 # Web server and API
-fastapi==0.142.2
+fastapi==0.143.0
 uvicorn[standard]==0.54.0
-websockets==17.1
+websockets==17.2
 
 # Async SQLite for history database
 aiosqlite==0.22.1
