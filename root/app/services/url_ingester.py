@@ -130,7 +130,7 @@ def suppress_logging():
         ```python
         with suppress_logging():
             # FanFicFare operations here won't produce log output
-            urls = geturls.get_urls_from_imap(server, email, password, mailbox)
+            urls = geturls.GetURLs().get_urls_from_imap(server, email, password, mailbox)
 
         # Normal logging resumes here
         ```
@@ -272,7 +272,7 @@ class EmailInfo:
                 # Extract URLs using FanFicFare's IMAP functionality
                 # Wrap in set() to ensure deduplication if found in both text/html parts
                 urls = set(
-                    geturls.get_urls_from_imap(
+                    geturls.GetURLs().get_urls_from_imap(
                         self.server, self.email, self.password, self.mailbox
                     )
                 )
