@@ -2,6 +2,7 @@ from parameterized import parameterized
 import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
+import threading
 from queue import Empty
 
 
@@ -241,6 +242,34 @@ class TestUrlIngester(unittest.TestCase):
         # GetURLs must have been rebuilt once more for the changed ini
         assert mock_get_urls_class.call_count == 2
 
+    # ------------------------------------------------------------------
+    # imap_idle attribute tests
+    # ------------------------------------------------------------------
+
+    @patch("services.url_ingester.geturls.GetURLs")
+    def test_email_info_init_imap_idle_defaults_false(self, _):
+        """imap_idle defaults to False on EmailInfo when not set in config."""
+        email_config = EmailConfig(email="u", password="p", server="s")
+        email_info = EmailInfo(email_config)
+        self.assertFalse(email_info.imap_idle)
+
+    @patch("services.url_ingester.geturls.GetURLs")
+    def test_email_info_init_imap_idle_true(self, _):
+        """imap_idle is True on EmailInfo when enabled in config."""
+        email_config = EmailConfig(email="u", password="p", server="s", imap_idle=True)
+        email_info = EmailInfo(email_config)
+        self.assertTrue(email_info.imap_idle)
+
+    def test_email_config_imap_idle_field_default_false(self):
+        """EmailConfig.imap_idle defaults to False for backward compatibility."""
+        config = EmailConfig(email="u", password="p", server="s")
+        self.assertFalse(config.imap_idle)
+
+    def test_email_config_imap_idle_field_accepts_true(self):
+        """EmailConfig.imap_idle accepts True."""
+        config = EmailConfig(email="u", password="p", server="s", imap_idle=True)
+        self.assertTrue(config.imap_idle)
+
 
 class TestMakeFffGetConfiguration(unittest.TestCase):
     """Tests for _make_fff_get_configuration (FFF issue #1429 compatibility)."""
@@ -345,6 +374,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         self.mock_email_info = MagicMock()
         self.mock_email_info.sleep_time = 1  # Short sleep for testing
         self.mock_email_info.disabled_sites = []
+        self.mock_email_info.imap_idle = False  # default to polling in existing tests
 
         self.mock_notification_info = MagicMock()
 
@@ -566,6 +596,184 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
         # Verify sleep was called with correct duration
         mock_sleep.assert_called_with(custom_sleep_time)
+
+    @patch("services.url_ingester.time.sleep")
+    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    def test_email_watcher_uses_idle_wait_when_imap_idle_enabled(
+        self, mock_generate_fanfic, mock_sleep
+    ):
+        """When imap_idle=True, email_watcher calls _idle_wait_for_notification instead of sleep."""
+        self.mock_email_info.imap_idle = True
+        # _idle_wait_for_notification returns True (new mail available)
+        self.mock_email_info._idle_wait_for_notification.return_value = True
+        self.mock_email_info.get_urls.side_effect = [
+            [],  # First iteration: no URLs
+            KeyboardInterrupt(),  # Stop the loop
+        ]
+
+        with self.assertRaises(KeyboardInterrupt):
+            email_watcher(
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.ingress_queue,
+                self.mock_url_parsers,
+            )
+
+        self.mock_email_info._idle_wait_for_notification.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    def test_email_watcher_idle_shutdown_signal_breaks_loop(self):
+        """When _idle_wait_for_notification returns False, the loop exits cleanly."""
+        self.mock_email_info.imap_idle = True
+        self.mock_email_info.get_urls.return_value = []
+        # Returning False from IDLE wait means shutdown was signalled
+        self.mock_email_info._idle_wait_for_notification.return_value = False
+
+        shutdown_event = threading.Event()
+        email_watcher(
+            self.mock_email_info,
+            self.mock_notification_info,
+            self.ingress_queue,
+            self.mock_url_parsers,
+            shutdown_event=shutdown_event,
+        )
+
+        self.mock_email_info._idle_wait_for_notification.assert_called_once_with(
+            shutdown_event
+        )
+
+
+class TestEmailInfoIdleWait(unittest.TestCase):
+    """Tests for EmailInfo._idle_wait_for_notification (IMAP IDLE mode)."""
+
+    def _make_email_info(self):
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="imap.example.com",
+            mailbox="INBOX",
+            imap_idle=True,
+        )
+        with patch("services.url_ingester.geturls.GetURLs"):
+            return EmailInfo(email_config)
+
+    @patch("imapclient.IMAPClient")
+    def test_returns_true_on_exists_notification(self, mock_cls):
+        """EXISTS response triggers return True so get_urls() is called."""
+        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn.idle_check.return_value = [(12, b"EXISTS")]
+
+        result = self._make_email_info()._idle_wait_for_notification()
+
+        self.assertTrue(result)
+        mock_conn.idle.assert_called_once()
+        mock_conn.idle_done.assert_called_once()
+
+    @patch("imapclient.IMAPClient")
+    def test_returns_true_on_recent_notification(self, mock_cls):
+        """RECENT response also triggers return True."""
+        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn.idle_check.return_value = [(5, b"RECENT")]
+
+        result = self._make_email_info()._idle_wait_for_notification()
+
+        self.assertTrue(result)
+
+    @patch("imapclient.IMAPClient")
+    def test_returns_false_on_shutdown_before_idle_check(self, mock_cls):
+        """Shutdown event set before idle_check causes immediate False return."""
+        shutdown_event = threading.Event()
+        shutdown_event.set()
+        mock_conn = mock_cls.return_value.__enter__.return_value
+
+        result = self._make_email_info()._idle_wait_for_notification(shutdown_event)
+
+        self.assertFalse(result)
+        mock_conn.idle_check.assert_not_called()
+        mock_conn.idle_done.assert_called_once()
+
+    @patch("imapclient.IMAPClient")
+    def test_returns_false_on_shutdown_during_idle_check(self, mock_cls):
+        """Shutdown event set inside idle_check causes False return after idle_done."""
+        shutdown_event = threading.Event()
+
+        def idle_check_side_effect(timeout):
+            shutdown_event.set()  # signal shutdown while waiting
+            return []  # no new mail
+
+        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn.idle_check.side_effect = idle_check_side_effect
+
+        result = self._make_email_info()._idle_wait_for_notification(shutdown_event)
+
+        self.assertFalse(result)
+        mock_conn.idle_done.assert_called_once()
+
+    @patch("services.url_ingester.ff_logging.log_failure")
+    @patch("imapclient.IMAPClient")
+    def test_returns_true_and_logs_on_connection_error(
+        self, mock_cls, mock_log_failure
+    ):
+        """Exception during IDLE is caught, logged, and True is returned so get_urls() runs."""
+        mock_cls.return_value.__enter__.side_effect = Exception("Connection refused")
+
+        result = self._make_email_info()._idle_wait_for_notification()
+
+        self.assertTrue(result)
+        mock_log_failure.assert_called_once()
+
+    @patch("services.url_ingester.time.monotonic")
+    @patch("imapclient.IMAPClient")
+    def test_reissues_idle_after_9_minutes(self, mock_cls, mock_monotonic):
+        """IDLE is re-issued every 9 minutes; loop exits on subsequent EXISTS."""
+        # Provide enough monotonic values:
+        # 1) idle_start = time.monotonic() -> 0.0
+        # 2) time.monotonic() in re-IDLE check -> 541.0  (541 - 0 >= 540 → re-IDLE)
+        # 3) idle_start = time.monotonic() -> 541.0
+        mock_monotonic.side_effect = [0.0, 541.0, 541.0, 541.0, 541.0]
+
+        call_count = 0
+
+        def idle_check_side_effect(timeout):
+            nonlocal call_count
+            call_count += 1
+            # First check: no mail yet → triggers re-IDLE via monotonic check
+            # Second check: EXISTS arrives after re-IDLE
+            return [(12, b"EXISTS")] if call_count >= 2 else []
+
+        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn.idle_check.side_effect = idle_check_side_effect
+        mock_conn.noop.return_value = []  # no messages arrived in the DONE gap
+
+        result = self._make_email_info()._idle_wait_for_notification()
+
+        self.assertTrue(result)
+        # idle() called twice: initial enter + re-issue after 9 min
+        self.assertEqual(mock_conn.idle.call_count, 2)
+        # idle_done() called twice: on re-issue + on EXISTS response
+        self.assertEqual(mock_conn.idle_done.call_count, 2)
+        # noop() called once between idle_done and the re-idle
+        mock_conn.noop.assert_called_once()
+
+    @patch("services.url_ingester.time.monotonic")
+    @patch("imapclient.IMAPClient")
+    def test_noop_after_idle_done_catches_missed_message(
+        self, mock_cls, mock_monotonic
+    ):
+        """If a message arrives in the DONE/re-IDLE gap, noop() catches it and returns True."""
+        mock_monotonic.side_effect = [0.0, 541.0, 541.0]
+
+        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn.idle_check.return_value = []  # no mail signalled during IDLE
+        mock_conn.noop.return_value = [(12, b"EXISTS")]  # message arrived in the gap
+
+        result = self._make_email_info()._idle_wait_for_notification()
+
+        self.assertTrue(result)
+        mock_conn.noop.assert_called_once()
+        # idle_done once (for re-issue DONE); idle once (initial entry only)
+        self.assertEqual(mock_conn.idle_done.call_count, 1)
+        self.assertEqual(mock_conn.idle.call_count, 1)
 
 
 if __name__ == "__main__":

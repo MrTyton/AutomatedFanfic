@@ -208,6 +208,7 @@ class HistoryRecorder:
         urls_new: int = 0,
         urls_duplicate: int = 0,
         urls_disabled_site: int = 0,
+        trigger: str = "poll",
     ) -> None:
         self._put(
             HistoryMessage(
@@ -217,6 +218,7 @@ class HistoryRecorder:
                     urls_new=urls_new,
                     urls_duplicate=urls_duplicate,
                     urls_disabled_site=urls_disabled_site,
+                    trigger=trigger,
                 ).model_dump(mode="json"),
             )
         )

@@ -15,6 +15,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.email_info = MagicMock(spec=EmailInfo)
         self.email_info.disabled_sites = []
         self.email_info.sleep_time = 0.1
+        self.email_info.imap_idle = False
         self.ingress_queue = MagicMock()
         self.url_parsers = {}
 

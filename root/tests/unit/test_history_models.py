@@ -87,6 +87,7 @@ class TestEmailCheckEvent(unittest.TestCase):
         self.assertEqual(event.urls_new, 0)
         self.assertEqual(event.urls_duplicate, 0)
         self.assertEqual(event.urls_disabled_site, 0)
+        self.assertEqual(event.trigger, "poll")
         self.assertIsInstance(event.checked_at, datetime)
 
     def test_counts(self):

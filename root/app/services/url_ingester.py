@@ -273,6 +273,7 @@ class EmailInfo:
         self.mailbox = email_config.mailbox
         self.sleep_time = email_config.sleep_time
         self.disabled_sites = email_config.disabled_sites
+        self.imap_idle = email_config.imap_idle
         self.default_ini = default_ini or ""
         self.personal_ini = personal_ini or ""
         self._build_geturls()
@@ -364,6 +365,87 @@ class EmailInfo:
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
 
         return urls
+
+    def _idle_wait_for_notification(
+        self, shutdown_event: threading.Event | None = None
+    ) -> bool:
+        """
+        Block using IMAP IDLE until the server signals new mail or shutdown.
+
+        Opens a dedicated IMAPClient connection, enters IDLE mode, and checks
+        for unsolicited EXISTS/RECENT responses every 30 seconds so that the
+        shutdown_event is honoured promptly.  IDLE is re-issued every 9
+        minutes (many servers, including Gmail, drop connections at 10 minutes;
+        staying under that threshold prevents dead sockets).  A NOOP is sent
+        after DONE to flush any messages that arrived in the DONE/re-IDLE gap.
+
+        Args:
+            shutdown_event: Optional event; when set the method exits cleanly.
+
+        Returns:
+            True  – new mail notification received (or re-IDLE timeout fired),
+                    caller should call get_urls().
+            False – shutdown_event was set; caller should stop the loop.
+        """
+        from imapclient import IMAPClient  # lazy import – only needed when idle enabled
+
+        IDLE_REISSUE_SECONDS = (
+            9 * 60
+        )  # re-issue IDLE every 9 minutes (Gmail times out at 10)
+        CHECK_INTERVAL = 30  # how often to check shutdown_event (seconds)
+
+        try:
+            with IMAPClient(host=self.server, ssl=True) as client:
+                client.login(self.email, self.password)
+                client.select_folder(self.mailbox)
+
+                idle_start = time.monotonic()
+                client.idle()
+                ff_logging.log_debug("EmailWatcher: entered IMAP IDLE mode")
+
+                while True:
+                    if shutdown_event and shutdown_event.is_set():
+                        client.idle_done()
+                        return False
+
+                    responses = client.idle_check(timeout=CHECK_INTERVAL)
+
+                    # Server signalled new/changed messages
+                    if any(
+                        len(r) >= 2 and r[1] in (b"EXISTS", b"RECENT")
+                        for r in responses
+                    ):
+                        ff_logging.log_debug(
+                            "EmailWatcher: IMAP IDLE notification received"
+                        )
+                        client.idle_done()
+                        return True
+
+                    # Re-issue IDLE every 9 minutes to keep the connection alive.
+                    # After DONE, send NOOP to flush any messages that arrived
+                    # in the DONE/re-IDLE gap before going back into IDLE.
+                    if time.monotonic() - idle_start >= IDLE_REISSUE_SECONDS:
+                        client.idle_done()
+                        noop_responses = client.noop()
+                        if any(
+                            len(r) >= 2 and r[1] in (b"EXISTS", b"RECENT")
+                            for r in noop_responses
+                        ):
+                            ff_logging.log_debug(
+                                "EmailWatcher: IMAP IDLE notification received via NOOP"
+                            )
+                            return True
+                        if shutdown_event and shutdown_event.is_set():
+                            return False
+                        client.idle()
+                        idle_start = time.monotonic()
+                        ff_logging.log_debug("EmailWatcher: re-issued IMAP IDLE")
+
+        except Exception as e:
+            ff_logging.log_failure(
+                f"EmailWatcher: IMAP IDLE error ({e}), falling back to immediate check"
+            )
+            return True  # fall through to get_urls() on next iteration
 
 
 def email_watcher(
@@ -477,10 +559,15 @@ def email_watcher(
                 urls_new=urls_new,
                 urls_duplicate=urls_duplicate,
                 urls_disabled_site=urls_disabled_site,
+                trigger="idle" if email_info.imap_idle else "poll",
             )
 
-        # Wait before next email check cycle, respecting shutdown event
-        if shutdown_event:
+        # Wait before next email check cycle
+        if email_info.imap_idle:
+            # Push mode: block in IMAP IDLE until the server notifies us
+            if not email_info._idle_wait_for_notification(shutdown_event):
+                break  # shutdown signalled inside IDLE wait
+        elif shutdown_event:
             if shutdown_event.wait(timeout=email_info.sleep_time):
                 break
         else:

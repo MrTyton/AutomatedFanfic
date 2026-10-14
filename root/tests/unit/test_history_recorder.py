@@ -106,6 +106,13 @@ class TestHistoryRecorder(unittest.TestCase):
         self.assertEqual(msg.event_type, HistoryEventType.EMAIL_CHECK)
         self.assertEqual(msg.payload["urls_found"], 10)
         self.assertEqual(msg.payload["urls_new"], 3)
+        self.assertEqual(msg.payload["trigger"], "poll")
+
+    def test_record_email_check_idle_trigger(self):
+        self.recorder.record_email_check(urls_found=1, trigger="idle")
+        raw = self._get_msg()
+        msg = HistoryMessage(**raw)
+        self.assertEqual(msg.payload["trigger"], "idle")
 
     def test_record_notification(self):
         self.recorder.record_notification(

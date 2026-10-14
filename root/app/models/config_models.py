@@ -152,6 +152,10 @@ class EmailConfig(BaseModel):
         default_factory=list,
         description="List of site identifiers to disable processing for (notification only)",
     )
+    imap_idle: bool = Field(
+        default=False,
+        description="Use IMAP IDLE push notifications instead of polling",
+    )
 
     @field_validator("email")
     @classmethod
