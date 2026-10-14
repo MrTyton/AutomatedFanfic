@@ -86,8 +86,39 @@ class NotificationWrapper:
         self.notification_workers: list[notification_base.NotificationBase] = []
         self.toml_path = toml_path
         self.history_recorder = history_recorder
+        self._config_store = None
+        self._notification_hash: int | None = None
         # Automatically initialize all available notification workers
         self._initialize_workers()
+
+    def set_config_store(self, config_store) -> None:
+        """Attach a ConfigStore so send_notification() can detect credential changes."""
+        self._config_store = config_store
+        self._notification_hash = self._compute_notification_hash()
+
+    def _compute_notification_hash(self) -> int | None:
+        """Hash of notification-related ConfigStore values."""
+        if self._config_store is None:
+            return None
+        keys = [
+            "pushbullet.enabled",
+            "pushbullet.api_key",
+            "pushbullet.device",
+            "apprise.urls",
+        ]
+        return hash(tuple(str(self._config_store.get(k)) for k in keys))
+
+    def _refresh_if_changed(self) -> None:
+        """Rebuild Apprise workers if notification config changed in ConfigStore."""
+        if self._config_store is None:
+            return
+        new_hash = self._compute_notification_hash()
+        if new_hash != self._notification_hash:
+            ff_logging.log_debug(
+                "NotificationWrapper: config changed, rebuilding notification workers"
+            )
+            self._initialize_workers()
+            self._notification_hash = new_hash
 
     def _initialize_workers(self) -> None:
         """Initializes and validates notification workers from configuration.
@@ -129,37 +160,10 @@ class NotificationWrapper:
             ff_logging.log_failure(f"Failed to initialize AppriseNotification: {e}")
 
     def send_notification(self, title: str, body: str, site: str) -> None:
-        """Sends notifications concurrently to all enabled notification workers.
+        """Sends notifications concurrently to all enabled notification workers."""
+        # Hot-reload: rebuild Apprise client if notification config changed
+        self._refresh_if_changed()
 
-        Dispatches the notification to all enabled notification workers using
-        ThreadPoolExecutor for concurrent delivery. This ensures fast notification
-        delivery and prevents slow notification providers from blocking others.
-
-        The method filters workers by their enabled status, creates concurrent
-        tasks for each enabled worker, and waits for all notifications to complete.
-        Any exceptions raised by individual workers are propagated after all
-        workers have finished their attempts.
-
-        Args:
-            title (str): The notification title/subject line. Should be concise
-                        and descriptive of the notification content.
-            body (str): The main notification message body containing detailed
-                       information about the event or status update.
-            site (str): The fanfiction site context (e.g., "archiveofourown.org")
-                       for site-specific notification handling or filtering.
-
-        Note:
-            Individual worker failures do not prevent other workers from
-            attempting notification delivery. All workers execute concurrently
-            and any raised exceptions are handled after completion.
-
-        Example:
-            >>> wrapper.send_notification(
-            ...     "Story Updated",
-            ...     "New chapter available for 'My Story'",
-            ...     "archiveofourown.org"
-            ... )
-        """
         # Filter for only enabled notification workers
         enabled_workers = [
             worker for worker in self.notification_workers if worker.enabled

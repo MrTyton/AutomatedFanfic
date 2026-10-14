@@ -278,6 +278,32 @@ class EmailInfo:
         self.personal_ini = personal_ini or ""
         self._build_geturls()
 
+    def update_from_config_store(self, config_store) -> bool:
+        """Sync email credentials from ConfigStore.
+
+        Called at the top of each poll cycle so credential changes made via
+        the web dashboard are picked up without restarting the process.
+
+        Returns:
+            True if any field changed (caller should rebuild GetURLs).
+        """
+        changed = False
+        mapping = [
+            ("email", "email.email"),
+            ("password", "email.password"),
+            ("server", "email.server"),
+            ("mailbox", "email.mailbox"),
+            ("imap_idle", "email.imap_idle"),
+            ("sleep_time", "email.sleep_time"),
+            ("disabled_sites", "email.disabled_sites"),
+        ]
+        for attr, key in mapping:
+            val = config_store.get(key)
+            if val is not None and val != getattr(self, attr):
+                setattr(self, attr, val)
+                changed = True
+        return changed
+
     def _ini_mtime(self) -> float:
         """Return the latest mtime across ini files, or 0.0 if none exist."""
         latest = 0.0
@@ -457,6 +483,7 @@ def email_watcher(
     verbose: bool = False,
     shutdown_event: threading.Event = None,
     history_recorder=None,
+    config_store=None,
 ):
     """
     Continuously monitor email for fanfiction URLs and route to processing queues.
@@ -488,6 +515,14 @@ def email_watcher(
         if shutdown_event and shutdown_event.is_set():
             ff_logging.log_debug("EmailWatcher received shutdown signal")
             break
+
+        # Hot-reload: sync credentials from ConfigStore if they changed
+        if config_store is not None:
+            if email_info.update_from_config_store(config_store):
+                ff_logging.log_debug(
+                    "EmailWatcher: credentials updated from ConfigStore, rebuilding URL extractor"
+                )
+                email_info._build_geturls()
 
         # Extract URLs from the configured email account
         urls = email_info.get_urls()

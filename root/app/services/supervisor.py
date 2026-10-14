@@ -27,6 +27,7 @@ def run_supervisor(
     active_urls: dict,
     verbose: bool = False,
     history_recorder=None,
+    config_store=None,
 ):
     """
     Entry point for the Supervisor process.
@@ -78,6 +79,7 @@ def run_supervisor(
                 verbose,
                 shutdown_event,
                 history_recorder,
+                config_store,
             ),
             name="EmailWatcher",
         )
