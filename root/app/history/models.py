@@ -76,6 +76,7 @@ class EmailCheckEvent(BaseModel):
     urls_new: int = 0
     urls_duplicate: int = 0
     urls_disabled_site: int = 0
+    trigger: str = "poll"  # "poll" or "idle"
 
 
 class NotificationEvent(BaseModel):

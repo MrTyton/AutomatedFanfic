@@ -252,6 +252,7 @@ export default function History() {
                         <thead>
                             <tr>
                                 <th>Checked At</th>
+                                <th>Trigger</th>
                                 <th>URLs Found</th>
                                 <th>New</th>
                                 <th>Duplicate</th>
@@ -260,10 +261,15 @@ export default function History() {
                         </thead>
                         <tbody>
                             {emails.length === 0 ? (
-                                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No email checks recorded yet</td></tr>
+                                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No email checks recorded yet</td></tr>
                             ) : emails.map(e => (
                                 <tr key={e.id}>
                                     <td>{new Date(e.checked_at).toLocaleString()}</td>
+                                    <td>
+                                        <span className={e.trigger === 'idle' ? 'badge badge-info' : 'badge'}>
+                                            {e.trigger === 'idle' ? 'IDLE' : 'Poll'}
+                                        </span>
+                                    </td>
                                     <td>{e.urls_found}</td>
                                     <td>{e.urls_new}</td>
                                     <td>{e.urls_duplicate}</td>

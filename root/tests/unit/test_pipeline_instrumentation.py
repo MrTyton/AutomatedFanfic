@@ -21,6 +21,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         self.email_info = MagicMock()
         self.email_info.sleep_time = 0
         self.email_info.disabled_sites = []
+        self.email_info.imap_idle = False
         self.notification_info = MagicMock()
         self.ingress_queue = MagicMock()
         self.url_parsers = {}
@@ -54,7 +55,11 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         )
 
         self.recorder.record_email_check.assert_called_once_with(
-            urls_found=1, urls_new=1, urls_duplicate=0, urls_disabled_site=0
+            urls_found=1,
+            urls_new=1,
+            urls_duplicate=0,
+            urls_disabled_site=0,
+            trigger="poll",
         )
 
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -111,7 +116,11 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         )
 
         self.recorder.record_email_check.assert_called_once_with(
-            urls_found=1, urls_new=0, urls_duplicate=0, urls_disabled_site=1
+            urls_found=1,
+            urls_new=0,
+            urls_duplicate=0,
+            urls_disabled_site=1,
+            trigger="poll",
         )
         self.recorder.record_download_created.assert_not_called()
 
@@ -142,7 +151,11 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         )
 
         self.recorder.record_email_check.assert_called_once_with(
-            urls_found=1, urls_new=0, urls_duplicate=1, urls_disabled_site=0
+            urls_found=1,
+            urls_new=0,
+            urls_duplicate=1,
+            urls_disabled_site=0,
+            trigger="poll",
         )
 
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")

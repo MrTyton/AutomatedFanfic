@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS email_events (
     urls_found          INTEGER NOT NULL DEFAULT 0,
     urls_new            INTEGER NOT NULL DEFAULT 0,
     urls_duplicate      INTEGER NOT NULL DEFAULT 0,
-    urls_disabled_site  INTEGER NOT NULL DEFAULT 0
+    urls_disabled_site  INTEGER NOT NULL DEFAULT 0,
+    trigger             TEXT    NOT NULL DEFAULT 'poll'
 );
 
 CREATE TABLE IF NOT EXISTS notification_events (
@@ -115,6 +116,13 @@ class SyncHistoryDB:
         # Migrate: add updated_at if missing (existing databases)
         try:
             self._conn.execute("ALTER TABLE download_events ADD COLUMN updated_at TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        # Migrate: add trigger column to email_events if missing (existing databases)
+        try:
+            self._conn.execute(
+                "ALTER TABLE email_events ADD COLUMN trigger TEXT NOT NULL DEFAULT 'poll'"
+            )
         except sqlite3.OperationalError:
             pass  # Column already exists
         self._conn.commit()
@@ -271,14 +279,15 @@ class SyncHistoryDB:
         assert self._conn is not None
         cur = self._conn.execute(
             """INSERT INTO email_events
-               (checked_at, urls_found, urls_new, urls_duplicate, urls_disabled_site)
-               VALUES (?, ?, ?, ?, ?)""",
+               (checked_at, urls_found, urls_new, urls_duplicate, urls_disabled_site, trigger)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 _dt_to_str(event.checked_at),
                 event.urls_found,
                 event.urls_new,
                 event.urls_duplicate,
                 event.urls_disabled_site,
+                event.trigger,
             ),
         )
         self._conn.commit()

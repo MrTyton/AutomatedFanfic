@@ -198,10 +198,18 @@ class TestSyncHistoryDB(unittest.TestCase):
         self.assertGreater(row_id, 0)
 
         cur = self.db._conn.execute(
-            "SELECT urls_found, urls_new, urls_duplicate, urls_disabled_site FROM email_events"
+            "SELECT urls_found, urls_new, urls_duplicate, urls_disabled_site, trigger FROM email_events"
         )
         row = cur.fetchone()
-        self.assertEqual(row, (10, 3, 5, 2))
+        self.assertEqual(row, (10, 3, 5, 2, "poll"))
+
+    def test_insert_email_check_idle_trigger(self):
+        event = EmailCheckEvent(urls_found=2, urls_new=2, trigger="idle")
+        self.db.insert_email_check(event)
+
+        cur = self.db._conn.execute("SELECT trigger FROM email_events")
+        row = cur.fetchone()
+        self.assertEqual(row[0], "idle")
 
     # -- notification_events --
 

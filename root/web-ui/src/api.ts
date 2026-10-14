@@ -28,6 +28,7 @@ export interface EmailRow {
     urls_new: number
     urls_duplicate: number
     urls_disabled_site: number
+    trigger: string
 }
 
 export interface NotificationRow {
