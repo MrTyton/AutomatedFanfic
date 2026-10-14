@@ -39,5 +39,8 @@ class WebState:
     config_path: Optional[str] = None
     config_store: Optional[Any] = None  # ConfigStore for hot-reload
 
+    # Web server auto-restart event (set by config route when web.* fields change)
+    web_restart_event: Optional[Any] = None
+
     # Verbose flag
     verbose: bool = False

@@ -126,6 +126,7 @@ def run_web_server(
     history_recorder: Any = None,
     verbose: bool = False,
     log_queue: Any = None,
+    web_restart_event: Any = None,
 ) -> None:
     """Process entry point for the web server.
 
@@ -164,12 +165,28 @@ def run_web_server(
         config=app_config,
         config_path=config_path,
         config_store=config_store,
+        web_restart_event=web_restart_event,
         verbose=verbose,
     )
 
     app = create_app(web_state)
 
     ff_logging.log(f"WebServer: Starting on {host}:{port}")
+
+    # Re-read host/port from TOML — picks up new values after a config-driven
+    # restart without needing to pass them explicitly through ProcessManager.
+    if config_path:
+        try:
+            from models.config_models import ConfigManager
+
+            fresh = ConfigManager.load_config(config_path)
+            host = fresh.web.host
+            port = fresh.web.port
+            ff_logging.log_debug(
+                f"WebServer: using config-file host={host} port={port}"
+            )
+        except Exception:
+            pass  # Fall back to the originally passed-in values
 
     # Run uvicorn — it handles its own event loop
     uvicorn_config = uvicorn.Config(
