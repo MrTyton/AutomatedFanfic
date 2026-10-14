@@ -228,8 +228,13 @@ def register_processes(
     cdb_info.check_installed()
     calibre_client = calibredb_utils.CalibreDBClient(cdb_info)
 
-    # Initialize external resources
-    email_info = url_ingester.EmailInfo(config.email)
+    # Initialize external resources.  Pass ini paths so GetURLs can login to
+    # RoyalRoad when following email-click redirect links (FFF issue #1429).
+    email_info = url_ingester.EmailInfo(
+        config.email,
+        default_ini=cdb_info.default_ini,
+        personal_ini=cdb_info.personal_ini,
+    )
     notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
 
     # Initialize history recording infrastructure

@@ -68,6 +68,7 @@ Thread Safety:
 """
 
 import multiprocessing as mp
+import os
 import socket
 import time
 import logging
@@ -78,6 +79,39 @@ from utils import ff_logging
 from parsers import regex_parsing
 from notifications import notification_wrapper
 from models.config_models import EmailConfig
+
+
+def _make_fff_get_configuration(
+    default_ini_path: str | None, personal_ini_path: str | None
+):
+    """
+    Return a get_configuration callable for fanficfare.geturls.GetURLs.
+
+    The callable receives a URL from FFF and returns a Configuration object
+    loaded with our defaults.ini and personal.ini so that site-specific
+    credentials (e.g. Royal Road username/password) are available during
+    email URL extraction – required since RR email-click links now need an
+    authenticated session to resolve to a story URL (FFF issue #1429).
+    """
+    from fanficfare.configurable import Configuration
+    from fanficfare import adapters
+
+    def get_configuration(url: str) -> Configuration:
+        try:
+            sections = adapters.getConfigSectionsFor(url)
+        except Exception:
+            sections = ["test1.com"]
+        config = Configuration(sections, "EPUB")
+        ini_files = []
+        if default_ini_path and os.path.isfile(default_ini_path):
+            ini_files.append(default_ini_path)
+        if personal_ini_path and os.path.isfile(personal_ini_path):
+            ini_files.append(personal_ini_path)
+        if ini_files:
+            config.read(ini_files)
+        return config
+
+    return get_configuration
 
 
 @contextmanager
@@ -199,7 +233,12 @@ class EmailInfo:
         rather than main account passwords for IMAP access.
     """
 
-    def __init__(self, email_config: EmailConfig):
+    def __init__(
+        self,
+        email_config: EmailConfig,
+        default_ini: str | None = None,
+        personal_ini: str | None = None,
+    ):
         """
         Initialize EmailInfo with email configuration object.
 
@@ -210,12 +249,20 @@ class EmailInfo:
         Args:
             email_config (config_models.EmailConfig): Pre-loaded email configuration
                                                      containing all email settings.
+            default_ini (str | None): Path to FanFicFare defaults.ini, passed through
+                                     to GetURLs so site-specific settings are available
+                                     during email URL extraction (e.g. RR login).
+            personal_ini (str | None): Path to FanFicFare personal.ini, passed through
+                                      to GetURLs so credentials are available during
+                                      email URL extraction (e.g. RR login).
 
         Example:
             ```python
             # In main process
             config = ConfigManager.load_config("config.toml")
-            email_info = EmailInfo(config.email)
+            email_info = EmailInfo(config.email,
+                                   default_ini=cdb_info.default_ini,
+                                   personal_ini=cdb_info.personal_ini)
             print(f"Monitoring {email_info.email}@{email_info.server}")
             ```
         """
@@ -226,6 +273,8 @@ class EmailInfo:
         self.mailbox = email_config.mailbox
         self.sleep_time = email_config.sleep_time
         self.disabled_sites = email_config.disabled_sites
+        self.default_ini = default_ini or ""
+        self.personal_ini = personal_ini or ""
 
     def get_urls(self) -> set[str]:
         """
@@ -266,13 +315,33 @@ class EmailInfo:
         """
         urls = set()
 
+        # Build a get_configuration callback so that site credentials from
+        # personal.ini (e.g. Royal Road username/password) are available when
+        # FFF resolves email-click redirect URLs – required after RR started
+        # requiring an authenticated session for those links (FFF issue #1429).
+        get_config = None
+        initial_config = None
+        if self.default_ini or self.personal_ini:
+            get_config = _make_fff_get_configuration(
+                self.default_ini or None, self.personal_ini or None
+            )
+            # Pre-build the initial Configuration so GetURLs.__init__ can set
+            # self.configuration before any get_configuration() call tries to
+            # copy the cache from it (chicken-and-egg guard).
+            initial_config = get_config("test1.com")
+
         # Use timeout protection and suppress verbose logging during extraction
         with set_timeout(55), suppress_logging():
             try:
-                # Extract URLs using FanFicFare's IMAP functionality
-                # Wrap in set() to ensure deduplication if found in both text/html parts
+                # Extract URLs using FanFicFare's IMAP functionality.
+                # Passing config= and get_config= together: config seeds
+                # self.configuration so the cache-copy in get_configuration()
+                # works, while get_config= ensures RR adapter credentials
+                # are loaded when following email-click redirect links.
                 urls = set(
-                    geturls.GetURLs().get_urls_from_imap(
+                    geturls.GetURLs(
+                        config=initial_config, get_config=get_config
+                    ).get_urls_from_imap(
                         self.server, self.email, self.password, self.mailbox
                     )
                 )

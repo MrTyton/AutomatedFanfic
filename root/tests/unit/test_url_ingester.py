@@ -5,7 +5,7 @@ import multiprocessing as mp
 from queue import Empty
 
 
-from services.url_ingester import EmailInfo, email_watcher
+from services.url_ingester import EmailInfo, email_watcher, _make_fff_get_configuration
 from models.fanfic_info import FanficInfo
 from models.config_models import (
     EmailConfig,
@@ -136,8 +136,179 @@ class TestUrlIngester(unittest.TestCase):
             "Failed to get URLs: Connection failed"
         )
 
+    # ------------------------------------------------------------------
+    # ini-path kwarg tests (FFF issue #1429)
+    # ------------------------------------------------------------------
 
-class TestEmailWatcher(unittest.TestCase):
+    @parameterized.expand(
+        [
+            ("both_paths", "/path/defaults.ini", "/path/personal.ini"),
+            ("default_only", "/path/defaults.ini", None),
+            ("personal_only", None, "/path/personal.ini"),
+        ]
+    )
+    def test_email_info_init_stores_ini_paths(self, name, default_ini, personal_ini):
+        """EmailInfo stores the ini paths passed as kwargs."""
+        email_config = EmailConfig(
+            email="testuser", password="pass", server="srv", mailbox="INBOX"
+        )
+        email_info = EmailInfo(
+            email_config, default_ini=default_ini, personal_ini=personal_ini
+        )
+        self.assertEqual(email_info.default_ini, default_ini or "")
+        self.assertEqual(email_info.personal_ini, personal_ini or "")
+
+    def test_email_info_init_defaults_ini_paths_to_empty_string(self):
+        """When no ini kwargs provided, paths default to empty string."""
+        email_config = EmailConfig(
+            email="testuser", password="pass", server="srv", mailbox="INBOX"
+        )
+        email_info = EmailInfo(email_config)
+        self.assertEqual(email_info.default_ini, "")
+        self.assertEqual(email_info.personal_ini, "")
+
+    @patch("services.url_ingester.geturls.GetURLs")
+    def test_email_info_get_urls_without_ini_passes_none_to_geturls(
+        self, mock_get_urls_class
+    ):
+        """Without ini paths GetURLs is constructed with config=None, get_config=None."""
+        email_config = EmailConfig(
+            email="testuser", password="pass", server="srv", mailbox="INBOX"
+        )
+        mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
+        email_info = EmailInfo(email_config)
+        email_info.get_urls()
+        mock_get_urls_class.assert_called_once_with(config=None, get_config=None)
+
+    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.url_ingester._make_fff_get_configuration")
+    def test_email_info_get_urls_with_ini_passes_get_config_to_geturls(
+        self, mock_make_config, mock_get_urls_class
+    ):
+        """With ini paths get_urls builds a get_config callable and passes it to GetURLs."""
+        email_config = EmailConfig(
+            email="testuser", password="pass", server="srv", mailbox="INBOX"
+        )
+
+        mock_get_config_fn = MagicMock()
+        mock_make_config.return_value = mock_get_config_fn
+        mock_initial_config = MagicMock()
+        mock_get_config_fn.return_value = mock_initial_config
+        mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
+
+        email_info = EmailInfo(
+            email_config,
+            default_ini="/a/defaults.ini",
+            personal_ini="/a/personal.ini",
+        )
+        email_info.get_urls()
+
+        # _make_fff_get_configuration called with stored ini paths
+        mock_make_config.assert_called_once_with("/a/defaults.ini", "/a/personal.ini")
+        # Initial config seeded via get_config_fn("test1.com") to avoid chicken-and-egg crash
+        mock_get_config_fn.assert_called_once_with("test1.com")
+        # GetURLs constructed with both config= and get_config= populated
+        mock_get_urls_class.assert_called_once_with(
+            config=mock_initial_config, get_config=mock_get_config_fn
+        )
+
+
+class TestMakeFffGetConfiguration(unittest.TestCase):
+    """Tests for _make_fff_get_configuration (FFF issue #1429 compatibility)."""
+
+    def _call(
+        self,
+        url,
+        default_ini=None,
+        personal_ini=None,
+        sections=None,
+        isfile_side_effect=None,
+    ):
+        """Helper: patch FFF internals, invoke the factory, call the inner fn."""
+        sections = sections or ["www.royalroad.com", "test1.com"]
+        isfile_side_effect = isfile_side_effect or (lambda _: False)
+
+        with patch(
+            "fanficfare.adapters.getConfigSectionsFor", return_value=sections
+        ) as mock_secs, patch(
+            "fanficfare.configurable.Configuration"
+        ) as mock_cfg_cls, patch(
+            "services.url_ingester.os.path.isfile", side_effect=isfile_side_effect
+        ):
+            mock_cfg = MagicMock()
+            mock_cfg_cls.return_value = mock_cfg
+            fn = _make_fff_get_configuration(default_ini, personal_ini)
+            result = fn(url)
+            return result, mock_secs, mock_cfg_cls, mock_cfg
+
+    def test_returns_callable(self):
+        """Factory always returns a callable regardless of ini path values."""
+        fn = _make_fff_get_configuration(None, None)
+        self.assertTrue(callable(fn))
+
+    def test_callable_uses_sections_from_url(self):
+        """get_configuration calls getConfigSectionsFor with the URL."""
+        url = "https://www.royalroad.com/fiction/123/test"
+        result, mock_secs, mock_cfg_cls, mock_cfg = self._call(
+            url, sections=["www.royalroad.com", "test1.com"]
+        )
+        mock_secs.assert_called_once_with(url)
+        mock_cfg_cls.assert_called_once_with(["www.royalroad.com", "test1.com"], "EPUB")
+        self.assertIs(result, mock_cfg)
+
+    def test_callable_falls_back_on_unknown_url(self):
+        """When getConfigSectionsFor raises, falls back to ['test1.com']."""
+        url = "https://not-a-fanfic-site.example.com/story/123"
+        with patch(
+            "fanficfare.adapters.getConfigSectionsFor",
+            side_effect=Exception("UnknownSite"),
+        ), patch("fanficfare.configurable.Configuration") as mock_cfg_cls, patch(
+            "services.url_ingester.os.path.isfile", return_value=False
+        ):
+            mock_cfg_cls.return_value = MagicMock()
+            fn = _make_fff_get_configuration(None, None)
+            fn(url)
+        mock_cfg_cls.assert_called_once_with(["test1.com"], "EPUB")
+
+    def test_callable_loads_both_ini_files_when_present(self):
+        """Both ini paths are read when both files exist."""
+        result, _, _, mock_cfg = self._call(
+            "https://www.royalroad.com/fiction/1/t",
+            default_ini="/d/defaults.ini",
+            personal_ini="/d/personal.ini",
+            isfile_side_effect=lambda _: True,
+        )
+        mock_cfg.read.assert_called_once_with(["/d/defaults.ini", "/d/personal.ini"])
+
+    def test_callable_skips_missing_ini_files(self):
+        """config.read is never called when neither ini file exists on disk."""
+        result, _, _, mock_cfg = self._call(
+            "https://www.royalroad.com/fiction/1/t",
+            default_ini="/missing/defaults.ini",
+            personal_ini="/missing/personal.ini",
+            isfile_side_effect=lambda _: False,
+        )
+        mock_cfg.read.assert_not_called()
+
+    def test_callable_loads_only_personal_ini_when_default_missing(self):
+        """Only the personal.ini is loaded when the defaults file does not exist."""
+        result, _, _, mock_cfg = self._call(
+            "https://www.royalroad.com/fiction/1/t",
+            default_ini="/missing/defaults.ini",
+            personal_ini="/exists/personal.ini",
+            isfile_side_effect=lambda p: p == "/exists/personal.ini",
+        )
+        mock_cfg.read.assert_called_once_with(["/exists/personal.ini"])
+
+    def test_callable_handles_none_ini_paths(self):
+        """Passing None for both ini paths is safe and skips config.read."""
+        result, _, _, mock_cfg = self._call(
+            "https://www.royalroad.com/fiction/1/t",
+            default_ini=None,
+            personal_ini=None,
+        )
+        mock_cfg.read.assert_not_called()
+
     """Test the email_watcher main loop function."""
 
     def setUp(self):
