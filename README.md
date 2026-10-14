@@ -23,6 +23,8 @@ This is a docker image to run the Automated FFF CLI, with Apprise integration.
     - [Pushbullet](#pushbullet)
     - [Apprise](#apprise)
     - [Web Dashboard](#web-dashboard)
+    - [max_workers](#max_workers)
+    - [Process Management](#process-management)
 
 ## Platform Support
 
@@ -117,7 +119,16 @@ A `run.sh` example script is included in the repo root for running the app from 
 
 ## Configuration
 
-The config file is a [TOML](https://toml.io/en/) file that contains the script's specific options. Changes to this file will only take effect upon script startup.
+The config file is a [TOML](https://toml.io/en/) file that contains the script's specific options.
+
+**Hot-Reload Support:**
+Most configuration fields are applied immediately — no Docker restart required. Changes saved via the web dashboard (or directly to `config.toml`) take effect at the next processing cycle:
+
+| Reload behavior | Fields |
+|---|---|
+| **Immediate (hot)** | All `[email]`, `[calibre]`, `[pushbullet]`, `[apprise]`, `[retry]`, `[process]` fields; `max_workers` |
+| **Web server restart** | `web.host`, `web.port` (the web dashboard restarts automatically — no container restart needed) |
+| **App restart required** | Only fields not covered above (in practice, none under normal use) |
 
 ### Environment Variable Overrides
 
@@ -171,6 +182,7 @@ password = ""
 server = ""
 mailbox = ""
 sleep_time = 60
+imap_idle = false
 disabled_sites = []
 ```
 
@@ -183,6 +195,7 @@ disabled_sites = []
 - `server`: Address for the email server. For Gmail, this is going to be `imap.gmail.com`. For other web services, you'll have to search for them.
 - `mailbox`: Which mailbox to check, such as `INBOX`, for the unread update emails.
 - `sleep_time`: How often to check the email account for new updates, in seconds. Default is 60 seconds, but you can make this as often as you want. Recommended that you don't go too fast though, since some email providers will not be happy.
+- `imap_idle`: When `true`, uses IMAP IDLE for push-based email notifications instead of polling. This means the script is notified by the server the moment a new email arrives rather than waiting for the next `sleep_time` cycle. Requires an IMAP server that supports the IDLE extension (most modern providers, including Gmail, do). Defaults to `false`.
 - `disabled_sites`: A list of site identifiers for which URLs should only trigger notifications without being processed by FanFicFare. Defaults to an empty list `[]` (all sites enabled). When a site is disabled, URLs from that site found in emails will only send a notification and will not be downloaded or processed further.
 
 **Site Identifier Parsing:**
@@ -367,6 +380,7 @@ history_db_path = "/data/history.db"
 - **Add URLs**: Manually inject fanfiction URLs into the processing queue
 - **History**: Searchable, paginated history of all downloads, retries, email checks, and notifications
 - **Expandable Errors**: Click truncated error messages to see full details
+- **Live Config Editor**: Edit `config.toml` directly from the browser. Most changes apply immediately (hot-reload). Changes to `web.host`/`web.port` automatically restart only the web server — no container restart required.
 
 **Docker Setup:**
 
@@ -426,3 +440,38 @@ The web dashboard exposes a widget-friendly endpoint at `/api/widget` for use wi
 ```
 
 Replace `your-host:8080` with the address and port of your AutomatedFanfic instance.
+
+### max_workers
+
+Controls the maximum number of simultaneous system processes (workers + support processes). Defaults to the system CPU count.
+
+```toml
+max_workers = 8
+```
+
+- A portion of this budget is reserved for internal support processes (email watcher, coordinator, etc.), so the actual number of download worker threads is `max_workers - 4`.
+- Minimum effective pool is 1 worker thread regardless of setting.
+- **This field supports hot-reload**: changing it via the web dashboard scales the worker pool up or down immediately without any restart.
+
+### Process Management
+
+Fine-grained control over process health monitoring and restart behavior. These settings rarely need to be changed from their defaults.
+
+```toml
+[process]
+shutdown_timeout = 30.0
+health_check_interval = 60.0
+auto_restart = true
+max_restart_attempts = 3
+restart_delay = 5.0
+enable_monitoring = true
+```
+
+- `shutdown_timeout`: Seconds to wait for processes to exit gracefully before force-terminating them (1–300, default `30.0`).
+- `health_check_interval`: How often (in seconds) the process monitor checks whether worker processes are still alive (0.1–600, default `60.0`).
+- `auto_restart`: When `true`, automatically restarts any process that crashes unexpectedly. Default `true`.
+- `max_restart_attempts`: How many times a crashed process will be restarted before it is permanently stopped (0–10, default `3`).
+- `restart_delay`: Seconds to wait before restarting a failed process (0–60, default `5.0`).
+- `enable_monitoring`: When `false`, disables the health monitoring thread entirely. Default `true`.
+
+All `[process]` fields support hot-reload.
