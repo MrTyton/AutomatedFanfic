@@ -275,6 +275,37 @@ class EmailInfo:
         self.disabled_sites = email_config.disabled_sites
         self.default_ini = default_ini or ""
         self.personal_ini = personal_ini or ""
+        self._build_geturls()
+
+    def _ini_mtime(self) -> float:
+        """Return the latest mtime across ini files, or 0.0 if none exist."""
+        latest = 0.0
+        for path in (self.default_ini, self.personal_ini):
+            if path:
+                try:
+                    latest = max(latest, os.path.getmtime(path))
+                except OSError:
+                    pass
+        return latest
+
+    def _build_geturls(self) -> None:
+        """(Re)create the GetURLs instance from the current ini files.
+
+        Stores the ini modification time so get_urls() can detect when
+        personal.ini or defaults.ini has changed and rebuild accordingly.
+        """
+        _get_config = None
+        _initial_config = None
+        if self.default_ini or self.personal_ini:
+            _get_config = _make_fff_get_configuration(
+                self.default_ini or None, self.personal_ini or None
+            )
+            # Pre-build the initial Configuration so GetURLs.__init__ can set
+            # self.configuration before any get_configuration() call tries to
+            # copy the cache from it (chicken-and-egg guard).
+            _initial_config = _get_config("test1.com")
+        self._geturls = geturls.GetURLs(config=_initial_config, get_config=_get_config)
+        self._geturls_ini_mtime = self._ini_mtime()
 
     def get_urls(self) -> set[str]:
         """
@@ -313,35 +344,19 @@ class EmailInfo:
             recognizable fanfiction URLs. It does not mark messages as read
             or modify the mailbox state in any way.
         """
-        urls = set()
+        # Rebuild if ini files have been modified since last build – ensures
+        # credential changes take effect without requiring a process restart.
+        if self._ini_mtime() > self._geturls_ini_mtime:
+            ff_logging.log("EmailWatcher: ini files changed, rebuilding URL extractor")
+            self._build_geturls()
 
-        # Build a get_configuration callback so that site credentials from
-        # personal.ini (e.g. Royal Road username/password) are available when
-        # FFF resolves email-click redirect URLs – required after RR started
-        # requiring an authenticated session for those links (FFF issue #1429).
-        get_config = None
-        initial_config = None
-        if self.default_ini or self.personal_ini:
-            get_config = _make_fff_get_configuration(
-                self.default_ini or None, self.personal_ini or None
-            )
-            # Pre-build the initial Configuration so GetURLs.__init__ can set
-            # self.configuration before any get_configuration() call tries to
-            # copy the cache from it (chicken-and-egg guard).
-            initial_config = get_config("test1.com")
+        urls = set()
 
         # Use timeout protection and suppress verbose logging during extraction
         with set_timeout(55), suppress_logging():
             try:
-                # Extract URLs using FanFicFare's IMAP functionality.
-                # Passing config= and get_config= together: config seeds
-                # self.configuration so the cache-copy in get_configuration()
-                # works, while get_config= ensures RR adapter credentials
-                # are loaded when following email-click redirect links.
                 urls = set(
-                    geturls.GetURLs(
-                        config=initial_config, get_config=get_config
-                    ).get_urls_from_imap(
+                    self._geturls.get_urls_from_imap(
                         self.server, self.email, self.password, self.mailbox
                     )
                 )

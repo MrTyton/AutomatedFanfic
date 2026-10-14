@@ -212,6 +212,35 @@ class TestUrlIngester(unittest.TestCase):
             config=mock_initial_config, get_config=mock_get_config_fn
         )
 
+    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.url_ingester._make_fff_get_configuration")
+    def test_email_info_get_urls_rebuilds_on_ini_change(
+        self, mock_make_config, mock_get_urls_class
+    ):
+        """GetURLs is rebuilt when ini files have been modified since last build."""
+        email_config = EmailConfig(
+            email="testuser", password="pass", server="srv", mailbox="INBOX"
+        )
+        mock_make_config.return_value = MagicMock(return_value=MagicMock())
+        mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
+
+        with patch("services.url_ingester.os.path.getmtime") as mock_mtime:
+            # First call (during __init__ -> _build_geturls): mtime = 1.0
+            mock_mtime.return_value = 1.0
+            email_info = EmailInfo(
+                email_config,
+                default_ini="/a/defaults.ini",
+                personal_ini="/a/personal.ini",
+            )
+            assert mock_get_urls_class.call_count == 1
+
+            # ini file changes between polls
+            mock_mtime.return_value = 2.0
+            email_info.get_urls()
+
+        # GetURLs must have been rebuilt once more for the changed ini
+        assert mock_get_urls_class.call_count == 2
+
 
 class TestMakeFffGetConfiguration(unittest.TestCase):
     """Tests for _make_fff_get_configuration (FFF issue #1429 compatibility)."""
