@@ -44,6 +44,16 @@ class CalibreDBClient:
             cdb_info: Configuration object containing library path, credentials, etc.
         """
         self.cdb_info = cdb_info
+        self._config_store = None
+
+    def set_config_store(self, config_store) -> None:
+        """Attach a ConfigStore so calibre settings are refreshed before each call."""
+        self._config_store = config_store
+
+    def refresh_if_changed(self) -> None:
+        """Sync cdb_info from ConfigStore if any Calibre field changed."""
+        if self._config_store is not None:
+            self.cdb_info.update_from_config_store(self._config_store)
 
     @staticmethod
     def get_calibre_version() -> str:
@@ -73,6 +83,9 @@ class CalibreDBClient:
 
     def _build_calibredb_command(self, command_args: str | list[str]) -> list[str]:
         """Build a safe calibredb argument list with configured library/auth args."""
+        # Hot-reload: sync calibre settings from ConfigStore before every call
+        self.refresh_if_changed()
+
         if isinstance(command_args, str):
             cmd = ["calibredb", *shlex.split(command_args)]
         else:

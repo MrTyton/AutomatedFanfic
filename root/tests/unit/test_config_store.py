@@ -85,23 +85,30 @@ class TestReloadBehaviorClassification(unittest.TestCase):
         )
 
     def test_service_restart_fields(self):
+        # Web fields are the only SERVICE_RESTART fields now
         self.assertEqual(
-            ConfigStore.get_reload_behavior("email", "password"),
+            ConfigStore.get_reload_behavior("web", "port"),
             ReloadBehavior.SERVICE_RESTART,
         )
         self.assertEqual(
-            ConfigStore.get_reload_behavior("calibre", "path"),
+            ConfigStore.get_reload_behavior("web", "host"),
             ReloadBehavior.SERVICE_RESTART,
         )
 
     def test_app_restart_fields(self):
+        # max_workers is now HOT (dynamic scaling via manager.dict())
         self.assertEqual(
             ConfigStore.get_reload_behavior("", "max_workers"),
-            ReloadBehavior.APP_RESTART,
+            ReloadBehavior.HOT,
+        )
+        # Email/calibre credentials are now HOT
+        self.assertEqual(
+            ConfigStore.get_reload_behavior("email", "password"),
+            ReloadBehavior.HOT,
         )
         self.assertEqual(
-            ConfigStore.get_reload_behavior("web", "port"),
-            ReloadBehavior.APP_RESTART,
+            ConfigStore.get_reload_behavior("calibre", "path"),
+            ReloadBehavior.HOT,
         )
 
     def test_unknown_defaults_to_app_restart(self):
@@ -113,11 +120,12 @@ class TestReloadBehaviorClassification(unittest.TestCase):
     def test_classify_changes_mixed(self):
         changes = {
             "sleep_time": 120,  # hot
-            "password": "new_pass",  # service_restart
+            "password": "new_pass",  # also hot now
         }
         classified = ConfigStore.classify_changes("email", changes)
         self.assertIn("sleep_time", classified[ReloadBehavior.HOT])
-        self.assertIn("password", classified[ReloadBehavior.SERVICE_RESTART])
+        self.assertIn("password", classified[ReloadBehavior.HOT])
+        self.assertEqual(classified[ReloadBehavior.SERVICE_RESTART], {})
         self.assertEqual(classified[ReloadBehavior.APP_RESTART], {})
 
 
@@ -248,9 +256,7 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         self.assertEqual(
             data["reload_map"]["email"]["sleep_time"]["reload_behavior"], "hot"
         )
-        self.assertEqual(
-            data["reload_map"]["max_workers"]["reload_behavior"], "app_restart"
-        )
+        self.assertEqual(data["reload_map"]["max_workers"]["reload_behavior"], "hot")
 
     def test_get_reload_map(self):
         """GET /api/config/reload-map returns full field mapping."""
@@ -258,7 +264,10 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["email.sleep_time"], "hot")
-        self.assertEqual(data["email.password"], "service_restart")
+        # Credentials are now HOT (no restart needed)
+        self.assertEqual(data["email.password"], "hot")
+        # Web fields are SERVICE_RESTART (auto-restarted by ProcessManager)
+        self.assertEqual(data["web.port"], "service_restart")
 
     def test_put_config_no_config(self):
         resp = self.client.put(
@@ -302,19 +311,17 @@ class TestConfigRoutesUpdated(unittest.TestCase):
 
     @patch("web.routes.config.TomlWriter")
     def test_put_config_service_restart(self, MockWriter):
-        """Service-restart field is flagged in the response."""
+        """Changing web.* fields is flagged as service_restart (auto web restart)."""
         cfg = MagicMock()
-        cfg.model_dump.return_value = {"email": {"sleep_time": 60, "password": "x"}}
+        cfg.model_dump.return_value = {"web": {"host": "0.0.0.0", "port": 8080}}
         self.state.config = cfg
         self.state.config_store = ConfigStore()
         self.state.config_path = "/tmp/config.toml"
 
-        resp = self.client.put(
-            "/api/config/email", json={"values": {"password": "new_pass"}}
-        )
+        resp = self.client.put("/api/config/web", json={"values": {"port": 9090}})
         data = resp.json()
         self.assertTrue(data["applied"])
-        self.assertIn("password", data["results"]["service_restart"])
+        self.assertIn("port", data["results"]["service_restart"])
         self.assertTrue(data["needs_service_restart"])
 
     def test_validate_config_with_real_config(self):
