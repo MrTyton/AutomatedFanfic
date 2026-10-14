@@ -124,6 +124,32 @@ class CalibreInfo:
             return ""
         return ini_file
 
+    def update_from_config_store(self, config_store) -> bool:
+        """Sync Calibre settings from ConfigStore.
+
+        Called by CalibreDBClient before each calibredb operation so changes
+        made via the web dashboard take effect without restarting workers.
+
+        Returns:
+            True if any field changed.
+        """
+        changed = False
+        mapping = {
+            "location": "calibre.path",
+            "username": "calibre.username",
+            "password": "calibre.password",
+            "default_ini": "calibre.default_ini",
+            "personal_ini": "calibre.personal_ini",
+            "update_method": "calibre.update_method",
+            "metadata_preservation_mode": "calibre.metadata_preservation_mode",
+        }
+        for attr, key in mapping.items():
+            val = config_store.get(key)
+            if val is not None and val != getattr(self, attr, None):
+                setattr(self, attr, val)
+                changed = True
+        return changed
+
     @staticmethod
     def check_installed() -> bool:
         """Checks if Calibre is installed and accessible via the calibredb command.

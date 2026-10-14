@@ -12,43 +12,51 @@ from typing import Any
 class ReloadBehavior(str, Enum):
     """How the system reacts when a config field changes."""
 
-    HOT = "hot"  # Updated immediately via shared dict
-    SERVICE_RESTART = "service_restart"  # Requires supervisor/worker restart
-    APP_RESTART = "app_restart"  # Requires full container restart
+    HOT = "hot"  # Updated immediately via shared dict — no interruption
+    SERVICE_RESTART = "service_restart"  # Web server restarts automatically
+    APP_RESTART = "app_restart"  # Requires restarting the application process
 
 
 # Exhaustive map of dotted field keys → reload behaviour
 FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
     # ── Hot-reloadable ──────────────────────────────────────────
+    # Polling / retry behaviour
     "email.sleep_time": ReloadBehavior.HOT,
     "email.disabled_sites": ReloadBehavior.HOT,
+    # Email credentials — email_watcher re-connects on next poll cycle
+    "email.email": ReloadBehavior.HOT,
+    "email.password": ReloadBehavior.HOT,
+    "email.server": ReloadBehavior.HOT,
+    "email.mailbox": ReloadBehavior.HOT,
+    "email.imap_idle": ReloadBehavior.HOT,
+    # Calibre — workers refresh before each calibredb call
     "calibre.update_method": ReloadBehavior.HOT,
     "calibre.metadata_preservation_mode": ReloadBehavior.HOT,
+    "calibre.path": ReloadBehavior.HOT,
+    "calibre.username": ReloadBehavior.HOT,
+    "calibre.password": ReloadBehavior.HOT,
+    "calibre.default_ini": ReloadBehavior.HOT,
+    "calibre.personal_ini": ReloadBehavior.HOT,
+    # Notifications — wrapper rebuilds Apprise client on hash change
+    "pushbullet.enabled": ReloadBehavior.HOT,
+    "pushbullet.api_key": ReloadBehavior.HOT,
+    "pushbullet.device": ReloadBehavior.HOT,
+    "apprise.urls": ReloadBehavior.HOT,
+    # Retry logic
     "retry.max_normal_retries": ReloadBehavior.HOT,
     "retry.hail_mary_enabled": ReloadBehavior.HOT,
     "retry.hail_mary_wait_hours": ReloadBehavior.HOT,
-    # ── Service restart ─────────────────────────────────────────
-    "email.email": ReloadBehavior.SERVICE_RESTART,
-    "email.password": ReloadBehavior.SERVICE_RESTART,
-    "email.server": ReloadBehavior.SERVICE_RESTART,
-    "email.mailbox": ReloadBehavior.SERVICE_RESTART,
-    "calibre.path": ReloadBehavior.SERVICE_RESTART,
-    "calibre.username": ReloadBehavior.SERVICE_RESTART,
-    "calibre.password": ReloadBehavior.SERVICE_RESTART,
-    "calibre.default_ini": ReloadBehavior.SERVICE_RESTART,
-    "calibre.personal_ini": ReloadBehavior.SERVICE_RESTART,
-    "pushbullet.enabled": ReloadBehavior.SERVICE_RESTART,
-    "pushbullet.api_key": ReloadBehavior.SERVICE_RESTART,
-    "pushbullet.device": ReloadBehavior.SERVICE_RESTART,
-    "apprise.urls": ReloadBehavior.SERVICE_RESTART,
-    # ── App restart ─────────────────────────────────────────────
-    "max_workers": ReloadBehavior.APP_RESTART,
-    "web.enabled": ReloadBehavior.APP_RESTART,
-    "web.host": ReloadBehavior.APP_RESTART,
-    "web.port": ReloadBehavior.APP_RESTART,
-    "process.shutdown_timeout": ReloadBehavior.APP_RESTART,
-    "process.health_check_interval": ReloadBehavior.APP_RESTART,
-    "process.max_restart_attempts": ReloadBehavior.APP_RESTART,
+    # Process monitor — ProcessManager reads these each tick
+    "process.shutdown_timeout": ReloadBehavior.HOT,
+    "process.health_check_interval": ReloadBehavior.HOT,
+    "process.max_restart_attempts": ReloadBehavior.HOT,
+    # ── Service restart (web server auto-restarts) ───────────────
+    "web.enabled": ReloadBehavior.SERVICE_RESTART,
+    "web.host": ReloadBehavior.SERVICE_RESTART,
+    "web.port": ReloadBehavior.SERVICE_RESTART,
+    # ── App restart (requires restarting the application) ────────
+    # Queue topology cannot be rebuilt at runtime.
+    "max_workers": ReloadBehavior.HOT,
 }
 
 
@@ -68,17 +76,43 @@ class ConfigStore:
 
     def initialize_from_config(self, config) -> None:
         """Populate the store from an AppConfig object."""
+        # ── Email ──────────────────────────────────────────────
         self._store["email.sleep_time"] = config.email.sleep_time
         self._store["email.disabled_sites"] = list(config.email.disabled_sites)
+        self._store["email.email"] = config.email.email
+        self._store["email.password"] = config.email.password
+        self._store["email.server"] = config.email.server
+        self._store["email.mailbox"] = config.email.mailbox
+        self._store["email.imap_idle"] = config.email.imap_idle
+        # ── Calibre ────────────────────────────────────────────
         self._store["calibre.update_method"] = config.calibre.update_method
         self._store["calibre.metadata_preservation_mode"] = (
             config.calibre.metadata_preservation_mode.value
             if hasattr(config.calibre.metadata_preservation_mode, "value")
             else config.calibre.metadata_preservation_mode
         )
+        self._store["calibre.path"] = config.calibre.path
+        self._store["calibre.username"] = config.calibre.username
+        self._store["calibre.password"] = config.calibre.password
+        self._store["calibre.default_ini"] = config.calibre.default_ini
+        self._store["calibre.personal_ini"] = config.calibre.personal_ini
+        # ── Notifications ──────────────────────────────────────
+        self._store["pushbullet.enabled"] = config.pushbullet.enabled
+        self._store["pushbullet.api_key"] = config.pushbullet.api_key
+        self._store["pushbullet.device"] = config.pushbullet.device
+        self._store["apprise.urls"] = list(config.apprise.urls)
+        # ── Retry ──────────────────────────────────────────────
         self._store["retry.max_normal_retries"] = config.retry.max_normal_retries
         self._store["retry.hail_mary_enabled"] = config.retry.hail_mary_enabled
         self._store["retry.hail_mary_wait_hours"] = config.retry.hail_mary_wait_hours
+        # ── Process monitor ────────────────────────────────────
+        self._store[
+            "process.health_check_interval"
+        ] = config.process.health_check_interval
+        self._store["process.shutdown_timeout"] = config.process.shutdown_timeout
+        self._store[
+            "process.max_restart_attempts"
+        ] = config.process.max_restart_attempts
 
     # ── Read ────────────────────────────────────────────────────
 
