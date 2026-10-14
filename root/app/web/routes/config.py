@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from config.config_store import ConfigStore, ReloadBehavior, FIELD_RELOAD_MAP
 from config.toml_writer import TomlWriter
+from utils import ff_logging
 from utils.system_utils import resolve_ini_path
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -146,6 +147,13 @@ async def update_config_section(
         results["service_restart"].append(field_name)
     for field_name in classified[ReloadBehavior.APP_RESTART]:
         results["app_restart"].append(field_name)
+
+    # Auto-restart web server when any web.* SERVICE_RESTART field changed
+    if results["service_restart"] and section == "web":
+        web_restart_event = getattr(state, "web_restart_event", None)
+        if web_restart_event is not None:
+            web_restart_event.set()
+            ff_logging.log_debug("WebServer: restart requested via web_restart_event")
 
     return {
         "applied": True,

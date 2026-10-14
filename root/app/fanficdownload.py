@@ -210,7 +210,7 @@ def register_processes(
     )
 
     ingress_queue = manager.Queue()
-    worker_queues = {}
+    worker_queues = manager.dict()
     for i in range(worker_pool_size):
         worker_id = f"worker_{i}"
         worker_queues[worker_id] = manager.Queue()
@@ -253,6 +253,18 @@ def register_processes(
     config_store = ConfigStore(manager.dict())
     config_store.initialize_from_config(config)
 
+    # Attach ConfigStore so notification_info reacts to credential changes in-process
+    notification_info.set_config_store(config_store)
+
+    # Shared event: web server sets it when web.host/port/enabled change;
+    # ProcessManager detects it and restarts only the web_server process.
+    web_restart_event = manager.Event()
+
+    # Inject hot-reload helpers into ProcessManager (created before the Manager context)
+    process_manager.set_config_store(config_store)
+    process_manager.set_web_restart_event(web_restart_event)
+    process_manager.set_worker_queues(worker_queues, manager.Queue)
+
     # Arm the cross-process log-forwarding queue BEFORE processes are started
     # so that all forked child processes inherit the reference and push their
     # log entries here.  The web server will clear its own copy and instead
@@ -273,6 +285,7 @@ def register_processes(
             active_urls,
             args.verbose,
             history_recorder,
+            config_store,
         ),
     )
 
@@ -290,6 +303,7 @@ def register_processes(
             active_urls,
             args.verbose,
             history_recorder,
+            config_store,
         ),
     )
 
@@ -316,6 +330,7 @@ def register_processes(
                 history_recorder,
                 args.verbose,
                 log_queue,
+                web_restart_event,
             ),
         )
 

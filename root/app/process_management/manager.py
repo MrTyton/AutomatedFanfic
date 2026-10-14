@@ -34,18 +34,18 @@ class ProcessManager:
         - Context manager support for clean resource management
     """
 
-    def __init__(self, config: AppConfig | None = None):
+    def __init__(
+        self, config: AppConfig | None = None, config_store=None, web_restart_event=None
+    ):
         """
         Initialize the ProcessManager with configuration.
 
         Args:
             config: AppConfig instance containing process configuration.
-                   Must be provided - configuration is required for proper
-                   operation of health monitoring and shutdown timeouts.
-
-        Raises:
-            ValueError: If config is None, as configuration is required
-                       for proper process management.
+            config_store: Optional ConfigStore for hot-reloading process settings.
+            web_restart_event: Optional mp.Event signalling the web server should
+                               be restarted (set by the config route on web field
+                               changes; cleared here after the restart).
         """
         # Process tracking and state management
         self.processes: dict[str, ProcessInfo] = {}
@@ -56,6 +56,12 @@ class ProcessManager:
         self._monitor_thread: threading.Thread | None = None
         self._signal_handlers_set = False
 
+        # Hot-reload helpers
+        self._config_store = config_store
+        self._web_restart_event = web_restart_event
+        self._worker_queues = None
+        self._create_queue_fn = None
+
         # Configuration validation and setup
         if config:
             self.config = config
@@ -65,6 +71,19 @@ class ProcessManager:
             raise ValueError("AppConfig must be provided to ProcessManager.")
 
         ff_logging.log_debug("ProcessManager initialized")
+
+    def set_config_store(self, config_store) -> None:
+        """Inject ConfigStore after ProcessManager construction (Manager context needed)."""
+        self._config_store = config_store
+
+    def set_web_restart_event(self, web_restart_event) -> None:
+        """Inject web_restart_event after ProcessManager construction."""
+        self._web_restart_event = web_restart_event
+
+    def set_worker_queues(self, worker_queues, create_queue_fn) -> None:
+        """Inject managed worker_queues dict and Queue factory for dynamic scaling."""
+        self._worker_queues = worker_queues
+        self._create_queue_fn = create_queue_fn
 
     def register_process(
         self,
@@ -472,6 +491,11 @@ class ProcessManager:
                         # Perform health check on this process
                         self._health_check_process(name, process_info, current_time)
 
+                # Hot-reload process config and handle web auto-restart
+                self._sync_process_config_from_store()
+                self._check_web_restart_event()
+                self._check_worker_scaling()
+
                 # Sleep until next monitoring cycle
                 self._shutdown_event.wait(
                     min(5.0, self.process_config.health_check_interval)
@@ -483,6 +507,84 @@ class ProcessManager:
                 self._shutdown_event.wait(5.0)
 
         ff_logging.log_debug("Process monitoring stopped")
+
+    def _sync_process_config_from_store(self) -> None:
+        """Refresh hot-reloadable ProcessConfig fields from ConfigStore."""
+        if self._config_store is None:
+            return
+        hi = self._config_store.get("process.health_check_interval")
+        if hi is not None:
+            self.process_config.health_check_interval = float(hi)
+        st = self._config_store.get("process.shutdown_timeout")
+        if st is not None:
+            self.process_config.shutdown_timeout = float(st)
+        mr = self._config_store.get("process.max_restart_attempts")
+        if mr is not None:
+            self.process_config.max_restart_attempts = int(mr)
+
+    def _check_web_restart_event(self) -> None:
+        """Restart the web server process if the web_restart_event is set."""
+        if (
+            self._web_restart_event is None
+            or not self._web_restart_event.is_set()
+            or "web_server" not in self.processes
+        ):
+            return
+        ff_logging.log("ProcessManager: web config changed, restarting web_server")
+        self._web_restart_event.clear()
+        # Reset restart_count so this config-driven restart isn't penalised
+        self.processes["web_server"].restart_count = 0
+        self.restart_process("web_server")
+
+    def _check_worker_scaling(self) -> None:
+        """Dynamically add or remove worker queues when max_workers changes in ConfigStore."""
+        if (
+            self._config_store is None
+            or self._worker_queues is None
+            or self._create_queue_fn is None
+        ):
+            return
+
+        new_max = self._config_store.get("max_workers")
+        if new_max is None:
+            return
+
+        _OVERHEAD_COUNT = 4
+        target_size = max(1, int(new_max) - _OVERHEAD_COUNT)
+
+        # Only manage queues that follow the worker_N naming convention
+        managed_ids = sorted(
+            [wid for wid in self._worker_queues.keys() if wid.startswith("worker_")],
+            key=lambda x: int(x.split("_")[-1]),
+        )
+        current_size = len(managed_ids)
+
+        if target_size == current_size:
+            return
+
+        if target_size > current_size:
+            for i in range(current_size, target_size):
+                worker_id = f"worker_{i}"
+                if worker_id not in self._worker_queues:
+                    self._worker_queues[worker_id] = self._create_queue_fn()
+                    ff_logging.log(
+                        f"ProcessManager: scaled up, added {worker_id} "
+                        f"(pool size {current_size} → {target_size})"
+                    )
+        else:
+            workers_to_remove = managed_ids[target_size:]
+            for worker_id in workers_to_remove:
+                if worker_id in self._worker_queues:
+                    # Send None sentinel so the thread exits cleanly after draining its queue
+                    try:
+                        self._worker_queues[worker_id].put(None)
+                    except Exception:
+                        pass
+                    del self._worker_queues[worker_id]
+                    ff_logging.log(
+                        f"ProcessManager: scaled down, removed {worker_id} "
+                        f"(pool size {current_size} → {target_size})"
+                    )
 
     def _health_check_process(
         self, name: str, process_info: ProcessInfo, current_time: float

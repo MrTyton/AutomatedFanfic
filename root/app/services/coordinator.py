@@ -318,6 +318,11 @@ class Coordinator:
         available_workers = list(self.state.idle_workers)
 
         for worker_id in available_workers:
+            # Skip workers that have been removed from worker_queues (scale-down clean-up)
+            if worker_id not in self.worker_queues:
+                self.state.idle_workers.discard(worker_id)
+                continue
+
             # Find a site in backlog that is NOT currently assigned
             candidate_site = self._find_unassigned_site()
 

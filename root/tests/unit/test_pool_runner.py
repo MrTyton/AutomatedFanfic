@@ -16,7 +16,7 @@ class TestPoolRunner(unittest.TestCase):
             spec=notification_wrapper.NotificationWrapper
         )
         self.mock_waiting_queue = MagicMock(spec=mp.Queue)
-        self.mock_ingress_queue = MagicMock(spec=mp.Queue)
+        self.mock_ingress_queue = MagicMock()
         self.mock_retry_config = MagicMock(spec=config_models.RetryConfig)
         self.active_urls = {}
 
@@ -36,6 +36,18 @@ class TestPoolRunner(unittest.TestCase):
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, True]  # Run loop once
         mock_event_cls.return_value = mock_shutdown_event
+
+        # Side effect: return a thread mock with proper .name so scale-up detection
+        # doesn't re-detect initial workers as "new" on the first monitoring loop.
+        def make_named_thread(**kwargs):
+            t = MagicMock()
+            t.name = kwargs.get("name", "unknown")
+            t.is_alive.return_value = True
+            return t
+
+        mock_thread_cls.side_effect = lambda *args, **kwargs: make_named_thread(
+            **kwargs
+        )
 
         pool_runner.run_worker_pool(
             self.worker_queues,
@@ -99,7 +111,10 @@ class TestPoolRunner(unittest.TestCase):
         thread2.is_alive.return_value = False  # Dies on check
 
         # Replacement thread
-        thread2_replacement = MagicMock(name="worker_2 (new)")
+        thread2_replacement = MagicMock()
+        thread2_replacement.name = (
+            "worker_2"  # Must be set so scale-up detector doesn't re-spawn it
+        )
 
         # mock_thread_cls will be called:
         # 1. Init worker_1

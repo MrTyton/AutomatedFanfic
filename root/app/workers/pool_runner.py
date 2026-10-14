@@ -28,6 +28,7 @@ def run_worker_pool(
     active_urls: dict,
     verbose: bool = False,
     history_recorder=None,
+    config_store=None,
 ) -> None:
     """
     Runs a pool of worker threads within a single process.
@@ -41,9 +42,15 @@ def run_worker_pool(
         retry_config: Retry configuration.
         active_urls: Shared dictionary of active URLs.
         verbose: Verbose logging flag.
+        config_store: Optional ConfigStore for hot-reloading calibre/notification config.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+
+    # Attach ConfigStore so workers pick up credential changes at runtime
+    if config_store is not None:
+        calibre_client.set_config_store(config_store)
+        notification_info.set_config_store(config_store)
 
     ff_logging.log_debug(f"Worker Pool Process using {len(worker_queues)} threads")
 
@@ -91,12 +98,10 @@ def run_worker_pool(
             for i, t in enumerate(threads):
                 if not t.is_alive():
                     worker_id = t.name
-                    ff_logging.log_failure(
-                        f"Thread {worker_id} died unexpectedly - Restarting..."
-                    )
-
-                    # Restart the worker thread
                     if worker_id in worker_queues:
+                        ff_logging.log_failure(
+                            f"Thread {worker_id} died unexpectedly - Restarting..."
+                        )
                         new_thread = threading.Thread(
                             target=pipeline.url_worker,
                             args=(
@@ -117,9 +122,36 @@ def run_worker_pool(
                         new_thread.start()
                         threads[i] = new_thread  # Replace the dead thread
                     else:
-                        ff_logging.log_failure(
-                            f"Could not restart {worker_id}: Queue not found"
+                        ff_logging.log_debug(
+                            f"Thread {worker_id} stopped (queue removed - intentional scale-down)"
                         )
+
+            # Scale-up: spawn threads for any worker_queues entries not yet tracked
+            tracked_ids = {t.name for t in threads}
+            for worker_id in list(worker_queues.keys()):
+                if worker_id not in tracked_ids:
+                    ff_logging.log(f"Worker Pool: spawning new thread for {worker_id}")
+                    new_thread = threading.Thread(
+                        target=pipeline.url_worker,
+                        args=(
+                            worker_queues[worker_id],
+                            calibre_client,
+                            notification_info,
+                            ingress_queue,
+                            waiting_queue,
+                            retry_config,
+                            worker_id,
+                            active_urls,
+                            verbose,
+                            history_recorder,
+                        ),
+                        name=worker_id,
+                        daemon=True,
+                    )
+                    new_thread.start()
+                    threads.append(new_thread)
+                    # Notify coordinator that this worker is now available
+                    ingress_queue.put(("WORKER_IDLE", worker_id, None))
 
     except KeyboardInterrupt:
         ff_logging.log("Worker Pool interrupted", "WARNING")
