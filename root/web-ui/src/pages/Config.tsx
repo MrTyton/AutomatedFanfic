@@ -26,6 +26,7 @@ export default function Config() {
     const [editValues, setEditValues] = useState<Record<string, string>>({})
     const [saveResult, setSaveResult] = useState<ConfigUpdateResult | null>(null)
     const [loading, setLoading] = useState(true)
+    const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
 
     const [iniStates, setIniStates] = useState<Record<IniType, IniState>>({
         personal: { content: '', path: null, error: null, loading: true, editing: false, editContent: '', saveResult: null },
@@ -145,6 +146,13 @@ export default function Config() {
         }
     }
 
+    const toggleSection = (key: string) =>
+        setCollapsedSections(prev => {
+            const next = new Set(prev)
+            next.has(key) ? next.delete(key) : next.add(key)
+            return next
+        })
+
     if (loading && Object.keys(configData).length === 0) return <p>Loading config…</p>
 
     const sections = Object.entries(configData)
@@ -168,91 +176,112 @@ export default function Config() {
                 </div>
             )}
 
-            {sections.map(([section, fields]) => (
-                <div className="card" key={section}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h2>{section}</h2>
-                        {editSection !== section && (
-                            <button className="secondary" onClick={() => startEdit(section)}>Edit</button>
-                        )}
-                    </div>
+            {sections.map(([section, fields]) => {
+                const collapsed = collapsedSections.has(section)
+                return (
+                    <div className="card" key={section}>
+                        <div
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                            onClick={() => toggleSection(section)}
+                        >
+                            <h2 style={{ margin: 0 }}>
+                                <span style={{ display: 'inline-block', marginRight: '0.4rem', fontSize: '0.7em', opacity: 0.7, transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', transformOrigin: 'center' }}>▼</span>
+                                {section}
+                            </h2>
+                            {!collapsed && editSection !== section && (
+                                <button className="secondary" onClick={e => { e.stopPropagation(); startEdit(section) }}>Edit</button>
+                            )}
+                        </div>
 
-                    {editSection === section ? (
-                        <div>
+                        {!collapsed && (editSection === section ? (
+                            <div>
+                                <table>
+                                    <tbody>
+                                        {Object.entries(editValues).map(([field, val]) => (
+                                            <tr key={field}>
+                                                <td style={{ width: '30%' }}>{field}</td>
+                                                <td>
+                                                    <input
+                                                        value={val}
+                                                        onChange={e => setEditValues(prev => ({ ...prev, [field]: e.target.value }))}
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                                    <button onClick={handleSave} disabled={loading}>Save</button>
+                                    <button className="secondary" onClick={() => setEditSection(null)}>Cancel</button>
+                                </div>
+                            </div>
+                        ) : (
                             <table>
                                 <tbody>
-                                    {Object.entries(editValues).map(([field, val]) => (
+                                    {Object.entries(fields).map(([field, value]) => (
                                         <tr key={field}>
                                             <td style={{ width: '30%' }}>{field}</td>
-                                            <td>
-                                                <input
-                                                    value={val}
-                                                    onChange={e => setEditValues(prev => ({ ...prev, [field]: e.target.value }))}
-                                                />
-                                            </td>
+                                            <td>{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
-                            <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
-                                <button onClick={handleSave} disabled={loading}>Save</button>
-                                <button className="secondary" onClick={() => setEditSection(null)}>Cancel</button>
-                            </div>
-                        </div>
-                    ) : (
-                        <table>
-                            <tbody>
-                                {Object.entries(fields).map(([field, value]) => (
-                                    <tr key={field}>
-                                        <td style={{ width: '30%' }}>{field}</td>
-                                        <td>{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-            ))}
+                        ))}
+                    </div>
+                )
+            })}
 
             <h2 style={{ margin: '1.5rem 0 0.75rem' }}>FanFicFare Configuration Files</h2>
 
             {(['personal', 'defaults'] as IniType[]).map(t => {
                 const ini = iniStates[t]
                 const label = INI_LABELS[t]
+                const iniKey = `ini_${t}`
+                const collapsed = collapsedSections.has(iniKey)
                 return (
                     <div className="card" key={t}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h2>{label}{ini.path && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', marginLeft: '0.5rem', opacity: 0.6 }}>{ini.path}</span>}</h2>
-                            {!ini.editing && !ini.error && (
-                                <button className="secondary" onClick={() => startIniEdit(t)} disabled={ini.loading}>Edit</button>
+                        <div
+                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                            onClick={() => toggleSection(iniKey)}
+                        >
+                            <h2 style={{ margin: 0 }}>
+                                <span style={{ display: 'inline-block', marginRight: '0.4rem', fontSize: '0.7em', opacity: 0.7, transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', transformOrigin: 'center' }}>▼</span>
+                                {label}{ini.path && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', marginLeft: '0.5rem', opacity: 0.6 }}>{ini.path}</span>}
+                            </h2>
+                            {!collapsed && !ini.editing && !ini.error && (
+                                <button className="secondary" onClick={e => { e.stopPropagation(); startIniEdit(t) }} disabled={ini.loading}>Edit</button>
                             )}
                         </div>
 
-                        {ini.saveResult && (
-                            <p style={{ color: ini.saveResult.applied ? 'var(--success)' : 'var(--error)' }}>
-                                {ini.saveResult.applied ? 'Changes saved.' : `Error: ${ini.saveResult.error}`}
-                            </p>
-                        )}
+                        {!collapsed && (
+                            <>
+                                {ini.saveResult && (
+                                    <p style={{ color: ini.saveResult.applied ? 'var(--success)' : 'var(--error)' }}>
+                                        {ini.saveResult.applied ? 'Changes saved.' : `Error: ${ini.saveResult.error}`}
+                                    </p>
+                                )}
 
-                        {ini.error && !ini.editing ? (
-                            <p style={{ color: 'var(--error)', fontStyle: 'italic' }}>{ini.error}</p>
-                        ) : ini.editing ? (
-                            <div>
-                                <textarea
-                                    value={ini.editContent}
-                                    onChange={e => setIniStates(prev => ({ ...prev, [t]: { ...prev[t], editContent: e.target.value } }))}
-                                    rows={20}
-                                    style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'vertical', boxSizing: 'border-box' }}
-                                />
-                                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
-                                    <button onClick={() => saveIni(t)} disabled={ini.loading}>Save</button>
-                                    <button className="secondary" onClick={() => cancelIniEdit(t)}>Cancel</button>
-                                </div>
-                            </div>
-                        ) : (
-                            ini.content
-                                ? <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.85rem', margin: 0 }}>{ini.content}</pre>
-                                : <p style={{ fontStyle: 'italic', opacity: 0.5, margin: 0 }}>File is empty</p>
+                                {ini.error && !ini.editing ? (
+                                    <p style={{ color: 'var(--error)', fontStyle: 'italic' }}>{ini.error}</p>
+                                ) : ini.editing ? (
+                                    <div>
+                                        <textarea
+                                            value={ini.editContent}
+                                            onChange={e => setIniStates(prev => ({ ...prev, [t]: { ...prev[t], editContent: e.target.value } }))}
+                                            rows={20}
+                                            style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem', resize: 'vertical', boxSizing: 'border-box' }}
+                                        />
+                                        <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                                            <button onClick={() => saveIni(t)} disabled={ini.loading}>Save</button>
+                                            <button className="secondary" onClick={() => cancelIniEdit(t)}>Cancel</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    ini.content
+                                        ? <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.85rem', margin: 0 }}>{ini.content}</pre>
+                                        : <p style={{ fontStyle: 'italic', opacity: 0.5, margin: 0 }}>File is empty</p>
+                                )}
+                            </>
                         )}
                     </div>
                 )

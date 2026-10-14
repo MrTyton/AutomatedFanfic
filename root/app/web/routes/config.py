@@ -132,6 +132,15 @@ async def update_config_section(
             writer.write_section(section, body.values)
         except Exception as e:
             return {"applied": False, "error": f"Failed to write config: {e}"}
+        # Reload the in-memory config so GET /api/config immediately reflects the new values
+        try:
+            from models.config_models import ConfigManager
+
+            state.config = ConfigManager.load_config(
+                state.config_path, force_reload=True
+            )
+        except Exception:
+            pass  # Write succeeded; stale in-memory config is non-fatal
 
     for field_name in classified[ReloadBehavior.SERVICE_RESTART]:
         results["service_restart"].append(field_name)
