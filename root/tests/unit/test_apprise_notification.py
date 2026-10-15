@@ -1,3 +1,5 @@
+import pickle
+import multiprocessing as mp
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -10,6 +12,19 @@ from models.config_models import (
     EmailConfig,
     CalibreConfig,
 )
+
+
+def _subprocess_echo_apprise(notifier: AppriseNotification, result_q) -> None:
+    """Top-level helper for test_pickle_roundtrip_via_spawn_process.
+    Must be module-level so it is importable by spawned child processes.
+    """
+    result_q.put(
+        {
+            "enabled": notifier.enabled,
+            "has_log_callback": hasattr(notifier.apobj, "_log_callback"),
+            "url_count": len(list(notifier.apobj.urls())),
+        }
+    )
 
 
 class TestAppriseNotification(unittest.TestCase):
@@ -655,6 +670,120 @@ class TestAppriseNotificationAdditionalCoverage(unittest.TestCase):
         result = notifier.is_enabled()
         self.assertEqual(result, notifier.enabled)
         self.assertTrue(result)
+
+
+class TestAppriseNotificationPickle(unittest.TestCase):
+    """Pickle / multiprocessing regression tests for AppriseNotification.
+
+    apprise.Apprise() objects lose private attributes (e.g. _log_callback)
+    when pickled. These tests guard against regressions that would break
+    the forkserver / spawn start methods used to launch worker processes.
+    """
+
+    def _make_notifier(self, urls=None, enabled=True):
+        """Build an AppriseNotification instance bypassing config loading."""
+        import apprise
+
+        obj = object.__new__(AppriseNotification)
+        obj.apprise_urls = list(urls or [])
+        obj.apobj = apprise.Apprise()
+        for url in obj.apprise_urls:
+            obj.apobj.add(url)
+        obj.enabled = enabled
+        obj.config = None
+        return obj
+
+    def test_getstate_excludes_apobj(self):
+        """__getstate__ must omit the un-picklable Apprise object."""
+        notifier = self._make_notifier(["json://localhost"])
+        state = notifier.__getstate__()
+        self.assertNotIn("apobj", state)
+
+    def test_getstate_includes_essential_fields(self):
+        """__getstate__ must retain apprise_urls and enabled."""
+        notifier = self._make_notifier(["json://localhost"], enabled=True)
+        state = notifier.__getstate__()
+        for field in ("apprise_urls", "enabled"):
+            self.assertIn(
+                field, state, msg=f"Field '{field}' missing from __getstate__"
+            )
+        self.assertEqual(state["apprise_urls"], ["json://localhost"])
+        self.assertTrue(state["enabled"])
+
+    def test_setstate_rebuilds_apobj_with_log_callback(self):
+        """__setstate__ must create a fresh Apprise object that has _log_callback."""
+        notifier = self._make_notifier(["json://localhost"])
+        state = notifier.__getstate__()
+
+        notifier2 = object.__new__(AppriseNotification)
+        notifier2.__setstate__(state)
+
+        self.assertTrue(
+            hasattr(notifier2.apobj, "_log_callback"),
+            "_log_callback missing after __setstate__",
+        )
+
+    def test_setstate_restores_urls_to_apobj(self):
+        """__setstate__ must re-add all saved URLs to the rebuilt Apprise object."""
+        notifier = self._make_notifier(["json://localhost"])
+        state = notifier.__getstate__()
+
+        notifier2 = object.__new__(AppriseNotification)
+        notifier2.__setstate__(state)
+
+        rebuilt_urls = list(notifier2.apobj.urls())
+        self.assertEqual(len(rebuilt_urls), 1)
+
+    def test_pickle_roundtrip_restores_log_callback(self):
+        """Regression: _log_callback must be present after pickle round-trip.
+
+        Before the __getstate__/__setstate__ fix, apprise.Apprise() lost its
+        private attributes when pickled, causing worker crashes:
+            'Apprise' object has no attribute '_log_callback'
+        """
+        notifier = self._make_notifier(["json://localhost"])
+        notifier2 = pickle.loads(pickle.dumps(notifier))
+        self.assertTrue(
+            hasattr(notifier2.apobj, "_log_callback"),
+            "_log_callback missing after pickle round-trip — worker would crash",
+        )
+
+    def test_pickle_roundtrip_preserves_enabled_true(self):
+        """enabled=True is preserved across a pickle round-trip."""
+        notifier = self._make_notifier(["json://localhost"], enabled=True)
+        notifier2 = pickle.loads(pickle.dumps(notifier))
+        self.assertTrue(notifier2.enabled)
+        self.assertEqual(notifier2.apprise_urls, ["json://localhost"])
+
+    def test_pickle_roundtrip_preserves_enabled_false(self):
+        """enabled=False (no URLs configured) is preserved across a pickle round-trip."""
+        notifier = self._make_notifier(urls=[], enabled=False)
+        notifier2 = pickle.loads(pickle.dumps(notifier))
+        self.assertFalse(notifier2.enabled)
+        self.assertEqual(notifier2.apprise_urls, [])
+        self.assertIsNotNone(notifier2.apobj)
+
+    def test_pickle_roundtrip_via_spawn_process(self):
+        """AppriseNotification must be passable as a Process arg under 'spawn'.
+
+        Regression test for the forkserver / spawn PicklingError.
+        Uses an explicit 'spawn' context so this catches regressions even
+        when the test suite itself runs under the default 'fork' start method.
+        """
+        ctx = mp.get_context("spawn")
+        notifier = self._make_notifier(["json://localhost"], enabled=True)
+        result_q = ctx.Queue()
+        p = ctx.Process(target=_subprocess_echo_apprise, args=(notifier, result_q))
+        p.start()
+        p.join(timeout=30)
+        self.assertEqual(p.exitcode, 0, "Spawned subprocess exited non-zero")
+        result = result_q.get_nowait()
+        self.assertTrue(result["enabled"])
+        self.assertTrue(
+            result["has_log_callback"],
+            "_log_callback missing inside spawned subprocess",
+        )
+        self.assertEqual(result["url_count"], 1)
 
 
 if __name__ == "__main__":

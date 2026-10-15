@@ -28,6 +28,7 @@ def run_supervisor(
     verbose: bool = False,
     history_recorder=None,
     config_store=None,
+    log_queue=None,
 ):
     """
     Entry point for the Supervisor process.
@@ -39,6 +40,7 @@ def run_supervisor(
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+    ff_logging.set_log_forward_queue(log_queue)
     ff_logging.set_thread_color("\033[92m")  # Green for Supervisor
 
     shutdown_event = threading.Event()

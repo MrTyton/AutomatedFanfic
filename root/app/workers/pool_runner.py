@@ -29,6 +29,7 @@ def run_worker_pool(
     verbose: bool = False,
     history_recorder=None,
     config_store=None,
+    log_queue=None,
 ) -> None:
     """
     Runs a pool of worker threads within a single process.
@@ -43,9 +44,11 @@ def run_worker_pool(
         active_urls: Shared dictionary of active URLs.
         verbose: Verbose logging flag.
         config_store: Optional ConfigStore for hot-reloading calibre/notification config.
+        log_queue: Optional cross-process queue for forwarding log entries to the web server.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+    ff_logging.set_log_forward_queue(log_queue)
 
     # Attach ConfigStore so workers pick up credential changes at runtime
     if config_store is not None:

@@ -269,3 +269,16 @@ class AppriseNotification(notification_base.NotificationBase):
             Using Apprise for notifications
         """
         return "Apprise"
+
+    def __getstate__(self) -> dict:
+        """Exclude the un-picklable Apprise object from serialization."""
+        state = self.__dict__.copy()
+        state.pop("apobj", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore state and rebuild the Apprise object from saved URLs."""
+        self.__dict__.update(state)
+        self.apobj = apprise.Apprise()
+        for url in getattr(self, "apprise_urls", []):
+            self.apobj.add(url)
