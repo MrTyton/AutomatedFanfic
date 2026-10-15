@@ -74,7 +74,7 @@ import time
 import logging
 import threading
 from contextlib import contextmanager
-from fanficfare import geturls
+lazy from fanficfare import geturls
 from utils import ff_logging
 from parsers import regex_parsing
 from notifications import notification_wrapper

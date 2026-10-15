@@ -168,7 +168,7 @@ class CalibreInfo:
         """
         try:
             # Redirect output to null to suppress command output during check
-            with open(os.devnull, "w") as nullout:
+            with open(os.devnull, "w", encoding="utf-8") as nullout:
                 # Attempt to call calibredb with no arguments to test availability
                 call(["calibredb"], stdout=nullout, stderr=nullout)
             return True

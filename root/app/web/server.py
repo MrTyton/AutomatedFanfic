@@ -9,7 +9,7 @@ import signal
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -114,14 +114,14 @@ def create_app(web_state: WebState) -> FastAPI:
 def run_web_server(
     host: str = "0.0.0.0",
     port: int = 8080,
-    history_db_path: Optional[str] = None,
-    active_urls: Optional[dict] = None,
+    history_db_path: str | None = None,
+    active_urls: dict | None = None,
     ingress_queue: Any = None,
-    worker_queues: Optional[dict] = None,
+    worker_queues: dict | None = None,
     waiting_queue: Any = None,
     process_status_callable: Any = None,
     app_config: Any = None,
-    config_path: Optional[str] = None,
+    config_path: str | None = None,
     config_store: Any = None,
     history_recorder: Any = None,
     verbose: bool = False,

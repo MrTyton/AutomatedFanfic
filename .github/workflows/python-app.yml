@@ -44,7 +44,7 @@ jobs:
       - name: Setup Python Environment
         uses: ./.github/actions/setup-python
         with:
-          python-version: "3.14"
+          python-version: "3.15"
           install-fanficfare: "false" # Not needed for pre-commit
           install-dev-tools: "true"
           requirements-file: "requirements-dev.txt" # Need dev dependencies for pre-commit
@@ -68,7 +68,7 @@ jobs:
       - name: Setup Python Environment
         uses: ./.github/actions/setup-python
         with:
-          python-version: "3.14"
+          python-version: "3.15"
           install-fanficfare: "false" # Not needed for linting
           install-dev-tools: "true"
           requirements-file: "requirements.txt" # Only runtime dependencies needed for linting
@@ -94,7 +94,7 @@ jobs:
       - name: Setup Python Environment
         uses: ./.github/actions/setup-python
         with:
-          python-version: "3.14"
+          python-version: "3.15"
           install-fanficfare: "true"
           install-dev-tools: "true"
           requirements-file: "requirements-dev.txt" # Need dev dependencies for testing

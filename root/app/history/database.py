@@ -9,9 +9,8 @@ the single-threaded HistoryWriter (see recorder.py).
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 
-import aiosqlite
+lazy import aiosqlite
 
 from history.models import (
     DownloadEvent,
@@ -84,11 +83,11 @@ CREATE INDEX IF NOT EXISTS idx_notification_events_sent_at ON notification_event
 """
 
 
-def _dt_to_str(dt: Optional[datetime]) -> Optional[str]:
+def _dt_to_str(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
-def _str_to_dt(s: Optional[str]) -> Optional[datetime]:
+def _str_to_dt(s: str | None) -> datetime | None:
     return datetime.fromisoformat(s) if s else None
 
 
@@ -102,7 +101,7 @@ class SyncHistoryDB:
 
     def __init__(self, db_path: str):
         self._db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
 
     def connect(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -160,11 +159,11 @@ class SyncHistoryDB:
         self,
         url: str,
         status: DownloadStatus,
-        title: Optional[str] = None,
-        calibre_id: Optional[str] = None,
-        error_message: Optional[str] = None,
-        completed_at: Optional[datetime] = None,
-        site: Optional[str] = None,
+        title: str | None = None,
+        calibre_id: str | None = None,
+        error_message: str | None = None,
+        completed_at: datetime | None = None,
+        site: str | None = None,
     ) -> None:
         """Update the most recent in-progress download_event for *url*.
 
@@ -364,9 +363,9 @@ class AsyncHistoryDB:
         self,
         limit: int = 50,
         offset: int = 0,
-        site: Optional[str] = None,
-        status: Optional[str] = None,
-        search: Optional[str] = None,
+        site: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
     ) -> list[dict]:
         conn = await self._get_conn()
         try:
@@ -396,9 +395,9 @@ class AsyncHistoryDB:
 
     async def get_download_count(
         self,
-        site: Optional[str] = None,
-        status: Optional[str] = None,
-        search: Optional[str] = None,
+        site: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
     ) -> int:
         conn = await self._get_conn()
         try:
@@ -576,8 +575,7 @@ class AsyncHistoryDB:
         """
         conn = await self._get_conn()
         try:
-            cursor = await conn.execute(
-                """WITH latest_waiting AS (
+            cursor = await conn.execute("""WITH latest_waiting AS (
                        SELECT url,
                               MAX(started_at) AS latest_started_at
                        FROM download_events
@@ -589,8 +587,7 @@ class AsyncHistoryDB:
                    JOIN latest_waiting lw
                      ON d.url = lw.url
                     AND d.started_at = lw.latest_started_at
-                   WHERE d.status = 'waiting'"""
-            )
+                   WHERE d.status = 'waiting'""")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
         finally:
@@ -699,31 +696,27 @@ class AsyncHistoryDB:
             total_retries = (await cursor.fetchone())[0]
 
             # Average retries to success
-            cursor = await conn.execute(
-                """SELECT AVG(cnt) FROM (
+            cursor = await conn.execute("""SELECT AVG(cnt) FROM (
                        SELECT COUNT(*) as cnt
                        FROM retry_events r
                        JOIN download_events d ON r.download_event_id = d.id
                        WHERE d.status = 'success'
                        GROUP BY r.download_event_id
-                   )"""
-            )
+                   )""")
             row = await cursor.fetchone()
             avg_retries_to_success = (
                 round(row[0], 2) if row and row[0] is not None else 0.0
             )
 
             # Downloads by site (all-time, top 20)
-            cursor = await conn.execute(
-                """SELECT site,
+            cursor = await conn.execute("""SELECT site,
                           COUNT(*) as total,
                           SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
                           SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
                    FROM download_events
                    GROUP BY site
                    ORDER BY total DESC
-                   LIMIT 20"""
-            )
+                   LIMIT 20""")
             downloads_by_site = [dict(r) for r in await cursor.fetchall()]
 
             # Downloads over time (daily buckets within period)
@@ -772,21 +765,17 @@ class AsyncHistoryDB:
             monthly_distribution = [dict(r) for r in await cursor.fetchall()]
 
             # Retry distribution by attempt number
-            cursor = await conn.execute(
-                """SELECT attempt_number, COUNT(*) as count
+            cursor = await conn.execute("""SELECT attempt_number, COUNT(*) as count
                    FROM retry_events
                    GROUP BY attempt_number
-                   ORDER BY attempt_number"""
-            )
+                   ORDER BY attempt_number""")
             retry_distribution = [dict(r) for r in await cursor.fetchall()]
 
             # Status breakdown (all-time)
-            cursor = await conn.execute(
-                """SELECT status, COUNT(*) as count
+            cursor = await conn.execute("""SELECT status, COUNT(*) as count
                    FROM download_events
                    GROUP BY status
-                   ORDER BY count DESC"""
-            )
+                   ORDER BY count DESC""")
             status_breakdown = [dict(r) for r in await cursor.fetchall()]
 
             return {
