@@ -23,6 +23,13 @@ from fanficfare import adapters, configurable, exceptions
 from utils import ff_logging
 
 
+def _normalize_url(url: str) -> str:
+    """Prepend https:// scheme if the URL has no scheme."""
+    if url and "://" not in url:
+        return "https://" + url
+    return url
+
+
 def is_series_url(
     url: str, config: Optional[configurable.Configuration] = None
 ) -> bool:
@@ -39,6 +46,7 @@ def is_series_url(
     Returns:
         True if the URL is a series/collection, False if single story or unknown
     """
+    url = _normalize_url(url)
     if not config:
         config = configurable.Configuration(["test.com"], "EPUB", lightweight=True)
 
@@ -106,6 +114,7 @@ def expand_series_url(
         List of individual story URLs extracted from the series.
         Returns empty list if URL is not a series or extraction fails.
     """
+    url = _normalize_url(url)
     if not config:
         config = configurable.Configuration(["test.com"], "EPUB", lightweight=True)
 

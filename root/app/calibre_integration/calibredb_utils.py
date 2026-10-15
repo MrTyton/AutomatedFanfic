@@ -244,7 +244,10 @@ class CalibreDBClient:
         """
         file_to_add = self._find_epub_in_directory(location)
         if not file_to_add:
-            ff_logging.log_failure("No EPUB files found in the specified location.")
+            ff_logging.log_failure(
+                f"\t({fanfic.site}) No EPUB file found in '{location}' for {fanfic.url}. "
+                "FanFicFare may have failed silently — check the FanFicFare output above."
+            )
             return
 
         fanfic.title = regex_parsing.extract_filename(file_to_add)
@@ -330,7 +333,10 @@ class CalibreDBClient:
 
         file_to_add = self._find_epub_in_directory(location)
         if not file_to_add:
-            ff_logging.log_failure("No EPUB files found in the specified location.")
+            ff_logging.log_failure(
+                f"\t({fanfic.site}) No EPUB file found in '{location}' for {fanfic.url}. "
+                "FanFicFare may have failed silently — check the FanFicFare output above."
+            )
             return False
 
         ff_logging.log(
