@@ -82,6 +82,20 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
 
 # Python Dependencies Stage
 FROM builder-tools AS python-deps
+# Install build tools and common dev libs for C extensions that may not yet
+# have pre-built wheels for the current Python version (e.g. Brotli, uvloop,
+# Pillow on a freshly-released Python release).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libjpeg-dev \
+    zlib1g-dev \
+    libpng-dev \
+    libfreetype6-dev \
+    libwebp-dev \
+    libopenjp2-7-dev
 COPY requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --prefix=/install --no-warn-script-location -r /tmp/requirements.txt
