@@ -1,4 +1,5 @@
 from parameterized import parameterized
+import pickle
 import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
@@ -11,6 +12,13 @@ from models.fanfic_info import FanficInfo
 from models.config_models import (
     EmailConfig,
 )
+
+
+def _subprocess_echo_email(email_info: EmailInfo, result_q) -> None:
+    """Top-level helper for test_email_info_picklable_via_spawn_process.
+    Must be module-level so it is importable by spawned child processes.
+    """
+    result_q.put({"email": email_info.email, "server": email_info.server})
 
 
 class TestUrlIngester(unittest.TestCase):
@@ -269,6 +277,120 @@ class TestUrlIngester(unittest.TestCase):
         """EmailConfig.imap_idle accepts True."""
         config = EmailConfig(email="u", password="p", server="s", imap_idle=True)
         self.assertTrue(config.imap_idle)
+
+    # ------------------------------------------------------------------
+    # Pickle / multiprocessing regression (Python 3.15 forkserver fix)
+    # EmailInfo._geturls held a non-picklable closure; these tests guard
+    # against regressions that would break forkserver / spawn start methods.
+    # ------------------------------------------------------------------
+
+    def test_email_info_getstate_excludes_geturls(self):
+        """__getstate__ must omit _geturls and _geturls_ini_mtime."""
+        email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
+        ei = EmailInfo(email_config)
+        state = ei.__getstate__()
+        self.assertNotIn("_geturls", state)
+        self.assertNotIn("_geturls_ini_mtime", state)
+
+    def test_email_info_getstate_includes_all_config_fields(self):
+        """__getstate__ retains every field needed to reconstruct EmailInfo."""
+        email_config = EmailConfig(
+            email="u",
+            password="p",
+            server="s",
+            mailbox="INBOX",
+            sleep_time=30,
+            imap_idle=True,
+            disabled_sites=["fanfiction"],
+        )
+        ei = EmailInfo(email_config, default_ini="/d.ini", personal_ini="/p.ini")
+        state = ei.__getstate__()
+        for field in (
+            "email",
+            "password",
+            "server",
+            "mailbox",
+            "sleep_time",
+            "imap_idle",
+            "disabled_sites",
+            "default_ini",
+            "personal_ini",
+        ):
+            self.assertIn(
+                field, state, msg=f"Field '{field}' missing from __getstate__"
+            )
+
+    def test_email_info_setstate_rebuilds_geturls(self):
+        """__setstate__ reconstructs _geturls without calling __init__."""
+        email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
+        ei = EmailInfo(email_config)
+        state = ei.__getstate__()
+
+        ei2 = object.__new__(EmailInfo)  # bypass __init__
+        ei2.__setstate__(state)
+
+        self.assertIsNotNone(ei2._geturls)
+        self.assertEqual(ei2.email, "u")
+        self.assertEqual(ei2.server, "s")
+
+    def test_email_info_pickle_roundtrip_no_ini(self):
+        """EmailInfo with no ini paths survives pickle.dumps / pickle.loads."""
+        email_config = EmailConfig(
+            email="u", password="p", server="s", mailbox="INBOX", sleep_time=15
+        )
+        ei = EmailInfo(email_config)
+        ei2 = pickle.loads(pickle.dumps(ei))
+        self.assertEqual(ei2.email, "u")
+        self.assertEqual(ei2.server, "s")
+        self.assertEqual(ei2.sleep_time, 15)
+        self.assertIsNotNone(ei2._geturls)
+
+    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.url_ingester._make_fff_get_configuration")
+    def test_email_info_pickle_roundtrip_with_closure(
+        self, mock_make_config, mock_geturls
+    ):
+        """EmailInfo whose _geturls was built from a closure must be picklable.
+
+        This is the direct regression test: before the __getstate__ fix,
+        pickle.dumps raised PicklingError because the closure returned by
+        _make_fff_get_configuration cannot be serialised.
+        """
+
+        # Use a real (non-picklable) local function to simulate the closure.
+        def _unpicklable_closure(url):  # noqa: WPS430 – intentional local fn
+            return MagicMock()
+
+        mock_make_config.return_value = _unpicklable_closure
+        mock_geturls.return_value = MagicMock()
+
+        email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
+        ei = EmailInfo(email_config, default_ini="/d.ini", personal_ini="/p.ini")
+
+        # Must not raise, even though _geturls holds an unpicklable closure.
+        ei2 = pickle.loads(pickle.dumps(ei))
+        self.assertEqual(ei2.email, "u")
+        self.assertEqual(ei2.default_ini, "/d.ini")
+        self.assertIsNotNone(ei2._geturls)
+
+    def test_email_info_picklable_via_spawn_process(self):
+        """EmailInfo must be passable as a Process arg under the 'spawn' start method.
+
+        Regression test for the Python 3.15 forkserver / spawn PicklingError.
+        Uses an explicit 'spawn' context so this test catches regressions even
+        when the test suite runs with the default 'fork' start method.
+        """
+        ctx = mp.get_context("spawn")
+        email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
+        ei = EmailInfo(email_config)
+        result_q = ctx.Queue()
+        p = ctx.Process(target=_subprocess_echo_email, args=(ei, result_q))
+        p.start()
+        p.join(timeout=30)
+        self.assertEqual(p.exitcode, 0, "Spawned subprocess exited non-zero")
+        result = result_q.get_nowait()
+        self.assertEqual(result["email"], "u")
+        self.assertEqual(result["server"], "s")
 
 
 class TestMakeFffGetConfiguration(unittest.TestCase):
