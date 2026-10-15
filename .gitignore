@@ -114,3 +114,10 @@ ENV/
 
 # Workspace
 .code-workspace
+
+# SlimToolkit - production configs with real credentials (for local slim analysis only)
+root/config.default/Actual Configs/
+
+# SlimToolkit state directory
+.slim/
+slim.report.json
