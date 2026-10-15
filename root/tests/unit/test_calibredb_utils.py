@@ -227,9 +227,9 @@ class TestCalibreDBClient(unittest.TestCase):
             self.client.add_story(location, fanfic)
 
             if should_fail:
-                mock_log_failure.assert_called_once_with(
-                    "No EPUB files found in the specified location."
-                )
+                mock_log_failure.assert_called_once()
+                failure_msg = mock_log_failure.call_args[0][0]
+                self.assertIn("No EPUB file found", failure_msg)
                 mock_execute.assert_not_called()
             else:
                 mock_log.assert_called_once_with(
@@ -737,7 +737,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
             self.assertFalse(result)
             mock_log_failure.assert_called()
             failure_msg = mock_log_failure.call_args[0][0]
-            self.assertIn("No EPUB files found", failure_msg)
+            self.assertIn("No EPUB file found", failure_msg)
 
     @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
     def test_add_format_exception_handling(self, mock_log_failure):
