@@ -182,7 +182,7 @@ def url_worker(
     try:
         # Extract ID number from "worker_12" -> 12
         w_index = int(worker_id.split("_")[-1])
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         w_index = 0
 
     worker_color = ff_logging.get_color_for_worker(w_index)

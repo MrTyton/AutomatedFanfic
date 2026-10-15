@@ -286,12 +286,14 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         sections = sections or ["www.royalroad.com", "test1.com"]
         isfile_side_effect = isfile_side_effect or (lambda _: False)
 
-        with patch(
-            "fanficfare.adapters.getConfigSectionsFor", return_value=sections
-        ) as mock_secs, patch(
-            "fanficfare.configurable.Configuration"
-        ) as mock_cfg_cls, patch(
-            "services.url_ingester.os.path.isfile", side_effect=isfile_side_effect
+        with (
+            patch(
+                "fanficfare.adapters.getConfigSectionsFor", return_value=sections
+            ) as mock_secs,
+            patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
+            patch(
+                "services.url_ingester.os.path.isfile", side_effect=isfile_side_effect
+            ),
         ):
             mock_cfg = MagicMock()
             mock_cfg_cls.return_value = mock_cfg
@@ -317,11 +319,13 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
     def test_callable_falls_back_on_unknown_url(self):
         """When getConfigSectionsFor raises, falls back to ['test1.com']."""
         url = "https://not-a-fanfic-site.example.com/story/123"
-        with patch(
-            "fanficfare.adapters.getConfigSectionsFor",
-            side_effect=Exception("UnknownSite"),
-        ), patch("fanficfare.configurable.Configuration") as mock_cfg_cls, patch(
-            "services.url_ingester.os.path.isfile", return_value=False
+        with (
+            patch(
+                "fanficfare.adapters.getConfigSectionsFor",
+                side_effect=Exception("UnknownSite"),
+            ),
+            patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
+            patch("services.url_ingester.os.path.isfile", return_value=False),
         ):
             mock_cfg_cls.return_value = MagicMock()
             fn = _make_fff_get_configuration(None, None)

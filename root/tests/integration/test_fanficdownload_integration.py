@@ -90,7 +90,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         """Clean up test fixtures."""
         try:
             os.unlink(self.temp_config_path)
-        except (OSError, FileNotFoundError):
+        except OSError, FileNotFoundError:
             pass
         ConfigManager.clear_cache()
 

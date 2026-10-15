@@ -110,9 +110,9 @@ def log_epub_metadata(epub_path: str, site: str) -> None:
             for elem in opf_root.iter():
                 # Check for dc:identifier
                 if "identifier" in elem.tag.lower():
-                    metadata[
-                        f"Identifier ({elem.attrib.get('id', 'unknown')})"
-                    ] = elem.text
+                    metadata[f"Identifier ({elem.attrib.get('id', 'unknown')})"] = (
+                        elem.text
+                    )
                 # Check for dc:source
                 if "source" in elem.tag.lower():
                     metadata["Source"] = elem.text
