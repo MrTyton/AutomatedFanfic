@@ -1,7 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { getLogs, getStartupLogs, type LogEntry } from '../api'
 
 const DEFAULT_LEVEL_FILTER = 'error'
+
+// Extract the site token from messages like "(ao3) Processing …" or "\t(ffnet) …"
+const SITE_RE = /^\s*\(([^)]+)\)/
+
+function extractSite(message: string): string | null {
+    const m = SITE_RE.exec(message)
+    return m ? m[1] : null
+}
 
 export default function Logs() {
     const [logs, setLogs] = useState<LogEntry[]>([])
@@ -11,6 +19,7 @@ export default function Logs() {
     const [levelFilter, setLevelFilter] = useState<string>(
         () => localStorage.getItem('logs-level-filter') ?? DEFAULT_LEVEL_FILTER
     )
+    const [siteFilter, setSiteFilter] = useState<string>('')
     const [activeView, setActiveView] = useState<'runtime' | 'startup'>('runtime')
     const [startupLoaded, setStartupLoaded] = useState(false)
     const bottomRef = useRef<HTMLDivElement>(null)
@@ -73,10 +82,31 @@ export default function Logs() {
 
     const visibleLogs = activeView === 'startup' ? startupLogs : logs
 
+    // Collect unique site names present in the visible log set for the dropdown
+    const availableSites = useMemo(() => {
+        const sites = new Set<string>()
+        for (const entry of visibleLogs) {
+            const site = extractSite(entry.message)
+            if (site) sites.add(site)
+        }
+        return Array.from(sites).sort()
+    }, [visibleLogs])
+
+    // Reset site filter when switching views or if the selected site disappears
+    useEffect(() => {
+        if (siteFilter && !availableSites.includes(siteFilter)) {
+            setSiteFilter('')
+        }
+    }, [availableSites, siteFilter])
+
     const filteredLogs = visibleLogs.filter(entry => {
         if (levelFilter !== 'all') {
             const allowed = levelSets[levelFilter]
             if (allowed && !allowed.has(entry.level)) return false
+        }
+        if (siteFilter) {
+            const site = extractSite(entry.message)
+            if (site !== siteFilter) return false
         }
         if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase())) return false
         return true
@@ -183,6 +213,21 @@ export default function Logs() {
                         <option value="all">All (incl. Debug)</option>
                     </select>
                 </label>
+                {availableSites.length > 0 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                        Site:
+                        <select
+                            value={siteFilter}
+                            onChange={e => setSiteFilter(e.target.value)}
+                            style={{ padding: '0.3rem 0.5rem' }}
+                        >
+                            <option value="">All sites</option>
+                            {availableSites.map(site => (
+                                <option key={site} value={site}>{site}</option>
+                            ))}
+                        </select>
+                    </label>
+                )}
                 <input
                     type="text"
                     placeholder="Filter logs…"

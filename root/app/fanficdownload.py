@@ -286,6 +286,7 @@ def register_processes(
             args.verbose,
             history_recorder,
             config_store,
+            log_queue,
         ),
     )
 
@@ -304,6 +305,7 @@ def register_processes(
             args.verbose,
             history_recorder,
             config_store,
+            log_queue,
         ),
     )
 

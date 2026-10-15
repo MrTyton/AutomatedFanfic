@@ -291,7 +291,7 @@ def execute_fanficfare_direct(
     #   failed_login    → "Login Failed on non-interactive process."
     if regex_parsing.check_failure_from_message(captured_output):
         result.failure_messages.append(
-            "FanFicFare reported a silent failure condition (see stdout above)."
+            f"FanFicFare silent failure: {captured_output.strip()}"
         )
 
     return result
