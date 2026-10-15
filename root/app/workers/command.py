@@ -2,6 +2,7 @@
 Command execution logic for FanFicFare integration.
 """
 
+import configparser
 import io
 import sys
 import shlex
@@ -112,6 +113,61 @@ class FanFicFareResult:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_output_filename_template(ini_text: str, site: str | None = None) -> str:
+    """Return the filename-only portion of the user's output_filename template.
+
+    Mirrors FanFicFare's config priority: [overrides] > [site-domain] > [defaults].
+    ``site`` is the fanfic.site value (e.g. ``archiveofourown``) used to find
+    a matching ini section (e.g. ``[archiveofourown.org]``) so per-site filename
+    customisations are respected.
+
+    Any directory prefix in the template is stripped — we control the directory;
+    the user controls the filename pattern.
+
+    Falls back to a sensible default if the setting is absent or unparseable.
+    """
+    _DEFAULT = "${title}-${siteabbrev}_${storyId}.epub"
+    if not ini_text:
+        return _DEFAULT
+
+    sections_to_check = ["overrides"]
+
+    try:
+        parser = configparser.RawConfigParser()
+        parser.read_string(ini_text)
+
+        # Find the site-specific section by substring match:
+        # fanfic.site="archiveofourown" matches "[archiveofourown.org]"
+        if site:
+            site_lower = site.lower()
+            for section in parser.sections():
+                if (
+                    section not in ("overrides", "defaults")
+                    and site_lower in section.lower()
+                ):
+                    sections_to_check.append(section)
+                    break
+
+        sections_to_check.append("defaults")
+
+        for section in sections_to_check:
+            try:
+                template = parser.get(section, "output_filename")
+                # Strip any directory component the user may have set —
+                # we control the directory; they control the filename pattern.
+                return template.rsplit("/", 1)[-1]
+            except configparser.NoSectionError, configparser.NoOptionError:
+                continue
+    except Exception:
+        pass
+    return _DEFAULT
+
+
+# ---------------------------------------------------------------------------
 # Public API: direct Python API execution
 # ---------------------------------------------------------------------------
 
@@ -173,14 +229,14 @@ def execute_fanficfare_direct(
             )
 
     # Build personal ini: user's personal.ini + output_filename override.
-    # The override routes new epub output to temp_dir, avoiding os.chdir()
-    # (which is process-global and therefore not thread-safe).
-    output_dir = Path(temp_dir).as_posix()
-    output_override = (
-        "\n[defaults]\n"
-        f"output_filename: {output_dir}/${{title}}-${{siteabbrev}}_${{storyId}}.epub\n"
-    )
-
+    # The direct Python API has no cwd concept (unlike the old subprocess approach
+    # which used cwd=temp_dir).  We inject output_filename via [overrides] —
+    # FanFicFare's highest-priority ini section — so the file always lands in
+    # temp_dir regardless of any path the user may have set.
+    #
+    # We respect the user's filename *template* (e.g. their custom naming
+    # convention) but strip any directory component: we control the directory,
+    # they control the filename pattern.
     personal_ini_base = ""
     if cdb.personal_ini and Path(cdb.personal_ini).is_file():
         try:
@@ -189,6 +245,14 @@ def execute_fanficfare_direct(
             ff_logging.log(
                 f"Could not read personal.ini ({cdb.personal_ini}): {e}", "WARNING"
             )
+
+    output_dir = Path(temp_dir).as_posix()
+    _filename_template = _extract_output_filename_template(
+        personal_ini_base, fanfic.site
+    )
+    output_override = (
+        "\n[overrides]\n" f"output_filename: {output_dir}/{_filename_template}\n"
+    )
 
     passed_personalini = personal_ini_base + output_override
 
