@@ -106,13 +106,13 @@ class ConfigStore:
         self._store["retry.hail_mary_enabled"] = config.retry.hail_mary_enabled
         self._store["retry.hail_mary_wait_hours"] = config.retry.hail_mary_wait_hours
         # ── Process monitor ────────────────────────────────────
-        self._store[
-            "process.health_check_interval"
-        ] = config.process.health_check_interval
+        self._store["process.health_check_interval"] = (
+            config.process.health_check_interval
+        )
         self._store["process.shutdown_timeout"] = config.process.shutdown_timeout
-        self._store[
-            "process.max_restart_attempts"
-        ] = config.process.max_restart_attempts
+        self._store["process.max_restart_attempts"] = (
+            config.process.max_restart_attempts
+        )
 
     # ── Read ────────────────────────────────────────────────────
 

@@ -110,14 +110,14 @@ async def _build_snapshot(state: Any) -> dict:
         if queue is not None:
             try:
                 queues[name] = queue.qsize()
-            except (NotImplementedError, OSError):
+            except NotImplementedError, OSError:
                 queues[name] = -1
     if state.worker_queues:
         worker_depths = {}
         for wid, q in state.worker_queues.items():
             try:
                 worker_depths[wid] = q.qsize()
-            except (NotImplementedError, OSError):
+            except NotImplementedError, OSError:
                 worker_depths[wid] = -1
         queues["workers"] = worker_depths
     snapshot["queues"] = queues
@@ -141,15 +141,15 @@ async def _build_snapshot(state: Any) -> dict:
         now_ts = snapshot["timestamp"]
         if now_ts >= _history_cache["expires_at"]:
             try:
-                _history_cache[
-                    "recent_downloads"
-                ] = await state.history_db.get_recent_downloads(limit=20)
+                _history_cache["recent_downloads"] = (
+                    await state.history_db.get_recent_downloads(limit=20)
+                )
             except Exception:
                 _history_cache["recent_downloads"] = []
             try:
-                _history_cache[
-                    "recent_activity"
-                ] = await state.history_db.get_recent_activity(limit=20)
+                _history_cache["recent_activity"] = (
+                    await state.history_db.get_recent_activity(limit=20)
+                )
             except Exception:
                 _history_cache["recent_activity"] = []
             _history_cache["expires_at"] = now_ts + _HISTORY_CACHE_TTL

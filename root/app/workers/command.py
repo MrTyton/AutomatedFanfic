@@ -16,7 +16,6 @@ from calibre_integration import calibre_info
 from models import fanfic_info
 from parsers import regex_parsing
 
-
 # ---------------------------------------------------------------------------
 # Thread-local stdout proxy
 # ---------------------------------------------------------------------------
@@ -54,7 +53,7 @@ class _ThreadLocalStdout:
     def fileno(self) -> int:
         try:
             return self._wrapped.fileno()  # type: ignore[attr-defined]
-        except (AttributeError, io.UnsupportedOperation):
+        except AttributeError, io.UnsupportedOperation:
             raise io.UnsupportedOperation("fileno")
 
     @property

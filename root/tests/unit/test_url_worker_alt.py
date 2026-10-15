@@ -470,10 +470,11 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         mock_parser = MagicMock()
         mock_parser.parse_args.return_value = (mock_options, [])
 
-        with patch("workers.command.ff_logging.is_verbose", return_value=False), patch(
-            "fanficfare.cli.mkParser", return_value=mock_parser
-        ) as mock_mk, patch("fanficfare.cli.expandOptions"), patch(
-            "fanficfare.cli.do_download", side_effect=do_download_side_effect
+        with (
+            patch("workers.command.ff_logging.is_verbose", return_value=False),
+            patch("fanficfare.cli.mkParser", return_value=mock_parser) as mock_mk,
+            patch("fanficfare.cli.expandOptions"),
+            patch("fanficfare.cli.do_download", side_effect=do_download_side_effect),
         ):
             result = execute_fanficfare_direct(
                 self.mock_cdb, self.mock_fanfic, "http://example.com/story/1", temp_dir
@@ -532,8 +533,9 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         captured_base = io.StringIO()
         proxy = _ThreadLocalStdout(captured_base)
 
-        with patch("workers.command._ensure_tl_stdout", return_value=proxy), patch(
-            "sys.stdout", proxy
+        with (
+            patch("workers.command._ensure_tl_stdout", return_value=proxy),
+            patch("sys.stdout", proxy),
         ):
             result = self._run_direct(do_download_side_effect=fake_do_download)
         self.assertTrue(result.has_failure)

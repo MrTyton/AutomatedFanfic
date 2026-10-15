@@ -51,7 +51,7 @@ def get_cpu_count() -> int:
     """
     try:
         return multiprocessing.cpu_count()
-    except (NotImplementedError, AttributeError):
+    except NotImplementedError, AttributeError:
         return 1
 
 
@@ -265,11 +265,11 @@ class CalibreConfig(BaseModel):
     personal_ini: str | None = Field(
         default=None, description="Path to personal.ini file"
     )
-    update_method: Literal[
-        "update", "update_always", "force", "update_no_force"
-    ] = Field(
-        default="update",
-        description="Fanficfare update method: 'update', 'update_always', 'force', or 'update_no_force'",
+    update_method: Literal["update", "update_always", "force", "update_no_force"] = (
+        Field(
+            default="update",
+            description="Fanficfare update method: 'update', 'update_always', 'force', or 'update_no_force'",
+        )
     )
     metadata_preservation_mode: MetadataPreservationMode = Field(
         default=MetadataPreservationMode.REMOVE_ADD,

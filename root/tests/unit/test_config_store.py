@@ -17,7 +17,6 @@ from config.toml_writer import TomlWriter
 from web.dependencies import WebState
 from web.server import create_app
 
-
 # ── ConfigStore ─────────────────────────────────────────────────────
 
 

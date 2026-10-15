@@ -68,9 +68,11 @@ def handle_failure(
         if history_recorder:
             history_recorder.record_download_abandoned(
                 fanfic.url,
-                error_message
-                if error_message is not None
-                else f"Maximum retries reached after {fanfic.repeats} attempts",
+                (
+                    error_message
+                    if error_message is not None
+                    else f"Maximum retries reached after {fanfic.repeats} attempts"
+                ),
                 site=fanfic.site,
             )
         return
