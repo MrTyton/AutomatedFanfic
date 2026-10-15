@@ -36,7 +36,7 @@ import datetime
 from multiprocessing import Value
 from queue import Empty
 import threading
-from typing import Any, Optional
+from typing import Any
 
 # Thread-local storage for worker-specific logging context
 _thread_local = threading.local()
@@ -62,7 +62,7 @@ _STARTUP_COMPLETE_MARKERS = (
 # When set, log() also puts entries into this queue so the web
 # server process (which runs in a separate subprocess) can drain
 # it and show logs from ALL processes, not just its own.
-_log_forward_queue: Optional[Any] = None
+_log_forward_queue: Any | None = None
 
 
 def _append_log_entry(entry: dict) -> None:
@@ -136,7 +136,7 @@ def set_verbose(value: bool) -> None:
     verbose.value = value
 
 
-def set_log_forward_queue(queue: Optional[Any]) -> None:
+def set_log_forward_queue(queue: Any | None) -> None:
     """Set (or clear) the cross-process log-forwarding queue.
 
     Call this once per process at startup.  When *queue* is not None

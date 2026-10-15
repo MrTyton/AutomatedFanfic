@@ -60,7 +60,6 @@ Note:
 
 from pathlib import Path
 import re
-from typing import Optional
 from models import fanfic_info
 from utils import ff_logging
 
@@ -209,7 +208,7 @@ def check_regexes(output: str, regex: re.Pattern, message: str) -> bool:
     return False
 
 
-def check_failure_regexes(output: str) -> Optional[str]:
+def check_failure_regexes(output: str) -> str | None:
     """
     Test FanFicFare output for permanent failure conditions.
 

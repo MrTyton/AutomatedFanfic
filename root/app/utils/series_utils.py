@@ -18,8 +18,7 @@ Adapter API Usage:
     - Falls back to treating URL as single story if detection fails
 """
 
-from typing import Optional, Dict, List
-from fanficfare import adapters, configurable, exceptions
+lazy from fanficfare import adapters, configurable, exceptions
 from utils import ff_logging
 
 
@@ -30,9 +29,7 @@ def _normalize_url(url: str) -> str:
     return url
 
 
-def is_series_url(
-    url: str, config: Optional[configurable.Configuration] = None
-) -> bool:
+def is_series_url(url: str, config: configurable.Configuration | None = None) -> bool:
     """
     Determine if a URL points to a series, collection, or single story.
 
@@ -98,8 +95,8 @@ def is_series_url(
 
 
 def expand_series_url(
-    url: str, config: Optional[configurable.Configuration] = None
-) -> List[str]:
+    url: str, config: configurable.Configuration | None = None
+) -> list[str]:
     """
     Extract individual story URLs from a series or collection URL.
 
@@ -162,8 +159,8 @@ def expand_series_url(
 
 
 def process_url(
-    url: str, config: Optional[configurable.Configuration] = None
-) -> Dict[str, any]:
+    url: str, config: configurable.Configuration | None = None
+) -> dict[str, any]:
     """
     Unified handler: detect if URL is series and expand or return as single.
 

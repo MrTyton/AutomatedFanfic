@@ -26,10 +26,10 @@ Example:
     ...     notifier.send_notification("Title", "Message", "site")
 """
 
-import apprise
+lazy import apprise
 from utils import ff_logging
 from . import notification_base
-import requests
+lazy import requests
 
 
 class AppriseNotification(notification_base.NotificationBase):

@@ -6,7 +6,6 @@ download lifecycle, retry attempts, email checks, and notifications.
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -40,37 +39,37 @@ class DownloadEvent(BaseModel):
     completion (success/failed/abandoned).
     """
 
-    id: Optional[int] = None
+    id: int | None = None
     url: str
     site: str
-    title: Optional[str] = None
-    calibre_id: Optional[str] = None
-    behavior: Optional[str] = None
+    title: str | None = None
+    calibre_id: str | None = None
+    behavior: str | None = None
     status: DownloadStatus = DownloadStatus.PENDING
-    error_message: Optional[str] = None
+    error_message: str | None = None
     started_at: datetime = Field(default_factory=_utcnow)
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 class RetryEvent(BaseModel):
     """A single retry attempt for a download."""
 
-    id: Optional[int] = None
-    download_event_id: Optional[int] = None
+    id: int | None = None
+    download_event_id: int | None = None
     url: str
     site: str
     attempt_number: int
     action: RetryAction
     delay_minutes: float = 0.0
-    error_message: Optional[str] = None
+    error_message: str | None = None
     scheduled_at: datetime = Field(default_factory=_utcnow)
-    fired_at: Optional[datetime] = None
+    fired_at: datetime | None = None
 
 
 class EmailCheckEvent(BaseModel):
     """Record of a single email polling cycle."""
 
-    id: Optional[int] = None
+    id: int | None = None
     checked_at: datetime = Field(default_factory=_utcnow)
     urls_found: int = 0
     urls_new: int = 0
@@ -82,13 +81,13 @@ class EmailCheckEvent(BaseModel):
 class NotificationEvent(BaseModel):
     """Record of a notification sent via Apprise/Pushbullet."""
 
-    id: Optional[int] = None
-    download_event_id: Optional[int] = None
+    id: int | None = None
+    download_event_id: int | None = None
     title: str
     body: str
-    site: Optional[str] = None
+    site: str | None = None
     sent_at: datetime = Field(default_factory=_utcnow)
-    provider: Optional[str] = None
+    provider: str | None = None
 
 
 # --- Wire format for cross-process history_queue messages ---

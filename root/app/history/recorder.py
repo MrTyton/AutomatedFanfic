@@ -8,7 +8,6 @@ import multiprocessing
 import threading
 from datetime import datetime, timezone
 from queue import Empty
-from typing import Optional
 
 from history.database import SyncHistoryDB
 from history.models import (
@@ -44,7 +43,7 @@ class HistoryRecorder:
     # -- convenience methods --
 
     def record_download_created(
-        self, url: str, site: str, behavior: Optional[str] = None
+        self, url: str, site: str, behavior: str | None = None
     ) -> None:
         self._put(
             HistoryMessage(
@@ -60,9 +59,9 @@ class HistoryRecorder:
     def record_download_success(
         self,
         url: str,
-        title: Optional[str] = None,
-        calibre_id: Optional[str] = None,
-        site: Optional[str] = None,
+        title: str | None = None,
+        calibre_id: str | None = None,
+        site: str | None = None,
     ) -> None:
         self._put(
             HistoryMessage(
@@ -79,7 +78,7 @@ class HistoryRecorder:
         )
 
     def record_download_failed(
-        self, url: str, error_message: Optional[str] = None, site: Optional[str] = None
+        self, url: str, error_message: str | None = None, site: str | None = None
     ) -> None:
         self._put(
             HistoryMessage(
@@ -95,7 +94,7 @@ class HistoryRecorder:
         )
 
     def record_download_abandoned(
-        self, url: str, error_message: Optional[str] = None, site: Optional[str] = None
+        self, url: str, error_message: str | None = None, site: str | None = None
     ) -> None:
         self._put(
             HistoryMessage(
@@ -113,9 +112,9 @@ class HistoryRecorder:
     def record_download_waiting(
         self,
         url: str,
-        site: Optional[str] = None,
-        title: Optional[str] = None,
-        error_message: Optional[str] = None,
+        site: str | None = None,
+        title: str | None = None,
+        error_message: str | None = None,
     ) -> None:
         """Called when download is queued for retry with backoff delay."""
         self._put(
@@ -132,7 +131,7 @@ class HistoryRecorder:
         )
 
     def record_download_requeued(
-        self, url: str, site: Optional[str] = None, title: Optional[str] = None
+        self, url: str, site: str | None = None, title: str | None = None
     ) -> None:
         """Move an existing 'waiting' download row back to 'pending' status.
 
@@ -152,7 +151,7 @@ class HistoryRecorder:
         )
 
     def record_download_title_update(
-        self, url: str, title: str, site: Optional[str] = None
+        self, url: str, title: str, site: str | None = None
     ) -> None:
         """Update the title on a pending download row without changing status."""
         self._put(
@@ -174,7 +173,7 @@ class HistoryRecorder:
         attempt_number: int,
         action: str,
         delay_minutes: float = 0.0,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> None:
         self._put(
             HistoryMessage(
@@ -227,8 +226,8 @@ class HistoryRecorder:
         self,
         title: str,
         body: str,
-        site: Optional[str] = None,
-        provider: Optional[str] = None,
+        site: str | None = None,
+        provider: str | None = None,
     ) -> None:
         self._put(
             HistoryMessage(
@@ -253,13 +252,13 @@ class HistoryWriter:
         self,
         history_queue: multiprocessing.Queue,  # type: ignore[type-arg]
         db_path: str,
-        shutdown_event: Optional[threading.Event] = None,
+        shutdown_event: threading.Event | None = None,
     ):
         self._queue = history_queue
         self._db_path = db_path
         self._shutdown = shutdown_event or threading.Event()
-        self._db: Optional[SyncHistoryDB] = None
-        self._thread: Optional[threading.Thread] = None
+        self._db: SyncHistoryDB | None = None
+        self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -296,7 +295,7 @@ class HistoryWriter:
         while True:
             try:
                 raw = self._queue.get_nowait()
-            except (Empty, OSError):
+            except Empty, OSError:
                 break
             self._process_message(raw)
 
