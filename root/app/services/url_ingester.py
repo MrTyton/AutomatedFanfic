@@ -278,6 +278,21 @@ class EmailInfo:
         self.personal_ini = personal_ini or ""
         self._build_geturls()
 
+    # ------------------------------------------------------------------
+    # Pickling support for multiprocessing (forkserver / spawn)
+    # The _geturls instance holds a closure that cannot be pickled.
+    # We exclude it from the pickled state and rebuild it on the other side.
+    # ------------------------------------------------------------------
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        state.pop("_geturls", None)
+        state.pop("_geturls_ini_mtime", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self._build_geturls()
+
     def update_from_config_store(self, config_store) -> bool:
         """Sync email credentials from ConfigStore.
 

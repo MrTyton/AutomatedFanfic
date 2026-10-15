@@ -337,14 +337,13 @@ def register_processes(
 
 def main() -> None:
     """Main application entry point."""
-    # Python 3.14+ changes the default multiprocessing start method on Linux
-    # from 'fork' to 'forkserver'. Explicitly set 'fork' to preserve current
-    # behavior, since the application uses queues, shared Values, and Processes.
-    if sys.platform != "win32":
-        try:
-            mp.set_start_method("fork")
-        except RuntimeError:
-            pass  # Already set (e.g., during testing)
+    # Use forkserver on Linux for safety: fork is deprecated in Python 3.15+
+    # when threads are present (e.g. SyncManager), and forkserver is the
+    # Linux default since Python 3.14.  Setting it explicitly ensures
+    # consistent behaviour on Python 3.13 too.  All subprocess arguments
+    # must be picklable — see url_ingester.EmailInfo for the pattern.
+    if sys.platform == "linux" and mp.get_start_method(allow_none=True) is None:
+        mp.set_start_method("forkserver")
 
     args = parse_arguments()
     setup_logging(args.verbose)
