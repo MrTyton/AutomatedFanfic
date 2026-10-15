@@ -7,6 +7,7 @@ from workers.command import (
     construct_fanficfare_command,
     _build_argv,
     _ThreadLocalStdout,
+    _extract_output_filename_template,
     FanFicFareResult,
     execute_fanficfare_direct,
 )
@@ -463,6 +464,7 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
 
         self.mock_fanfic = MagicMock(spec=FanficInfo)
         self.mock_fanfic.behavior = None
+        self.mock_fanfic.site = "archiveofourown"
 
     def _run_direct(self, do_download_side_effect=None, temp_dir="/tmp/test"):
         """Helper: patch fanficfare internals and run execute_fanficfare_direct."""
@@ -539,6 +541,73 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         ):
             result = self._run_direct(do_download_side_effect=fake_do_download)
         self.assertTrue(result.has_failure)
+
+
+class TestExtractOutputFilenameTemplate(unittest.TestCase):
+    """Tests for _extract_output_filename_template()."""
+
+    def test_empty_ini_returns_default(self):
+        result = _extract_output_filename_template("")
+        self.assertEqual(result, "${title}-${siteabbrev}_${storyId}.epub")
+
+    def test_no_output_filename_returns_default(self):
+        ini = "[defaults]\nsome_other_key: value\n"
+        result = _extract_output_filename_template(ini)
+        self.assertEqual(result, "${title}-${siteabbrev}_${storyId}.epub")
+
+    def test_defaults_section_template_preserved(self):
+        ini = "[defaults]\noutput_filename: ${title}-${author}_${storyId}.epub\n"
+        result = _extract_output_filename_template(ini)
+        self.assertEqual(result, "${title}-${author}_${storyId}.epub")
+
+    def test_overrides_section_takes_priority_over_defaults(self):
+        ini = (
+            "[defaults]\noutput_filename: from_defaults.epub\n"
+            "[overrides]\noutput_filename: from_overrides.epub\n"
+        )
+        result = _extract_output_filename_template(ini)
+        self.assertEqual(result, "from_overrides.epub")
+
+    def test_site_section_beats_defaults(self):
+        ini = (
+            "[defaults]\noutput_filename: from_defaults.epub\n"
+            "[archiveofourown.org]\noutput_filename: from_site.epub\n"
+        )
+        result = _extract_output_filename_template(ini, site="archiveofourown")
+        self.assertEqual(result, "from_site.epub")
+
+    def test_overrides_beats_site_section(self):
+        ini = (
+            "[archiveofourown.org]\noutput_filename: from_site.epub\n"
+            "[overrides]\noutput_filename: from_overrides.epub\n"
+        )
+        result = _extract_output_filename_template(ini, site="archiveofourown")
+        self.assertEqual(result, "from_overrides.epub")
+
+    def test_site_substring_matches_section_with_tld(self):
+        ini = "[archiveofourown.org]\noutput_filename: site_specific.epub\n"
+        result = _extract_output_filename_template(ini, site="archiveofourown")
+        self.assertEqual(result, "site_specific.epub")
+
+    def test_site_used_for_update_flow_file_path(self):
+        # When path_or_url is a file path (update flow), site param still works
+        ini = "[archiveofourown.org]\noutput_filename: site_specific.epub\n"
+        result = _extract_output_filename_template(ini, site="archiveofourown")
+        self.assertEqual(result, "site_specific.epub")
+
+    def test_directory_prefix_stripped(self):
+        ini = "[defaults]\noutput_filename: /some/path/${title}-${siteabbrev}_${storyId}.epub\n"
+        result = _extract_output_filename_template(ini)
+        self.assertEqual(result, "${title}-${siteabbrev}_${storyId}.epub")
+
+    def test_relative_directory_prefix_stripped(self):
+        ini = "[defaults]\noutput_filename: subdir/${title}.epub\n"
+        result = _extract_output_filename_template(ini)
+        self.assertEqual(result, "${title}.epub")
+
+    def test_malformed_ini_returns_default(self):
+        result = _extract_output_filename_template("not\x00valid\x00ini")
+        self.assertEqual(result, "${title}-${siteabbrev}_${storyId}.epub")
 
 
 if __name__ == "__main__":
