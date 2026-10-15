@@ -89,6 +89,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # FanFicFare Installer Stage
 FROM builder-tools AS fanficfare-installer
 ARG FANFICFARE_VERSION
+# Install build tools needed to compile C extensions (e.g. apsw on ARM64
+# where pre-built wheels may not yet exist for the current Python version).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libsqlite3-dev
 RUN --mount=type=cache,target=/root/.cache/pip \
     echo "*** Install FanFicFare from PyPI + TestPyPI ***" && \
     if [ -n "${FANFICFARE_VERSION}" ]; then \
