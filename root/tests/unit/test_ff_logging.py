@@ -131,6 +131,25 @@ class TestLogForwarding(unittest.TestCase):
         ff_logging.log("no queue")
 
     @patch("builtins.print")
+    def test_set_log_forward_queue_replays_buffered_logs(self, _mock_print):
+        """set_log_forward_queue() replays logs emitted prior to queue attachment."""
+        ff_logging.log("early startup banner")
+        ff_logging.log("early tool versions")
+        q: queue.Queue = queue.Queue()
+        ff_logging.set_log_forward_queue(q)
+
+        replayed = []
+        while not q.empty():
+            replayed.append(q.get_nowait()["message"])
+
+        self.assertIn("early startup banner", replayed)
+        self.assertIn("early tool versions", replayed)
+        self.assertLess(
+            replayed.index("early startup banner"),
+            replayed.index("early tool versions"),
+        )
+
+    @patch("builtins.print")
     def test_log_failure_forwarded_with_error_level(self, _mock_print):
         """log_failure() entries forwarded with level='error'."""
         q: queue.Queue = queue.Queue()
