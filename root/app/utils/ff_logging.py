@@ -151,6 +151,11 @@ def set_log_forward_queue(queue: LogQueue | None) -> None:
     queue so the web-server process (which has a separate copy of
     ``_log_buffer``) can drain it and display logs from all processes.
 
+    Any log entries that were emitted in this process prior to attaching
+    the queue (such as early startup banners, tool versions, and configuration
+    details) are automatically replayed into the queue so the web server captures
+    the complete startup history.
+
     Pass ``None`` to disable forwarding (e.g. inside the web-server
     process itself so it does not re-push its own entries).
 
@@ -160,6 +165,13 @@ def set_log_forward_queue(queue: LogQueue | None) -> None:
     """
     global _log_forward_queue
     _log_forward_queue = queue
+    if queue is not None:
+        with _log_buffer_lock:
+            for entry in list(_log_buffer):
+                try:
+                    queue.put_nowait(entry)
+                except Exception:
+                    pass
 
 
 def start_log_drain_thread(queue: LogQueue) -> threading.Thread:
