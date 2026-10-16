@@ -29,7 +29,7 @@ env:
   IMAGE_NAME: automated-ffdl
 
 jobs:
-  cleanup_github_actions_cache:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -84,13 +84,6 @@ jobs:
           else
             echo "✅ GitHub Actions cache cleanup completed"
           fi
-
-  cleanup_docker_hub_tags:
-    runs-on: ubuntu-latest
-    needs: cleanup_github_actions_cache
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
 
       - name: Get current and recent versions
         id: versions

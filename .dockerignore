@@ -64,6 +64,21 @@ dist/
 .eggs/
 *.log
 *.out
+pyrightconfig.json
+
+# Frontend development files and build artifacts
+**/node_modules/
+node_modules/
+root/web-ui/node_modules/
+root/web-ui/dist/
+*.tsbuildinfo
+.npm/
+
+# Local databases and runtime state
+*.db
+*.db-shm
+*.db-wal
+root/config.default/Actual Configs/
 
 # Docker development files
 docker-compose*.yml
