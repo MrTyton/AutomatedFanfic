@@ -138,8 +138,6 @@ class CalibreInfo:
             "location": "calibre.path",
             "username": "calibre.username",
             "password": "calibre.password",
-            "default_ini": "calibre.default_ini",
-            "personal_ini": "calibre.personal_ini",
             "update_method": "calibre.update_method",
             "metadata_preservation_mode": "calibre.metadata_preservation_mode",
         }
@@ -148,6 +146,22 @@ class CalibreInfo:
             if val is not None and val != getattr(self, attr, None):
                 setattr(self, attr, val)
                 changed = True
+
+        # INI paths require resolution: the config store holds the raw user value
+        # (which may be a directory like "/config"), but self.default_ini /
+        # self.personal_ini must be resolved full-file paths.  Reuse
+        # _get_ini_file_from_config for consistent behaviour with __init__.
+        for attr, key, filename in (
+            ("default_ini", "calibre.default_ini", "defaults.ini"),
+            ("personal_ini", "calibre.personal_ini", "personal.ini"),
+        ):
+            raw = config_store.get(key)
+            if raw is not None:
+                resolved = self._get_ini_file_from_config(raw, filename)
+                if resolved != getattr(self, attr, None):
+                    setattr(self, attr, resolved)
+                    changed = True
+
         return changed
 
     @staticmethod

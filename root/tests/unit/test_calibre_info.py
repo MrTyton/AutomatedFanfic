@@ -1,4 +1,5 @@
 from parameterized import parameterized
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 import unittest
 from pydantic import ValidationError
@@ -313,6 +314,158 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
                 any("No personal.ini found" in call for call in debug_calls),
                 "Should log that personal.ini was not found",
             )
+
+
+class TestCalibreInfoUpdateFromConfigStore(unittest.TestCase):
+    """Tests for update_from_config_store.
+
+    This method is called before every calibredb operation to hot-reload config
+    changes made via the web dashboard.  The INI path fields require special
+    handling: the config store holds the *raw* user value (which may be a
+    directory like ``/config``) while ``self.personal_ini`` / ``self.default_ini``
+    must be *resolved* full file paths (``/config/personal.ini``).
+    """
+
+    def _make_cdb(self, personal_ini="", default_ini="", location="/library"):
+        """Create a CalibreInfo bypassing __init__ with known field values.
+
+        This lets us test update_from_config_store in isolation without wiring
+        up config loading, file-system checks, or multiprocessing.
+
+        Paths are normalised through Path() so comparisons are platform-safe
+        (resolve_ini_path uses str(Path(dir) / filename) internally).
+        """
+        cdb = CalibreInfo.__new__(CalibreInfo)
+        cdb.location = location
+        cdb.username = ""
+        cdb.password = ""
+        cdb.personal_ini = str(Path(personal_ini)) if personal_ini else ""
+        cdb.default_ini = str(Path(default_ini)) if default_ini else ""
+        cdb.update_method = "update"
+        cdb.metadata_preservation_mode = "remove_add"
+        cdb.lock = MagicMock()
+        return cdb
+
+    def _p(self, *parts) -> str:
+        """Platform-safe path: str(Path(parts[0]) / parts[1] / ...)."""
+        return str(Path(*parts))
+
+    def _store(self, **kwargs):
+        """Build a minimal config-store mock whose .get() returns the given keys."""
+        m = MagicMock()
+        m.get = lambda key, default=None: kwargs.get(key, default)
+        return m
+
+    # ------------------------------------------------------------------ #
+    # Regression: raw directory path must be resolved to the file path    #
+    # ------------------------------------------------------------------ #
+
+    @patch("pathlib.Path.is_file", return_value=True)
+    def test_directory_path_resolved_for_personal_ini(self, _mock_isfile):
+        """Raw dir value (/config) must be resolved to /config/personal.ini.
+
+        Regression: previously the raw value was stored directly, overwriting
+        the resolved path produced at __init__ time.
+        """
+        cdb = self._make_cdb(personal_ini=self._p("/config/personal.ini"))
+        cdb.update_from_config_store(self._store(**{"calibre.personal_ini": "/config"}))
+        self.assertEqual(cdb.personal_ini, self._p("/config", "personal.ini"))
+
+    @patch("pathlib.Path.is_file", return_value=True)
+    def test_directory_path_resolved_for_default_ini(self, _mock_isfile):
+        """Raw dir value (/config) must be resolved to /config/defaults.ini."""
+        cdb = self._make_cdb(default_ini=self._p("/config/defaults.ini"))
+        cdb.update_from_config_store(self._store(**{"calibre.default_ini": "/config"}))
+        self.assertEqual(cdb.default_ini, self._p("/config", "defaults.ini"))
+
+    @patch("pathlib.Path.is_file", return_value=True)
+    def test_no_spurious_change_when_dir_resolves_to_same_path(self, _mock_isfile):
+        """Returns False when the resolved path equals the current value.
+
+        The raw-vs-resolved mismatch must not be treated as a real change.
+        """
+        cdb = self._make_cdb(
+            personal_ini=self._p("/config", "personal.ini"),
+            default_ini=self._p("/config", "defaults.ini"),
+        )
+        changed = cdb.update_from_config_store(
+            self._store(
+                **{
+                    "calibre.personal_ini": "/config",
+                    "calibre.default_ini": "/config",
+                }
+            )
+        )
+        self.assertFalse(changed)
+
+    # ------------------------------------------------------------------ #
+    # Full file path passes through unchanged                             #
+    # ------------------------------------------------------------------ #
+
+    @patch("pathlib.Path.is_file", return_value=True)
+    def test_full_file_path_passes_through_unchanged(self, _mock_isfile):
+        """If config store already has the full path, it is kept as-is."""
+        full_path = self._p("/config", "personal.ini")
+        cdb = self._make_cdb(personal_ini=full_path)
+        changed = cdb.update_from_config_store(
+            self._store(**{"calibre.personal_ini": full_path})
+        )
+        self.assertFalse(changed)
+        self.assertEqual(cdb.personal_ini, full_path)
+
+    # ------------------------------------------------------------------ #
+    # Genuine path changes are detected and applied                       #
+    # ------------------------------------------------------------------ #
+
+    @patch("pathlib.Path.is_file", return_value=True)
+    def test_change_detected_when_ini_dir_actually_differs(self, _mock_isfile):
+        """Returns True and updates path when config store points to a new dir."""
+        cdb = self._make_cdb(personal_ini=self._p("/old-config/personal.ini"))
+        changed = cdb.update_from_config_store(
+            self._store(**{"calibre.personal_ini": "/new-config"})
+        )
+        self.assertTrue(changed)
+        self.assertEqual(cdb.personal_ini, self._p("/new-config", "personal.ini"))
+
+    @patch("pathlib.Path.is_file", return_value=False)
+    def test_ini_set_to_empty_when_resolved_file_missing(self, _mock_isfile):
+        """If resolved file does not exist, personal_ini is set to empty string."""
+        cdb = self._make_cdb(personal_ini=self._p("/config/personal.ini"))
+        changed = cdb.update_from_config_store(
+            self._store(**{"calibre.personal_ini": "/missing"})
+        )
+        self.assertTrue(changed)
+        self.assertEqual(cdb.personal_ini, "")
+
+    # ------------------------------------------------------------------ #
+    # Non-INI fields                                                      #
+    # ------------------------------------------------------------------ #
+
+    def test_non_ini_fields_updated_directly(self):
+        """Regular fields (location, username, password) are assigned directly."""
+        cdb = self._make_cdb(location="/old/lib")
+        changed = cdb.update_from_config_store(
+            self._store(
+                **{
+                    "calibre.path": "/new/lib",
+                    "calibre.username": "admin",
+                    "calibre.password": "secret",
+                }
+            )
+        )
+        self.assertTrue(changed)
+        self.assertEqual(cdb.location, "/new/lib")
+        self.assertEqual(cdb.username, "admin")
+        self.assertEqual(cdb.password, "secret")
+
+    def test_returns_false_when_store_has_no_values(self):
+        """Returns False when config store returns None for every key."""
+        cdb = self._make_cdb(
+            personal_ini=self._p("/config/personal.ini"),
+            default_ini=self._p("/config/defaults.ini"),
+        )
+        changed = cdb.update_from_config_store(self._store())
+        self.assertFalse(changed)
 
 
 if __name__ == "__main__":
