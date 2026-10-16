@@ -103,6 +103,14 @@ class SyncHistoryDB:
         self._db_path = db_path
         self._conn: sqlite3.Connection | None = None
 
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Return the active SQLite connection, connecting if not already connected."""
+        if self._conn is None:
+            self.connect()
+        assert self._conn is not None
+        return self._conn
+
     def connect(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self._db_path)
@@ -671,47 +679,41 @@ class AsyncHistoryDB:
                 datetime.now(timezone.utc) - timedelta(hours=period_hours)
             ).isoformat()
 
-            # All-time totals
-            cursor = await conn.execute("SELECT COUNT(*) FROM download_events")
-            total_downloads = (await cursor.fetchone())[0]
+            async def _scalar_count(query: str, params: tuple = ()) -> int:
+                cur = await conn.execute(query, params)
+                r = await cur.fetchone()
+                return int(r[0]) if r and r[0] is not None else 0
 
-            cursor = await conn.execute(
+            # All-time totals
+            total_downloads = await _scalar_count(
+                "SELECT COUNT(*) FROM download_events"
+            )
+            total_success = await _scalar_count(
                 "SELECT COUNT(*) FROM download_events WHERE status = 'success'"
             )
-            total_success = (await cursor.fetchone())[0]
-
-            cursor = await conn.execute(
+            total_failed = await _scalar_count(
                 "SELECT COUNT(*) FROM download_events WHERE status IN ('failed', 'abandoned')"
             )
-            total_failed = (await cursor.fetchone())[0]
 
             # Period totals
-            cursor = await conn.execute(
+            period_downloads = await _scalar_count(
                 "SELECT COUNT(*) FROM download_events WHERE started_at >= ?",
                 (cutoff,),
             )
-            period_downloads = (await cursor.fetchone())[0]
-
-            cursor = await conn.execute(
+            period_success = await _scalar_count(
                 "SELECT COUNT(*) FROM download_events WHERE status = 'success' AND started_at >= ?",
                 (cutoff,),
             )
-            period_success = (await cursor.fetchone())[0]
-
-            cursor = await conn.execute(
+            period_failed = await _scalar_count(
                 "SELECT COUNT(*) FROM download_events WHERE status IN ('failed', 'abandoned') AND started_at >= ?",
                 (cutoff,),
             )
-            period_failed = (await cursor.fetchone())[0]
 
             # Retry stats (all-time)
-            cursor = await conn.execute(
+            downloads_with_retries = await _scalar_count(
                 "SELECT COUNT(DISTINCT download_event_id) FROM retry_events"
             )
-            downloads_with_retries = (await cursor.fetchone())[0]
-
-            cursor = await conn.execute("SELECT COUNT(*) FROM retry_events")
-            total_retries = (await cursor.fetchone())[0]
+            total_retries = await _scalar_count("SELECT COUNT(*) FROM retry_events")
 
             # Average retries to success
             cursor = await conn.execute("""SELECT AVG(cnt) FROM (

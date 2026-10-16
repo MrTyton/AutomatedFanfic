@@ -10,17 +10,17 @@ while maintaining isolation from the main process.
 import threading
 import signal
 import time
-import multiprocessing as mp
 from typing import Any
 
 from utils import ff_logging
 from services import url_ingester, ff_waiter, coordinator
+from models.queue_types import IngressQueue, LogQueue, WaitingQueue, WorkerQueues
 
 
 def run_supervisor(
-    worker_queues: dict[str, mp.Queue],
-    ingress_queue: mp.Queue,
-    waiting_queue: mp.Queue,
+    worker_queues: WorkerQueues,
+    ingress_queue: IngressQueue,
+    waiting_queue: WaitingQueue,
     email_info: url_ingester.EmailInfo,
     notification_info: Any,
     url_parsers: dict,
@@ -28,7 +28,7 @@ def run_supervisor(
     verbose: bool = False,
     history_recorder=None,
     config_store=None,
-    log_queue=None,
+    log_queue: LogQueue | None = None,
 ):
     """
     Entry point for the Supervisor process.

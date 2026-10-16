@@ -4,11 +4,11 @@ WebState holds references to all shared multiprocessing objects and config,
 injected into route handlers via FastAPI's Depends() mechanism.
 """
 
-import multiprocessing as mp
 from dataclasses import dataclass
 from typing import Any
 
 from history.database import AsyncHistoryDB
+from models.queue_types import IngressQueue, WaitingQueue, WorkerQueues
 
 
 @dataclass
@@ -24,9 +24,9 @@ class WebState:
 
     # Shared multiprocessing objects (read-only from web server)
     active_urls: dict | None = None
-    ingress_queue: mp.Queue | None = None
-    worker_queues: dict | None = None
-    waiting_queue: mp.Queue | None = None
+    ingress_queue: IngressQueue | None = None
+    worker_queues: WorkerQueues | None = None
+    waiting_queue: WaitingQueue | None = None
 
     # Process manager reference for status queries
     process_status_callable: Any | None = None

@@ -60,8 +60,8 @@ def main():
             enable_monitoring=False,
             auto_restart=False,
             shutdown_timeout=3.0,
+            max_workers=2,
         ),
-        max_workers=2,
     )
 
     # Use ProcessManager with signal handling (simulating fanficdownload.py)

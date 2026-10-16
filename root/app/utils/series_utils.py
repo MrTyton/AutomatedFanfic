@@ -19,6 +19,7 @@ Adapter API Usage:
 """
 
 import re
+from typing import Any
 
 lazy from fanficfare import adapters, configurable, exceptions, geturls
 from utils import ff_logging
@@ -196,8 +197,8 @@ def expand_series_url(
 
 
 def process_url(
-    url: str, config: configurable.Configuration | None = None
-) -> dict[str, any]:
+    url: str | None, config: configurable.Configuration | None = None
+) -> dict[str, Any]:
     """
     Unified handler: detect if URL is series and expand or return as single.
 
@@ -221,7 +222,7 @@ def process_url(
     result = {"is_series": False, "urls": [], "count": 0, "source_url": url}
 
     try:
-        if is_series_url(url, config):
+        if url and is_series_url(url, config):
             # Expand the series URL
             expanded = expand_series_url(url, config)
             if expanded:

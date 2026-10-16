@@ -2,12 +2,11 @@
 Failure and success handling logic for worker processes.
 """
 
-import multiprocessing as mp
-
 from models import config_models
 from models import retry_types
 from calibre_integration import calibre_info
 from models import fanfic_info
+from models.queue_types import WaitingQueue
 from notifications import notification_wrapper
 from calibre_integration import calibredb_utils
 from utils import ff_logging
@@ -17,7 +16,7 @@ from calibre_integration import update_strategies
 def handle_failure(
     fanfic: fanfic_info.FanficInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    waiting_queue: mp.Queue,
+    waiting_queue: WaitingQueue,
     retry_config: config_models.RetryConfig,
     cdb: calibre_info.CalibreInfo | None = None,
     history_recorder=None,
@@ -142,7 +141,7 @@ def process_fanfic_addition(
     temp_dir: str,
     site: str,
     path_or_url: str,
-    waiting_queue: mp.Queue,
+    waiting_queue: WaitingQueue,
     notification_info: notification_wrapper.NotificationWrapper,
     retry_config: config_models.RetryConfig,
     history_recorder=None,

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+from models.fanfic_info import FanficInfo
 from web.dependencies import WebState
 from web.server import create_app
 
@@ -242,6 +243,7 @@ class TestControlRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["ok"])
         queued = self.state.ingress_queue.get_nowait()
+        assert isinstance(queued, FanficInfo)
         self.assertIn(queued.url, {"https://ao3.org/works/1", "ao3.org/works/1"})
         self.assertEqual(queued.title, "Story")
 
@@ -315,6 +317,7 @@ class TestControlRoutes(unittest.TestCase):
         self.assertTrue(resp.json()["ok"])
 
         queued = self.state.ingress_queue.get_nowait()
+        assert isinstance(queued, FanficInfo)
         self.assertEqual(queued.url, "https://ao3.org/works/1")
         self.assertEqual(queued.behavior, "force")
 
@@ -770,6 +773,7 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
             DownloadEvent,
             EmailCheckEvent,
             NotificationEvent,
+            RetryAction,
             RetryEvent,
         )
 
@@ -796,7 +800,7 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
                         url="archiveofourown.org/works/101",
                         site="archiveofourown",
                         attempt_number=1,
-                        action="retry",
+                        action=RetryAction.RETRY,
                         delay_minutes=1.0,
                         error_message="HTTP Error 503",
                     )
@@ -916,7 +920,10 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
             json={"url": "https://archiveofourown.org/works/42"},
         )
         self.assertTrue(retry_resp.json()["ok"])
+        assert state.ingress_queue is not None
+        assert state.active_urls is not None
         requeued = state.ingress_queue.get_nowait()
+        assert isinstance(requeued, FanficInfo)
         self.assertEqual(requeued.url, "archiveofourown.org/works/42")
         self.assertEqual(requeued.calibre_id, "777")
         self.assertEqual(
@@ -1007,6 +1014,7 @@ port = 8080
             self.assertTrue(resp.json()["applied"])
             self.assertEqual(store.get("email.email"), "updated@example.com")
             self.assertEqual(store.get("email.password"), "super_secret_password")
+            assert state.config is not None
             self.assertEqual(state.config.email.password, "super_secret_password")
             with open(cfg_path, encoding="utf-8") as fh:
                 disk_text = fh.read()
@@ -1028,6 +1036,7 @@ port = 8080
             )
             self.assertTrue(mw_resp.json()["applied"])
             self.assertEqual(store.get("process.max_workers"), 6)
+            assert state.config is not None
             self.assertEqual(state.config.process.max_workers, 6)
             self.assertEqual(state.config.max_workers, 6)
 

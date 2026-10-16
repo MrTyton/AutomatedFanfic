@@ -4,7 +4,6 @@ HistoryRecorder is the facade used by every process/thread to emit events.
 HistoryWriter is a daemon thread that drains the queue and writes to SQLite.
 """
 
-import multiprocessing
 import threading
 from datetime import datetime, timezone
 from queue import Empty
@@ -20,6 +19,7 @@ from history.models import (
     RetryAction,
     RetryEvent,
 )
+from models.queue_types import HistoryQueue
 from utils import ff_logging
 
 
@@ -30,7 +30,7 @@ class HistoryRecorder:
     Calls are non-blocking fire-and-forget.
     """
 
-    def __init__(self, history_queue: multiprocessing.Queue):  # type: ignore[type-arg]
+    def __init__(self, history_queue: HistoryQueue):
         self._queue = history_queue
 
     def _put(self, msg: HistoryMessage) -> None:
@@ -250,7 +250,7 @@ class HistoryWriter:
 
     def __init__(
         self,
-        history_queue: multiprocessing.Queue,  # type: ignore[type-arg]
+        history_queue: HistoryQueue,
         db_path: str,
         shutdown_event: threading.Event | None = None,
     ):

@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from history.database import AsyncHistoryDB
+from models.queue_types import IngressQueue, LogQueue, WaitingQueue, WorkerQueues
 from utils import ff_logging
 from web.dependencies import WebState
 from web.routes import (
@@ -116,16 +117,16 @@ def run_web_server(
     port: int = 8080,
     history_db_path: str | None = None,
     active_urls: dict | None = None,
-    ingress_queue: Any = None,
-    worker_queues: dict | None = None,
-    waiting_queue: Any = None,
+    ingress_queue: IngressQueue | None = None,
+    worker_queues: WorkerQueues | None = None,
+    waiting_queue: WaitingQueue | None = None,
     process_status_callable: Any = None,
     app_config: Any = None,
     config_path: str | None = None,
     config_store: Any = None,
     history_recorder: Any = None,
     verbose: bool = False,
-    log_queue: Any = None,
+    log_queue: LogQueue | None = None,
     web_restart_event: Any = None,
 ) -> None:
     """Process entry point for the web server.

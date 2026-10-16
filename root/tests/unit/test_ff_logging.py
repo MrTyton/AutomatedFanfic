@@ -144,7 +144,7 @@ class TestLogForwarding(unittest.TestCase):
     def test_log_ignores_full_or_broken_queue(self, _mock_print):
         """A queue that raises on put_nowait must not propagate the exception."""
 
-        class _BrokenQueue:
+        class _BrokenQueue(queue.Queue):
             def put_nowait(self, item):
                 raise RuntimeError("queue is broken")
 
@@ -168,6 +168,7 @@ class TestLogForwarding(unittest.TestCase):
 
         # Give the drain thread a moment to consume the entry.
         deadline = time.monotonic() + 2.0
+        found = False
         while time.monotonic() < deadline:
             with ff_logging._log_buffer_lock:
                 found = any(e["message"] == "drained" for e in ff_logging._log_buffer)

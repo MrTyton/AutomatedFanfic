@@ -180,7 +180,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 sync_db = SyncHistoryDB(db_path)
                 sync_db.connect()
                 try:
-                    rows = sync_db._conn.execute(
+                    rows = sync_db.conn.execute(
                         "SELECT id, url, status, error_message, completed_at FROM download_events"
                     ).fetchall()
                     self.assertEqual(
@@ -379,7 +379,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             self.assertEqual(len(wrapper.notification_workers), 1)
             self.assertIn(
                 "json://localhost:8080/notify",
-                wrapper.notification_workers[0].apprise_urls,
+                getattr(wrapper.notification_workers[0], "apprise_urls", []),
             )
 
             # 3. RetryConfig hot-reloads max_normal_retries and hail_mary_enabled from ConfigStore inside handle_failure
@@ -403,6 +403,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             self.assertEqual(retry_cfg.max_normal_retries, 1)
             self.assertFalse(retry_cfg.hail_mary_enabled)
             # With max_normal_retries=1 and hail_mary_enabled=False, repeats=0 -> 1 is ABANDON!
+            self.assertIsNotNone(fanfic.retry_decision)
+            assert fanfic.retry_decision is not None
             self.assertEqual(fanfic.retry_decision.action.value, "abandon")
             self.assertTrue(waiting_q.empty())
 

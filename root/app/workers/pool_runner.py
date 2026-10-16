@@ -7,29 +7,29 @@ downloads, significantly reducing memory overhead compared to multi-process appr
 """
 
 import threading
-import multiprocessing as mp
 import time
 import signal
 
 from utils import ff_logging
 from workers import pipeline
 from models import config_models
+from models.queue_types import IngressQueue, LogQueue, WaitingQueue, WorkerQueues
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
 
 
 def run_worker_pool(
-    worker_queues: dict[str, mp.Queue],
+    worker_queues: WorkerQueues,
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
-    ingress_queue: mp.Queue,
-    waiting_queue: mp.Queue,
+    ingress_queue: IngressQueue,
+    waiting_queue: WaitingQueue,
     retry_config: config_models.RetryConfig,
     active_urls: dict,
     verbose: bool = False,
     history_recorder=None,
     config_store=None,
-    log_queue=None,
+    log_queue: LogQueue | None = None,
 ) -> None:
     """
     Runs a pool of worker threads within a single process.

@@ -6,8 +6,8 @@ def load_bump_version_module():
     repo_root = Path(__file__).resolve().parents[3]
     module_path = repo_root / "scripts" / "bump_version.py"
     spec = importlib.util.spec_from_file_location("bump_version_script", module_path)
-    module = importlib.util.module_from_spec(spec)
     assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 

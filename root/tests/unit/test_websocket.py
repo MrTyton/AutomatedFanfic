@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import web.routes.websocket as ws_module
+from history.database import AsyncHistoryDB
 from web.dependencies import WebState
 from web.server import create_app
 
@@ -79,7 +80,10 @@ class TestWebSocketDashboard(unittest.TestCase):
     def test_snapshot_includes_waiting_error_details(self):
         """Waiting rows include history metadata needed by dashboard actions."""
 
-        class StubHistoryDB:
+        class StubHistoryDB(AsyncHistoryDB):
+            def __init__(self):
+                super().__init__("")
+
             async def get_waiting_urls(self):
                 return [
                     {
@@ -143,7 +147,7 @@ class TestWebSocketDashboard(unittest.TestCase):
                 sent_payloads.append(data)
 
         fake = FakeWS()
-        _connections.add(fake)
+        _connections.add(fake)  # type: ignore[arg-type]
         try:
 
             async def run():
@@ -178,7 +182,7 @@ class TestWebSocketDashboard(unittest.TestCase):
                 sent_payloads.append(data)
 
         fake = FakeWS()
-        _connections.add(fake)
+        _connections.add(fake)  # type: ignore[arg-type]
         try:
             asyncio.run(broadcast({"event": "ok"}))
             self.assertEqual(len(sent_payloads), 1)
@@ -192,7 +196,10 @@ class TestWebSocketDashboard(unittest.TestCase):
 
         call_counts = {"downloads": 0, "activity": 0}
 
-        class StubHistoryDB:
+        class StubHistoryDB(AsyncHistoryDB):
+            def __init__(self):
+                super().__init__("")
+
             async def get_waiting_urls(self):
                 return []
 
@@ -238,8 +245,8 @@ class TestWebSocketDashboard(unittest.TestCase):
                 sent[self.n].append(data)
 
         fake1, fake2 = FakeWS(1), FakeWS(2)
-        _connections.add(fake1)
-        _connections.add(fake2)
+        _connections.add(fake1)  # type: ignore[arg-type]
+        _connections.add(fake2)  # type: ignore[arg-type]
         try:
             asyncio.run(_build_and_push_snapshot(self.state))
             # Both clients should have received exactly one snapshot
@@ -262,7 +269,7 @@ class TestWebSocketDashboard(unittest.TestCase):
                 raise RuntimeError("connection closed")
 
         dead = DeadWS()
-        _connections.add(dead)
+        _connections.add(dead)  # type: ignore[arg-type]
         try:
             asyncio.run(_build_and_push_snapshot(self.state))
             # Dead connection should have been removed

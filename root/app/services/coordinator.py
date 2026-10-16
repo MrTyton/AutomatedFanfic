@@ -18,7 +18,6 @@ Architecture Note:
     for retries, creating a unified task ingress point.
 """
 
-import multiprocessing as mp
 import collections
 from dataclasses import dataclass, field
 
@@ -26,6 +25,7 @@ from queue import Empty
 from enum import Enum
 from utils import ff_logging
 from models.fanfic_info import FanficInfo
+from models.queue_types import IngressQueue, WorkerQueue, WorkerQueues
 import threading
 
 
@@ -79,8 +79,8 @@ class CoordinatorState:
 class Coordinator:
     def __init__(
         self,
-        ingress_queue: mp.Queue,
-        worker_queues: dict[str, mp.Queue],
+        ingress_queue: IngressQueue,
+        worker_queues: WorkerQueues,
         shutdown_event: threading.Event | None = None,
         active_urls: dict | None = None,
         history_recorder=None,
@@ -277,7 +277,7 @@ class Coordinator:
         # 3. Try to assign immediately if we have waiting workers
         self._assign_work_if_possible()
 
-    def _get_queue_position_string(self, queue: mp.Queue) -> str:
+    def _get_queue_position_string(self, queue: WorkerQueue) -> str:
         """Get queue position string, using cached qsize support detection."""
         if self.state.qsize_supported:
             try:
@@ -317,7 +317,7 @@ class Coordinator:
                 return site
         return None
 
-    def _drain_site_backlog(self, site: str, queue: mp.Queue) -> list:
+    def _drain_site_backlog(self, site: str, queue: WorkerQueue) -> list:
         """Drain all tasks for a site from backlog to worker queue."""
         tasks_pushed = []
         while self.state.backlog[site]:
@@ -330,7 +330,7 @@ class Coordinator:
         return tasks_pushed
 
     def _log_assignment_details(
-        self, site: str, worker_id: str, queue: mp.Queue, tasks_pushed: list
+        self, site: str, worker_id: str, queue: WorkerQueue, tasks_pushed: list
     ):
         """Log detailed information about the assignment."""
         # Get final queue size to calculate positions
@@ -398,8 +398,8 @@ class Coordinator:
 
 
 def start_coordinator(
-    ingress_queue: mp.Queue,
-    worker_queues: dict[str, mp.Queue],
+    ingress_queue: IngressQueue,
+    worker_queues: WorkerQueues,
     verbose: bool = False,
     shutdown_event: threading.Event | None = None,
     active_urls: dict | None = None,

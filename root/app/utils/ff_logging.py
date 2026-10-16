@@ -30,13 +30,18 @@ Example:
     >>> ff_logging.log_debug("Debug information")
 """
 
+from __future__ import annotations
+
 import ctypes
 import collections
 import datetime
 from multiprocessing import Value
 from queue import Empty
 import threading
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models.queue_types import LogQueue
 
 # Thread-local storage for worker-specific logging context
 _thread_local = threading.local()
@@ -62,7 +67,7 @@ _STARTUP_COMPLETE_MARKERS = (
 # When set, log() also puts entries into this queue so the web
 # server process (which runs in a separate subprocess) can drain
 # it and show logs from ALL processes, not just its own.
-_log_forward_queue: Any | None = None
+_log_forward_queue: LogQueue | None = None
 
 
 def _append_log_entry(entry: dict) -> None:
@@ -138,7 +143,7 @@ def set_verbose(value: bool) -> None:
     verbose.value = value
 
 
-def set_log_forward_queue(queue: Any | None) -> None:
+def set_log_forward_queue(queue: LogQueue | None) -> None:
     """Set (or clear) the cross-process log-forwarding queue.
 
     Call this once per process at startup.  When *queue* is not None
@@ -157,7 +162,7 @@ def set_log_forward_queue(queue: Any | None) -> None:
     _log_forward_queue = queue
 
 
-def start_log_drain_thread(queue: Any) -> threading.Thread:
+def start_log_drain_thread(queue: LogQueue) -> threading.Thread:
     """Start a daemon thread that drains *queue* into the local ring buffer.
 
     Intended to be called once inside the web-server process so that log

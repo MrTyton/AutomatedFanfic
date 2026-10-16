@@ -7,12 +7,12 @@ way to switch between preservation modes (Metadata, Format Only, or Remove-Add).
 """
 
 from abc import ABC, abstractmethod
-import multiprocessing as mp
 from typing import Callable
 
 from . import calibredb_utils
 from models import config_models
 from models import fanfic_info
+from models.queue_types import WaitingQueue
 from utils import ff_logging
 from notifications import notification_wrapper
 
@@ -28,7 +28,7 @@ class UpdateStrategy(ABC):
         temp_dir: str,
         site: str,
         path_or_url: str,
-        waiting_queue: mp.Queue,
+        waiting_queue: WaitingQueue,
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
@@ -65,7 +65,7 @@ class AddFormatStrategy(UpdateStrategy):
         temp_dir: str,
         site: str,
         path_or_url: str,
-        waiting_queue: mp.Queue,
+        waiting_queue: WaitingQueue,
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
@@ -114,7 +114,7 @@ class PreserveMetadataStrategy(UpdateStrategy):
         temp_dir: str,
         site: str,
         path_or_url: str,
-        waiting_queue: mp.Queue,
+        waiting_queue: WaitingQueue,
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
@@ -181,7 +181,7 @@ class RemoveAddStrategy(UpdateStrategy):
         temp_dir: str,
         site: str,
         path_or_url: str,
-        waiting_queue: mp.Queue,
+        waiting_queue: WaitingQueue,
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
@@ -242,7 +242,7 @@ class AddNewStoryStrategy(UpdateStrategy):
         temp_dir: str,
         site: str,
         path_or_url: str,
-        waiting_queue: mp.Queue,
+        waiting_queue: WaitingQueue,
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
