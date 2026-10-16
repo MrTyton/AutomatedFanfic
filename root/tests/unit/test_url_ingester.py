@@ -901,6 +901,75 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         self.assertEqual(mock_conn.idle_done.call_count, 1)
         self.assertEqual(mock_conn.idle.call_count, 1)
 
+    def test_update_from_config_store_syncs_ini_paths(self):
+        """EmailInfo.update_from_config_store hot-reloads calibre.default_ini and calibre.personal_ini."""
+        import os
+        import tempfile
+        from config.config_store import ConfigStore
+
+        email_config = EmailConfig(email="u", password="p", server="s")
+        ei = EmailInfo(email_config)
+        self.assertEqual(ei.default_ini, "")
+        self.assertEqual(ei.personal_ini, "")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = ConfigStore()
+            store.update("calibre.default_ini", tmp_dir)
+            store.update("calibre.personal_ini", os.path.join(tmp_dir, "personal.ini"))
+
+            with patch.object(ei, "_build_geturls") as mock_rebuild:
+                changed = ei.update_from_config_store(store)
+
+            self.assertTrue(changed)
+            self.assertEqual(ei.default_ini, os.path.join(tmp_dir, "defaults.ini"))
+            self.assertEqual(ei.personal_ini, os.path.join(tmp_dir, "personal.ini"))
+            mock_rebuild.assert_called_once()
+
+    def test_email_watcher_reingests_cancelled_url(self):
+        """email_watcher must allow re-ingesting a URL whose active_urls entry has status='cancelled'."""
+        import re
+        from queue import Queue
+
+        email_config = EmailConfig(email="u", password="p", server="s", sleep_time=1)
+        ei = EmailInfo(email_config)
+        mock_notif = MagicMock()
+        ingress_q = Queue()
+        url_parsers = {
+            "archiveofourown": (
+                re.compile(r"(archiveofourown\.org/works/\d+)"),
+                "",
+            )
+        }
+        # Simulate a URL that was previously cancelled via cancel-retry
+        active_urls = {
+            "archiveofourown.org/works/12345": {
+                "site": "archiveofourown",
+                "status": "cancelled",
+            }
+        }
+
+        with (
+            patch.object(
+                ei,
+                "get_urls",
+                side_effect=[
+                    {"https://archiveofourown.org/works/12345"},
+                    KeyboardInterrupt,
+                ],
+            ),
+            patch("services.url_ingester.time.sleep", side_effect=KeyboardInterrupt),
+        ):
+            try:
+                email_watcher(ei, mock_notif, ingress_q, url_parsers, active_urls)
+            except KeyboardInterrupt:
+                pass
+
+        queued = ingress_q.get_nowait()
+        self.assertEqual(queued.url, "archiveofourown.org/works/12345")
+        self.assertEqual(
+            active_urls["archiveofourown.org/works/12345"]["status"], "queued"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -376,18 +376,29 @@ class TestConfigRoutes(unittest.TestCase):
         self.assertIn("Unknown ini type", data["error"])
 
     def test_get_ini_no_path_configured(self):
-        """INI endpoint returns error when path is not configured."""
+        """INI endpoint returns error for personal.ini when path is not configured."""
         mock_config = MagicMock()
         mock_config.calibre.personal_ini = None
         mock_config.calibre.default_ini = None
         self.state.config = mock_config
 
-        for ini_type in ("personal", "defaults"):
-            resp = self.client.get(f"/api/config/ini/{ini_type}")
-            self.assertEqual(resp.status_code, 200)
-            data = resp.json()
-            self.assertIsNone(data["content"])
-            self.assertIsNotNone(data["error"])
+        resp = self.client.get("/api/config/ini/personal")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIsNone(data["content"])
+        self.assertIn("No path configured for personal.ini", data["error"])
+
+    def test_put_ini_defaults_is_read_only(self):
+        """PUT INI endpoint rejects modifications to defaults.ini."""
+        mock_config = MagicMock()
+        self.state.config = mock_config
+        resp = self.client.put("/api/config/ini/defaults", json={"content": "[new]"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["applied"])
+        self.assertIn(
+            "defaults.ini is packaged and updated automatically", data["error"]
+        )
 
     def test_get_ini_file_content(self):
         """INI endpoint returns file content when file exists."""
@@ -746,6 +757,279 @@ class TestWebConfig(unittest.TestCase):
         # Just verify the model can be imported and has the field
         wc = WebConfig()
         self.assertIsNotNone(wc)
+
+
+class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
+    """End-to-end tests for web routes using real FastAPI lifespan, real SQLite DB, real ConfigStore, and real TomlWriter."""
+
+    def test_real_lifespan_stats_history_and_logs(self):
+        import os
+        import tempfile
+        from history.database import SyncHistoryDB
+        from history.models import (
+            DownloadEvent,
+            EmailCheckEvent,
+            NotificationEvent,
+            RetryEvent,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = os.path.join(tmp_dir, "history.db")
+            sync_db = SyncHistoryDB(db_path)
+            sync_db.connect()
+            try:
+                sync_db.insert_download(
+                    DownloadEvent(
+                        url="archiveofourown.org/works/101",
+                        site="archiveofourown",
+                        title="Story 101",
+                        behavior="force",
+                    )
+                )
+                sync_db.update_download(
+                    "archiveofourown.org/works/101",
+                    status="failed",
+                    error_message="HTTP Error 503",
+                )
+                sync_db.insert_retry(
+                    RetryEvent(
+                        url="archiveofourown.org/works/101",
+                        site="archiveofourown",
+                        attempt_number=1,
+                        action="retry",
+                        delay_minutes=1.0,
+                        error_message="HTTP Error 503",
+                    )
+                )
+                sync_db.update_download(
+                    "archiveofourown.org/works/101",
+                    status="waiting",
+                    error_message="HTTP Error 503",
+                )
+                sync_db.insert_email_check(
+                    EmailCheckEvent(
+                        urls_found=2,
+                        urls_new=1,
+                        urls_duplicate=1,
+                        urls_disabled_site=0,
+                    )
+                )
+                sync_db.insert_notification(
+                    NotificationEvent(
+                        title="New Fanfiction Download",
+                        body="Story 101",
+                        site="archiveofourown",
+                        provider="apprise",
+                    )
+                )
+            finally:
+                sync_db.close()
+
+            from history.database import AsyncHistoryDB
+
+            state = WebState(
+                history_db=AsyncHistoryDB(db_path),
+                active_urls={
+                    "archiveofourown.org/works/101": {
+                        "site": "archiveofourown",
+                        "title": "Story 101",
+                        "status": "waiting",
+                    },
+                    "archiveofourown.org/works/999": {
+                        "site": "archiveofourown",
+                        "title": "Cancelled Story",
+                        "status": "cancelled",
+                    },
+                },
+            )
+            app = create_app(state)
+            with TestClient(app) as client:
+                # 1. History endpoints backed by real AsyncHistoryDB
+                dl_resp = client.get("/api/history/downloads")
+                self.assertEqual(dl_resp.status_code, 200)
+                dl_data = dl_resp.json()
+                self.assertEqual(dl_data["total"], 1)
+                self.assertEqual(dl_data["items"][0]["status"], "waiting")
+
+                retry_resp = client.get(
+                    "/api/history/retries/archiveofourown.org/works/101"
+                )
+                self.assertEqual(retry_resp.status_code, 200)
+                self.assertEqual(len(retry_resp.json()["items"]), 1)
+
+                email_resp = client.get("/api/history/emails")
+                self.assertEqual(len(email_resp.json()["items"]), 1)
+
+                notif_resp = client.get("/api/history/notifications")
+                self.assertEqual(len(notif_resp.json()["items"]), 1)
+
+                recent_resp = client.get("/api/history/recent")
+                self.assertGreaterEqual(len(recent_resp.json()["items"]), 3)
+
+                # 2. Stats endpoints backed by real AsyncHistoryDB
+                stats_resp = client.get("/api/stats")
+                self.assertEqual(stats_resp.status_code, 200)
+                stats_data = stats_resp.json()
+                self.assertEqual(stats_data["total_downloads"], 1)
+                self.assertEqual(stats_data["downloads_with_retries"], 1)
+                self.assertEqual(stats_data["total_retries"], 1)
+                self.assertEqual(
+                    stats_data["downloads_by_site"][0]["site"], "archiveofourown"
+                )
+                self.assertEqual(
+                    stats_data["status_breakdown"], [{"status": "waiting", "count": 1}]
+                )
+
+                # 3. Widget & monitoring exclude cancelled entries
+                widget_resp = client.get("/api/widget")
+                widget_data = widget_resp.json()
+                self.assertEqual(widget_data["active_downloads"], 1)
+                self.assertEqual(widget_data["active"][0]["state"], "waiting")
+
+                mon_resp = client.get("/api/monitoring/active")
+                self.assertEqual(mon_resp.json()["count"], 1)
+
+    def test_controls_cancel_retry_allows_immediate_readd_and_preserves_calibre_id_on_retry_now(
+        self,
+    ):
+        """Cancelling a waiting URL removes it cleanly so add-url can re-add it, and retry-now preserves calibre_id."""
+        state = WebState(
+            ingress_queue=Queue(),
+            waiting_queue=Queue(),
+            worker_queues={"worker_0": Queue()},
+            active_urls={
+                "archiveofourown.org/works/42": {
+                    "site": "archiveofourown",
+                    "title": "Story 42",
+                    "calibre_id": "777",
+                    "status": "waiting",
+                    "heap_gen": 1,
+                }
+            },
+        )
+        app = create_app(state)
+        client = TestClient(app)
+
+        # 1. retry-now preserves calibre_id from active_urls when item is in pending_heap (not waiting_queue)
+        retry_resp = client.post(
+            "/api/controls/retry-now",
+            json={"url": "https://archiveofourown.org/works/42"},
+        )
+        self.assertTrue(retry_resp.json()["ok"])
+        requeued = state.ingress_queue.get_nowait()
+        self.assertEqual(requeued.url, "archiveofourown.org/works/42")
+        self.assertEqual(requeued.calibre_id, "777")
+        self.assertEqual(
+            state.active_urls["archiveofourown.org/works/42"]["status"], "queued"
+        )
+
+        # 2. cancel-retry marks entry cancelled without adding raw https:// duplicate key, and allows immediate add-url
+        state.active_urls["archiveofourown.org/works/42"]["status"] = "waiting"
+        cancel_resp = client.post(
+            "/api/controls/cancel-retry",
+            json={"url": "https://archiveofourown.org/works/42"},
+        )
+        self.assertTrue(cancel_resp.json()["ok"])
+        self.assertNotIn("https://archiveofourown.org/works/42", state.active_urls)
+        self.assertEqual(
+            state.active_urls["archiveofourown.org/works/42"]["status"], "cancelled"
+        )
+
+        # Re-adding the same URL immediately after cancel-retry must succeed!
+        add_resp = client.post(
+            "/api/controls/add-url",
+            json={"url": "https://archiveofourown.org/works/42"},
+        )
+        self.assertTrue(add_resp.json()["accepted"])
+        self.assertEqual(
+            state.active_urls["archiveofourown.org/works/42"]["status"], "queued"
+        )
+
+    def test_config_put_preserves_masked_secrets_and_rejects_invalid_values(self):
+        """PUT /api/config/{section} preserves '********' secrets and rejects invalid values before mutating state."""
+        import os
+        import tempfile
+        from config.config_store import ConfigStore
+        from models.config_models import ConfigManager
+
+        toml_content = """
+[email]
+email = "orig@example.com"
+password = "super_secret_password"
+server = "imap.example.com"
+mailbox = "INBOX"
+sleep_time = 60
+
+[calibre]
+path = "/library"
+password = "calibre_secret_password"
+
+[process]
+max_workers = 2
+
+[pushbullet]
+enabled = true
+api_key = "pb_real_secret_key"
+
+[web]
+enabled = true
+host = "0.0.0.0"
+port = 8080
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg_path = os.path.join(tmp_dir, "config.toml")
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                fh.write(toml_content)
+
+            cfg = ConfigManager.load_config(cfg_path, force_reload=True)
+            store = ConfigStore()
+            store.initialize_from_config(cfg)
+
+            state = WebState(
+                config=cfg,
+                config_path=cfg_path,
+                config_store=store,
+            )
+            app = create_app(state)
+            client = TestClient(app)
+
+            # 1. Saving email section with masked password '********' must preserve real password
+            resp = client.put(
+                "/api/config/email",
+                json={
+                    "values": {
+                        "email": "updated@example.com",
+                        "password": "********",
+                        "sleep_time": 90,
+                    }
+                },
+            )
+            self.assertTrue(resp.json()["applied"])
+            self.assertEqual(store.get("email.email"), "updated@example.com")
+            self.assertEqual(store.get("email.password"), "super_secret_password")
+            self.assertEqual(state.config.email.password, "super_secret_password")
+            with open(cfg_path, encoding="utf-8") as fh:
+                disk_text = fh.read()
+            self.assertIn("super_secret_password", disk_text)
+            self.assertNotIn("********", disk_text)
+
+            # 2. Invalid config value (sleep_time = -10) is rejected before mutating store or file
+            bad_resp = client.put(
+                "/api/config/email",
+                json={"values": {"sleep_time": -10}},
+            )
+            self.assertFalse(bad_resp.json()["applied"])
+            self.assertEqual(store.get("email.sleep_time"), 90)
+
+            # 3. Updating process.max_workers updates ConfigStore and TOML
+            mw_resp = client.put(
+                "/api/config/process",
+                json={"values": {"max_workers": 6}},
+            )
+            self.assertTrue(mw_resp.json()["applied"])
+            self.assertEqual(store.get("process.max_workers"), 6)
+            self.assertEqual(state.config.process.max_workers, 6)
+            self.assertEqual(state.config.max_workers, 6)
 
 
 if __name__ == "__main__":

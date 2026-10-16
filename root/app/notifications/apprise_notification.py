@@ -55,7 +55,7 @@ class AppriseNotification(notification_base.NotificationBase):
         ...     success = notifier.send_notification("Title", "Body", "site")
     """
 
-    def __init__(self, toml_path: str) -> None:
+    def __init__(self, toml_path: str, config_store=None) -> None:
         """Initializes Apprise notification provider with configuration loading.
 
         Sets up the Apprise notification system by loading configuration,
@@ -77,7 +77,10 @@ class AppriseNotification(notification_base.NotificationBase):
             Configuration or API failures result in service being disabled.
         """
         # Initialize parent class with configuration loading
-        super().__init__(toml_path)
+        if config_store is not None:
+            super().__init__(toml_path, config_store=config_store)
+        else:
+            super().__init__(toml_path)
         # Use set initially to prevent URL duplicates during configuration
         self.apprise_urls = set()
         # Create Apprise object for notification management

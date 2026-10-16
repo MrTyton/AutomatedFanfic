@@ -52,6 +52,36 @@ from tempfile import mkdtemp
 # from calibre_integration import calibre_info
 
 
+def get_packaged_defaults_ini_path() -> str:
+    """Return the filesystem path to the packaged FanFicFare defaults.ini.
+
+    Checks the installed fanficfare package directory first, then the repo/container
+    default config directory (`root/config.default/defaults.ini` or `/config.default/defaults.ini`).
+
+    Returns:
+        str: Absolute path to the packaged defaults.ini file, or empty string if not found.
+    """
+    try:
+        import fanficfare
+
+        fff_ini = Path(fanficfare.__file__).resolve().parent / "defaults.ini"
+        if fff_ini.is_file():
+            return str(fff_ini)
+    except Exception:
+        pass
+
+    # Fallbacks for repo structure or container filesystem
+    candidates = [
+        Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini",
+        Path("/config.default/defaults.ini"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+
+    return ""
+
+
 def resolve_ini_path(path: str | None, default_filename: str) -> str:
     """Resolve an INI file path, appending the filename if the path is a directory.
 
@@ -61,6 +91,9 @@ def resolve_ini_path(path: str | None, default_filename: str) -> str:
     single source of truth for INI path resolution used by both CalibreInfo
     initialization and the web configuration routes.
 
+    When resolving `defaults.ini` and no path is configured (None or empty),
+    it automatically falls back to the packaged FanFicFare `defaults.ini`.
+
     Args:
         path: The configured path which may be a directory, a full file path,
             or None/empty.
@@ -69,9 +102,11 @@ def resolve_ini_path(path: str | None, default_filename: str) -> str:
 
     Returns:
         The resolved file path, or an empty string if the input path was
-        None or empty.
+        None or empty (except for defaults.ini which falls back to the packaged file).
     """
     if not path:
+        if default_filename == "defaults.ini":
+            return get_packaged_defaults_ini_path()
         return ""
 
     # If path doesn't already end with the expected filename, append it

@@ -74,7 +74,12 @@ class TestCalibreInfo(unittest.TestCase):
         self.assertEqual(calibre_info.location, path)
         self.assertEqual(calibre_info.username, username)
         self.assertEqual(calibre_info.password, password)
-        self.assertEqual(calibre_info.default_ini, default_ini)
+        if default_ini:
+            self.assertEqual(calibre_info.default_ini, default_ini)
+        else:
+            from utils.system_utils import get_packaged_defaults_ini_path
+
+            self.assertEqual(calibre_info.default_ini, get_packaged_defaults_ini_path())
         self.assertEqual(calibre_info.personal_ini, personal_ini)
 
     @parameterized.expand(

@@ -137,7 +137,7 @@ def _extract_output_filename_template(ini_text: str, site: str | None = None) ->
     sections_to_check = ["overrides"]
 
     try:
-        parser = configparser.RawConfigParser()
+        parser = configparser.RawConfigParser(strict=False)
         parser.read_string(ini_text)
 
         # Find the site-specific section by substring match:

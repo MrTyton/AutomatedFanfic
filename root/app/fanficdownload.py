@@ -34,7 +34,7 @@ import argparse
 import multiprocessing as mp
 from multiprocessing.managers import SyncManager
 import sys
-from utils import ff_logging  # Custom logging module for formatted logging
+from utils import ff_logging, system_utils  # Custom logging and system utility modules
 
 from parsers import auto_url_parsers
 from calibre_integration import calibre_info
@@ -143,8 +143,13 @@ def log_configuration_details(
 
         # Log Calibre Configuration
         ff_logging.log(f"  Calibre Path: {config.calibre.path or 'Not Specified'}")
+        resolved_default_ini = (
+            system_utils.resolve_ini_path(config.calibre.default_ini, "defaults.ini")
+            if hasattr(system_utils, "resolve_ini_path")
+            else None
+        )
         ff_logging.log(
-            f"  Calibre Default INI: {config.calibre.default_ini or 'Not Specified'}"
+            f"  Calibre Default INI: {config.calibre.default_ini or (f'Packaged ({resolved_default_ini})' if resolved_default_ini else 'Packaged')}"
         )
         ff_logging.log(
             f"  Calibre Personal INI: {config.calibre.personal_ini or 'Not Specified'}"
@@ -240,11 +245,20 @@ def register_processes(
     # Initialize history recording infrastructure
     history_queue = manager.Queue(maxsize=10000)
     history_recorder = HistoryRecorder(history_queue)
-    history_db_path = config.web.history_db_path if config.web.enabled else None
+    history_db_path = (
+        config.web.history_db_path
+        if (config.web.enabled or getattr(config.web, "history_db_path", None))
+        else None
+    )
 
     # Start the HistoryWriter daemon thread (runs in main process)
-    history_writer = HistoryWriter(history_queue, history_db_path or "/data/history.db")
+    history_writer = HistoryWriter(
+        history_queue,
+        history_db_path or "/data/history.db",
+        shutdown_event=getattr(process_manager, "_shutdown_event", None),
+    )
     history_writer.start()
+    process_manager._history_writer = history_writer
 
     # Wire up notification history recording (must happen after both are created)
     notification_info.history_recorder = history_recorder
@@ -391,6 +405,10 @@ def main() -> None:
                     )
                 else:
                     ff_logging.log("Manual shutdown completed successfully")
+            finally:
+                history_writer = getattr(process_manager, "_history_writer", None)
+                if history_writer is not None:
+                    history_writer.stop()
 
     ff_logging.log("Application shutdown complete")
 

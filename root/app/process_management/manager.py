@@ -545,7 +545,7 @@ class ProcessManager:
         ):
             return
 
-        new_max = self._config_store.get("max_workers")
+        new_max = self._config_store.get("process.max_workers")
         if new_max is None:
             return
 

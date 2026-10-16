@@ -71,8 +71,8 @@ async def _build_snapshot(state: Any) -> dict:
         meta = url_metadata.get(u, {})
         if meta.get("status") == "cancelled":
             continue  # being cleaned up by wait_processor; hide from UI immediately
-        if u in waiting_url_map:
-            w_meta = waiting_url_map[u]
+        if u in waiting_url_map or meta.get("status") == "waiting":
+            w_meta = waiting_url_map.get(u, {})
             waiting_urls.append(
                 {
                     "url": u,

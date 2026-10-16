@@ -121,6 +121,8 @@ class TestUpdateStrategies(unittest.TestCase):
             self.mock_queue,
             self.retry_config,
             self.mock_client.cdb_info,
+            history_recorder=None,
+            error_message=f"Failed to replace format for {self.path_or_url}",
         )
 
     # --- PreserveMetadataStrategy Tests ---
@@ -245,7 +247,15 @@ class TestUpdateStrategies(unittest.TestCase):
         self.assertFalse(result)
         self.mock_client.remove_story.assert_called_once()
         self.mock_client.add_story.assert_called_once()
-        self.mock_failure_handler.assert_called_once()
+        self.mock_failure_handler.assert_called_once_with(
+            self.fanfic,
+            self.mock_notification,
+            self.mock_queue,
+            self.retry_config,
+            self.mock_client.cdb_info,
+            history_recorder=None,
+            error_message=f"Failed to add {self.path_or_url} to Calibre",
+        )
 
     # --- RemoveAddStrategy Tests ---
 
@@ -340,7 +350,15 @@ class TestUpdateStrategies(unittest.TestCase):
         )
 
         self.assertFalse(result)
-        self.mock_failure_handler.assert_called_once()
+        self.mock_failure_handler.assert_called_once_with(
+            self.fanfic,
+            self.mock_notification,
+            self.mock_queue,
+            self.retry_config,
+            self.mock_client.cdb_info,
+            history_recorder=None,
+            error_message=f"Failed to add {self.path_or_url} to Calibre",
+        )
 
     # --- AddNewStoryStrategy Tests ---
 
@@ -398,4 +416,56 @@ class TestUpdateStrategies(unittest.TestCase):
 
         self.assertFalse(result)
         self.mock_client.add_story.assert_called_once()
-        self.mock_failure_handler.assert_called_once()
+        self.mock_failure_handler.assert_called_once_with(
+            self.fanfic,
+            self.mock_notification,
+            self.mock_queue,
+            self.retry_config,
+            self.mock_client.cdb_info,
+            history_recorder=None,
+            error_message=f"Failed to add {self.path_or_url} to Calibre",
+        )
+
+    def test_strategies_with_real_handle_failure_and_history_recorder(self):
+        """Real handle_failure + HistoryRecorder records Calibre failure reason and retry event."""
+        from queue import Queue
+        from history.recorder import HistoryRecorder
+        from workers import handlers
+
+        history_q = Queue()
+        recorder = HistoryRecorder(history_q)
+        waiting_q = Queue()
+
+        self.mock_client.add_format_to_existing_story.return_value = False
+        strategy = update_strategies.AddFormatStrategy()
+
+        result = strategy.execute(
+            self.fanfic,
+            self.mock_client,
+            self.temp_dir,
+            "site",
+            self.path_or_url,
+            waiting_q,
+            self.mock_notification,
+            self.retry_config,
+            handlers.handle_failure,
+            history_recorder=recorder,
+        )
+
+        self.assertFalse(result)
+        # Fanfic should be queued onto waiting_q with retry decision
+        queued_fanfic = waiting_q.get_nowait()
+        self.assertEqual(queued_fanfic.url, self.fanfic.url)
+        self.assertIsNotNone(queued_fanfic.retry_decision)
+        self.assertEqual(queued_fanfic.retry_decision.action.value, "retry")
+
+        # HistoryRecorder queue should have retry_scheduled and download_updated (waiting)
+        events = []
+        while not history_q.empty():
+            events.append(history_q.get_nowait())
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0]["event_type"], "retry")
+        self.assertIn("Failed to replace format", events[0]["payload"]["error_message"])
+        self.assertEqual(events[1]["event_type"], "download_updated")
+        self.assertEqual(events[1]["payload"]["status"], "waiting")
+        self.assertIn("Failed to replace format", events[1]["payload"]["error_message"])

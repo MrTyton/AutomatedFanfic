@@ -211,6 +211,19 @@ def _remove_from_calibre_if_possible(state, fanfic: FanficInfo) -> tuple[bool, s
         return False, f"Failed to remove from Calibre: {exc}"
 
 
+def _is_active_url(active_urls, url: str) -> bool:
+    """Return True if *url* is in *active_urls* and not marked cancelled."""
+    if active_urls is None or url not in active_urls:
+        return False
+    try:
+        meta = active_urls.get(url, {})
+        if isinstance(meta, dict) and meta.get("status") == "cancelled":
+            return False
+    except Exception:
+        pass
+    return True
+
+
 @router.post("/add-url", response_model=AddUrlResponse)
 async def add_url(request: Request, body: AddUrlRequest):
     """Add a fanfiction URL directly to the ingress queue."""
@@ -231,8 +244,8 @@ async def add_url(request: Request, body: AddUrlRequest):
     url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
     fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
 
-    # Check for duplicates (use normalized fanfic.url, not raw_url)
-    if state.active_urls is not None and fanfic.url in state.active_urls:
+    # Check for duplicates (use normalized fanfic.url, not raw_url; ignore cancelled entries)
+    if _is_active_url(state.active_urls, fanfic.url):
         return AddUrlResponse(
             accepted=False, message=f"URL already in queue: {fanfic.url}"
         )
@@ -283,7 +296,7 @@ async def add_urls(request: Request, body: AddUrlsRequest):
         try:
             fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
 
-            if state.active_urls is not None and fanfic.url in state.active_urls:
+            if _is_active_url(state.active_urls, fanfic.url):
                 results.append(
                     AddUrlResponse(
                         accepted=False,
@@ -337,22 +350,37 @@ async def cancel_retry(request: Request, body: QueueActionRequest):
 
     waiting_removed: list[FanficInfo] = []
     ingress_removed: list[FanficInfo] = []
+    worker_removed: list[FanficInfo] = []
     for candidate in candidate_urls:
         waiting_removed.extend(_dequeue_matching_fics(state.waiting_queue, candidate))
         ingress_removed.extend(_dequeue_matching_fics(state.ingress_queue, candidate))
     for queue_obj in (state.worker_queues or {}).values():
         for candidate in candidate_urls:
-            _dequeue_matching_fics(queue_obj, candidate)
+            worker_removed.extend(_dequeue_matching_fics(queue_obj, candidate))
 
     # Mark as cancelled in active_urls. wait_processor checks this flag before
     # requeuing items from its heap, so items already consumed from waiting_queue
     # are still dropped when their timer fires instead of re-entering the pipeline.
+    active_cancelled = 0
     if state.active_urls is not None:
+        matched_any = False
         for candidate in candidate_urls:
             try:
-                existing = dict(state.active_urls.get(candidate, {}))
-                existing["status"] = "cancelled"
-                state.active_urls[candidate] = existing
+                if candidate in state.active_urls:
+                    matched_any = True
+                    raw_existing = state.active_urls.get(candidate, {})
+                    existing = (
+                        dict(raw_existing) if isinstance(raw_existing, dict) else {}
+                    )
+                    if existing.get("status") != "cancelled":
+                        active_cancelled += 1
+                    existing["status"] = "cancelled"
+                    state.active_urls[candidate] = existing
+            except Exception:
+                pass
+        if not matched_any:
+            try:
+                state.active_urls[canonical_url] = {"status": "cancelled"}
             except Exception:
                 pass
 
@@ -363,7 +391,12 @@ async def cancel_retry(request: Request, body: QueueActionRequest):
             site=site,
         )
 
-    removed_count = len(waiting_removed) + len(ingress_removed)
+    removed_count = (
+        len(waiting_removed)
+        + len(ingress_removed)
+        + len(worker_removed)
+        + active_cancelled
+    )
     if removed_count == 0:
         return ActionResponse(
             ok=True, message=f"No pending retry found for {canonical_url}"
@@ -382,6 +415,7 @@ async def retry_now(request: Request, body: QueueActionRequest):
     metadata = await _load_latest_metadata(state, raw_url)
     site = body.site or metadata.get("site")
     title = body.title or metadata.get("title")
+    calibre_id = body.calibre_id or metadata.get("calibre_id")
 
     canonical_fanfic: FanficInfo | None = None
     try:
@@ -408,17 +442,23 @@ async def retry_now(request: Request, body: QueueActionRequest):
             except Exception as e:
                 return ActionResponse(ok=False, message=f"Error: {e}")
 
+    existing_meta, _ = _remove_from_active_url_candidates(state, candidate_urls)
+    if not site and existing_meta.get("site"):
+        site = existing_meta.get("site")
+    if not title and existing_meta.get("title"):
+        title = existing_meta.get("title")
+    if not calibre_id and existing_meta.get("calibre_id"):
+        calibre_id = existing_meta.get("calibre_id")
+
     if site:
         fanfic.site = site
     if title and not fanfic.title:
         fanfic.title = title
+    if calibre_id and not fanfic.calibre_id:
+        fanfic.calibre_id = calibre_id
 
-    _remove_from_active_url_candidates(state, candidate_urls)
-
-    # Enqueue the fanfic but update the existing DB row instead of creating a
-    # new one.  _enqueue_fanfic inserts a fresh download event which leaves the
-    # old 'waiting' row intact — causing the UI to incorrectly show the URL in
-    # the waiting queue even after it's been requeued.
+    # Enqueue the fanfic, updating active_urls with a fresh dict (no heap_gen)
+    # so wait_processor drops any stale heap entry when its timer expires.
     if state.active_urls is not None:
         state.active_urls[fanfic.url] = {
             "site": fanfic.site,

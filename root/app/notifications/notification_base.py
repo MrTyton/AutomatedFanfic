@@ -79,7 +79,7 @@ class NotificationBase:
         ...         return True
     """
 
-    def __init__(self, toml_path: str, sleep_time: int = 10) -> None:
+    def __init__(self, toml_path: str, sleep_time: int = 10, config_store=None) -> None:
         """Initializes the notification base class with configuration loading.
 
         Loads and validates the TOML configuration file using ConfigManager,
@@ -109,7 +109,28 @@ class NotificationBase:
 
         # Load the configuration using ConfigManager with comprehensive error handling
         try:
-            self.config = ConfigManager.load_config(toml_path)
+            if config_store is not None:
+                loaded_config = ConfigManager.load_config(toml_path, force_reload=True)
+            else:
+                loaded_config = ConfigManager.load_config(toml_path)
+            if loaded_config is not None and config_store is not None:
+                try:
+                    loaded_config = loaded_config.model_copy(deep=True)
+                except Exception:
+                    pass
+                pb_enabled = config_store.get("pushbullet.enabled")
+                if pb_enabled is not None and hasattr(loaded_config, "pushbullet"):
+                    loaded_config.pushbullet.enabled = pb_enabled
+                pb_key = config_store.get("pushbullet.api_key")
+                if pb_key is not None and hasattr(loaded_config, "pushbullet"):
+                    loaded_config.pushbullet.api_key = pb_key
+                pb_device = config_store.get("pushbullet.device")
+                if pb_device is not None and hasattr(loaded_config, "pushbullet"):
+                    loaded_config.pushbullet.device = pb_device
+                apprise_urls = config_store.get("apprise.urls")
+                if apprise_urls is not None and hasattr(loaded_config, "apprise"):
+                    loaded_config.apprise.urls = list(apprise_urls)
+            self.config = loaded_config
         except (ConfigError, ConfigValidationError) as e:
             ff_logging.log_failure(f"Failed to load configuration: {e}")
             # Set to None to indicate configuration loading failed

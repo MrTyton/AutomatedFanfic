@@ -18,7 +18,9 @@ Adapter API Usage:
     - Falls back to treating URL as single story if detection fails
 """
 
-lazy from fanficfare import adapters, configurable, exceptions
+import re
+
+lazy from fanficfare import adapters, configurable, exceptions, geturls
 from utils import ff_logging
 
 
@@ -27,6 +29,28 @@ def _normalize_url(url: str) -> str:
     if url and "://" not in url:
         return "https://" + url
     return url
+
+
+def _call_get_urls_from_page(
+    adapter, url: str, config: configurable.Configuration
+) -> dict | None:
+    """Invoke adapter.get_urls_from_page, supplying a GetURLs helper when accepted."""
+    try:
+        gu = geturls.GetURLs(config=config)
+        return adapter.get_urls_from_page(url, geturls=gu, normalize=False)
+    except TypeError:
+        return adapter.get_urls_from_page(url, normalize=False)
+
+
+def _is_single_story_url(config: configurable.Configuration, url: str) -> bool:
+    """Return True if *url* is accepted by FanFicFare as a single-story URL."""
+    if "/series/" in url.lower():
+        return False
+    try:
+        adapters.getAdapter(config, url, anyurl=False)
+        return True
+    except Exception:
+        return False
 
 
 def is_series_url(url: str, config: configurable.Configuration | None = None) -> bool:
@@ -53,21 +77,29 @@ def is_series_url(url: str, config: configurable.Configuration | None = None) ->
 
         # Method 1: Check if this is an OTW adapter (AO3) with series support
         if hasattr(adapter, "get_series_from_page"):
-            # AO3 has explicit series URL pattern matching
-            import re
-
             # Try to match series pattern: /series/<ID>
-            site_pattern = adapter.getSiteURLPattern()
-            series_pattern = site_pattern.replace("/works/", "/series/")
-            m = re.match(series_pattern, url)
-            if m and m.group("id"):
-                ff_logging.log_debug(f"Series URL detected (AO3 series): {url}")
-                return True
+            site_pattern = (
+                adapter.getSiteURLPattern()
+                if hasattr(adapter, "getSiteURLPattern")
+                else None
+            )
+            if isinstance(site_pattern, str) and "/works/" in site_pattern:
+                series_pattern = site_pattern.replace("/works/", "/series/")
+                m = re.match(series_pattern, url)
+                if m and m.group("id"):
+                    ff_logging.log_debug(f"Series URL detected (AO3 series): {url}")
+                    return True
 
-        # Method 2: Check if this is a site with get_urls_from_page override
+        # Fast-path: if FanFicFare validates the URL as a single story (anyurl=False),
+        # never make a network call to scrape the page for list URLs.
+        if _is_single_story_url(config, url):
+            ff_logging.log_debug(f"Single story URL detected: {url}")
+            return False
+
+        # Method 2: Check if this is a site with get_urls_from_page support
         if hasattr(adapter, "get_urls_from_page"):
             try:
-                result = adapter.get_urls_from_page(url, normalize=False)
+                result = _call_get_urls_from_page(adapter, url, config)
                 if isinstance(result, dict) and "urllist" in result:
                     urllist = result.get("urllist", [])
 
@@ -118,6 +150,11 @@ def expand_series_url(
     try:
         adapter = adapters.getAdapter(config, url, anyurl=True)
 
+        # Fast-path: if FanFicFare validates the URL as a single story (anyurl=False),
+        # return [] immediately without making any network calls.
+        if _is_single_story_url(config, url):
+            return []
+
         # Method 1: Use AO3's native get_series_from_page (handles pagination)
         if hasattr(adapter, "get_series_from_page"):
             try:
@@ -140,7 +177,7 @@ def expand_series_url(
         # Method 2: Use generic get_urls_from_page (for other sites with list support)
         if hasattr(adapter, "get_urls_from_page"):
             try:
-                result = adapter.get_urls_from_page(url, normalize=False)
+                result = _call_get_urls_from_page(adapter, url, config)
                 if isinstance(result, dict) and "urllist" in result:
                     urllist = result.get("urllist", [])
                     if len(urllist) > 1:

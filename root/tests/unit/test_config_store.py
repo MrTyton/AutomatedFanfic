@@ -95,9 +95,9 @@ class TestReloadBehaviorClassification(unittest.TestCase):
         )
 
     def test_app_restart_fields(self):
-        # max_workers is now HOT (dynamic scaling via manager.dict())
+        # process.max_workers is now HOT (dynamic scaling via manager.dict())
         self.assertEqual(
-            ConfigStore.get_reload_behavior("", "max_workers"),
+            ConfigStore.get_reload_behavior("process", "max_workers"),
             ReloadBehavior.HOT,
         )
         # Email/calibre credentials are now HOT
@@ -245,7 +245,7 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         cfg = MagicMock()
         cfg.model_dump.return_value = {
             "email": {"sleep_time": 60, "password": "secret"},
-            "max_workers": 4,
+            "process": {"max_workers": 4},
         }
         self.state.config = cfg
 
@@ -255,7 +255,9 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         self.assertEqual(
             data["reload_map"]["email"]["sleep_time"]["reload_behavior"], "hot"
         )
-        self.assertEqual(data["reload_map"]["max_workers"]["reload_behavior"], "hot")
+        self.assertEqual(
+            data["reload_map"]["process"]["max_workers"]["reload_behavior"], "hot"
+        )
 
     def test_get_reload_map(self):
         """GET /api/config/reload-map returns full field mapping."""

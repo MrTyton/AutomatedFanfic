@@ -82,8 +82,8 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                 "health_check_interval": 1.0,
                 "auto_restart": False,
                 "enable_monitoring": False,
+                "max_workers": 2,
             },
-            "max_workers": 2,
         }
 
     def tearDown(self):
@@ -189,8 +189,8 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                         "health_check_interval": 2.0,
                         "auto_restart": True,
                         "enable_monitoring": True,
+                        "max_workers": 4,
                     },
-                    "max_workers": 4,
                 },
                 "full_feature_operation",
                 True,
@@ -369,8 +369,8 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                 auto_restart=config_data["auto_restart"],
                 shutdown_timeout=1.0,
                 health_check_interval=0.5,
+                max_workers=1,
             ),
-            max_workers=1,
         )
 
         with ProcessManager(config=config) as process_manager:
@@ -569,8 +569,8 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                 health_check_interval=0.5,
                 auto_restart=False,
                 enable_monitoring=False,
+                max_workers=1,
             ),
-            max_workers=1,
         )
 
         with ProcessManager(config=config) as process_manager:
@@ -701,8 +701,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                 mailbox="INBOX",
             ),
             calibre=CalibreConfig(path="/test/path"),
-            process=ProcessConfig(shutdown_timeout=1.0),
-            max_workers=2,
+            process=ProcessConfig(shutdown_timeout=1.0, max_workers=2),
         )
 
         # Test multiple process manager cycles

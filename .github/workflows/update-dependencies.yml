@@ -4,12 +4,6 @@ on:
   schedule:
     - cron: "0 23 * * *" # Every day at 11pm UTC
   workflow_dispatch:
-    inputs:
-      update_defaults_ini:
-        description: "Update defaults.ini from the FanFicFare repo when FFF version changes"
-        required: false
-        default: "true"
-        type: boolean
 
 permissions:
   contents: write # Needed to commit changes and read repository files
@@ -170,29 +164,22 @@ jobs:
             echo "No updates detected"
           fi
 
-      - name: Update defaults.ini from FanFicFare repo
-        id: update_defaults_ini
-        if: |
-          steps.check_updates.outputs.fff_changed == 'true' &&
-          (github.event_name == 'schedule' || github.event.inputs.update_defaults_ini == 'true')
+      - name: Set up Python for FanFicFare compatibility check
+        if: steps.check_updates.outputs.fff_changed == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.15"
+          allow-prereleases: true
+
+      - name: Run FanFicFare compatibility tests before committing
+        if: steps.check_updates.outputs.fff_changed == 'true'
         run: |
-          FFF_VERSION="${{ steps.check_updates.outputs.fff_new_version }}"
-          echo "Updating defaults.ini for FanFicFare ${FFF_VERSION}..."
-
-          # Try the version-specific tag first (exact match), fall back to master
-          TAG_URL="https://raw.githubusercontent.com/JimmXinu/FanFicFare/${FFF_VERSION}/fanficfare/defaults.ini"
-          MASTER_URL="https://raw.githubusercontent.com/JimmXinu/FanFicFare/master/fanficfare/defaults.ini"
-
-          if curl -sSfL "$TAG_URL" -o root/config.default/defaults.ini 2>/dev/null; then
-            echo "updated=true" >> $GITHUB_OUTPUT
-            echo "✅ Updated defaults.ini from FanFicFare tag ${FFF_VERSION}"
-          elif curl -sSfL "$MASTER_URL" -o root/config.default/defaults.ini; then
-            echo "updated=true" >> $GITHUB_OUTPUT
-            echo "✅ Updated defaults.ini from FanFicFare master (tag ${FFF_VERSION} not found)"
-          else
-            echo "updated=false" >> $GITHUB_OUTPUT
-            echo "::warning::Failed to download defaults.ini; skipping update"
-          fi
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pytest root/tests/unit/test_fanficfare_compat.py \
+                 root/tests/unit/test_auto_url_parsers.py \
+                 root/tests/unit/test_url_ingester.py \
+                 root/tests/unit/test_series_utils.py -v
 
       - name: Update latest.txt if any changes were made
         id: update_latest_txt
@@ -240,7 +227,7 @@ jobs:
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
           # Ensure latest.txt is committed along with dependency files
-          add: "release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py pyproject.toml root/config.default/defaults.ini"
+          add: "release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py pyproject.toml"
 
       - name: Verify commit and set output
         id: verify_commit

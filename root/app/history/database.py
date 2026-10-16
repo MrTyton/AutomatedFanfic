@@ -158,20 +158,25 @@ class SyncHistoryDB:
     def update_download(
         self,
         url: str,
-        status: DownloadStatus,
+        status: DownloadStatus | str,
         title: str | None = None,
         calibre_id: str | None = None,
         error_message: str | None = None,
         completed_at: datetime | None = None,
         site: str | None = None,
     ) -> None:
-        """Update the most recent in-progress download_event for *url*.
+        """Update the most recent non-successful download_event for *url*.
 
-        Matches rows with status 'pending' or 'waiting' (both represent
-        in-progress downloads).  If no such row exists, insert a new
-        completed row so the event isn't lost.
+        Matches rows with status 'pending', 'waiting', 'failed', or 'abandoned'
+        so retry transitions (failed -> waiting/abandoned) and manual requeues
+        update the existing record rather than inserting duplicate rows.
+        If no such row exists, insert a new row so the event isn't lost.
         """
         assert self._conn is not None
+        if isinstance(status, str):
+            status = DownloadStatus(status)
+        now_str = _dt_to_str(datetime.now(timezone.utc))
+        is_in_progress = status in (DownloadStatus.PENDING, DownloadStatus.WAITING)
         cur = self._conn.execute(
             """UPDATE download_events
                SET status = ?,
@@ -179,12 +184,13 @@ class SyncHistoryDB:
                    calibre_id = COALESCE(?, calibre_id),
                    error_message = CASE WHEN ? = 'success' THEN NULL
                                         ELSE COALESCE(?, error_message) END,
-                   completed_at = COALESCE(?, completed_at),
+                   completed_at = CASE WHEN ? THEN NULL
+                                       ELSE COALESCE(?, completed_at) END,
                    updated_at = ?
                WHERE id = (
                    SELECT id FROM download_events
-                   WHERE url = ? AND status IN ('pending', 'waiting')
-                   ORDER BY started_at DESC LIMIT 1
+                   WHERE url = ? AND status IN ('pending', 'waiting', 'failed', 'abandoned')
+                   ORDER BY started_at DESC, id DESC LIMIT 1
                )""",
             (
                 status.value,
@@ -192,13 +198,14 @@ class SyncHistoryDB:
                 calibre_id,
                 status.value,
                 error_message,
+                1 if is_in_progress else 0,
                 _dt_to_str(completed_at),
-                _dt_to_str(datetime.now()),
+                now_str,
                 url,
             ),
         )
         if cur.rowcount == 0:
-            # No pending row found — insert a complete record
+            # No matching row found — insert a complete record
             self._conn.execute(
                 """INSERT INTO download_events
                    (url, site, title, calibre_id, status,
@@ -211,8 +218,8 @@ class SyncHistoryDB:
                     calibre_id,
                     status.value,
                     error_message,
-                    _dt_to_str(completed_at or datetime.now()),
-                    _dt_to_str(completed_at),
+                    _dt_to_str(completed_at) or now_str,
+                    None if is_in_progress else _dt_to_str(completed_at),
                 ),
             )
         self._conn.commit()
@@ -224,7 +231,7 @@ class SyncHistoryDB:
         if download_event_id is None:
             row = self._conn.execute(
                 """SELECT id FROM download_events
-                   WHERE url = ? ORDER BY started_at DESC LIMIT 1""",
+                   WHERE url = ? ORDER BY started_at DESC, id DESC LIMIT 1""",
                 (event.url,),
             ).fetchone()
             if row:
@@ -268,9 +275,9 @@ class SyncHistoryDB:
                WHERE id = (
                    SELECT id FROM download_events
                    WHERE url = ? AND status = 'waiting'
-                   ORDER BY started_at DESC LIMIT 1
+                   ORDER BY started_at DESC, id DESC LIMIT 1
                )""",
-            (_dt_to_str(datetime.now()), url),
+            (_dt_to_str(datetime.now(timezone.utc)), url),
         )
         self._conn.commit()
 
@@ -355,9 +362,20 @@ class AsyncHistoryDB:
                 )
             except Exception:
                 pass  # Column already exists
+            # Migrate: add trigger column to email_events if missing (existing databases)
+            try:
+                await conn.execute(
+                    "ALTER TABLE email_events ADD COLUMN trigger TEXT NOT NULL DEFAULT 'poll'"
+                )
+            except Exception:
+                pass  # Column already exists
             await conn.commit()
         finally:
             await conn.close()
+
+    async def close(self) -> None:
+        """Close any held resources (connections are opened/closed per query)."""
+        return None
 
     async def get_downloads(
         self,

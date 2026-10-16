@@ -123,3 +123,82 @@ class TestFanFicFareExceptionsAPI(unittest.TestCase):
             hasattr(exceptions, "FetchEmailFailed"),
             "fanficfare.exceptions must export 'FetchEmailFailed'",
         )
+
+
+class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
+    """Verify fanficfare.cli entry points and real GetURLs/Configuration integration."""
+
+    def test_cli_exports_mkParser_expandOptions_do_download(self):
+        import inspect
+        import fanficfare.cli as fff_cli
+
+        self.assertTrue(callable(getattr(fff_cli, "mkParser", None)))
+        self.assertTrue(callable(getattr(fff_cli, "expandOptions", None)))
+        self.assertTrue(callable(getattr(fff_cli, "do_download", None)))
+
+        parser = fff_cli.mkParser(calibre=False)
+        options, args = parser.parse_args(
+            [
+                "-u",
+                "--update-cover",
+                "--non-interactive",
+                "https://archiveofourown.org/works/123",
+            ]
+        )
+        fff_cli.expandOptions(options)
+        self.assertEqual(args, ["https://archiveofourown.org/works/123"])
+
+        target_fn = fff_cli.do_download
+        if getattr(target_fn, "__closure__", None):
+            for cell in target_fn.__closure__:
+                if callable(cell.cell_contents):
+                    target_fn = cell.cell_contents
+                    break
+        sig = inspect.signature(target_fn)
+        for param in (
+            "arg",
+            "options",
+            "passed_defaultsini",
+            "passed_personalini",
+            "warn",
+            "fail",
+        ):
+            self.assertIn(
+                param,
+                sig.parameters,
+                f"fanficfare.cli.do_download must accept '{param}' parameter",
+            )
+
+    def test_getAdapter_anyurl_false_rejects_series_and_accepts_single_story(self):
+        config = configurable.Configuration(["test.com"], "EPUB", lightweight=True)
+        adapter = adapters.getAdapter(
+            config, "https://archiveofourown.org/works/12345", anyurl=False
+        )
+        self.assertEqual(adapter.story.getMetadata("storyId"), "12345")
+
+        with self.assertRaises(Exception):
+            adapters.getAdapter(
+                config, "https://archiveofourown.org/series/12345", anyurl=False
+            )
+
+    def test_make_fff_get_configuration_with_real_GetURLs_html_extraction(self):
+        """Real _make_fff_get_configuration + GetURLs extracts URLs from HTML without AttributeError."""
+        from pathlib import Path
+        from services.url_ingester import _make_fff_get_configuration
+
+        defaults_ini = (
+            Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini"
+        )
+        get_config_fn = _make_fff_get_configuration(str(defaults_ini), "")
+        initial_config = get_config_fn("test1.com")
+        gu = geturls.GetURLs(config=initial_config, get_config=get_config_fn)
+
+        html = (
+            "<html><body>"
+            '<a href="https://archiveofourown.org/works/987654">AO3 Work</a>'
+            '<a href="https://www.fanfiction.net/s/11223344/1/Test">FFNet Work</a>'
+            "</body></html>"
+        )
+        urls = gu.get_urls_from_html(html)
+        self.assertIn("https://archiveofourown.org/works/987654", urls)
+        self.assertTrue(any("fanfiction.net/s/11223344" in u for u in urls))

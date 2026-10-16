@@ -54,8 +54,8 @@ class TestSignalHandlingIntegration(unittest.TestCase):
                 enable_monitoring=False,  # Disable for simpler testing
                 auto_restart=False,
                 shutdown_timeout=2.0,  # Short timeout for faster tests
+                max_workers=2,
             ),
-            max_workers=2,
         )
 
         self.manager = ProcessManager(config=self.config)

@@ -34,8 +34,8 @@ scenarios with comprehensive validation to prevent runtime configuration errors.
 from pathlib import Path
 import os
 import re
-from typing import Literal
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Any, Literal
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import tomllib
 from utils import ff_logging
@@ -474,6 +474,33 @@ class RetryConfig(BaseModel):
         description="Maximum number of normal retry attempts before Hail-Mary",
     )
 
+    _config_store: Any = PrivateAttr(default=None)
+
+    def set_config_store(self, config_store: Any) -> None:
+        """Attach a shared ConfigStore for hot-reloading retry settings."""
+        self._config_store = config_store
+
+    def update_from_config_store(self) -> bool:
+        """Sync retry settings from the attached ConfigStore.
+
+        Returns:
+            True if any retry field changed.
+        """
+        if self._config_store is None:
+            return False
+        changed = False
+        mapping = {
+            "max_normal_retries": "retry.max_normal_retries",
+            "hail_mary_enabled": "retry.hail_mary_enabled",
+            "hail_mary_wait_hours": "retry.hail_mary_wait_hours",
+        }
+        for attr, key in mapping.items():
+            val = self._config_store.get(key)
+            if val is not None and val != getattr(self, attr, None):
+                setattr(self, attr, val)
+                changed = True
+        return changed
+
     @property
     def hail_mary_wait_minutes(self) -> float:
         """Convert Hail-Mary wait time from hours to minutes for internal use."""
@@ -545,6 +572,10 @@ class ProcessConfig(BaseModel):
     )
 
     # Worker process settings
+    max_workers: int = Field(
+        default_factory=get_cpu_count,
+        description="Maximum number of worker processes/threads",
+    )
     worker_timeout: float | None = Field(
         default=None,
         ge=30.0,
@@ -558,6 +589,19 @@ class ProcessConfig(BaseModel):
         le=60.0,
         description="Timeout in seconds to wait for signal handling completion",
     )
+
+    @field_validator("max_workers")
+    @classmethod
+    def validate_max_workers(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("max_workers must be positive")
+        if v == 1:
+            ff_logging.log(
+                "Warning: max_workers=1 may result in slow processing. "
+                f"Consider using max_workers={get_cpu_count()} to utilize all CPU cores.",
+                "WARNING",
+            )
+        return v
 
 
 class WebConfig(BaseModel):
@@ -623,33 +667,18 @@ class AppConfig(BaseSettings):
 
     # Application settings
     version: str = Field(default="1.3.23", description="Application version")
-    max_workers: int = Field(
-        default_factory=get_cpu_count, description="Maximum number of worker processes"
-    )
+
+    @property
+    def max_workers(self) -> int:
+        return self.process.max_workers
+
+    @max_workers.setter
+    def max_workers(self, value: int) -> None:
+        self.process.max_workers = value
 
     @model_validator(mode="after")
-    def validate_worker_count(self):
-        """Validates worker process count.
-
-        Ensures that the worker count is positive to prevent invalid process
-        configurations. Defaults to system CPU count if not specified (via default_factory).
-
-        Returns:
-            AppConfig: The validated configuration instance.
-
-        Raises:
-            ValueError: If max_workers is explicitly set to zero or negative.
-        """
-        if self.max_workers <= 0:
-            raise ValueError("max_workers must be positive")
-
-        # Warn if suboptimal settings are detected
-        if self.max_workers == 1:
-            ff_logging.log(
-                "Warning: max_workers=1 may result in slow processing. "
-                f"Consider using max_workers={get_cpu_count()} to utilize all CPU cores.",
-                "WARNING",
-            )
+    def validate_cross_sections(self):
+        """Validates cross-section dependencies and local paths."""
 
         # Validate Calibre path if it's a local path (not URL)
         if self.calibre and self.calibre.path:

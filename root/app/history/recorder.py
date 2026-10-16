@@ -281,7 +281,7 @@ class HistoryWriter:
                     raw = self._queue.get(timeout=1.0)
                 except Empty:
                     continue
-                except OSError:
+                except OSError, EOFError:
                     break
                 self._process_message(raw)
             # Drain remaining messages on shutdown
@@ -295,7 +295,7 @@ class HistoryWriter:
         while True:
             try:
                 raw = self._queue.get_nowait()
-            except Empty, OSError:
+            except Empty, OSError, EOFError:
                 break
             self._process_message(raw)
 

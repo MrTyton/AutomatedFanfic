@@ -269,4 +269,29 @@ class TestWebSocketDashboard(unittest.TestCase):
             self.assertNotIn(dead, _connections)
         finally:
             _connections.discard(dead)
+            ws_module._last_broadcast_time = 0.0
             ws_module._latest_snapshot = None
+
+    def test_snapshot_waiting_before_db_flush_and_cancelled_filtered(self):
+        """Items with status='waiting' in active_urls appear in waiting_downloads even before DB flush, and status='cancelled' items are excluded."""
+        self.state.active_urls = {
+            "archiveofourown.org/works/10": {
+                "site": "archiveofourown",
+                "title": "Waiting Before DB Flush",
+                "status": "waiting",
+            },
+            "archiveofourown.org/works/20": {
+                "site": "archiveofourown",
+                "title": "Cancelled Entry",
+                "status": "cancelled",
+            },
+        }
+        with self.client.websocket_connect("/ws/dashboard") as ws:
+            data = ws.receive_json()
+            self.assertEqual(data["waiting_downloads"]["count"], 1)
+            self.assertEqual(
+                data["waiting_downloads"]["items"][0]["url"],
+                "archiveofourown.org/works/10",
+            )
+            self.assertEqual(data["active_downloads"]["count"], 0)
+            self.assertEqual(data["queued_downloads"]["count"], 0)
