@@ -84,6 +84,12 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                 "enable_monitoring": False,
                 "max_workers": 2,
             },
+            "web": {
+                "enabled": False,
+                "history_db_path": os.path.join(
+                    tempfile.gettempdir(), "test_integration_history.db"
+                ),
+            },
         }
 
     def tearDown(self):
