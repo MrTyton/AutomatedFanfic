@@ -263,12 +263,8 @@ jobs:
             echo "✅ Docker Hub cleanup completed"
           fi
 
-  cleanup_summary:
-    runs-on: ubuntu-latest
-    needs: [cleanup_github_actions_cache, cleanup_docker_hub_tags]
-    if: always()
-    steps:
       - name: Cleanup Summary
+        if: always()
         env:
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
@@ -299,18 +295,5 @@ jobs:
           echo "- 🗑️  PR tags (pr-123, etc.)"
           echo "- 🗑️  commit hash tags"
           echo "- 🗑️  pre-release tags (alpha, beta, rc, test, staging)"
-
-          if [ "${{ needs.cleanup_github_actions_cache.result }}" = "success" ]; then
-            echo "✅ GitHub Actions cache cleanup: Completed"
-          else
-            echo "❌ GitHub Actions cache cleanup: Failed or skipped"
-          fi
-
-          if [ "${{ needs.cleanup_docker_hub_tags.result }}" = "success" ]; then
-            echo "✅ Docker Hub tags cleanup: Completed"
-          else
-            echo "❌ Docker Hub tags cleanup: Failed or skipped"
-          fi
-
           echo ""
           echo "Next scheduled cleanup: $(date -d 'next sunday 3:00' '+%Y-%m-%d %H:%M UTC')"
