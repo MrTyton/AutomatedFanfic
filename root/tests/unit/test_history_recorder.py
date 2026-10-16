@@ -178,7 +178,7 @@ class TestHistoryWriter(unittest.TestCase):
         self.writer.stop()
 
         db = self._verify_db()
-        cur = db._conn.execute("SELECT url, site, status FROM download_events")
+        cur = db.conn.execute("SELECT url, site, status FROM download_events")
         row = cur.fetchone()
         db.close()
         self.assertEqual(row[0], "https://ao3.org/works/1")
@@ -194,7 +194,7 @@ class TestHistoryWriter(unittest.TestCase):
         self.writer.stop()
 
         db = self._verify_db()
-        cur = db._conn.execute("SELECT status, title, calibre_id FROM download_events")
+        cur = db.conn.execute("SELECT status, title, calibre_id FROM download_events")
         row = cur.fetchone()
         db.close()
         self.assertEqual(row[0], "success")
@@ -214,7 +214,7 @@ class TestHistoryWriter(unittest.TestCase):
         self.writer.stop()
 
         db = self._verify_db()
-        cur = db._conn.execute(
+        cur = db.conn.execute(
             "SELECT attempt_number, action, delay_minutes FROM retry_events"
         )
         row = cur.fetchone()
@@ -231,7 +231,7 @@ class TestHistoryWriter(unittest.TestCase):
         self.writer.stop()
 
         db = self._verify_db()
-        cur = db._conn.execute("SELECT urls_found, urls_new FROM email_events")
+        cur = db.conn.execute("SELECT urls_found, urls_new FROM email_events")
         row = cur.fetchone()
         db.close()
         self.assertEqual(row[0], 5)
@@ -245,7 +245,7 @@ class TestHistoryWriter(unittest.TestCase):
         self.writer.stop()
 
         db = self._verify_db()
-        cur = db._conn.execute("SELECT title, body, provider FROM notification_events")
+        cur = db.conn.execute("SELECT title, body, provider FROM notification_events")
         row = cur.fetchone()
         db.close()
         self.assertEqual(row[0], "t")
@@ -264,7 +264,7 @@ class TestHistoryWriter(unittest.TestCase):
         self.writer.stop()
 
         db = self._verify_db()
-        cur = db._conn.execute("SELECT COUNT(*) FROM download_events")
+        cur = db.conn.execute("SELECT COUNT(*) FROM download_events")
         count = cur.fetchone()[0]
         db.close()
         self.assertEqual(count, 5)
@@ -284,7 +284,7 @@ class TestHistoryWriter(unittest.TestCase):
         self.writer.stop()
 
         db = self._verify_db()
-        cur = db._conn.execute("SELECT COUNT(*) FROM download_events")
+        cur = db.conn.execute("SELECT COUNT(*) FROM download_events")
         count = cur.fetchone()[0]
         db.close()
         self.assertEqual(count, 1)

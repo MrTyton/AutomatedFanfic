@@ -67,7 +67,6 @@ Thread Safety:
     shared queues and is safe for concurrent operation.
 """
 
-import multiprocessing as mp
 import os
 import socket
 import time
@@ -79,6 +78,7 @@ from utils import ff_logging
 from parsers import regex_parsing
 from notifications import notification_wrapper
 from models.config_models import EmailConfig
+from models.queue_types import IngressQueue
 
 
 def _make_fff_get_configuration(
@@ -488,7 +488,9 @@ class EmailInfo:
                         client.idle_done()
                         noop_responses = client.noop()
                         if any(
-                            len(r) >= 2 and r[1] in (b"EXISTS", b"RECENT")
+                            isinstance(r, (list, tuple))
+                            and len(r) >= 2
+                            and r[1] in (b"EXISTS", b"RECENT")
                             for r in noop_responses
                         ):
                             ff_logging.log_debug(
@@ -511,11 +513,11 @@ class EmailInfo:
 def email_watcher(
     email_info: EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
-    ingress_queue: mp.Queue,
+    ingress_queue: IngressQueue,
     url_parsers: dict,
     active_urls: dict | None = None,
     verbose: bool = False,
-    shutdown_event: threading.Event = None,
+    shutdown_event: threading.Event | None = None,
     history_recorder=None,
     config_store=None,
 ):

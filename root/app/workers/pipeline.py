@@ -13,13 +13,13 @@ Worker-Coordinator Communication:
     where ff_waiter applies exponential backoff before re-submitting.
 """
 
-import multiprocessing as mp
 import time
 from queue import Empty
 
 from utils import ff_logging
 from calibre_integration import calibredb_utils
 from models import config_models
+from models.queue_types import IngressQueue, WaitingQueue, WorkerQueue
 from notifications import notification_wrapper
 from utils import system_utils
 from models import fanfic_info
@@ -39,8 +39,8 @@ def _process_task(
     fanfic: fanfic_info.FanficInfo,
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
-    ingress_queue: mp.Queue,
-    waiting_queue: mp.Queue,
+    ingress_queue: IngressQueue,
+    waiting_queue: WaitingQueue,
     retry_config: config_models.RetryConfig,
     worker_id: str,
     history_recorder=None,
@@ -178,11 +178,11 @@ def _process_task(
 
 
 def url_worker(
-    queue: mp.Queue,
+    queue: WorkerQueue,
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
-    ingress_queue: mp.Queue,
-    waiting_queue: mp.Queue,
+    ingress_queue: IngressQueue,
+    waiting_queue: WaitingQueue,
     retry_config: config_models.RetryConfig,
     worker_id: str,
     active_urls: dict | None = None,

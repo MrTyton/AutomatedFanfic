@@ -289,7 +289,7 @@ async def get_ini_file(ini_type: str, request: Request):
     """Return the raw content of personal.ini or defaults.ini."""
     state = request.app.state.web_state
     path, err = _resolve_ini_path(state, ini_type)
-    if err:
+    if err or path is None:
         return {"content": None, "path": None, "error": err}
 
     ini_path = Path(path)
@@ -314,7 +314,7 @@ async def update_ini_file(ini_type: str, request: Request, body: IniUpdateReques
 
     state = request.app.state.web_state
     path, err = _resolve_ini_path(state, ini_type)
-    if err:
+    if err or path is None:
         return {"applied": False, "error": err}
 
     ini_path = Path(path)

@@ -52,7 +52,7 @@ class TestSyncHistoryDB(unittest.TestCase):
         )
 
         # Verify via raw SQL
-        cur = self.db._conn.execute(
+        cur = self.db.conn.execute(
             "SELECT status, title, calibre_id, completed_at FROM download_events WHERE url = ?",
             ("https://ao3.org/works/1",),
         )
@@ -72,7 +72,7 @@ class TestSyncHistoryDB(unittest.TestCase):
             error_message="Max retries exceeded",
         )
 
-        cur = self.db._conn.execute(
+        cur = self.db.conn.execute(
             "SELECT status, error_message FROM download_events WHERE url = ?",
             ("https://ffnet.com/s/1",),
         )
@@ -97,7 +97,7 @@ class TestSyncHistoryDB(unittest.TestCase):
             title="Epic Story",
         )
 
-        cur = self.db._conn.execute(
+        cur = self.db.conn.execute(
             "SELECT status, error_message FROM download_events WHERE url = ?",
             ("https://ao3.org/works/99",),
         )
@@ -128,7 +128,7 @@ class TestSyncHistoryDB(unittest.TestCase):
 
         self.db.update_download(url="u", status=DownloadStatus.SUCCESS)
 
-        cur = self.db._conn.execute(
+        cur = self.db.conn.execute(
             "SELECT status FROM download_events WHERE url = ? ORDER BY started_at",
             ("u",),
         )
@@ -153,7 +153,7 @@ class TestSyncHistoryDB(unittest.TestCase):
         self.assertGreater(retry_id, 0)
 
         # Verify FK linkage
-        cur = self.db._conn.execute(
+        cur = self.db.conn.execute(
             "SELECT download_event_id FROM retry_events WHERE id = ?", (retry_id,)
         )
         self.assertEqual(cur.fetchone()[0], dl_id)
@@ -182,7 +182,7 @@ class TestSyncHistoryDB(unittest.TestCase):
         fired = datetime(2026, 1, 1, 13, 0, 0)
         self.db.update_retry_fired("https://ao3.org/works/1", 2, fired)
 
-        cur = self.db._conn.execute(
+        cur = self.db.conn.execute(
             "SELECT fired_at FROM retry_events WHERE url = ? AND attempt_number = ?",
             ("https://ao3.org/works/1", 2),
         )
@@ -197,7 +197,7 @@ class TestSyncHistoryDB(unittest.TestCase):
         row_id = self.db.insert_email_check(event)
         self.assertGreater(row_id, 0)
 
-        cur = self.db._conn.execute(
+        cur = self.db.conn.execute(
             "SELECT urls_found, urls_new, urls_duplicate, urls_disabled_site, trigger FROM email_events"
         )
         row = cur.fetchone()
@@ -207,7 +207,7 @@ class TestSyncHistoryDB(unittest.TestCase):
         event = EmailCheckEvent(urls_found=2, urls_new=2, trigger="idle")
         self.db.insert_email_check(event)
 
-        cur = self.db._conn.execute("SELECT trigger FROM email_events")
+        cur = self.db.conn.execute("SELECT trigger FROM email_events")
         row = cur.fetchone()
         self.assertEqual(row[0], "idle")
 
@@ -229,7 +229,7 @@ class TestSyncHistoryDB(unittest.TestCase):
         )
         self.db.insert_notification(event)
 
-        cur = self.db._conn.execute("SELECT download_event_id FROM notification_events")
+        cur = self.db.conn.execute("SELECT download_event_id FROM notification_events")
         row = cur.fetchone()
         self.assertIsNotNone(row[0])
 
@@ -242,12 +242,14 @@ class TestSyncHistoryDB(unittest.TestCase):
 
     def test_sync_db_synchronous_pragma(self):
         """PRAGMA synchronous should be NORMAL (1)."""
-        row = self.db._conn.execute("PRAGMA synchronous").fetchone()
+        row = self.db.conn.execute("PRAGMA synchronous").fetchone()
+        assert row is not None
         self.assertEqual(row[0], 1)  # 0=OFF, 1=NORMAL, 2=FULL
 
     def test_sync_db_cache_size_pragma(self):
         """PRAGMA cache_size should be -65536 (64 MB)."""
-        row = self.db._conn.execute("PRAGMA cache_size").fetchone()
+        row = self.db.conn.execute("PRAGMA cache_size").fetchone()
+        assert row is not None
         self.assertEqual(row[0], -65536)
 
 
@@ -417,6 +419,7 @@ class TestAsyncHistoryDB(unittest.TestCase):
 
         result = self._run(self.async_db.get_latest_download("u1"))
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["title"], "New Title")
 
     def test_get_email_checks(self):
@@ -471,6 +474,7 @@ class TestAsyncHistoryDB(unittest.TestCase):
             try:
                 async with conn.execute("PRAGMA synchronous") as cur:
                     row = await cur.fetchone()
+                assert row is not None
                 return row[0]
             finally:
                 await conn.close()
@@ -486,6 +490,7 @@ class TestAsyncHistoryDB(unittest.TestCase):
             try:
                 async with conn.execute("PRAGMA cache_size") as cur:
                     row = await cur.fetchone()
+                assert row is not None
                 return row[0]
             finally:
                 await conn.close()

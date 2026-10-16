@@ -104,7 +104,7 @@ async def _build_snapshot(state: Any) -> dict:
     }
 
     # ── Queue depths ────────────────────────────────────────────
-    queues: dict[str, int] = {}
+    queues: dict[str, Any] = {}
     for name, queue in [
         ("ingress", state.ingress_queue),
         ("waiting", state.waiting_queue),

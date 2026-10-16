@@ -1,3 +1,4 @@
+import collections
 import queue as stdlib_queue
 import unittest
 import multiprocessing as mp
@@ -30,6 +31,7 @@ class TestCoordinatorIntegration(unittest.TestCase):
         # Determine who got site1
         worker_id = self.coordinator.state.assignments.get("site1")
         self.assertIsNotNone(worker_id)
+        assert worker_id is not None
 
         # Verify first task is in queue
         task1 = self.worker_queues[worker_id].get()
@@ -288,6 +290,7 @@ class TestCoordinator(unittest.TestCase):
         # Determine who got site1
         worker_id = self.coordinator.state.assignments.get("site1")
         self.assertIsNotNone(worker_id)
+        assert worker_id is not None
 
         # Verify first task is in queue
         task1 = self.worker_queues[worker_id].get()
@@ -435,7 +438,7 @@ class TestCoordinatorAdvancedEdgeCases(unittest.TestCase):
         """Test backlog draining when idle_workers set becomes empty."""
         # Add item to backlog manually
         fic = FanficInfo(url="http://site1.com/1", site="site1")
-        self.coordinator.state.backlog["site1"] = [fic]
+        self.coordinator.state.backlog["site1"] = collections.deque([fic])
 
         # Remove all idle workers
         self.coordinator.state.idle_workers.clear()
@@ -468,7 +471,7 @@ class TestCoordinatorAdvancedEdgeCases(unittest.TestCase):
         # Add items to backlog
         fic1 = FanficInfo(url="http://site1.com/1", site="site1")
         fic2 = FanficInfo(url="http://site1.com/2", site="site1")
-        self.coordinator.state.backlog["site1"] = [fic1, fic2]
+        self.coordinator.state.backlog["site1"] = collections.deque([fic1, fic2])
 
         # Shutdown should log pending work
         # Note: This requires coordinator to have shutdown method that checks backlog
@@ -478,7 +481,7 @@ class TestCoordinatorAdvancedEdgeCases(unittest.TestCase):
     def test_backlog_pop_empty_list(self):
         """Test backlog handling when site list becomes empty."""
         # Manually create empty list in backlog
-        self.coordinator.state.backlog["site1"] = []
+        self.coordinator.state.backlog["site1"] = collections.deque()
 
         # Verify empty list exists
         self.assertIn("site1", self.coordinator.state.backlog)
@@ -530,7 +533,7 @@ class TestCoordinatorAdvancedEdgeCases(unittest.TestCase):
 
     def test_process_fanfic_with_none_site(self):
         """Test handling of FanficInfo with None site attribute."""
-        fic = FanficInfo(url="http://example.com/1", site=None)
+        fic = FanficInfo(url="http://example.com/1", site=None)  # type: ignore[arg-type]
         self.ingress_queue.put(fic)
 
         # Should handle gracefully (may use URL as fallback or reject)

@@ -10,7 +10,10 @@ from multiprocessing.connection import wait as mp_wait
 import signal
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from history.recorder import HistoryWriter
 
 from utils import ff_logging
 from models.config_models import AppConfig, ProcessConfig
@@ -61,6 +64,7 @@ class ProcessManager:
         self._web_restart_event = web_restart_event
         self._worker_queues = None
         self._create_queue_fn = None
+        self._history_writer: HistoryWriter | None = None
 
         # Configuration validation and setup
         if config:

@@ -472,13 +472,15 @@ class CalibreDBClient:
     def log_metadata_comparison(
         self,
         fanfic: fanfic_info.FanficInfo,
-        old_metadata: dict[str, Any],
-        new_metadata: dict[str, Any],
+        old_metadata: dict[str, Any] | None,
+        new_metadata: dict[str, Any] | None,
     ) -> None:
         """Log comparison of metadata (helper method)."""
         # This logic is pure calculation/logging, so it fits here as a utility method on the client
         # or could remain valid as a static helper.
-        if not old_metadata and not new_metadata:
+        old_meta = old_metadata or {}
+        new_meta = new_metadata or {}
+        if not old_meta and not new_meta:
             return
 
         ff_logging.log_debug(f"\t({fanfic.site}) Metadata Comparison Report")
@@ -486,15 +488,15 @@ class CalibreDBClient:
         changed = []
         lost = []
 
-        for field, old_val in old_metadata.items():
-            if field in new_metadata:
-                new_val = new_metadata[field]
+        for field, old_val in old_meta.items():
+            if field in new_meta:
+                new_val = new_meta[field]
                 if old_val != new_val:
                     changed.append((field, str(old_val)[:50], str(new_val)[:50]))
             else:
                 lost.append(field)
 
-        new_fields = [k for k in new_metadata.keys() if k not in old_metadata]
+        new_fields = [k for k in new_meta.keys() if k not in old_meta]
 
         if changed:
             ff_logging.log_debug(f"\t  Fields Changed: {len(changed)}")

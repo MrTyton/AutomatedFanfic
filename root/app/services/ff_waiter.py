@@ -33,11 +33,11 @@ Example:
 """
 
 import heapq
-import multiprocessing as mp
 import threading
 import time
 
 from models import fanfic_info
+from models.queue_types import IngressQueue, WaitingQueue
 from utils import ff_logging
 from models import retry_types
 
@@ -110,10 +110,10 @@ def _get_delay_seconds(fanfic: fanfic_info.FanficInfo) -> int | None:
 
 
 def wait_processor(
-    ingress_queue: mp.Queue,
-    waiting_queue: mp.Queue,
+    ingress_queue: IngressQueue,
+    waiting_queue: WaitingQueue,
     verbose: bool = False,
-    shutdown_event: threading.Event = None,
+    shutdown_event: threading.Event | None = None,
     history_recorder=None,
     active_urls=None,
 ) -> None:
@@ -193,9 +193,7 @@ def wait_processor(
 
         # --- Check waiting_queue for new failed items ---
         try:
-            fanfic_item: fanfic_info.FanficInfo = waiting_queue.get(
-                timeout=queue_timeout
-            )
+            fanfic_item = waiting_queue.get(timeout=queue_timeout)
         except Exception:  # queue.Empty is expected on timeout
             continue
 

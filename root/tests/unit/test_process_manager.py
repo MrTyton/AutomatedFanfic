@@ -518,6 +518,7 @@ class TestProcessManagerMonitoring(unittest.TestCase):
 
         # Verify monitoring thread is running
         self.assertIsNotNone(self.manager._monitor_thread)
+        assert self.manager._monitor_thread is not None
         self.assertTrue(self.manager._monitor_thread.is_alive())
 
         # Wait for the process to fail and for health monitoring to detect it and restart
@@ -551,6 +552,7 @@ class TestProcessManagerMonitoring(unittest.TestCase):
 
         # Verify monitoring thread is running
         self.assertIsNotNone(self.manager._monitor_thread)
+        assert self.manager._monitor_thread is not None
         self.assertTrue(self.manager._monitor_thread.is_alive())
 
         # Wait for multiple restart cycles
@@ -923,7 +925,7 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
     def test_process_start_with_invalid_target(self):
         """Test that manager handles process with None target gracefully."""
         # Register a process with None target
-        self.manager.register_process("bad_process", None)
+        self.manager.register_process("bad_process", None)  # type: ignore[arg-type]
 
         # Attempting to start should not crash the manager
         result = self.manager.start_process("bad_process")
@@ -949,11 +951,11 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
         original_health_check = self.manager._health_check_process
         exception_count = [0]
 
-        def failing_health_check(proc_info):
+        def failing_health_check(name, proc_info, current_time):
             if exception_count[0] == 0:
                 exception_count[0] += 1
                 raise Exception("Health check error")
-            return original_health_check(proc_info)
+            return original_health_check(name, proc_info, current_time)
 
         with patch.object(
             self.manager, "_health_check_process", side_effect=failing_health_check
@@ -962,6 +964,7 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
             time.sleep(1.5)
 
             # Manager should still be operational despite exception
+            assert self.manager._monitor_thread is not None
             self.assertTrue(self.manager._monitor_thread.is_alive())
 
         # Cleanup

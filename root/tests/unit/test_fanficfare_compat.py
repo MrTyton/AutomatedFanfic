@@ -149,8 +149,9 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
         self.assertEqual(args, ["https://archiveofourown.org/works/123"])
 
         target_fn = fff_cli.do_download
-        if getattr(target_fn, "__closure__", None):
-            for cell in target_fn.__closure__:
+        closure = getattr(target_fn, "__closure__", None)
+        if closure is not None:
+            for cell in closure:
                 if callable(cell.cell_contents):
                     target_fn = cell.cell_contents
                     break

@@ -12,6 +12,7 @@ from models.config_models import (
     CalibreConfig,
     AppriseConfig,
     PushbulletConfig,
+    MetadataPreservationMode,
 )
 
 
@@ -97,7 +98,7 @@ class TestCalibreInfo(unittest.TestCase):
         if path is None:
             # Test that Pydantic validation properly rejects None paths
             with self.assertRaises(ValidationError):
-                CalibreConfig(path=path)
+                CalibreConfig(path=path)  # type: ignore[arg-type]
             return  # Exit early since we've tested the validation
 
         mock_config = AppConfig(
@@ -210,7 +211,6 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
                 {
                     "type": "missing",
                     "loc": ("field",),
-                    "msg": "field required",
                     "input": {},
                 }
             ],
@@ -347,7 +347,7 @@ class TestCalibreInfoUpdateFromConfigStore(unittest.TestCase):
         cdb.personal_ini = str(Path(personal_ini)) if personal_ini else ""
         cdb.default_ini = str(Path(default_ini)) if default_ini else ""
         cdb.update_method = "update"
-        cdb.metadata_preservation_mode = "remove_add"
+        cdb.metadata_preservation_mode = MetadataPreservationMode.REMOVE_ADD
         cdb.lock = MagicMock()
         return cdb
 
