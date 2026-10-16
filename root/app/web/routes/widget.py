@@ -30,14 +30,18 @@ async def homepage_widget(request: Request):
     if state.active_urls is not None:
         try:
             for url, meta in state.active_urls.items():
+                if isinstance(meta, dict) and meta.get("status") == "cancelled":
+                    continue
                 entry = {"url": url}
                 if isinstance(meta, dict):
                     entry["site"] = meta.get("site", "unknown")
                     entry["title"] = meta.get("title", url)
+                    is_waiting = url in waiting_urls or meta.get("status") == "waiting"
                 else:
                     entry["site"] = "unknown"
                     entry["title"] = url
-                entry["state"] = "waiting" if url in waiting_urls else "downloading"
+                    is_waiting = url in waiting_urls
+                entry["state"] = "waiting" if is_waiting else "downloading"
                 active_items.append(entry)
             active_count = len(active_items)
         except Exception:

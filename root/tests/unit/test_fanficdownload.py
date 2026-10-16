@@ -413,6 +413,43 @@ class TestFanficDownloadMain(unittest.TestCase):
                     # Verify KeyboardInterrupt handling
                     mock_pm_instance.stop_all.assert_called_once()
 
+    def test_log_configuration_details_with_and_without_default_ini(self):
+        """Test log_configuration_details works cleanly with and without default_ini."""
+        import argparse
+
+        args = argparse.Namespace(config="test_config.toml")
+        mock_config = MagicMock()
+        mock_config.email.email = "user@test.com"
+        mock_config.email.server = "imap.test.com"
+        mock_config.email.mailbox = "INBOX"
+        mock_config.email.sleep_time = 30
+        mock_config.email.disabled_sites = []
+        mock_config.calibre.path = "/test/library"
+        mock_config.calibre.default_ini = None
+        mock_config.calibre.personal_ini = "/test/personal.ini"
+        mock_config.calibre.update_method = "update"
+        mock_config.calibre.metadata_preservation_mode = "remove_add"
+        mock_config.pushbullet.enabled = False
+        mock_config.apprise.urls = []
+
+        with patch("fanficdownload.ff_logging.log") as mock_log:
+            fanficdownload.log_configuration_details(mock_config, args)
+            logged_messages = [call.args[0] for call in mock_log.call_args_list]
+            self.assertTrue(
+                any("Calibre Default INI: Packaged" in msg for msg in logged_messages)
+            )
+
+        mock_config.calibre.default_ini = "/custom/defaults.ini"
+        with patch("fanficdownload.ff_logging.log") as mock_log:
+            fanficdownload.log_configuration_details(mock_config, args)
+            logged_messages = [call.args[0] for call in mock_log.call_args_list]
+            self.assertTrue(
+                any(
+                    "Calibre Default INI: /custom/defaults.ini" in msg
+                    for msg in logged_messages
+                )
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

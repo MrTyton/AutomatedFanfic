@@ -42,7 +42,12 @@ class TomlWriter:
         doc = self.read_tomlkit()
         backup_path = self.backup()
 
-        if section in doc:
+        if section in ("", "root") or (
+            section in doc and not isinstance(doc[section], dict)
+        ):
+            for key, value in values.items():
+                doc[key] = value
+        elif section in doc:
             for key, value in values.items():
                 doc[section][key] = value
         else:

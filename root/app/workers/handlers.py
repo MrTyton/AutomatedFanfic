@@ -36,6 +36,10 @@ def handle_failure(
         retry_config (config_models.RetryConfig): Retry configuration.
         cdb (calibre_info.CalibreInfo, optional): Calibre configuration info.
     """
+    # Sync hot-reloaded retry settings if ConfigStore is attached
+    if hasattr(retry_config, "update_from_config_store"):
+        retry_config.update_from_config_store()
+
     fanfic.increment_repeat()
 
     # Check for special case: force requested but update_no_force configured
@@ -142,7 +146,7 @@ def process_fanfic_addition(
     notification_info: notification_wrapper.NotificationWrapper,
     retry_config: config_models.RetryConfig,
     history_recorder=None,
-) -> None:
+) -> bool:
     """
     Integrate downloaded fanfic with Calibre library.
 
@@ -155,6 +159,10 @@ def process_fanfic_addition(
         waiting_queue: Queue for retries
         notification_info: Notification wrapper
         retry_config: Retry configuration
+
+    Returns:
+        bool: True if the URL should be removed from active_urls (succeeded or abandoned),
+              False if it is waiting for retry.
     """
     try:
         # Determine if the story exists in Calibre
@@ -187,9 +195,11 @@ def process_fanfic_addition(
             notification_info=notification_info,
             retry_config=retry_config,
             failure_handler=handle_failure,
+            history_recorder=history_recorder,
         )
 
         if success:
+            fanfic.retry_decision = None
             # Retrieve the new/current Story ID to confirm
             # Redundant call removed - strategy updates fanfic.calibre_id
             if fanfic.calibre_id:
@@ -211,7 +221,9 @@ def process_fanfic_addition(
             notification_info.send_notification(
                 "New Fanfiction Download", fanfic.title or "Unknown Title", site
             )
+            return True
         # Note: Failures are handled within the strategy.execute calls via failure_handler
+        return check_active_removal(fanfic)
 
     except Exception as e:
         ff_logging.log_failure(f"Error processing additions to Calibre: {e}")
@@ -228,3 +240,4 @@ def process_fanfic_addition(
             history_recorder=history_recorder,
             error_message=str(e),
         )
+        return check_active_removal(fanfic)

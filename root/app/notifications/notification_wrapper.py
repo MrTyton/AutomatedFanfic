@@ -146,7 +146,12 @@ class NotificationWrapper:
         self.notification_workers = []
         try:
             # Initialize AppriseNotification as the primary notification handler
-            apprise_worker = AppriseNotification(toml_path=self.toml_path)
+            if getattr(self, "_config_store", None) is not None:
+                apprise_worker = AppriseNotification(
+                    toml_path=self.toml_path, config_store=self._config_store
+                )
+            else:
+                apprise_worker = AppriseNotification(toml_path=self.toml_path)
             # Validate worker is properly configured and enabled
             if apprise_worker.is_enabled():  # Preferred over direct .enabled access
                 self.notification_workers.append(apprise_worker)

@@ -29,6 +29,35 @@ def _mask_sensitive(data: dict) -> dict:
     return masked
 
 
+def _restore_masked_sensitive(current: dict, incoming: dict) -> dict:
+    """Replace masked '********' sensitive values with their existing values."""
+    cleaned = {}
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(current.get(key), dict):
+            cleaned[key] = _restore_masked_sensitive(current[key], value)
+        elif (
+            value == "********"
+            and any(s in key.lower() for s in _SENSITIVE_FIELDS)
+            and key in current
+        ):
+            cleaned[key] = current[key]
+        else:
+            cleaned[key] = value
+    return cleaned
+
+
+def _merge_config_dict(current: dict, updates: dict) -> dict:
+    """Deep-merge section dictionaries into a copy of the current config dict."""
+    merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in current.items()}
+    cleaned_updates = _restore_masked_sensitive(current, updates)
+    for key, value in cleaned_updates.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    return merged
+
+
 def _annotate_reload_behavior(config_dict: dict) -> dict:
     """Add reload_behavior annotation to each section's fields."""
     annotated = {}
@@ -81,7 +110,7 @@ async def validate_config(request: Request, body: ConfigUpdateRequest):
 
     try:
         current = state.config.model_dump()
-        merged = {**current, **body.values}
+        merged = _merge_config_dict(current, body.values)
         from models.config_models import AppConfig
 
         AppConfig(**merged)
@@ -106,15 +135,54 @@ async def update_config_section(
         return {"applied": False, "error": "No config loaded"}
 
     config_dict = state.config.model_dump()
-    if section not in config_dict:
+    if section not in config_dict or not isinstance(config_dict[section], dict):
         valid_sections = [k for k in config_dict if isinstance(config_dict[k], dict)]
         return {
             "applied": False,
             "error": f"Unknown section '{section}'. Valid: {valid_sections}",
         }
 
+    # Restore masked sensitive fields so '********' from the UI never overwrites real secrets
+    current_section = config_dict[section]
+    cleaned_values = _restore_masked_sensitive(current_section, body.values)
+
+    # Validate merged configuration with AppConfig (or section model if state.config is a mock)
+    validated_config = None
+    try:
+        from models.config_models import (
+            AppConfig,
+            AppriseConfig,
+            CalibreConfig,
+            EmailConfig,
+            ProcessConfig,
+            PushbulletConfig,
+            RetryConfig,
+            WebConfig,
+        )
+
+        if isinstance(state.config, AppConfig):
+            proposed = _merge_config_dict(config_dict, {section: cleaned_values})
+            validated_config = AppConfig(**proposed)
+        else:
+            section_models = {
+                "email": EmailConfig,
+                "calibre": CalibreConfig,
+                "pushbullet": PushbulletConfig,
+                "apprise": AppriseConfig,
+                "retry": RetryConfig,
+                "process": ProcessConfig,
+                "web": WebConfig,
+            }
+            if section in section_models:
+                model_cls = section_models[section]
+                dummy = model_cls.model_construct(**current_section)
+                for k, v in cleaned_values.items():
+                    model_cls.__pydantic_validator__.validate_assignment(dummy, k, v)
+    except Exception as e:
+        return {"applied": False, "error": f"Validation error: {e}"}
+
     # Classify changes by reload behaviour
-    classified = ConfigStore.classify_changes(section, body.values)
+    classified = ConfigStore.classify_changes(section, cleaned_values)
     results = {"hot": [], "service_restart": [], "app_restart": []}
 
     # Apply hot-reloadable changes immediately
@@ -130,7 +198,7 @@ async def update_config_section(
     if state.config_path:
         try:
             writer = TomlWriter(state.config_path)
-            writer.write_section(section, body.values)
+            writer.write_section(section, cleaned_values)
         except Exception as e:
             return {"applied": False, "error": f"Failed to write config: {e}"}
         # Reload the in-memory config so GET /api/config immediately reflects the new values
@@ -141,7 +209,10 @@ async def update_config_section(
                 state.config_path, force_reload=True
             )
         except Exception:
-            pass  # Write succeeded; stale in-memory config is non-fatal
+            if validated_config is not None:
+                state.config = validated_config
+    elif validated_config is not None:
+        state.config = validated_config
 
     for field_name in classified[ReloadBehavior.SERVICE_RESTART]:
         results["service_restart"].append(field_name)
@@ -198,16 +269,18 @@ def _resolve_ini_path(state, ini_type: str) -> tuple[str | None, str | None]:
     if ini_type == "personal":
         raw_path = state.config.calibre.personal_ini
         default_filename = "personal.ini"
+        if not raw_path:
+            return None, "No path configured for personal.ini"
+        path = resolve_ini_path(raw_path, default_filename)
     elif ini_type == "defaults":
         raw_path = state.config.calibre.default_ini
         default_filename = "defaults.ini"
+        path = resolve_ini_path(raw_path, default_filename)
+        if not path:
+            return None, "No defaults.ini found in package or configuration"
     else:
         return None, f"Unknown ini type '{ini_type}'. Valid: personal, defaults"
-    if not raw_path:
-        return None, f"No path configured for {ini_type}.ini"
 
-    # Resolve directory paths to full file paths using the shared utility
-    path = resolve_ini_path(raw_path, default_filename)
     return path, None
 
 
@@ -232,7 +305,13 @@ async def get_ini_file(ini_type: str, request: Request):
 
 @router.put("/ini/{ini_type}")
 async def update_ini_file(ini_type: str, request: Request, body: IniUpdateRequest):
-    """Overwrite personal.ini or defaults.ini with the supplied content."""
+    """Overwrite personal.ini with the supplied content. defaults.ini is packaged and read-only."""
+    if ini_type == "defaults":
+        return {
+            "applied": False,
+            "error": "defaults.ini is packaged and updated automatically with FanFicFare releases. Put personal overrides in personal.ini.",
+        }
+
     state = request.app.state.web_state
     path, err = _resolve_ini_path(state, ini_type)
     if err:

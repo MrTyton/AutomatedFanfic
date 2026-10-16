@@ -101,8 +101,8 @@ class TestProcessManager(unittest.TestCase):
                 max_restart_attempts=2,
                 restart_delay=0.1,
                 enable_monitoring=True,
+                max_workers=2,
             ),
-            max_workers=2,
         )
 
         # Mock ConfigManager to return the test config

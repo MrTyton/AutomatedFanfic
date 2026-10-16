@@ -54,6 +54,8 @@ def run_worker_pool(
     if config_store is not None:
         calibre_client.set_config_store(config_store)
         notification_info.set_config_store(config_store)
+        if hasattr(retry_config, "set_config_store"):
+            retry_config.set_config_store(config_store)
 
     ff_logging.log_debug(f"Worker Pool Process using {len(worker_queues)} threads")
 

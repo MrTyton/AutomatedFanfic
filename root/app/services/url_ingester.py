@@ -294,10 +294,10 @@ class EmailInfo:
         self._build_geturls()
 
     def update_from_config_store(self, config_store) -> bool:
-        """Sync email credentials from ConfigStore.
+        """Sync email credentials and INI paths from ConfigStore.
 
-        Called at the top of each poll cycle so credential changes made via
-        the web dashboard are picked up without restarting the process.
+        Called at the top of each poll cycle so credential or INI path changes
+        made via the web dashboard are picked up without restarting the process.
 
         Returns:
             True if any field changed (caller should rebuild GetURLs).
@@ -317,6 +317,25 @@ class EmailInfo:
             if val is not None and val != getattr(self, attr):
                 setattr(self, attr, val)
                 changed = True
+
+        from calibre_integration.calibre_info import resolve_ini_path
+
+        ini_changed = False
+        for attr, key, filename in (
+            ("default_ini", "calibre.default_ini", "defaults.ini"),
+            ("personal_ini", "calibre.personal_ini", "personal.ini"),
+        ):
+            raw = config_store.get(key)
+            if raw is not None:
+                resolved = (resolve_ini_path(raw, filename) or "") if raw else ""
+                if resolved != getattr(self, attr):
+                    setattr(self, attr, resolved)
+                    changed = True
+                    ini_changed = True
+
+        if ini_changed:
+            self._build_geturls()
+
         return changed
 
     def _ini_mtime(self) -> float:
@@ -573,14 +592,19 @@ def email_watcher(
                 )
                 continue
 
-            # Check if URL is already active
+            # Check if URL is already active (ignore cancelled entries awaiting heap cleanup)
             if active_urls is not None and fanfic.url in active_urls:
-                urls_duplicate += 1
-                ff_logging.log(
-                    f"Skipping {fanfic.url} - already in queue or processing",
-                    "WARNING",
-                )
-                continue
+                existing_meta = active_urls.get(fanfic.url, {})
+                if not (
+                    isinstance(existing_meta, dict)
+                    and existing_meta.get("status") == "cancelled"
+                ):
+                    urls_duplicate += 1
+                    ff_logging.log(
+                        f"Skipping {fanfic.url} - already in queue or processing",
+                        "WARNING",
+                    )
+                    continue
 
             # Add to processing set for queue routing
             urls_new += 1

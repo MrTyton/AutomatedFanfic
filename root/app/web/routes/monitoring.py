@@ -16,6 +16,7 @@ async def active_downloads(request: Request):
         items = [
             {"url": url, **(meta if isinstance(meta, dict) else {})}
             for url, meta in state.active_urls.items()
+            if not (isinstance(meta, dict) and meta.get("status") == "cancelled")
         ]
     except Exception:
         items = []

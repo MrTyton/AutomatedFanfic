@@ -692,7 +692,7 @@ path = ""
         self.assertFalse(config_whitespace_path.is_configured())
 
     def test_app_config_max_workers_validation(self):
-        """Test AppConfig max_workers validation and default behavior."""
+        """Test ProcessConfig max_workers validation and default behavior."""
         # Create proper config objects
         email_config = EmailConfig(
             email="test@example.com", password="password", server="imap.gmail.com"
@@ -701,21 +701,27 @@ path = ""
 
         # Test with no max_workers specified - should default to CPU count
         config = AppConfig(email=email_config, calibre=calibre_config)
-        self.assertIsNotNone(config.max_workers)
-        self.assertIsInstance(config.max_workers, int)
-        self.assertGreater(config.max_workers, 0)  # type: ignore
+        self.assertIsNotNone(config.process.max_workers)
+        self.assertIsInstance(config.process.max_workers, int)
+        self.assertGreater(config.process.max_workers, 0)
+        self.assertEqual(config.max_workers, config.process.max_workers)
 
-        # Test with explicit max_workers
-        config = AppConfig(email=email_config, calibre=calibre_config, max_workers=4)
+        # Test with explicit max_workers in ProcessConfig
+        config = AppConfig(
+            email=email_config,
+            calibre=calibre_config,
+            process=ProcessConfig(max_workers=4),
+        )
+        self.assertEqual(config.process.max_workers, 4)
         self.assertEqual(config.max_workers, 4)
 
         # Test with invalid max_workers (zero)
         with self.assertRaises(Exception):
-            AppConfig(email=email_config, calibre=calibre_config, max_workers=0)
+            ProcessConfig(max_workers=0)
 
         # Test with invalid max_workers (negative)
         with self.assertRaises(Exception):
-            AppConfig(email=email_config, calibre=calibre_config, max_workers=-1)
+            ProcessConfig(max_workers=-1)
 
     def tearDown(self):
         """Clean up after each test."""

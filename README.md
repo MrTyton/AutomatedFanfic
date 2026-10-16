@@ -23,7 +23,6 @@ This is a docker image to run the Automated FFF CLI, with Apprise integration.
     - [Pushbullet](#pushbullet)
     - [Apprise](#apprise)
     - [Web Dashboard](#web-dashboard)
-    - [max_workers](#max_workers)
     - [Process Management](#process-management)
 
 ## Platform Support
@@ -93,7 +92,7 @@ services:
 **Volumes:**
 | Volume | Purpose |
 |---|---|
-| `/config` | Configuration files (`config.toml`, `defaults.ini`, `personal.ini`) |
+| `/config` | Configuration files (`config.toml`, `personal.ini`) |
 | `/data` | Persistent data (history database for the web dashboard) |
 
 **Ports:**
@@ -126,7 +125,7 @@ Most configuration fields are applied immediately — no Docker restart required
 
 | Reload behavior | Fields |
 |---|---|
-| **Immediate (hot)** | All `[email]`, `[calibre]`, `[pushbullet]`, `[apprise]`, `[retry]`, `[process]` fields; `max_workers` |
+| **Immediate (hot)** | All `[email]`, `[calibre]`, `[pushbullet]`, `[apprise]`, `[retry]`, `[process]` fields |
 | **Web server restart** | `web.host`, `web.port` (the web dashboard restarts automatically — no container restart needed) |
 | **App restart required** | Only fields not covered above (in practice, none under normal use) |
 
@@ -240,7 +239,6 @@ The Calibre information for access and updating.
 path=""
 username=""
 password=""
-default_ini=""
 personal_ini=""
 update_method="update"
 metadata_preservation_mode="remove_add"
@@ -249,8 +247,8 @@ metadata_preservation_mode="remove_add"
 - `path`: This is the path to your Calibre database. It's the location where your Calibre library is stored on your system. This can be either a directory that contains the `calibre.db` file, or the URL/Port/Library marked down above, such as `https://192.168.1.1:9001/#Fanfiction` This is the only argument that is **required** in this section.
 - `username`: If your Calibre database is password protected, this is the username you use to access it.
 - `password`: If your Calibre database is password protected, this is the password you use to access it.
-- `default_ini`: This is the path to the [default INI configuration file](https://github.com/JimmXinu/FanFicFare/blob/main/fanficfare/defaults.ini) for FanFicFare.
-- `personal_ini`: This is the path to your [personal INI configuration file](https://github.com/JimmXinu/FanFicFare/wiki/INI-File) for FanFicFare.
+- `personal_ini`: This is the path to your [personal INI configuration file](https://github.com/JimmXinu/FanFicFare/wiki/INI-File) for FanFicFare. All user customizations (credentials, filename templates, custom columns) belong here.
+- `default_ini`: Optional path to a custom `defaults.ini`. By default, AutomatedFanfic automatically uses the packaged `defaults.ini` kept up-to-date with each FanFicFare release, so you do not need to configure or mount this file.
 - `update_method`: Controls how FanFicFare handles story updates. Valid options are described below.
 - `metadata_preservation_mode`: Controls how Calibre metadata is preserved during story updates. Valid options are described below.
 
@@ -441,24 +439,13 @@ The web dashboard exposes a widget-friendly endpoint at `/api/widget` for use wi
 
 Replace `your-host:8080` with the address and port of your AutomatedFanfic instance.
 
-### max_workers
-
-Controls the maximum number of simultaneous system processes (workers + support processes). Defaults to the system CPU count.
-
-```toml
-max_workers = 8
-```
-
-- A portion of this budget is reserved for internal support processes (email watcher, coordinator, etc.), so the actual number of download worker threads is `max_workers - 4`.
-- Minimum effective pool is 1 worker thread regardless of setting.
-- **This field supports hot-reload**: changing it via the web dashboard scales the worker pool up or down immediately without any restart.
-
 ### Process Management
 
-Fine-grained control over process health monitoring and restart behavior. These settings rarely need to be changed from their defaults.
+Fine-grained control over worker pool sizing, process health monitoring, and restart behavior.
 
 ```toml
 [process]
+max_workers = 8
 shutdown_timeout = 30.0
 health_check_interval = 60.0
 auto_restart = true
@@ -467,6 +454,7 @@ restart_delay = 5.0
 enable_monitoring = true
 ```
 
+- `max_workers`: Controls the maximum number of simultaneous system processes/threads (workers + support processes). Defaults to system CPU count. A portion of this budget is reserved for internal support processes (email watcher, coordinator, etc.), so the actual number of download worker threads is `max_workers - 4`. Minimum effective pool is 1 worker thread. Changing this via the dashboard scales the pool immediately without restart.
 - `shutdown_timeout`: Seconds to wait for processes to exit gracefully before force-terminating them (1–300, default `30.0`).
 - `health_check_interval`: How often (in seconds) the process monitor checks whether worker processes are still alive (0.1–600, default `60.0`).
 - `auto_restart`: When `true`, automatically restarts any process that crashes unexpectedly. Default `true`.

@@ -105,7 +105,15 @@ def run_supervisor(
         # 3. Coordinator Thread
         coord_thread = threading.Thread(
             target=coordinator.start_coordinator,
-            args=(ingress_queue, worker_queues, verbose, shutdown_event),
+            args=(
+                ingress_queue,
+                worker_queues,
+                verbose,
+                shutdown_event,
+                active_urls,
+                history_recorder,
+                url_parsers,
+            ),
             name="Coordinator",
         )
         threads.append(coord_thread)

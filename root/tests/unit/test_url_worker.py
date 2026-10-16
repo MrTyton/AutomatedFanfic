@@ -591,7 +591,8 @@ class TestUrlWorker(unittest.TestCase):
             )
 
         # Execution
-        handlers.process_fanfic_addition(
+        mock_history_recorder = MagicMock()
+        result = handlers.process_fanfic_addition(
             mock_fanfic,
             mock_client,
             "/fake/temp/dir",
@@ -600,37 +601,28 @@ class TestUrlWorker(unittest.TestCase):
             mock_queue,
             mock_notification_info,
             config_models.RetryConfig(),
+            history_recorder=mock_history_recorder,
         )
 
-        # Assertions
+        # Verify strategy execution and forwarded arguments
+        mock_strategy_instance.execute.assert_called_once()
+        _, kwargs = mock_strategy_instance.execute.call_args
+        self.assertEqual(kwargs["path_or_url"], "path_or_url")
+        self.assertEqual(kwargs["fanfic"], mock_fanfic)
+        self.assertEqual(kwargs["temp_dir"], "/fake/temp/dir")
+        self.assertEqual(kwargs["calibre_client"], mock_client)
+        self.assertEqual(kwargs["history_recorder"], mock_history_recorder)
+        self.assertEqual(kwargs["failure_handler"], mock_handle_failure)
 
-        if calibre_id:
-            # Existing story path - uses Strategy
-
-            # Verify strategy execution
-            mock_strategy_instance.execute.assert_called_once()
-
+        if expected_success_notification_call:
+            self.assertTrue(result)
+            mock_notification_info.send_notification.assert_called_once_with(
+                "New Fanfiction Download", "title", "site"
+            )
+            mock_history_recorder.record_download_success.assert_called_once()
         else:
-            # New story path
-            # Instead of mock_client.add_story, we check if AddNewStoryStrategy was used
-            mock_strategy_instance.execute.assert_called_once()
-            args, kwargs = mock_strategy_instance.execute.call_args
-            self.assertEqual(kwargs["path_or_url"], "path_or_url")
-            self.assertEqual(kwargs["fanfic"], mock_fanfic)
-            self.assertEqual(kwargs["temp_dir"], "/fake/temp/dir")
-            self.assertEqual(kwargs["calibre_client"], mock_client)
-
-            if expected_handle_failure_call:
-                # Log failure call is inside strategy or handlers?
-                # In handlers.py:
-                # if success: ... else: handle_failure(...)
-                # But execution result is "not expected_handle_failure_call" by logic below?
-                pass
-
-            # Actually, let's look at setup logic:
-            # if calibre_id: ... execute.return_value = not expected_handle_failure_call
-            # else: ... we need to set return value for new story case too
-            pass
+            mock_notification_info.send_notification.assert_not_called()
+            mock_history_recorder.record_download_success.assert_not_called()
 
 
 class TestUrlWorkerMainLoop(unittest.TestCase):
@@ -1835,6 +1827,93 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.assertEqual(idle_signals[1][0], "WORKER_IDLE")
         self.assertEqual(idle_signals[1][1], self.worker_id)
         self.assertEqual(idle_signals[1][2], "fanfiction")
+
+    @patch("workers.handlers.process_fanfic_addition", return_value=True)
+    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    def test_worker_signals_idle_on_poison_pill_exit(
+        self,
+        mock_get_path,
+        mock_temp_dir,
+        mock_execute,
+        mock_process_addition,
+    ):
+        """Worker must emit WORKER_IDLE before exiting when receiving None poison pill while holding a site lock."""
+        fanfic = FanficInfo(
+            url="https://archiveofourown.org/works/99",
+            site="archiveofourown",
+            title="Story 99",
+        )
+        # Task followed immediately by None poison pill (no Empty in between)
+        self.mock_queue.get.side_effect = [fanfic, None]
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "https://archiveofourown.org/works/99"
+        mock_execute.return_value = command.FanFicFareResult()
+
+        pipeline.url_worker(
+            self.mock_queue,
+            self.mock_client,
+            self.mock_notification_info,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
+            self.retry_config,
+            self.worker_id,
+            None,
+        )
+
+        idle_signals = [
+            call[0][0]
+            for call in self.mock_ingress_queue.put.call_args_list
+            if len(call[0]) > 0
+            and isinstance(call[0][0], tuple)
+            and call[0][0][0] == "WORKER_IDLE"
+        ]
+        self.assertEqual(
+            idle_signals,
+            [("WORKER_IDLE", self.worker_id, "archiveofourown")],
+        )
+
+    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.common.get_path_or_url")
+    def test_worker_retains_active_url_with_waiting_status_on_strategy_failure(
+        self,
+        mock_get_path,
+        mock_temp_dir,
+        mock_execute,
+    ):
+        """When Calibre addition fails and schedules a retry, url_worker keeps the URL in active_urls with status='waiting'."""
+        fanfic = FanficInfo(
+            url="https://archiveofourown.org/works/555",
+            site="archiveofourown",
+            title="Story 555",
+            calibre_id="555",
+        )
+        active_urls = {fanfic.url: {"site": "archiveofourown", "status": "queued"}}
+        self.mock_queue.get.side_effect = [fanfic, None]
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
+        mock_get_path.return_value = "/tmp/test/story.epub"
+        mock_execute.return_value = command.FanFicFareResult()
+        # Simulate Calibre strategy failure (add_format_to_existing_story returns False)
+        self.mock_cdb_info.metadata_preservation_mode = "add_format"
+        self.mock_client.add_format_to_existing_story.return_value = False
+
+        pipeline.url_worker(
+            self.mock_queue,
+            self.mock_client,
+            self.mock_notification_info,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
+            self.retry_config,
+            self.worker_id,
+            active_urls,
+        )
+
+        # URL must NOT be deleted from active_urls while waiting for retry!
+        self.assertIn(fanfic.url, active_urls)
+        self.assertEqual(active_urls[fanfic.url]["status"], "waiting")
+        self.mock_waiting_queue.put.assert_called_once_with(fanfic)
 
 
 if __name__ == "__main__":

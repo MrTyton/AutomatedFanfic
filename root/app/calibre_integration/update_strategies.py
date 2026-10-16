@@ -32,6 +32,7 @@ class UpdateStrategy(ABC):
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
+        history_recorder=None,
     ) -> bool:
         """
         Execute the update strategy.
@@ -46,6 +47,7 @@ class UpdateStrategy(ABC):
             notification_info: Notification system
             retry_config: Retry configuration
             failure_handler: Callable to handle failures (typically handle_failure from url_worker)
+            history_recorder: Optional HistoryRecorder for recording retry/failure events
 
         Returns:
             bool: True if successful, False if failed
@@ -67,6 +69,7 @@ class AddFormatStrategy(UpdateStrategy):
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
+        history_recorder=None,
     ) -> bool:
         ff_logging.log_debug(
             f"\t({site}) Using add_format mode - replacing EPUB file only"
@@ -81,15 +84,16 @@ class AddFormatStrategy(UpdateStrategy):
         success = calibre_client.add_format_to_existing_story(temp_dir, fanfic)
 
         if not success:
-            ff_logging.log_failure(
-                f"\t({site}) Failed to replace format for {path_or_url}"
-            )
+            error_msg = f"Failed to replace format for {path_or_url}"
+            ff_logging.log_failure(f"\t({site}) {error_msg}")
             failure_handler(
                 fanfic,
                 notification_info,
                 waiting_queue,
                 retry_config,
                 calibre_client.cdb_info,
+                history_recorder=history_recorder,
+                error_message=error_msg,
             )
             return False
 
@@ -114,6 +118,7 @@ class PreserveMetadataStrategy(UpdateStrategy):
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
+        history_recorder=None,
     ) -> bool:
         ff_logging.log_debug(
             f"\t({site}) Using preserve_metadata mode - will export and restore metadata fields"
@@ -136,13 +141,16 @@ class PreserveMetadataStrategy(UpdateStrategy):
 
         # Verify addition and get new ID
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
-            ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
+            error_msg = f"Failed to add {path_or_url} to Calibre"
+            ff_logging.log_failure(f"\t({site}) {error_msg}")
             failure_handler(
                 fanfic,
                 notification_info,
                 waiting_queue,
                 retry_config,
                 calibre_client.cdb_info,
+                history_recorder=history_recorder,
+                error_message=error_msg,
             )
             return False
 
@@ -177,6 +185,7 @@ class RemoveAddStrategy(UpdateStrategy):
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
+        history_recorder=None,
     ) -> bool:
         ff_logging.log_debug(
             f"\t({site}) Using remove_add mode - custom metadata will NOT be preserved"
@@ -196,13 +205,16 @@ class RemoveAddStrategy(UpdateStrategy):
 
         # Verify addition
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
-            ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
+            error_msg = f"Failed to add {path_or_url} to Calibre"
+            ff_logging.log_failure(f"\t({site}) {error_msg}")
             failure_handler(
                 fanfic,
                 notification_info,
                 waiting_queue,
                 retry_config,
                 calibre_client.cdb_info,
+                history_recorder=history_recorder,
+                error_message=error_msg,
             )
             return False
 
@@ -234,6 +246,7 @@ class AddNewStoryStrategy(UpdateStrategy):
         notification_info: notification_wrapper.NotificationWrapper,
         retry_config: config_models.RetryConfig,
         failure_handler: Callable,
+        history_recorder=None,
     ) -> bool:
         ff_logging.log_debug(f"\t({site}) Using add_new_story mode")
 
@@ -242,13 +255,16 @@ class AddNewStoryStrategy(UpdateStrategy):
 
         # Verify addition and get new ID
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
-            ff_logging.log_failure(f"\t({site}) Failed to add {path_or_url} to Calibre")
+            error_msg = f"Failed to add {path_or_url} to Calibre"
+            ff_logging.log_failure(f"\t({site}) {error_msg}")
             failure_handler(
                 fanfic,
                 notification_info,
                 waiting_queue,
                 retry_config,
                 calibre_client.cdb_info,
+                history_recorder=history_recorder,
+                error_message=error_msg,
             )
             return False
 

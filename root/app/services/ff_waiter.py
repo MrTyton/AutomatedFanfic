@@ -161,7 +161,7 @@ def wait_processor(
             # or cancel-retry sets status="cancelled".
             if active_urls is not None:
                 try:
-                    meta = active_urls.get(fanfic.url, {})
+                    meta = dict(active_urls.get(fanfic.url, {}))
                     is_cancelled = meta.get("status") == "cancelled"
                     is_stale = meta.get("heap_gen") != heap_gen
                     if is_cancelled or is_stale:
@@ -174,6 +174,9 @@ def wait_processor(
                             f"Waiter: Dropped {'cancelled' if is_cancelled else 'stale'} retry for {fanfic.url}"
                         )
                         continue
+                    meta["status"] = "queued"
+                    meta.pop("heap_gen", None)
+                    active_urls[fanfic.url] = meta
                 except Exception:
                     pass
             ingress_queue.put(fanfic)
@@ -213,6 +216,18 @@ def wait_processor(
         if active_urls is not None:
             try:
                 existing_meta = dict(active_urls.get(fanfic_item.url, {}))
+                if existing_meta.get("status") == "cancelled":
+                    try:
+                        del active_urls[fanfic_item.url]
+                    except Exception:
+                        pass
+                    continue
+                existing_meta.setdefault("site", fanfic_item.site)
+                if getattr(fanfic_item, "title", None):
+                    existing_meta["title"] = fanfic_item.title
+                if getattr(fanfic_item, "calibre_id", None):
+                    existing_meta["calibre_id"] = fanfic_item.calibre_id
+                existing_meta["status"] = "waiting"
                 existing_meta["heap_gen"] = heap_gen
                 active_urls[fanfic_item.url] = existing_meta
             except Exception:

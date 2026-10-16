@@ -146,11 +146,19 @@ def _process_task(
         if fff_result.is_forceable:
             # Conditions that can be resolved by force-retrying
             fanfic.behavior = "force"
+            if active_urls is not None:
+                try:
+                    existing = dict(active_urls.get(fanfic.url, {}))
+                    existing["status"] = "queued"
+                    existing["behavior"] = "force"
+                    active_urls[fanfic.url] = existing
+                except Exception:
+                    pass
             ingress_queue.put(fanfic)
             return False  # Keep in active_urls; re-queued for force retry
 
         # 5. Integrate with Calibre (Process Addition)
-        handlers.process_fanfic_addition(
+        result = handlers.process_fanfic_addition(
             fanfic,
             calibre_client,
             temp_dir,
@@ -162,7 +170,11 @@ def _process_task(
             history_recorder=history_recorder,
         )
 
-        return True  # Success, remove from active
+        # If process_fanfic_addition was mocked in a test and returned None,
+        # fall back to check_active_removal(fanfic).
+        if result is None:
+            return handlers.check_active_removal(fanfic)
+        return bool(result)
 
 
 def url_worker(
@@ -206,6 +218,13 @@ def url_worker(
 
                 # Check for Poison Pill (None)
                 if fanfic is None:
+                    if current_site is not None:
+                        try:
+                            ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
+                        except Exception:
+                            pass
+                        current_site = None
+                        ff_logging.set_thread_site(None)
                     ff_logging.log(f"Worker {worker_id} stopping", "HEADER")
                     break
 
@@ -222,6 +241,13 @@ def url_worker(
                 continue
             except Exception as e:
                 if isinstance(e, ValueError):  # Queue closed
+                    if current_site is not None:
+                        try:
+                            ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
+                        except Exception:
+                            pass
+                        current_site = None
+                        ff_logging.set_thread_site(None)
                     ff_logging.log(f"Worker {worker_id} queue closed", "WARNING")
                     break
                 ff_logging.log_failure(f"Worker {worker_id} error waiting: {e}")
@@ -273,10 +299,21 @@ def url_worker(
                 should_remove = handlers.check_active_removal(fanfic)
             finally:
                 # Update active_urls
-                if active_urls is not None and should_remove:
+                if active_urls is not None:
                     try:
-                        if fanfic.url in active_urls:
-                            del active_urls[fanfic.url]
+                        if should_remove:
+                            if fanfic.url in active_urls:
+                                del active_urls[fanfic.url]
+                        elif getattr(fanfic, "retry_decision", None) is not None:
+                            existing = dict(active_urls.get(fanfic.url, {}))
+                            if existing.get("status") != "cancelled":
+                                existing.setdefault("site", fanfic.site)
+                                if getattr(fanfic, "title", None):
+                                    existing["title"] = fanfic.title
+                                if getattr(fanfic, "calibre_id", None):
+                                    existing["calibre_id"] = fanfic.calibre_id
+                                existing["status"] = "waiting"
+                                active_urls[fanfic.url] = existing
                     except Exception as e:
                         ff_logging.log_failure(
                             f"Worker {worker_id} failed to update active_urls: {e}"

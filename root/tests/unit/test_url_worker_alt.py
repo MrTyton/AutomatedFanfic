@@ -609,6 +609,77 @@ class TestExtractOutputFilenameTemplate(unittest.TestCase):
         result = _extract_output_filename_template("not\x00valid\x00ini")
         self.assertEqual(result, "${title}-${siteabbrev}_${storyId}.epub")
 
+    def test_duplicate_keys_and_sections_parsed_non_strict(self):
+        """User personal.ini with duplicate keys or sections must not fall back to default template."""
+        ini = (
+            "[defaults]\n"
+            "add_to_extra_valid_entries: custom1\n"
+            "add_to_extra_valid_entries: custom2\n"
+            "output_filename: ${title}_By_${author}_${storyId}.epub\n"
+            "[archiveofourown.org]\n"
+            "use_archiveofourown_gay: true\n"
+            "[archiveofourown.org]\n"
+            "output_filename: AO3_${title}_${storyId}.epub\n"
+        )
+        self.assertEqual(
+            _extract_output_filename_template(ini, site="archiveofourown"),
+            "AO3_${title}_${storyId}.epub",
+        )
+        self.assertEqual(
+            _extract_output_filename_template(ini, site="fanfiction"),
+            "${title}_By_${author}_${storyId}.epub",
+        )
+
+    def test_execute_fanficfare_direct_real_fff_config_forces_temp_dir(self):
+        """Real FFF mkParser + expandOptions + Configuration resolves output_filename into temp_dir even when [archiveofourown.org] sets output_filename."""
+        import os
+        import tempfile
+        from pathlib import Path
+        import fanficfare.configurable as configurable
+
+        defaults_ini = str(
+            Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            personal_ini = os.path.join(tmp_dir, "personal.ini")
+            with open(personal_ini, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "[archiveofourown.org]\n"
+                    "output_filename: /wrong/dir/MyCustom_${title}_${storyId}.epub\n"
+                )
+
+            cdb = MagicMock(spec=CalibreInfo)
+            cdb.update_method = "update"
+            cdb.default_ini = defaults_ini
+            cdb.personal_ini = personal_ini
+
+            fanfic = FanficInfo(
+                url="https://archiveofourown.org/works/12345",
+                site="archiveofourown",
+            )
+
+            captured = {}
+
+            def inspect_do_download(url, options, passed_personalini=None, **kwargs):
+                cfg = configurable.Configuration(
+                    ["archiveofourown.org"], "EPUB", lightweight=False
+                )
+                cfg.read([defaults_ini])
+                if passed_personalini:
+                    cfg.read_string(passed_personalini)
+                captured["output_filename"] = cfg.getConfig("output_filename")
+
+            out_dir = os.path.join(tmp_dir, "download_target")
+            os.makedirs(out_dir, exist_ok=True)
+            with patch("fanficfare.cli.do_download", side_effect=inspect_do_download):
+                res = execute_fanficfare_direct(cdb, fanfic, fanfic.url, out_dir)
+
+            self.assertFalse(res.has_failure)
+            expected_prefix = (
+                out_dir.replace("\\", "/") + "/MyCustom_${title}_${storyId}.epub"
+            )
+            self.assertEqual(captured["output_filename"], expected_prefix)
+
 
 if __name__ == "__main__":
     unittest.main()

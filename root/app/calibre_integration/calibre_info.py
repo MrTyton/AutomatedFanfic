@@ -87,6 +87,8 @@ class CalibreInfo:
         self.password = config.calibre.password
         self.update_method = config.calibre.update_method
         self.metadata_preservation_mode = config.calibre.metadata_preservation_mode
+        self._raw_default_ini = config.calibre.default_ini
+        self._raw_personal_ini = config.calibre.personal_ini
         self.default_ini = self._get_ini_file_from_config(
             config.calibre.default_ini, "defaults.ini"
         )
@@ -149,18 +151,33 @@ class CalibreInfo:
 
         # INI paths require resolution: the config store holds the raw user value
         # (which may be a directory like "/config"), but self.default_ini /
-        # self.personal_ini must be resolved full-file paths.  Reuse
-        # _get_ini_file_from_config for consistent behaviour with __init__.
-        for attr, key, filename in (
-            ("default_ini", "calibre.default_ini", "defaults.ini"),
-            ("personal_ini", "calibre.personal_ini", "personal.ini"),
+        # self.personal_ini must be resolved full-file paths. Only re-run
+        # _get_ini_file_from_config when the raw setting or file existence changes
+        # so missing optional files don't log an error on every calibredb call.
+        for attr, raw_attr, key, filename in (
+            ("default_ini", "_raw_default_ini", "calibre.default_ini", "defaults.ini"),
+            (
+                "personal_ini",
+                "_raw_personal_ini",
+                "calibre.personal_ini",
+                "personal.ini",
+            ),
         ):
             raw = config_store.get(key)
             if raw is not None:
-                resolved = self._get_ini_file_from_config(raw, filename)
-                if resolved != getattr(self, attr, None):
-                    setattr(self, attr, resolved)
-                    changed = True
+                current_resolved = getattr(self, attr, "")
+                candidate_path = resolve_ini_path(raw, filename)
+                candidate_exists = bool(
+                    candidate_path and Path(candidate_path).is_file()
+                )
+                raw_changed = raw != getattr(self, raw_attr, None)
+                existence_changed = bool(current_resolved) != candidate_exists
+                if raw_changed or existence_changed:
+                    setattr(self, raw_attr, raw)
+                    resolved = self._get_ini_file_from_config(raw, filename)
+                    if resolved != current_resolved:
+                        setattr(self, attr, resolved)
+                        changed = True
 
         return changed
 

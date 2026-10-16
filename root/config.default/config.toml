@@ -45,10 +45,9 @@ username = ""
 # Password for Calibre server authentication (only needed for protected servers)
 password = ""
 
-# Path to FanFicFare defaults.ini configuration file (optional)
-default_ini = ""
-
 # Path to FanFicFare personal.ini configuration file (optional)
+# Put site credentials, output filename format, and personal overrides here.
+# Note: defaults.ini is packaged and updated automatically with FanFicFare releases.
 personal_ini = ""
 
 # Method for updating stories in Calibre
@@ -145,12 +144,7 @@ enable_monitoring = true
 # Timeout in seconds to wait for signal handling completion (1.0-60.0)
 signal_timeout = 10.0
 
-# ============================================================================
-# APPLICATION SETTINGS
-# Global application configuration
-# ============================================================================
-
-# Maximum number of worker processes (optional)
+# Maximum number of worker threads/processes (optional)
 # If not specified, defaults to the number of CPU cores
 # max_workers = 4
 

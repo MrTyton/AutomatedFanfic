@@ -82,10 +82,16 @@ class Coordinator:
         ingress_queue: mp.Queue,
         worker_queues: dict[str, mp.Queue],
         shutdown_event: threading.Event | None = None,
+        active_urls: dict | None = None,
+        history_recorder=None,
+        url_parsers: dict | None = None,
     ):
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
         self.shutdown_event = shutdown_event
+        self.active_urls = active_urls
+        self.history_recorder = history_recorder
+        self.url_parsers = url_parsers
 
         # Encapsulated coordinator state
         self.state = CoordinatorState(idle_workers=set(worker_queues.keys()))
@@ -193,16 +199,60 @@ class Coordinator:
                 f"Coordinator: Expanding series ({expansion_result['count']} stories): {task.url}"
             )
 
+            # Remove the parent series URL from active_urls since workers only
+            # process and clean up the individual child story URLs.
+            if self.active_urls is not None:
+                try:
+                    if task.url in self.active_urls:
+                        del self.active_urls[task.url]
+                except Exception:
+                    pass
+
             for story_url in expansion_result["urls"]:
+                child_url = story_url
+                child_site = site
+                if self.url_parsers:
+                    try:
+                        from parsers import regex_parsing
+
+                        norm_url = (
+                            story_url
+                            if story_url.startswith(("http://", "https://"))
+                            else f"https://{story_url}"
+                        )
+                        parsed = regex_parsing.generate_FanficInfo_from_url(
+                            norm_url, self.url_parsers
+                        )
+                        child_url = parsed.url
+                        if parsed.site and parsed.site != "other":
+                            child_site = parsed.site
+                    except Exception:
+                        pass
+
                 story_task = FanficInfo(
-                    url=story_url,
-                    site=site,
+                    url=child_url,
+                    site=child_site,
                     calibre_id=task.calibre_id,
                     behavior=task.behavior,
                     title=None,
                     repeats=0,  # Individual stories start fresh, never inherit series repeats
                     retry_decision=task.retry_decision,
                 )
+                if self.active_urls is not None:
+                    try:
+                        self.active_urls[story_task.url] = {
+                            "site": story_task.site,
+                            "status": "queued",
+                        }
+                    except Exception:
+                        pass
+                if self.history_recorder is not None:
+                    try:
+                        self.history_recorder.record_download_created(
+                            story_task.url, story_task.site, story_task.behavior
+                        )
+                    except Exception:
+                        pass
                 # Recursively handle each story
                 self._handle_new_task(story_task)
 
@@ -352,6 +402,9 @@ def start_coordinator(
     worker_queues: dict[str, mp.Queue],
     verbose: bool = False,
     shutdown_event: threading.Event | None = None,
+    active_urls: dict | None = None,
+    history_recorder=None,
+    url_parsers: dict | None = None,
 ):
     """Entry point for the coordinator process."""
     # Initialize logging for this process
@@ -359,7 +412,12 @@ def start_coordinator(
     ff_logging.set_thread_color("\033[95m")  # Magenta
 
     coordinator = Coordinator(
-        ingress_queue, worker_queues, shutdown_event=shutdown_event
+        ingress_queue,
+        worker_queues,
+        shutdown_event=shutdown_event,
+        active_urls=active_urls,
+        history_recorder=history_recorder,
+        url_parsers=url_parsers,
     )
     try:
         coordinator.run()

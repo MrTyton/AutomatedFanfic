@@ -246,9 +246,11 @@ export default function Config() {
                         >
                             <h2 style={{ margin: 0 }}>
                                 <span style={{ display: 'inline-block', marginRight: '0.4rem', fontSize: '0.7em', opacity: 0.7, transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', transformOrigin: 'center' }}>▼</span>
-                                {label}{ini.path && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', marginLeft: '0.5rem', opacity: 0.6 }}>{ini.path}</span>}
+                                {label}
+                                {t === 'defaults' && <span style={{ fontSize: '0.75rem', fontWeight: 'bold', marginLeft: '0.5rem', opacity: 0.7, padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--border, #444)' }}>Packaged (Read-Only)</span>}
+                                {ini.path && <span style={{ fontSize: '0.75rem', fontWeight: 'normal', marginLeft: '0.5rem', opacity: 0.6 }}>{ini.path}</span>}
                             </h2>
-                            {!collapsed && !ini.editing && !ini.error && (
+                            {!collapsed && !ini.editing && !ini.error && t === 'personal' && (
                                 <button className="secondary" onClick={e => { e.stopPropagation(); startIniEdit(t) }} disabled={ini.loading}>Edit</button>
                             )}
                         </div>

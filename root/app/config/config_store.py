@@ -47,6 +47,7 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
     "retry.hail_mary_enabled": ReloadBehavior.HOT,
     "retry.hail_mary_wait_hours": ReloadBehavior.HOT,
     # Process monitor — ProcessManager reads these each tick
+    "process.max_workers": ReloadBehavior.HOT,
     "process.shutdown_timeout": ReloadBehavior.HOT,
     "process.health_check_interval": ReloadBehavior.HOT,
     "process.max_restart_attempts": ReloadBehavior.HOT,
@@ -54,9 +55,6 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
     "web.enabled": ReloadBehavior.SERVICE_RESTART,
     "web.host": ReloadBehavior.SERVICE_RESTART,
     "web.port": ReloadBehavior.SERVICE_RESTART,
-    # ── App restart (requires restarting the application) ────────
-    # Queue topology cannot be rebuilt at runtime.
-    "max_workers": ReloadBehavior.HOT,
 }
 
 
@@ -113,6 +111,7 @@ class ConfigStore:
         self._store["process.max_restart_attempts"] = (
             config.process.max_restart_attempts
         )
+        self._store["process.max_workers"] = config.process.max_workers
 
     # ── Read ────────────────────────────────────────────────────
 
@@ -144,7 +143,10 @@ class ConfigStore:
     @staticmethod
     def get_reload_behavior(section: str, field_name: str) -> ReloadBehavior:
         """Return the reload behaviour for a ``section.field`` pair."""
-        key = f"{section}.{field_name}" if section else field_name
+        if not section:
+            key = field_name
+        else:
+            key = f"{section}.{field_name}"
         return FIELD_RELOAD_MAP.get(key, ReloadBehavior.APP_RESTART)
 
     @staticmethod

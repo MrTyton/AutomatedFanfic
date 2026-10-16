@@ -158,8 +158,8 @@ def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> tuple[st
         # For story sites: match the core story pattern based on URL structure
         if "/s/" in path:  # FanFiction.Net/FictionPress style URLs
             path_pattern = r"/s/\d+"
-        elif "/works/" in path:  # Archive of Our Own style URLs
-            path_pattern = r"/works/\d+"
+        elif "/works/" in path:  # Archive of Our Own style URLs (works and series)
+            path_pattern = r"/(?:works|series)/\d+"
         elif "/fiction/" in path:  # RoyalRoad style URLs
             path_pattern = r"/fiction/\d+"
         else:
