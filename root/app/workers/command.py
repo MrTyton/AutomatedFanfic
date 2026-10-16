@@ -220,9 +220,19 @@ def execute_fanficfare_direct(
     # Pass the app's ini files as strings so they override any system-level
     # fanficfare settings.
     passed_defaultsini: str | None = None
-    if cdb.default_ini and Path(cdb.default_ini).is_file():
+    if not cdb.default_ini:
+        ff_logging.log_debug("\tdefaults.ini: path not configured")
+    elif not Path(cdb.default_ini).is_file():
+        ff_logging.log(
+            f"\tdefaults.ini: path configured ({cdb.default_ini}) but file does not exist",
+            "WARNING",
+        )
+    else:
         try:
             passed_defaultsini = Path(cdb.default_ini).read_text(encoding="utf-8")
+            ff_logging.log_debug(
+                f"\tdefaults.ini: loaded {len(passed_defaultsini)} bytes from {cdb.default_ini}"
+            )
         except Exception as e:
             ff_logging.log(
                 f"Could not read defaults.ini ({cdb.default_ini}): {e}", "WARNING"
@@ -238,9 +248,21 @@ def execute_fanficfare_direct(
     # convention) but strip any directory component: we control the directory,
     # they control the filename pattern.
     personal_ini_base = ""
-    if cdb.personal_ini and Path(cdb.personal_ini).is_file():
+    if not cdb.personal_ini:
+        ff_logging.log_debug(
+            "\tpersonal.ini: path not configured — running with FanFicFare defaults"
+        )
+    elif not Path(cdb.personal_ini).is_file():
+        ff_logging.log(
+            f"\tpersonal.ini: path configured ({cdb.personal_ini}) but file does not exist",
+            "WARNING",
+        )
+    else:
         try:
             personal_ini_base = Path(cdb.personal_ini).read_text(encoding="utf-8")
+            ff_logging.log_debug(
+                f"\tpersonal.ini: loaded {len(personal_ini_base)} bytes from {cdb.personal_ini}"
+            )
         except Exception as e:
             ff_logging.log(
                 f"Could not read personal.ini ({cdb.personal_ini}): {e}", "WARNING"
