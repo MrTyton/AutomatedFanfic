@@ -520,8 +520,15 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
 
         results = []
-        while not iq.empty():
-            results.append(iq.get(timeout=1).url)
+        try:
+            results.append(iq.get(timeout=2).url)
+        except Exception:
+            pass
+        while True:
+            try:
+                results.append(iq.get_nowait().url)
+            except Exception:
+                break
         self.assertEqual(results, ["http://example.com/normal"])
         # Cancelled entry must be cleaned up
         self.assertNotIn(cancelled_url, active_urls)
