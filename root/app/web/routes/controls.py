@@ -344,14 +344,15 @@ async def cancel_retry(request: Request, body: QueueActionRequest):
         for candidate in candidate_urls:
             _dequeue_matching_fics(queue_obj, candidate)
 
-    # Force-remove from active_urls regardless of processing status — the URL is
-    # in the retry/waiting queue, not actively being worked on, so any stale
-    # "processing" status in active_urls should be cleared on cancellation.
+    # Mark as cancelled in active_urls. wait_processor checks this flag before
+    # requeuing items from its heap, so items already consumed from waiting_queue
+    # are still dropped when their timer fires instead of re-entering the pipeline.
     if state.active_urls is not None:
         for candidate in candidate_urls:
             try:
-                if candidate in state.active_urls:
-                    del state.active_urls[candidate]
+                existing = dict(state.active_urls.get(candidate, {}))
+                existing["status"] = "cancelled"
+                state.active_urls[candidate] = existing
             except Exception:
                 pass
 

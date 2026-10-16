@@ -70,14 +70,19 @@ def _process_task(
                 ff_logging.log_debug(
                     f"\t({site}) Extracted title from filename: {fanfic.title}"
                 )
-                # Push title to active_urls so the web UI can show it immediately
+                # Push title to active_urls so the web UI can show it immediately.
+                # Merge into the existing entry to preserve heap_gen and other fields.
                 if active_urls is not None:
                     try:
-                        active_urls[fanfic.url] = {
-                            "site": fanfic.site,
-                            "title": fanfic.title,
-                            "status": "processing",
-                        }
+                        existing = dict(active_urls.get(fanfic.url, {}))
+                        existing.update(
+                            {
+                                "site": fanfic.site,
+                                "title": fanfic.title,
+                                "status": "processing",
+                            }
+                        )
+                        active_urls[fanfic.url] = existing
                     except Exception:
                         pass
                 # Update the pending history DB row with the title
@@ -212,6 +217,7 @@ def url_worker(
                         f"Worker {worker_id} signaling idle after draining {current_site} queue"
                     )
                     current_site = None
+                    ff_logging.set_thread_site(None)
                 # Continue waiting for more work
                 continue
             except Exception as e:
@@ -224,6 +230,7 @@ def url_worker(
 
             # Track which site we're processing
             current_site = fanfic.site
+            ff_logging.set_thread_site(fanfic.site)
 
             # Mark as actively being processed by this worker thread
             if active_urls is not None:

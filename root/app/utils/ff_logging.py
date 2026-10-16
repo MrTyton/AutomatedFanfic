@@ -85,6 +85,8 @@ def _store_log_entry(
     entry = {"timestamp": timestamp, "level": level, "message": message}
     if hasattr(_thread_local, "color"):
         entry["thread_color"] = _thread_local.color
+    if hasattr(_thread_local, "site") and _thread_local.site is not None:
+        entry["thread_site"] = _thread_local.site
 
     _append_log_entry(entry)
 
@@ -203,6 +205,20 @@ def set_thread_color(ansi_code: str) -> None:
                   for logs from this thread.
     """
     _thread_local.color = ansi_code
+
+
+def set_thread_site(site: str | None) -> None:
+    """Sets (or clears) the site tag for the current thread's log output.
+
+    While set, every log entry produced by this thread will carry a
+    ``thread_site`` field so the web UI can filter logs by site without
+    relying on regex parsing of message text.
+
+    Args:
+        site: Site identifier (e.g. ``"ao3"``, ``"fanfiction"``), or
+              ``None`` to clear the tag (e.g. when a worker goes idle).
+    """
+    _thread_local.site = site
 
 
 def get_color_for_worker(index: int) -> str:

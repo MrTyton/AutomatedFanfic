@@ -115,6 +115,7 @@ def wait_processor(
     verbose: bool = False,
     shutdown_event: threading.Event = None,
     history_recorder=None,
+    active_urls=None,
 ) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 
@@ -136,9 +137,12 @@ def wait_processor(
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[96m")  # Bright Cyan
 
-    # Heap entries: (expiry_time, sequence_counter, fanfic)
+    # Heap entries: (expiry_time, sequence_counter, fanfic, heap_gen)
     # sequence_counter breaks ties so FanficInfo never needs to be compared.
-    pending_heap: list[tuple[float, int, fanfic_info.FanficInfo]] = []
+    # heap_gen is a snapshot of the per-URL generation token stored in active_urls
+    # at scheduling time; mismatches on firing mean the URL was cancelled or
+    # explicitly re-queued via the UI while the item sat on the heap.
+    pending_heap: list[tuple[float, int, fanfic_info.FanficInfo, int]] = []
     seq = 0
 
     while True:
@@ -150,7 +154,28 @@ def wait_processor(
         # --- Drain expired items from the heap ---
         now = time.monotonic()
         while pending_heap and pending_heap[0][0] <= now:
-            _, _, fanfic = heapq.heappop(pending_heap)
+            _, _, fanfic, heap_gen = heapq.heappop(pending_heap)
+            # Drop stale or cancelled entries.
+            # A stale entry is one whose heap_gen no longer matches active_urls —
+            # which happens when retry-now creates a fresh dict (no heap_gen)
+            # or cancel-retry sets status="cancelled".
+            if active_urls is not None:
+                try:
+                    meta = active_urls.get(fanfic.url, {})
+                    is_cancelled = meta.get("status") == "cancelled"
+                    is_stale = meta.get("heap_gen") != heap_gen
+                    if is_cancelled or is_stale:
+                        if is_cancelled:
+                            try:
+                                del active_urls[fanfic.url]
+                            except Exception:
+                                pass
+                        ff_logging.log_debug(
+                            f"Waiter: Dropped {'cancelled' if is_cancelled else 'stale'} retry for {fanfic.url}"
+                        )
+                        continue
+                except Exception:
+                    pass
             ingress_queue.put(fanfic)
             if history_recorder:
                 history_recorder.record_retry_fired(fanfic.url, fanfic.repeats or 0)
@@ -181,5 +206,16 @@ def wait_processor(
             continue  # ABANDON — drop the item
 
         expiry = time.monotonic() + delay
-        heapq.heappush(pending_heap, (expiry, seq, fanfic_item))
+        # Record a generation token in active_urls so we can detect stale heap
+        # entries: any user action (retry-now, cancel-retry) that writes a fresh
+        # dict to active_urls without heap_gen will cause a mismatch on firing.
+        heap_gen = seq
+        if active_urls is not None:
+            try:
+                existing_meta = dict(active_urls.get(fanfic_item.url, {}))
+                existing_meta["heap_gen"] = heap_gen
+                active_urls[fanfic_item.url] = existing_meta
+            except Exception:
+                pass
+        heapq.heappush(pending_heap, (expiry, seq, fanfic_item, heap_gen))
         seq += 1

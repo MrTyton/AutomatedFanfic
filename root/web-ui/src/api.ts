@@ -183,6 +183,7 @@ export interface LogEntry {
     level: string
     message: string
     thread_color?: string
+    thread_site?: string
 }
 
 export function getLogs(limit = 500) {
