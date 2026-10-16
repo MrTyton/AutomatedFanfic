@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 from models import fanfic_info
@@ -251,6 +251,283 @@ class TestWaitProcessor(unittest.TestCase):
         # Shut down
         shutdown_event.set()
         t.join(timeout=5)
+
+
+class TestWaitProcessorHeapGen(unittest.TestCase):
+    """Tests for the heap generation token (cancel/stale detection) behaviour.
+
+    When wait_processor schedules a heap entry it writes a ``heap_gen`` token
+    to ``active_urls``.  On expiry the stored token is compared against the
+    current active_urls value:
+
+    - **match** and status != "cancelled" → item requeued normally.
+    - **mismatch** (e.g. retry-now wrote a fresh dict without ``heap_gen``) →
+      stale; entry dropped, active_urls left intact so the new queued entry
+      survives.
+    - **match** but status == "cancelled" (cancel-retry wrote the status after
+      scheduling) → entry dropped and the active_urls entry deleted.
+    """
+
+    def _fanfic(self, url: str) -> fanfic_info.FanficInfo:
+        fanfic = fanfic_info.FanficInfo(site="site", url=url)
+        fanfic.retry_decision = retry_types.RetryDecision(
+            action=retry_types.FailureAction.RETRY,
+            delay_minutes=0.0,
+            should_notify=False,
+            notification_message="",
+        )
+        return fanfic
+
+    # ------------------------------------------------------------------ #
+    # Scheduling: heap_gen written to active_urls                         #
+    # ------------------------------------------------------------------ #
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_heap_gen_written_to_active_urls_on_scheduling(self, mock_get_delay):
+        """wait_processor writes heap_gen=0 to active_urls for the first item."""
+        mock_get_delay.return_value = 100  # large delay: item stays on heap
+
+        wq, iq = mp.Queue(), mp.Queue()
+        active_urls: dict = {}
+        fanfic = self._fanfic("http://example.com/a")
+        wq.put(fanfic)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        self.assertIn(fanfic.url, active_urls)
+        self.assertEqual(active_urls[fanfic.url].get("heap_gen"), 0)
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_heap_gen_increments_per_item(self, mock_get_delay):
+        """Each scheduled item receives a unique, incrementing heap_gen token."""
+        mock_get_delay.return_value = 100
+
+        wq, iq = mp.Queue(), mp.Queue()
+        active_urls: dict = {}
+        fanfic1 = self._fanfic("http://example.com/b1")
+        fanfic2 = self._fanfic("http://example.com/b2")
+        wq.put(fanfic1)
+        wq.put(fanfic2)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        gen1 = active_urls[fanfic1.url]["heap_gen"]
+        gen2 = active_urls[fanfic2.url]["heap_gen"]
+        self.assertNotEqual(gen1, gen2)
+
+    # ------------------------------------------------------------------ #
+    # Firing: normal (matching heap_gen) requeues                         #
+    # ------------------------------------------------------------------ #
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_normal_item_requeued_with_matching_heap_gen(self, mock_get_delay):
+        """Item whose heap_gen still matches active_urls is forwarded to ingress."""
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+        active_urls: dict = {}
+        fanfic = self._fanfic("http://example.com/c")
+        wq.put(fanfic)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        result = iq.get(timeout=2)
+        self.assertEqual(result.url, fanfic.url)
+        self.assertTrue(iq.empty())
+
+    # ------------------------------------------------------------------ #
+    # Firing: stale entry (retry-now scenario) is dropped                 #
+    # ------------------------------------------------------------------ #
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_stale_entry_dropped_simulating_retry_now(self, mock_get_delay):
+        """Stale heap entry is dropped when active_urls no longer carries heap_gen.
+
+        Reproduces the retry-now scenario: the UI replaces active_urls[url] with
+        a fresh dict (no heap_gen) while the old entry sits on the heap.
+        """
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+
+        class RetryNowUrls(dict):
+            """After heap_gen is written, replace with a fresh dict (no heap_gen)."""
+
+            def __setitem__(self, key, value):
+                super().__setitem__(key, value)
+                if isinstance(value, dict) and "heap_gen" in value:
+                    super().__setitem__(key, {"status": "queued", "site": "site"})
+
+        active_urls = RetryNowUrls()
+        fanfic = self._fanfic("http://example.com/d")
+        wq.put(fanfic)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        # Old heap entry must be dropped — ingress queue stays empty
+        self.assertTrue(iq.empty())
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_stale_entry_does_not_delete_active_urls_entry(self, mock_get_delay):
+        """Dropping a stale entry leaves active_urls intact.
+
+        The fresh 'queued' dict written by retry-now must not be deleted;
+        it belongs to the newly-enqueued item, not the stale heap entry.
+        """
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+
+        class RetryNowUrls(dict):
+            def __setitem__(self, key, value):
+                super().__setitem__(key, value)
+                if isinstance(value, dict) and "heap_gen" in value:
+                    super().__setitem__(key, {"status": "queued", "site": "site"})
+
+        active_urls = RetryNowUrls()
+        fanfic = self._fanfic("http://example.com/e")
+        wq.put(fanfic)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        self.assertIn(fanfic.url, active_urls)
+        self.assertEqual(active_urls[fanfic.url].get("status"), "queued")
+
+    # ------------------------------------------------------------------ #
+    # Firing: cancelled entry is dropped and cleaned up                   #
+    # ------------------------------------------------------------------ #
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_cancelled_entry_is_not_requeued(self, mock_get_delay):
+        """Heap entry with matching heap_gen but status='cancelled' is dropped.
+
+        Reproduces the cancel-retry scenario: the UI keeps heap_gen intact but
+        sets status='cancelled' on the active_urls entry.
+        """
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+
+        class CancelUrls(dict):
+            """Preserve heap_gen but inject status='cancelled' after scheduling."""
+
+            def __setitem__(self, key, value):
+                super().__setitem__(key, value)
+                if isinstance(value, dict) and "heap_gen" in value:
+                    merged = dict(value)
+                    merged["status"] = "cancelled"
+                    super().__setitem__(key, merged)
+
+        active_urls = CancelUrls()
+        fanfic = self._fanfic("http://example.com/f")
+        wq.put(fanfic)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        self.assertTrue(iq.empty())
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_cancelled_entry_is_removed_from_active_urls(self, mock_get_delay):
+        """Dropping a cancelled entry deletes it from active_urls (UI cleanup)."""
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+
+        class CancelUrls(dict):
+            def __setitem__(self, key, value):
+                super().__setitem__(key, value)
+                if isinstance(value, dict) and "heap_gen" in value:
+                    merged = dict(value)
+                    merged["status"] = "cancelled"
+                    super().__setitem__(key, merged)
+
+        active_urls = CancelUrls()
+        fanfic = self._fanfic("http://example.com/g")
+        wq.put(fanfic)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        self.assertNotIn(fanfic.url, active_urls)
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_cancelled_entry_does_not_call_history_recorder(self, mock_get_delay):
+        """history_recorder.record_retry_fired is NOT called when an entry is dropped."""
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+
+        class CancelUrls(dict):
+            def __setitem__(self, key, value):
+                super().__setitem__(key, value)
+                if isinstance(value, dict) and "heap_gen" in value:
+                    merged = dict(value)
+                    merged["status"] = "cancelled"
+                    super().__setitem__(key, merged)
+
+        recorder = MagicMock()
+        active_urls = CancelUrls()
+        fanfic = self._fanfic("http://example.com/h")
+        wq.put(fanfic)
+        wq.put(None)
+
+        ff_waiter.wait_processor(
+            iq, wq, active_urls=active_urls, history_recorder=recorder
+        )
+
+        recorder.record_retry_fired.assert_not_called()
+
+    # ------------------------------------------------------------------ #
+    # Mixed scenario                                                       #
+    # ------------------------------------------------------------------ #
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    def test_mixed_items_selective_drop(self, mock_get_delay):
+        """Normal, stale, and cancelled items coexist: only the normal one requeues."""
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+
+        stale_url = "http://example.com/stale"
+        cancelled_url = "http://example.com/cancelled"
+
+        class MixedUrls(dict):
+            def __setitem__(self, key, value):
+                super().__setitem__(key, value)
+                if isinstance(value, dict) and "heap_gen" in value:
+                    if key == cancelled_url:
+                        merged = dict(value)
+                        merged["status"] = "cancelled"
+                        super().__setitem__(key, merged)
+                    elif key == stale_url:
+                        super().__setitem__(key, {"status": "queued"})
+
+        active_urls = MixedUrls()
+        fanfic_normal = self._fanfic("http://example.com/normal")
+        fanfic_stale = self._fanfic(stale_url)
+        fanfic_cancelled = self._fanfic(cancelled_url)
+
+        for f in [fanfic_normal, fanfic_stale, fanfic_cancelled]:
+            wq.put(f)
+        wq.put(None)
+
+        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+
+        results = []
+        while not iq.empty():
+            results.append(iq.get(timeout=1).url)
+        self.assertEqual(results, ["http://example.com/normal"])
+        # Cancelled entry must be cleaned up
+        self.assertNotIn(cancelled_url, active_urls)
+        # Stale entry must remain (it holds the fresh queued dict from retry-now)
+        self.assertIn(stale_url, active_urls)
+        self.assertEqual(active_urls[stale_url].get("status"), "queued")
 
 
 if __name__ == "__main__":

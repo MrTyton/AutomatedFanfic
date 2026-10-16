@@ -3,12 +3,23 @@ import { getLogs, getStartupLogs, type LogEntry } from '../api'
 
 const DEFAULT_LEVEL_FILTER = 'error'
 
-// Extract the site token from messages like "(ao3) Processing …" or "\t(ffnet) …"
-const SITE_RE = /^\s*\(([^)]+)\)/
+// Extract the site token from messages like "(ao3) Processing …" or "\t(ffnet) …".
+// Only matches valid site identifiers (lowercase letters/digits/hyphens/underscores,
+// no spaces) to avoid picking up phrases like "(AO3 series)" or "(retry #1)".
+const SITE_EXTRACT_RE = /^\s*\(([a-z][a-z0-9_-]*)\)/i
 
 function extractSite(message: string): string | null {
-    const m = SITE_RE.exec(message)
-    return m ? m[1] : null
+    const m = SITE_EXTRACT_RE.exec(message)
+    return m ? m[1].toLowerCase() : null
+}
+
+// Returns true if the message is associated with the given site — either via the
+// explicit (site) prefix OR by mentioning the site name as a whole word anywhere
+// (e.g. "in queue fanfiction", "Coordinator: Assigned site ao3 to worker_0").
+function messageMentionsSite(message: string, site: string): boolean {
+    if (extractSite(message) === site.toLowerCase()) return true
+    const escaped = site.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`(?:^|\\W)${escaped}(?:\\W|$)`, 'i').test(message)
 }
 
 export default function Logs() {
@@ -82,12 +93,18 @@ export default function Logs() {
 
     const visibleLogs = activeView === 'startup' ? startupLogs : logs
 
-    // Collect unique site names present in the visible log set for the dropdown
+    // Collect unique site names: prefer the explicit thread_site tag carried on each
+    // entry (set by worker threads), fall back to regex extraction from the message
+    // for untagged entries (Coordinator, Waiter, etc.).
     const availableSites = useMemo(() => {
         const sites = new Set<string>()
         for (const entry of visibleLogs) {
-            const site = extractSite(entry.message)
-            if (site) sites.add(site)
+            if (entry.thread_site) {
+                sites.add(entry.thread_site)
+            } else {
+                const site = extractSite(entry.message)
+                if (site) sites.add(site)
+            }
         }
         return Array.from(sites).sort()
     }, [visibleLogs])
@@ -105,8 +122,14 @@ export default function Logs() {
             if (allowed && !allowed.has(entry.level)) return false
         }
         if (siteFilter) {
-            const site = extractSite(entry.message)
-            if (site !== siteFilter) return false
+            // Entries with an explicit thread_site tag (from worker threads) use
+            // exact match.  Untagged entries (Coordinator, Waiter, global messages)
+            // fall back to word-boundary search so they still appear when relevant.
+            if (entry.thread_site) {
+                if (entry.thread_site !== siteFilter) return false
+            } else {
+                if (!messageMentionsSite(entry.message, siteFilter)) return false
+            }
         }
         if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase())) return false
         return true
@@ -213,21 +236,19 @@ export default function Logs() {
                         <option value="all">All (incl. Debug)</option>
                     </select>
                 </label>
-                {availableSites.length > 0 && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                        Site:
-                        <select
-                            value={siteFilter}
-                            onChange={e => setSiteFilter(e.target.value)}
-                            style={{ padding: '0.3rem 0.5rem' }}
-                        >
-                            <option value="">All sites</option>
-                            {availableSites.map(site => (
-                                <option key={site} value={site}>{site}</option>
-                            ))}
-                        </select>
-                    </label>
-                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                    Site:
+                    <select
+                        value={siteFilter}
+                        onChange={e => setSiteFilter(e.target.value)}
+                        style={{ padding: '0.3rem 0.5rem' }}
+                    >
+                        <option value="">All sites</option>
+                        {availableSites.map(site => (
+                            <option key={site} value={site}>{site}</option>
+                        ))}
+                    </select>
+                </label>
                 <input
                     type="text"
                     placeholder="Filter logs…"

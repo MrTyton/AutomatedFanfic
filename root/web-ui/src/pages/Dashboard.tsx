@@ -291,13 +291,9 @@ export default function Dashboard({ data }: Props) {
                                 <td>—</td>
                                 <td></td>
                                 <td>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`redl-${dl.url}`]}
-                                        onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url, site: dl.site, title: dl.title }))}
-                                    >
-                                        Redownload
-                                    </button>
+                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                        Redownload unavailable while queued
+                                    </span>
                                 </td>
                             </tr>
                         ))}

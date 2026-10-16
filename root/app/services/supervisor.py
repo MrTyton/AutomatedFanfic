@@ -96,6 +96,7 @@ def run_supervisor(
                 verbose,
                 shutdown_event,
                 history_recorder,
+                active_urls,
             ),
             name="Waiter",
         )
