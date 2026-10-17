@@ -1,16 +1,24 @@
 # Git and version control
 .git/
 .gitignore
+.gitattributes
 .github/
+
+# AI agents and assistance
+.agents/
+.agent/
+AGENTS.md
+GEMINI.md
+.swarm/
 
 # IDE and editor files
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-.DS_Store
-*.code-workspace
+**/*.swp
+**/*.swo
+**/*~
+**/.DS_Store
+**/*.code-workspace
 AutomatedFanfic.code-workspace
 
 # Python development files
@@ -18,33 +26,49 @@ AutomatedFanfic.code-workspace
 .env/
 venv/
 env/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+**/__pycache__/
+**/*.py[cod]
+**/*.pyc
+**/*.pyo
+**/*.pyd
 .Python
-*.so
-.pytest_cache/
-.coverage
+**/*.so
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
 .tox/
 .cache/
-.mypy_cache/
 .dmypy.json
 dmypy.json
 
 # Test files and testing artifacts
-*_test.py
-test_*.py
+**/*_test.py
+**/test_*.py
 tests/
 root/tests/
 htmlcov/
-.coverage.*
+**/htmlcov/
+.coverage
+**/.coverage*
 coverage.xml
-*.cover
+**/coverage.xml
+**/*.cover
 .hypothesis/
 junit/
 test-results/
 pytest_results/
+
+# Project developer tools, scripts, and local state
+.pre-commit-config.yaml
+pyproject.toml
+pytest.ini
+requirements-dev.txt
+run.sh
+scripts/
+slim.report.json
+.slim/
+release-versions/
+data/
 
 # S6-overlay files (not used in this Docker setup)
 root/etc/
@@ -52,6 +76,7 @@ root/app/run.sh
 
 # Documentation
 *.md
+**/*.md
 README.*
 CHANGELOG.*
 LICENSE*
@@ -61,9 +86,10 @@ docs/
 build/
 dist/
 *.egg-info/
+**/*.egg-info/
 .eggs/
-*.log
-*.out
+**/*.log
+**/*.out
 pyrightconfig.json
 
 # Frontend development files and build artifacts
@@ -71,13 +97,15 @@ pyrightconfig.json
 node_modules/
 root/web-ui/node_modules/
 root/web-ui/dist/
-*.tsbuildinfo
+**/*.tsbuildinfo
 .npm/
+**/.npm/
+root/web-ui/.gitignore
 
 # Local databases and runtime state
-*.db
-*.db-shm
-*.db-wal
+**/*.db
+**/*.db-shm
+**/*.db-wal
 root/config.default/Actual Configs/
 
 # Docker development files
@@ -86,9 +114,6 @@ docker-compose*.yaml
 Dockerfile.*
 !Dockerfile
 
-# Release and version files (these should be included)
-# release-versions/ - commented out because these ARE needed for the build
-
 # Local configuration examples
 *.example
 *.sample
@@ -96,25 +121,22 @@ config.example.*
 .env.example
 
 # Backup and temporary files
-*.bak
-*.tmp
-*.temp
-.DS_Store
-Thumbs.db
+**/*.bak
+**/*.tmp
+**/*.temp
+**/Thumbs.db
+**/ehthumbs.db
 
 # OS specific files
-.DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db
-Thumbs.db
 
 # Archives
-*.zip
-*.tar.gz
-*.tgz
-*.tar
-*.rar
-*.7z
+**/*.zip
+**/*.tar.gz
+**/*.tgz
+**/*.tar
+**/*.rar
+**/*.7z
