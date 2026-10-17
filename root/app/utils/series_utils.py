@@ -18,10 +18,12 @@ Adapter API Usage:
     - Falls back to treating URL as single story if detection fails
 """
 
+import os
 import re
 from typing import Any
 
 lazy from fanficfare import adapters, configurable, exceptions, geturls
+lazy from utils.system_utils import get_packaged_defaults_ini_path, resolve_ini_path
 from utils import ff_logging
 
 
@@ -67,9 +69,6 @@ def get_series_configuration(
     """
     if config_store is not None and not default_ini_path and not personal_ini_path:
         return config_store.get_fff_configuration(url)
-
-    from utils.system_utils import get_packaged_defaults_ini_path, resolve_ini_path
-    import os
 
     try:
         sections = adapters.getConfigSectionsFor(url)

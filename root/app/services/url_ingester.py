@@ -74,7 +74,7 @@ import logging
 import threading
 from typing import Any
 from contextlib import contextmanager
-lazy from fanficfare import geturls
+lazy from fanficfare import adapters, configurable, geturls
 from utils import ff_logging
 from parsers import regex_parsing
 from notifications import notification_wrapper
@@ -99,15 +99,12 @@ def _make_fff_get_configuration(
     if config_store is not None and not default_ini_path and not personal_ini_path:
         return config_store.get_fff_get_configuration_callable()
 
-    from fanficfare.configurable import Configuration
-    from fanficfare import adapters
-
-    def get_configuration(url: str) -> Configuration:
+    def get_configuration(url: str):
         try:
             sections = adapters.getConfigSectionsFor(url)
         except Exception:
             sections = ["test1.com"]
-        config = Configuration(sections, "EPUB")
+        config = configurable.Configuration(sections, "EPUB")
         ini_files = []
         if default_ini_path and os.path.isfile(default_ini_path):
             ini_files.append(default_ini_path)
