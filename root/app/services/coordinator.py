@@ -89,8 +89,6 @@ class Coordinator:
         history_recorder=None,
         url_parsers: dict | None = None,
         config_store: Any | None = None,
-        default_ini: str | None = None,
-        personal_ini: str | None = None,
     ):
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
@@ -99,8 +97,6 @@ class Coordinator:
         self.history_recorder = history_recorder
         self.url_parsers = url_parsers
         self.config_store = config_store
-        self.default_ini = default_ini
-        self.personal_ini = personal_ini
 
         # Encapsulated coordinator state
         self.state = CoordinatorState(idle_workers=set(worker_queues.keys()))
@@ -201,8 +197,6 @@ class Coordinator:
         expansion_result = series_utils.process_url(
             task.url,
             config_store=self.config_store,
-            default_ini=self.default_ini,
-            personal_ini=self.personal_ini,
         )
 
         if expansion_result["is_series"]:
@@ -439,8 +433,6 @@ def start_coordinator(
     history_recorder=None,
     url_parsers: dict | None = None,
     config_store: Any | None = None,
-    default_ini: str | None = None,
-    personal_ini: str | None = None,
 ):
     """Entry point for the coordinator process."""
     # Initialize logging for this process
@@ -455,8 +447,6 @@ def start_coordinator(
         history_recorder=history_recorder,
         url_parsers=url_parsers,
         config_store=config_store,
-        default_ini=default_ini,
-        personal_ini=personal_ini,
     )
     try:
         coordinator.run()
