@@ -297,3 +297,30 @@ class TestEdgeCases:
 
         assert result["is_series"] is True
         assert result["count"] == 2
+
+    def test_get_series_configuration_loads_site_sections_and_ini_files(self, tmp_path):
+        """get_series_configuration creates configuration with site sections and INI files."""
+        ini_file = tmp_path / "personal.ini"
+        ini_file.write_text(
+            "[archiveofourown.org]\nusername=testuser\n", encoding="utf-8"
+        )
+
+        config = series_utils.get_series_configuration(
+            "https://archiveofourown.org/series/12345",
+            personal_ini_path=str(ini_file),
+        )
+
+        assert config.has_section("archiveofourown.org")
+        assert config.get("archiveofourown.org", "username") == "testuser"
+
+    def test_series_expansion_failure_returns_zero_count(self):
+        """When series expansion encounters an HTTP error, it returns is_series=True and count=0."""
+        url = "https://archiveofourown.org/series/12345"
+        with patch.object(
+            BaseSiteAdapter, "get_request", side_effect=Exception("403 Forbidden")
+        ):
+            result = series_utils.process_url(url)
+
+        assert result["is_series"] is True
+        assert result["urls"] == []
+        assert result["count"] == 0

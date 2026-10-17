@@ -54,7 +54,76 @@ def _is_single_story_url(config: configurable.Configuration, url: str) -> bool:
         return False
 
 
-def is_series_url(url: str, config: configurable.Configuration | None = None) -> bool:
+def get_series_configuration(
+    url: str,
+    default_ini_path: str | None = None,
+    personal_ini_path: str | None = None,
+    config_store: Any | None = None,
+) -> configurable.Configuration:
+    """Build a FanFicFare Configuration for *url* loaded with defaults.ini and personal.ini.
+
+    This ensures site-specific authentication (credentials, cookies, is_adult flags)
+    is available when scraping series/collection pages (such as locked AO3 series).
+    """
+    from utils.system_utils import get_packaged_defaults_ini_path, resolve_ini_path
+    import os
+
+    try:
+        sections = adapters.getConfigSectionsFor(url)
+    except Exception:
+        sections = ["test1.com"]
+
+    config = configurable.Configuration(sections, "EPUB")
+
+    ini_files: list[str] = []
+
+    # 1. Resolve defaults.ini
+    if not default_ini_path and config_store is not None:
+        default_ini_path = config_store.get("calibre.default_ini")
+
+    if not default_ini_path:
+        default_ini_path = get_packaged_defaults_ini_path()
+    elif os.path.isdir(default_ini_path):
+        default_ini_path = resolve_ini_path(default_ini_path, "defaults.ini")
+
+    if default_ini_path and os.path.isfile(default_ini_path):
+        ini_files.append(default_ini_path)
+
+    # 2. Resolve personal.ini
+    if not personal_ini_path and config_store is not None:
+        personal_ini_path = config_store.get("calibre.personal_ini")
+
+    if not personal_ini_path:
+        try:
+            from models.config_models import ConfigManager
+
+            for cached_config in ConfigManager._cache.values():
+                if cached_config.calibre and cached_config.calibre.personal_ini:
+                    personal_ini_path = cached_config.calibre.personal_ini
+                    break
+        except Exception:
+            pass
+
+    if personal_ini_path:
+        if os.path.isdir(personal_ini_path):
+            personal_ini_path = resolve_ini_path(personal_ini_path, "personal.ini")
+        if os.path.isfile(personal_ini_path):
+            ini_files.append(personal_ini_path)
+
+    if ini_files:
+        config.read(ini_files)
+
+    return config
+
+
+def is_series_url(
+    url: str,
+    config: configurable.Configuration | None = None,
+    *,
+    default_ini: str | None = None,
+    personal_ini: str | None = None,
+    config_store: Any | None = None,
+) -> bool:
     """
     Determine if a URL points to a series, collection, or single story.
 
@@ -64,13 +133,21 @@ def is_series_url(url: str, config: configurable.Configuration | None = None) ->
     Args:
         url: The fanfiction URL to check
         config: FanFicFare Configuration object (created if not provided)
+        default_ini: Optional path to defaults.ini
+        personal_ini: Optional path to personal.ini
+        config_store: Optional ConfigStore instance
 
     Returns:
         True if the URL is a series/collection, False if single story or unknown
     """
     url = _normalize_url(url)
     if not config:
-        config = configurable.Configuration(["test.com"], "EPUB", lightweight=True)
+        config = get_series_configuration(
+            url,
+            default_ini_path=default_ini,
+            personal_ini_path=personal_ini,
+            config_store=config_store,
+        )
 
     try:
         # Try to get the adapter for this URL
@@ -128,7 +205,12 @@ def is_series_url(url: str, config: configurable.Configuration | None = None) ->
 
 
 def expand_series_url(
-    url: str, config: configurable.Configuration | None = None
+    url: str,
+    config: configurable.Configuration | None = None,
+    *,
+    default_ini: str | None = None,
+    personal_ini: str | None = None,
+    config_store: Any | None = None,
 ) -> list[str]:
     """
     Extract individual story URLs from a series or collection URL.
@@ -139,6 +221,9 @@ def expand_series_url(
     Args:
         url: The series/collection URL to expand
         config: FanFicFare Configuration object (created if not provided)
+        default_ini: Optional path to defaults.ini
+        personal_ini: Optional path to personal.ini
+        config_store: Optional ConfigStore instance
 
     Returns:
         List of individual story URLs extracted from the series.
@@ -146,7 +231,12 @@ def expand_series_url(
     """
     url = _normalize_url(url)
     if not config:
-        config = configurable.Configuration(["test.com"], "EPUB", lightweight=True)
+        config = get_series_configuration(
+            url,
+            default_ini_path=default_ini,
+            personal_ini_path=personal_ini,
+            config_store=config_store,
+        )
 
     try:
         adapter = adapters.getAdapter(config, url, anyurl=True)
@@ -197,7 +287,12 @@ def expand_series_url(
 
 
 def process_url(
-    url: str | None, config: configurable.Configuration | None = None
+    url: str | None,
+    config: configurable.Configuration | None = None,
+    *,
+    default_ini: str | None = None,
+    personal_ini: str | None = None,
+    config_store: Any | None = None,
 ) -> dict[str, Any]:
     """
     Unified handler: detect if URL is series and expand or return as single.
@@ -208,6 +303,9 @@ def process_url(
     Args:
         url: The fanfiction URL to process
         config: FanFicFare Configuration object (created if not provided)
+        default_ini: Optional path to defaults.ini
+        personal_ini: Optional path to personal.ini
+        config_store: Optional ConfigStore instance
 
     Returns:
         Dictionary with:
@@ -216,22 +314,45 @@ def process_url(
             - 'count': number of URLs returned
             - 'source_url': original URL
     """
-    if not config:
-        config = configurable.Configuration(["test.com"], "EPUB", lightweight=True)
+    if not config and url:
+        config = get_series_configuration(
+            url,
+            default_ini_path=default_ini,
+            personal_ini_path=personal_ini,
+            config_store=config_store,
+        )
 
     result = {"is_series": False, "urls": [], "count": 0, "source_url": url}
 
     try:
-        if url and is_series_url(url, config):
+        if url and is_series_url(
+            url,
+            config,
+            default_ini=default_ini,
+            personal_ini=personal_ini,
+            config_store=config_store,
+        ):
             # Expand the series URL
-            expanded = expand_series_url(url, config)
+            expanded = expand_series_url(
+                url,
+                config,
+                default_ini=default_ini,
+                personal_ini=personal_ini,
+                config_store=config_store,
+            )
             if expanded:
                 result["is_series"] = True
                 result["urls"] = expanded
                 result["count"] = len(expanded)
                 return result
+            else:
+                # Detected as series, but expansion returned 0 stories (e.g. error)
+                result["is_series"] = True
+                result["urls"] = []
+                result["count"] = 0
+                return result
 
-        # If not a series or expansion failed, treat as single story
+        # If not a series, treat as single story
         result["is_series"] = False
         result["urls"] = [url]
         result["count"] = 1

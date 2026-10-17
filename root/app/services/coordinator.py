@@ -20,6 +20,7 @@ Architecture Note:
 
 import collections
 from dataclasses import dataclass, field
+from typing import Any
 
 from queue import Empty
 from enum import Enum
@@ -85,6 +86,9 @@ class Coordinator:
         active_urls: dict | None = None,
         history_recorder=None,
         url_parsers: dict | None = None,
+        default_ini: str | None = None,
+        personal_ini: str | None = None,
+        config_store: Any | None = None,
     ):
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
@@ -92,6 +96,9 @@ class Coordinator:
         self.active_urls = active_urls
         self.history_recorder = history_recorder
         self.url_parsers = url_parsers
+        self.default_ini = default_ini
+        self.personal_ini = personal_ini
+        self.config_store = config_store
 
         # Encapsulated coordinator state
         self.state = CoordinatorState(idle_workers=set(worker_queues.keys()))
@@ -180,6 +187,26 @@ class Coordinator:
             # Timeout path used by targeted tests and optional timeout callers.
             pass
 
+    def _get_personal_ini(self) -> str | None:
+        if self.config_store:
+            try:
+                val = self.config_store.get("calibre.personal_ini")
+                if val:
+                    return val
+            except Exception:
+                pass
+        return self.personal_ini
+
+    def _get_default_ini(self) -> str | None:
+        if self.config_store:
+            try:
+                val = self.config_store.get("calibre.default_ini")
+                if val:
+                    return val
+            except Exception:
+                pass
+        return self.default_ini
+
     def _handle_new_task(self, task: FanficInfo):
         """Route new task to appropriate worker or backlog.
 
@@ -191,22 +218,48 @@ class Coordinator:
         site = task.site
 
         # Check if this is a series/collection URL
-        expansion_result = series_utils.process_url(task.url)
+        expansion_result = series_utils.process_url(
+            task.url,
+            default_ini=self._get_default_ini(),
+            personal_ini=self._get_personal_ini(),
+            config_store=self.config_store,
+        )
 
-        if expansion_result["is_series"] and expansion_result["count"] > 1:
-            # Expand series into individual story tasks
-            ff_logging.log(
-                f"Coordinator: Expanding series ({expansion_result['count']} stories): {task.url}"
-            )
+        if expansion_result["is_series"]:
+            if expansion_result["count"] > 1 or (
+                expansion_result["count"] == 1
+                and expansion_result["urls"]
+                and expansion_result["urls"][0] != task.url
+            ):
+                # Expand series into individual story tasks
+                ff_logging.log(
+                    f"Coordinator: Expanding series ({expansion_result['count']} stories): {task.url}"
+                )
 
-            # Remove the parent series URL from active_urls since workers only
-            # process and clean up the individual child story URLs.
-            if self.active_urls is not None:
-                try:
-                    if task.url in self.active_urls:
-                        del self.active_urls[task.url]
-                except Exception:
-                    pass
+                # Remove the parent series URL from active_urls since workers only
+                # process and clean up the individual child story URLs.
+                if self.active_urls is not None:
+                    try:
+                        if task.url in self.active_urls:
+                            del self.active_urls[task.url]
+                    except Exception:
+                        pass
+            elif expansion_result["count"] == 0:
+                # Detected as series, but expansion produced 0 stories (e.g. 403 or network error)
+                ff_logging.log_failure(
+                    f"Coordinator: Failed to expand series {task.url} into story URLs"
+                )
+                if self.active_urls is not None and task.url in self.active_urls:
+                    try:
+                        entry = dict(self.active_urls[task.url])
+                        entry["status"] = "failed"
+                        entry["error"] = (
+                            "Failed to expand series (check credentials/login in personal.ini or network)"
+                        )
+                        self.active_urls[task.url] = entry
+                    except Exception:
+                        pass
+                return
 
             for story_url in expansion_result["urls"]:
                 child_url = story_url
@@ -405,6 +458,9 @@ def start_coordinator(
     active_urls: dict | None = None,
     history_recorder=None,
     url_parsers: dict | None = None,
+    default_ini: str | None = None,
+    personal_ini: str | None = None,
+    config_store: Any | None = None,
 ):
     """Entry point for the coordinator process."""
     # Initialize logging for this process
@@ -418,6 +474,9 @@ def start_coordinator(
         active_urls=active_urls,
         history_recorder=history_recorder,
         url_parsers=url_parsers,
+        default_ini=default_ini,
+        personal_ini=personal_ini,
+        config_store=config_store,
     )
     try:
         coordinator.run()
