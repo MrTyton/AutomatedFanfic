@@ -17,7 +17,7 @@ class TestCalibreDBClient(unittest.TestCase):
             return_value='--with-library "/fake/library"'
         )
         self.mock_calibre_info.lock = MagicMock()
-        self.client = CalibreDBClient(self.mock_calibre_info)
+        self.client = CalibreDBClient(self.mock_calibre_info, MagicMock())
 
     class ExecuteCommandParams(NamedTuple):
         command: str
@@ -661,7 +661,7 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
             return_value='--with-library "/fake/library"'
         )
         self.mock_calibre_info.lock = MagicMock()
-        self.client = CalibreDBClient(self.mock_calibre_info)
+        self.client = CalibreDBClient(self.mock_calibre_info, MagicMock())
 
     @patch("calibre_integration.calibredb_utils.ff_logging.log_failure")
     def test_get_calibre_version_error(self, mock_log_failure):

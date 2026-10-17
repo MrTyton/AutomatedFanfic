@@ -13,11 +13,15 @@ class TestSupervisor(unittest.TestCase):
         self.notification_info = MagicMock()
         self.url_parsers = {}
         self.active_urls = {}
+        self.mock_history_recorder = MagicMock()
+        self.mock_config_store = MagicMock()
         self.ipc = SharedIPCContext(
             ingress_queue=self.ingress_queue,
             waiting_queue=self.waiting_queue,
             worker_queues=self.worker_queues,
             active_urls=self.active_urls,
+            history_recorder=self.mock_history_recorder,
+            config_store=self.mock_config_store,
             verbose=False,
         )
 
@@ -55,7 +59,7 @@ class TestSupervisor(unittest.TestCase):
             True,
             color="\033[92m",
             log_queue=None,
-            config_store=None,
+            config_store=self.mock_config_store,
             is_web_server=False,
         )
 
@@ -84,7 +88,7 @@ class TestSupervisor(unittest.TestCase):
             False,
             color="\033[92m",
             log_queue=mock_log_queue,
-            config_store=None,
+            config_store=self.mock_config_store,
             is_web_server=False,
         )
 

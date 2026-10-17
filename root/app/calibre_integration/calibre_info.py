@@ -6,12 +6,12 @@ the AutomatedFanfic application. It handles both local library paths and remote
 Calibre server connections with comprehensive credential management.
 
 Key Features:
-    - TOML-based configuration loading with Pydantic validation
+    - Direct initialization from validated Pydantic CalibreConfig models
     - Support for both local Calibre libraries and remote Calibre servers
     - Secure credential management for server authentication
     - Thread-safe configuration access via multiprocessing locks
     - Command-line argument formatting for Calibre operations
-    - Path validation and library accessibility verification
+    - Live configuration synchronization via ConfigStore
 
 Classes:
     CalibreInfo: Complete Calibre configuration management with validation
@@ -24,93 +24,67 @@ and configuration consistency across all worker processes.
 import os
 from pathlib import Path
 from subprocess import call
+from typing import Any
+from config.config_store import ConfigStore
 from utils import ff_logging  # Custom logging module for failure logging
 from utils.system_utils import resolve_ini_path
-from models.config_models import (
-    AppConfig,
-    ConfigManager,
-    ConfigError,
-    ConfigValidationError,
-)
+from models.config_models import CalibreConfig
 
 
 class CalibreInfo:
     """Manages Calibre library information and configuration for fanfiction processing.
 
-    This class handles loading Calibre configuration from TOML files, validating
-    paths and credentials, and providing formatted command-line arguments for
-    Calibre operations. It manages both library location and optional authentication
-    credentials, with thread-safe access through multiprocessing locks.
-
-    The class automatically validates configuration files, checks for required
-    INI files (defaults.ini and personal.ini), and provides utilities for
-    verifying Calibre installation status.
+    This class stores validated Calibre configuration settings, resolves INI file
+    paths, and provides formatted command-line arguments for Calibre operations.
+    It manages both library location and optional authentication credentials,
+    with thread-safe access through multiprocessing locks.
 
     Attributes:
         location (str): Path to the Calibre library directory or server URL.
-        username (str): Optional username for Calibre server authentication.
-        password (str): Optional password for Calibre server authentication.
+        username (str | None): Optional username for Calibre server authentication.
+        password (str | None): Optional password for Calibre server authentication.
         update_method (str): Method for updating stories ('update', 'force', etc.).
         metadata_preservation_mode (str): Strategy for preserving metadata during updates.
-        default_ini (str): Path to defaults.ini file for FanFicFare configuration.
-        personal_ini (str): Path to personal.ini file for FanFicFare configuration.
-        lock (multiprocessing.Lock): Thread-safe lock for concurrent access.
+        default_ini (str): Resolved path to defaults.ini file for FanFicFare configuration.
+        personal_ini (str): Resolved path to personal.ini file for FanFicFare configuration.
+        lock (multiprocessing.Lock): Process/thread-safe lock for concurrent access.
     """
 
     def __init__(
         self,
-        toml_path: str,
-        manager,
-        *,
-        app_config: AppConfig | None = None,
-    ):
-        """Initializes the CalibreInfo object by loading and validating Calibre configuration.
-
-        This constructor loads configuration from the specified TOML file (or uses a
-        pre-loaded AppConfig), validates all required settings, and sets up INI file paths
-        for FanFicFare integration. It establishes a multiprocessing lock for thread-safe
-        access and performs comprehensive validation of the Calibre library path and
-        authentication settings.
+        calibre_config: CalibreConfig,
+        manager: Any,
+    ) -> None:
+        """Initializes the CalibreInfo object from a validated CalibreConfig.
 
         Args:
-            toml_path (str): Path to the TOML configuration file containing Calibre settings.
-            manager: A multiprocessing.Manager object used to create shared resources
-                like locks for concurrent access protection.
-            app_config (AppConfig | None, optional): Pre-loaded AppConfig object to avoid
-                re-reading the TOML file from disk.
+            calibre_config (CalibreConfig): Validated Calibre configuration section
+                containing library path, credentials, update method, and INI paths.
+            manager (Any): A multiprocessing.Manager (or lock factory) object used
+                to create a shared Lock for concurrent access protection.
 
         Raises:
-            ValueError: If the configuration file cannot be loaded, is invalid, or if
-                the Calibre library location is not specified in the configuration.
+            ValueError: If the Calibre library location (`calibre_config.path`) is empty.
         """
-        if app_config is not None:
-            config = app_config
-        else:
-            try:
-                config = ConfigManager.load_config(toml_path)
-            except (ConfigError, ConfigValidationError) as e:
-                message = f"Failed to load configuration from {toml_path}: {e}"
-                ff_logging.log_failure(message)
-                raise ValueError(message)
-
-        self.location = config.calibre.path
+        self.location = calibre_config.path
         if not self.location:
             message = "Calibre library location not set in the config file."
             ff_logging.log_failure(message)
             raise ValueError(message)
 
-        self.username = config.calibre.username
-        self.password = config.calibre.password
-        self.update_method = config.calibre.update_method
-        self.metadata_preservation_mode = config.calibre.metadata_preservation_mode
-        self._raw_default_ini = config.calibre.default_ini
-        self._raw_personal_ini = config.calibre.personal_ini
+        self.username = calibre_config.username
+        self.password = calibre_config.password
+        self.update_method = calibre_config.update_method
+        self.metadata_preservation_mode = calibre_config.metadata_preservation_mode
+        self._raw_default_ini = calibre_config.default_ini
+        self._raw_personal_ini = calibre_config.personal_ini
         self.default_ini = self._get_ini_file_from_config(
-            config.calibre.default_ini, "defaults.ini"
+            calibre_config.default_ini, "defaults.ini"
         )
         self.personal_ini = self._get_ini_file_from_config(
-            config.calibre.personal_ini, "personal.ini"
+            calibre_config.personal_ini, "personal.ini"
         )
+        self._last_config_version: int | None = None
         self.lock = manager.Lock()
 
     def _get_ini_file_from_config(
@@ -142,14 +116,18 @@ class CalibreInfo:
             return ""
         return ini_file
 
-    def update_from_config_store(self, config_store) -> bool:
-        """Sync Calibre settings from ConfigStore.
+    def update_from_config_store(self, config_store: ConfigStore) -> bool:
+        """Synchronize Calibre settings from a shared ConfigStore.
 
         Called by CalibreDBClient before each calibredb operation so changes
         made via the web dashboard take effect without restarting workers.
 
+        Args:
+            config_store (ConfigStore): Shared ConfigStore instance holding live
+                configuration values.
+
         Returns:
-            True if any field changed.
+            bool: True if any field on this CalibreInfo instance changed, False otherwise.
         """
         store_version = config_store.get("__version__")
         version_unchanged = (

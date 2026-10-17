@@ -36,7 +36,16 @@ def _signal_worker_idle(
     *,
     suppress_errors: bool = True,
 ) -> None:
-    """Signal WORKER_IDLE to the coordinator if the worker was holding a site lock."""
+    """Signal WORKER_IDLE to the coordinator if the worker was holding a site lock.
+
+    Args:
+        ingress_queue (IngressQueue): Unified task ingress queue read by the coordinator.
+        worker_id (str): Identifier of the worker releasing its site assignment.
+        current_site (str | None): Site identifier whose lock is being released, or
+            None if the worker is not currently assigned to a site.
+        suppress_errors (bool, optional): Whether to swallow queue errors (e.g., during
+            process shutdown). Defaults to True.
+    """
     if current_site is None:
         return
     if suppress_errors:
@@ -53,11 +62,17 @@ def _process_task(
     fanfic: fanfic_info.FanficInfo,
     ctx: WorkerContext,
 ) -> bool:
-    """
-    Process a single fanfiction task.
+    """Process a single fanfiction download or update task.
+
+    Args:
+        fanfic (FanficInfo): Fanfiction task metadata (URL, site, behavior, calibre_id).
+        ctx (WorkerContext): Bundled worker dependencies (calibre_client, notification_info,
+            ingress_queue, waiting_queue, retry_config, history_recorder, active_urls).
 
     Returns:
-        bool: True if the URL should be removed from active_urls, False otherwise.
+        bool: True if the URL should be removed from `active_urls` upon completion
+            (succeeded or permanently abandoned), False if it remains active (waiting
+            for retry or re-queued for force update).
     """
     site = fanfic.site
     calibre_client = ctx.calibre_client
@@ -172,8 +187,17 @@ def url_worker(
     worker_id: str,
     verbose: bool = False,
 ) -> None:
-    """
-    Main worker function for processing fanfiction downloads in a dedicated process/thread.
+    """Main worker loop for processing fanfiction downloads on a dedicated thread.
+
+    Consumes `FanficInfo` tasks from `queue`, processes each via `_process_task`,
+    updates `ctx.active_urls` and `ctx.history_recorder`, and signals `WORKER_IDLE`
+    to `ctx.ingress_queue` when the worker's queue drains or on shutdown.
+
+    Args:
+        queue (WorkerQueue): Worker-specific task queue populated by the Coordinator.
+        ctx (WorkerContext): Bundled worker dependencies and shared IPC state.
+        worker_id (str): Unique identifier for this worker (e.g., 'worker_0').
+        verbose (bool, optional): Enable verbose debug logging. Defaults to False.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)

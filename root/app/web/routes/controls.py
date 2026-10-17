@@ -230,12 +230,19 @@ def _remove_from_calibre_if_possible(state, fanfic: FanficInfo) -> tuple[bool, s
     """Attempt calibre removal for scratch redownload."""
     if not fanfic.calibre_id:
         return True, "No Calibre entry found; queued fresh download."
-    if not state.config_path:
-        return False, "Calibre ID found but config path unavailable for removal."
+    if (
+        state.config is None
+        or getattr(state.config, "calibre", None) is None
+        or state.config_store is None
+    ):
+        return (
+            False,
+            "Calibre ID found but Calibre configuration unavailable for removal.",
+        )
 
     try:
-        cdb_info = calibre_info.CalibreInfo(state.config_path, _LockFactory())
-        client = calibredb_utils.CalibreDBClient(cdb_info)
+        cdb_info = calibre_info.CalibreInfo(state.config.calibre, _LockFactory())
+        client = calibredb_utils.CalibreDBClient(cdb_info, state.config_store)
         client.remove_story(fanfic)
         return True, "Removed from Calibre and queued fresh download."
     except Exception as exc:

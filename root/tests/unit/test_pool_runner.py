@@ -25,11 +25,15 @@ class TestPoolRunner(unittest.TestCase):
             "worker_1": MagicMock(spec=mp.Queue),
             "worker_2": MagicMock(spec=mp.Queue),
         }
+        self.mock_history_recorder = MagicMock()
+        self.mock_config_store = MagicMock()
         self.ipc = SharedIPCContext(
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
             worker_queues=self.worker_queues,
             active_urls=self.active_urls,
+            history_recorder=self.mock_history_recorder,
+            config_store=self.mock_config_store,
             verbose=False,
         )
 
@@ -67,7 +71,7 @@ class TestPoolRunner(unittest.TestCase):
         mock_logging.init_process_logging.assert_called_once_with(
             True,
             log_queue=None,
-            config_store=None,
+            config_store=self.mock_config_store,
             is_web_server=False,
         )
 
@@ -204,7 +208,7 @@ class TestPoolRunner(unittest.TestCase):
         mock_logging.init_process_logging.assert_called_once_with(
             False,
             log_queue=mock_log_queue,
-            config_store=None,
+            config_store=self.mock_config_store,
             is_web_server=False,
         )
         mock_sleep.assert_called_once_with(2.0)
@@ -222,6 +226,7 @@ class TestPoolRunner(unittest.TestCase):
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
             retry_config=self.mock_retry_config,
+            history_recorder=self.mock_history_recorder,
             active_urls=self.active_urls,
         )
         q = self.worker_queues["worker_1"]

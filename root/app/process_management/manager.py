@@ -7,10 +7,14 @@ of worker processes, including lifecycle management, monitoring, and shutdown co
 
 import multiprocessing as mp
 from multiprocessing.connection import wait as mp_wait
+from multiprocessing.synchronize import Event
 import signal
 import threading
 import time
+from collections.abc import MutableMapping
 from typing import Any, Callable, TYPE_CHECKING
+
+from config.config_store import ConfigStore
 
 if TYPE_CHECKING:
     from history.recorder import HistoryWriter
@@ -38,17 +42,21 @@ class ProcessManager:
     """
 
     def __init__(
-        self, config: AppConfig | None = None, config_store=None, web_restart_event=None
-    ):
+        self,
+        config: AppConfig,
+        config_store: ConfigStore | None = None,
+        web_restart_event: Event | None = None,
+    ) -> None:
         """
         Initialize the ProcessManager with configuration.
 
         Args:
-            config: AppConfig instance containing process configuration.
-            config_store: Optional ConfigStore for hot-reloading process settings.
-            web_restart_event: Optional mp.Event signalling the web server should
-                               be restarted (set by the config route on web field
-                               changes; cleared here after the restart).
+            config (AppConfig): AppConfig instance containing process configuration.
+            config_store (ConfigStore | None, optional): Shared ConfigStore for
+                hot-reloading process settings.
+            web_restart_event (Event | None, optional): Event signalling the web
+                server should be restarted (set by the config route on web field
+                changes; cleared here after the restart).
         """
         # Process tracking and state management
         self.processes: dict[str, ProcessInfo] = {}
@@ -59,10 +67,10 @@ class ProcessManager:
         self._signal_handlers_set = False
 
         # Hot-reload helpers
-        self._config_store = config_store
-        self._web_restart_event = web_restart_event
-        self._worker_queues = None
-        self._create_queue_fn = None
+        self._config_store: ConfigStore | None = config_store
+        self._web_restart_event: Event | None = web_restart_event
+        self._worker_queues: MutableMapping[str, Any] | None = None
+        self._create_queue_fn: Callable[[], Any] | None = None
         self._history_writer: HistoryWriter | None = None
 
         # Configuration validation and setup
@@ -75,15 +83,19 @@ class ProcessManager:
 
         ff_logging.log_debug("ProcessManager initialized")
 
-    def set_config_store(self, config_store) -> None:
+    def set_config_store(self, config_store: ConfigStore) -> None:
         """Inject ConfigStore after ProcessManager construction (Manager context needed)."""
         self._config_store = config_store
 
-    def set_web_restart_event(self, web_restart_event) -> None:
+    def set_web_restart_event(self, web_restart_event: Event) -> None:
         """Inject web_restart_event after ProcessManager construction."""
         self._web_restart_event = web_restart_event
 
-    def set_worker_queues(self, worker_queues, create_queue_fn) -> None:
+    def set_worker_queues(
+        self,
+        worker_queues: MutableMapping[str, Any],
+        create_queue_fn: Callable[[], Any],
+    ) -> None:
         """Inject managed worker_queues dict and Queue factory for dynamic scaling."""
         self._worker_queues = worker_queues
         self._create_queue_fn = create_queue_fn

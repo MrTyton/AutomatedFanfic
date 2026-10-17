@@ -107,6 +107,8 @@ class TestUrlWorker(unittest.TestCase):
             ingress_queue=MagicMock(),
             waiting_queue=mock_waiting_queue,
             retry_config=retry_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
         # Execution
@@ -228,6 +230,8 @@ class TestUrlWorker(unittest.TestCase):
             ingress_queue=MagicMock(),
             waiting_queue=mock_waiting_queue,
             retry_config=retry_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
         handlers.handle_failure(mock_fanfic, ctx)
@@ -278,6 +282,8 @@ class TestUrlWorker(unittest.TestCase):
             ingress_queue=MagicMock(),
             waiting_queue=mock_waiting_queue,
             retry_config=retry_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
         # Test Case: Normal retry with force behavior but cdb=None -> should retry normally
@@ -359,6 +365,8 @@ class TestUrlWorker(unittest.TestCase):
             ingress_queue=MagicMock(),
             waiting_queue=mock_waiting_queue,
             retry_config=retry_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
         handlers.handle_failure(mock_fanfic, ctx)
@@ -529,6 +537,7 @@ class TestUrlWorker(unittest.TestCase):
             waiting_queue=mock_queue,
             retry_config=config_models.RetryConfig(),
             history_recorder=mock_history_recorder,
+            active_urls={},
         )
         result = handlers.process_fanfic_addition(
             mock_fanfic,
@@ -587,7 +596,8 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
             retry_config=self.retry_config,
-            active_urls=None,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
         # Create test fanfic object
@@ -1401,7 +1411,8 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
             retry_config=self.retry_config,
-            active_urls=None,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
     @patch("workers.handlers.process_fanfic_addition")

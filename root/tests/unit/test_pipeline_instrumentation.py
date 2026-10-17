@@ -1,7 +1,7 @@
 """Tests for Phase 2 pipeline instrumentation — history recording calls.
 
 Verifies that each instrumented function calls the appropriate HistoryRecorder
-methods when a recorder is provided, and works correctly without one.
+methods when a recorder is provided.
 """
 
 import threading
@@ -9,7 +9,14 @@ import unittest
 from queue import Empty
 from unittest.mock import MagicMock, patch
 
-from models.config_models import RetryConfig
+from models.config_models import (
+    AppConfig,
+    AppriseConfig,
+    CalibreConfig,
+    EmailConfig,
+    PushbulletConfig,
+    RetryConfig,
+)
 from models.fanfic_info import FanficInfo
 from models import retry_types
 
@@ -28,6 +35,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         self.active_urls = {}
         self.shutdown_event = threading.Event()
         self.recorder = MagicMock()
+        self.config_store = MagicMock()
 
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
     def test_records_email_check_event(self, mock_generate):
@@ -50,8 +58,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.ingress_queue,
             self.url_parsers,
             self.active_urls,
-            shutdown_event=self.shutdown_event,
-            history_recorder=self.recorder,
+            False,
+            self.shutdown_event,
+            self.recorder,
+            self.config_store,
         )
 
         self.recorder.record_email_check.assert_called_once_with(
@@ -82,8 +92,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.ingress_queue,
             self.url_parsers,
             self.active_urls,
-            shutdown_event=self.shutdown_event,
-            history_recorder=self.recorder,
+            False,
+            self.shutdown_event,
+            self.recorder,
+            self.config_store,
         )
 
         self.recorder.record_download_created.assert_called_once_with(
@@ -111,8 +123,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.ingress_queue,
             self.url_parsers,
             self.active_urls,
-            shutdown_event=self.shutdown_event,
-            history_recorder=self.recorder,
+            False,
+            self.shutdown_event,
+            self.recorder,
+            self.config_store,
         )
 
         self.recorder.record_email_check.assert_called_once_with(
@@ -146,8 +160,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.ingress_queue,
             self.url_parsers,
             self.active_urls,
-            shutdown_event=self.shutdown_event,
-            history_recorder=self.recorder,
+            False,
+            self.shutdown_event,
+            self.recorder,
+            self.config_store,
         )
 
         self.recorder.record_email_check.assert_called_once_with(
@@ -156,30 +172,6 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             urls_duplicate=1,
             urls_disabled_site=0,
             trigger="poll",
-        )
-
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    def test_no_recorder_still_works(self, mock_generate):
-        """email_watcher works without a history_recorder (default None)."""
-        from services.url_ingester import email_watcher
-
-        fanfic = FanficInfo(url="https://archiveofourown.org/works/123", site="ao3")
-        mock_generate.return_value = fanfic
-
-        def get_urls_then_shutdown():
-            self.shutdown_event.set()
-            return {"https://archiveofourown.org/works/123"}
-
-        self.email_info.get_urls.side_effect = get_urls_then_shutdown
-
-        # Should not raise
-        email_watcher(
-            self.email_info,
-            self.notification_info,
-            self.ingress_queue,
-            self.url_parsers,
-            self.active_urls,
-            shutdown_event=self.shutdown_event,
         )
 
 
@@ -204,6 +196,7 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
             waiting_queue=self.waiting_queue,
             retry_config=self.retry_config,
             history_recorder=self.recorder,
+            active_urls={},
         )
 
     def test_records_retry_event_on_retry(self):
@@ -264,14 +257,6 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
         call_kwargs = self.recorder.record_retry.call_args
         self.assertEqual(call_kwargs.kwargs["action"], "hail_mary")
 
-    def test_no_recorder_still_works(self):
-        """handle_failure works without a history_recorder."""
-        from workers.handlers import handle_failure
-
-        self.ctx.history_recorder = None
-        # Should not raise
-        handle_failure(self.fanfic, self.ctx)
-
 
 class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
     """Tests for process_fanfic_addition history recording."""
@@ -297,6 +282,7 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
             waiting_queue=self.waiting_queue,
             retry_config=self.retry_config,
             history_recorder=self.recorder,
+            active_urls={},
         )
 
     @patch("workers.handlers.update_strategies")
@@ -340,24 +326,6 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
             "https://ao3.org/works/1", "Calibre failed", site="ao3"
         )
 
-    @patch("workers.handlers.update_strategies")
-    def test_no_recorder_still_works(self, mock_strategies):
-        """process_fanfic_addition works without a history_recorder."""
-        from workers.handlers import process_fanfic_addition
-
-        mock_strategy = MagicMock()
-        mock_strategy.execute.return_value = (True, None)
-        mock_strategies.RemoveAddStrategy.return_value = mock_strategy
-
-        self.ctx.history_recorder = None
-        # Should not raise
-        process_fanfic_addition(
-            self.fanfic,
-            self.ctx,
-            "/tmp/test",
-            "test.epub",
-        )
-
 
 class TestWaitProcessorInstrumentation(unittest.TestCase):
     """Tests for wait_processor history recording."""
@@ -396,27 +364,15 @@ class TestWaitProcessorInstrumentation(unittest.TestCase):
         wait_processor(
             ingress_queue,
             waiting_queue,
-            shutdown_event=shutdown_event,
-            history_recorder=recorder,
+            False,
+            shutdown_event,
+            recorder,
+            {},
         )
 
         recorder.record_retry_fired.assert_called_once_with(
             "https://ao3.org/works/1", 3
         )
-
-    def test_no_recorder_still_works(self):
-        """wait_processor works without a history_recorder."""
-        from services.ff_waiter import wait_processor
-
-        shutdown_event = threading.Event()
-        shutdown_event.set()  # Immediate exit
-
-        ingress_queue = MagicMock()
-        waiting_queue = MagicMock()
-        waiting_queue.get.side_effect = Empty()
-
-        # Should not raise
-        wait_processor(ingress_queue, waiting_queue, shutdown_event=shutdown_event)
 
 
 class TestNotificationWrapperInstrumentation(unittest.TestCase):
@@ -432,26 +388,18 @@ class TestNotificationWrapperInstrumentation(unittest.TestCase):
         mock_worker.enabled = True
         mock_apprise_cls.return_value = mock_worker
 
+        cfg = AppConfig(
+            email=EmailConfig(),
+            calibre=CalibreConfig(path="/tmp/calibre"),
+            apprise=AppriseConfig(),
+            pushbullet=PushbulletConfig(),
+        )
         recorder = MagicMock()
-        wrapper = NotificationWrapper(toml_path="test.toml", history_recorder=recorder)
+        wrapper = NotificationWrapper(cfg, MagicMock(), recorder)
 
         wrapper.send_notification("Title", "Body", "ao3")
 
         recorder.record_notification.assert_called_once_with("Title", "Body", "ao3")
-
-    @patch("notifications.notification_wrapper.AppriseNotification")
-    def test_no_recorder_still_works(self, mock_apprise_cls):
-        """NotificationWrapper works without a history_recorder."""
-        from notifications.notification_wrapper import NotificationWrapper
-
-        mock_worker = MagicMock()
-        mock_worker.is_enabled.return_value = True
-        mock_worker.enabled = True
-        mock_apprise_cls.return_value = mock_worker
-
-        wrapper = NotificationWrapper(toml_path="test.toml")
-        # Should not raise
-        wrapper.send_notification("Title", "Body", "ao3")
 
 
 if __name__ == "__main__":

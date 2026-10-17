@@ -127,6 +127,24 @@ class TestGetDelaySeconds(unittest.TestCase):
         self.assertEqual(delay, 630)
 
 
+def _run_wait_processor(
+    ingress_queue,
+    waiting_queue,
+    verbose=False,
+    shutdown_event=None,
+    history_recorder=None,
+    active_urls=None,
+):
+    ff_waiter.wait_processor(
+        ingress_queue,
+        waiting_queue,
+        verbose,
+        shutdown_event if shutdown_event is not None else threading.Event(),
+        history_recorder if history_recorder is not None else MagicMock(),
+        active_urls if active_urls is not None else {},
+    )
+
+
 class TestWaitProcessor(unittest.TestCase):
     """Test the wait_processor function with heap-based scheduling."""
 
@@ -148,7 +166,7 @@ class TestWaitProcessor(unittest.TestCase):
         waiting_queue.put(fanfic)
         waiting_queue.put(None)  # Poison pill
 
-        ff_waiter.wait_processor(ingress_queue, waiting_queue)
+        _run_wait_processor(ingress_queue, waiting_queue)
 
         # Item should be requeued to ingress
         result = ingress_queue.get(timeout=2)
@@ -162,7 +180,7 @@ class TestWaitProcessor(unittest.TestCase):
 
         waiting_queue.put(None)
 
-        ff_waiter.wait_processor(ingress_queue, waiting_queue)
+        _run_wait_processor(ingress_queue, waiting_queue)
 
         mock_get_delay.assert_not_called()
         self.assertTrue(ingress_queue.empty())
@@ -184,7 +202,7 @@ class TestWaitProcessor(unittest.TestCase):
         waiting_queue.put(fanfic3)
         waiting_queue.put(None)
 
-        ff_waiter.wait_processor(ingress_queue, waiting_queue)
+        _run_wait_processor(ingress_queue, waiting_queue)
 
         urls = []
         for _ in range(3):
@@ -203,7 +221,7 @@ class TestWaitProcessor(unittest.TestCase):
         waiting_queue.put(fanfic)
         waiting_queue.put(None)
 
-        ff_waiter.wait_processor(ingress_queue, waiting_queue)
+        _run_wait_processor(ingress_queue, waiting_queue)
 
         self.assertTrue(ingress_queue.empty())
 
@@ -215,9 +233,7 @@ class TestWaitProcessor(unittest.TestCase):
         shutdown_event = threading.Event()
         shutdown_event.set()  # Already signaled
 
-        ff_waiter.wait_processor(
-            ingress_queue, waiting_queue, shutdown_event=shutdown_event
-        )
+        _run_wait_processor(ingress_queue, waiting_queue, shutdown_event=shutdown_event)
 
         # Should exit immediately without processing anything
         self.assertTrue(ingress_queue.empty())
@@ -237,7 +253,7 @@ class TestWaitProcessor(unittest.TestCase):
 
         # Run in a thread so we can shut it down
         def run():
-            ff_waiter.wait_processor(
+            _run_wait_processor(
                 ingress_queue, waiting_queue, shutdown_event=shutdown_event
             )
 
@@ -293,7 +309,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         self.assertIn(fanfic.url, active_urls)
         self.assertEqual(active_urls[fanfic.url].get("heap_gen"), 0)
@@ -311,7 +327,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic2)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         gen1 = active_urls[fanfic1.url]["heap_gen"]
         gen2 = active_urls[fanfic2.url]["heap_gen"]
@@ -332,7 +348,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         result = iq.get(timeout=2)
         self.assertEqual(result.url, fanfic.url)
@@ -366,7 +382,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         # Old heap entry must be dropped — ingress queue stays empty
         self.assertTrue(iq.empty())
@@ -393,7 +409,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         self.assertIn(fanfic.url, active_urls)
         self.assertEqual(active_urls[fanfic.url].get("status"), "queued")
@@ -428,7 +444,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         self.assertTrue(iq.empty())
 
@@ -452,7 +468,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         self.assertNotIn(fanfic.url, active_urls)
 
@@ -477,9 +493,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         wq.put(fanfic)
         wq.put(None)
 
-        ff_waiter.wait_processor(
-            iq, wq, active_urls=active_urls, history_recorder=recorder
-        )
+        _run_wait_processor(iq, wq, active_urls=active_urls, history_recorder=recorder)
 
         recorder.record_retry_fired.assert_not_called()
 
@@ -517,7 +531,7 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
             wq.put(f)
         wq.put(None)
 
-        ff_waiter.wait_processor(iq, wq, active_urls=active_urls)
+        _run_wait_processor(iq, wq, active_urls=active_urls)
 
         results = []
         try:

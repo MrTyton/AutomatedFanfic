@@ -269,12 +269,15 @@ class TestTomlWriter(unittest.TestCase):
 class TestCoordinatorSnapshot(unittest.TestCase):
     def test_snapshot_empty_state(self):
         import multiprocessing as mp
+        import threading
 
         q = mp.Queue()
         wq = {"w-1": mp.Queue(), "w-2": mp.Queue()}
         from services.coordinator import Coordinator
 
-        coord = Coordinator(q, wq)
+        coord = Coordinator(
+            q, wq, threading.Event(), {}, MagicMock(), {}, ConfigStore()
+        )
         snap = coord.get_state_snapshot()
         self.assertEqual(snap["backlog"], {})
         self.assertEqual(snap["assignments"], {})
@@ -284,13 +287,16 @@ class TestCoordinatorSnapshot(unittest.TestCase):
     def test_snapshot_with_backlog_and_assignments(self):
         import collections
         import multiprocessing as mp
+        import threading
 
         from models.fanfic_info import FanficInfo
         from services.coordinator import Coordinator
 
         q = mp.Queue()
         wq = {"w-1": mp.Queue()}
-        coord = Coordinator(q, wq)
+        coord = Coordinator(
+            q, wq, threading.Event(), {}, MagicMock(), {}, ConfigStore()
+        )
 
         # Manually set state
         fanfic = FanficInfo(url="https://ao3.org/works/1", site="ao3")

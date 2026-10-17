@@ -1,12 +1,26 @@
 import collections
 import queue as stdlib_queue
+import threading
 import unittest
 import multiprocessing as mp
 from unittest.mock import MagicMock, patch
 from queue import Empty
 
+from config.config_store import ConfigStore
 from services.coordinator import Coordinator, start_coordinator
 from models.fanfic_info import FanficInfo
+
+
+def _make_coordinator(ingress_queue, worker_queues, **overrides):
+    defaults = {
+        "shutdown_event": threading.Event(),
+        "active_urls": {},
+        "history_recorder": MagicMock(),
+        "url_parsers": {},
+        "config_store": ConfigStore(),
+    }
+    defaults.update(overrides)
+    return Coordinator(ingress_queue, worker_queues, **defaults)
 
 
 class TestCoordinatorIntegration(unittest.TestCase):
@@ -15,7 +29,7 @@ class TestCoordinatorIntegration(unittest.TestCase):
     def setUp(self):
         self.ingress_queue = mp.Queue()
         self.worker_queues = {"worker_0": mp.Queue(), "worker_1": mp.Queue()}
-        self.coordinator = Coordinator(self.ingress_queue, self.worker_queues)
+        self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
 
     def test_direct_assignment_same_site(self):
         """Test that multiple tasks for the same site are pushed directly to the assigned worker."""
@@ -122,7 +136,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
     def setUp(self):
         self.mock_ingress = MagicMock()
         self.mock_worker_queues = {"worker_0": MagicMock(), "worker_1": MagicMock()}
-        self.coordinator = Coordinator(self.mock_ingress, self.mock_worker_queues)
+        self.coordinator = _make_coordinator(self.mock_ingress, self.mock_worker_queues)
 
     def test_shutdown_signal(self):
         """Test processing of shutdown signal (None)."""
@@ -197,7 +211,16 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
         """Test entry point logic."""
         mock_instance = mock_coord_cls.return_value
 
-        start_coordinator(self.mock_ingress, self.mock_worker_queues, verbose=True)
+        start_coordinator(
+            self.mock_ingress,
+            self.mock_worker_queues,
+            verbose=True,
+            shutdown_event=threading.Event(),
+            active_urls={},
+            history_recorder=MagicMock(),
+            url_parsers={},
+            config_store=MagicMock(),
+        )
 
         mock_logging.set_verbose.assert_called_with(True)
         mock_coord_cls.assert_called_once()
@@ -210,7 +233,16 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
         mock_instance = mock_coord_cls.return_value
         mock_instance.run.side_effect = KeyboardInterrupt
 
-        start_coordinator(self.mock_ingress, self.mock_worker_queues)
+        start_coordinator(
+            self.mock_ingress,
+            self.mock_worker_queues,
+            verbose=False,
+            shutdown_event=threading.Event(),
+            active_urls={},
+            history_recorder=MagicMock(),
+            url_parsers={},
+            config_store=MagicMock(),
+        )
 
         mock_logging.log.assert_called_with("Coordinator stopped by KeyboardInterrupt")
 
@@ -221,7 +253,16 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
         mock_instance = mock_coord_cls.return_value
         mock_instance.run.side_effect = Exception("Crash")
 
-        start_coordinator(self.mock_ingress, self.mock_worker_queues)
+        start_coordinator(
+            self.mock_ingress,
+            self.mock_worker_queues,
+            verbose=False,
+            shutdown_event=threading.Event(),
+            active_urls={},
+            history_recorder=MagicMock(),
+            url_parsers={},
+            config_store=MagicMock(),
+        )
 
         mock_logging.log_failure.assert_called()
 
@@ -274,7 +315,7 @@ class TestCoordinator(unittest.TestCase):
     def setUp(self):
         self.ingress_queue = mp.Queue()
         self.worker_queues = {"worker_0": mp.Queue(), "worker_1": mp.Queue()}
-        self.coordinator = Coordinator(self.ingress_queue, self.worker_queues)
+        self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
 
     def test_direct_assignment_same_site(self):
         """Test that multiple tasks for the same site are pushed directly to the assigned worker."""
@@ -382,7 +423,7 @@ class TestCoordinatorAdvancedEdgeCases(unittest.TestCase):
     def setUp(self):
         self.ingress_queue = mp.Queue()
         self.worker_queues = {"worker_0": mp.Queue(), "worker_1": mp.Queue()}
-        self.coordinator = Coordinator(self.ingress_queue, self.worker_queues)
+        self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
 
     @patch("services.coordinator.ff_logging.log_failure")
     def test_process_ingress_timeout(self, mock_log_failure):
@@ -533,7 +574,7 @@ class TestCoordinatorAdvancedEdgeCases(unittest.TestCase):
 
     def test_process_fanfic_with_none_site(self):
         """Test handling of FanficInfo with None site attribute."""
-        fic = FanficInfo(url="http://example.com/1", site=None)  # type: ignore[arg-type]
+        fic = FanficInfo(url="http://example.com/1", site=None)  # type: ignore
         self.ingress_queue.put(fic)
 
         # Should handle gracefully (may use URL as fallback or reject)
@@ -557,7 +598,7 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
             "worker_0": stdlib_queue.Queue(),
             "worker_1": stdlib_queue.Queue(),
         }
-        self.coordinator = Coordinator(self.ingress_queue, self.worker_queues)
+        self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
 
     @patch("utils.series_utils.expand_series_url")
     @patch("services.coordinator.ff_logging")

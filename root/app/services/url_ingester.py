@@ -29,21 +29,17 @@ Email Processing Flow:
 
 Example:
     ```python
-    from url_ingester import EmailInfo, email_watcher
+    from services.url_ingester import EmailInfo, email_watcher
     import multiprocessing as mp
 
-    # Configure email monitoring
-    email_info = EmailInfo("config.toml")
+    # Configure email monitoring from validated EmailConfig
+    email_info = EmailInfo(config.email, config_store=config_store)
 
-    # Set up processing queues
-    queues = {
-        "archiveofourown.org": mp.Queue(),
-        "fanfiction.net": mp.Queue(),
-        "other": mp.Queue()
-    }
+    # Set up ingress queue
+    ingress_queue = mp.Queue()
 
-    # Start monitoring (typically in a separate process)
-    email_watcher(email_info, notification_wrapper, queues)
+    # Start monitoring
+    email_watcher(email_info, notification_wrapper, ingress_queue, url_parsers)
     ```
 
 Configuration:
@@ -76,7 +72,8 @@ from collections.abc import MutableMapping
 from typing import Any
 from contextlib import contextmanager
 lazy from fanficfare import geturls
-lazy from config.config_store import ConfigStore
+from config.config_store import ConfigStore
+from history.recorder import HistoryRecorder
 lazy import imapclient
 from utils import ff_logging
 from parsers import regex_parsing
@@ -86,10 +83,8 @@ from models.config_models import EmailConfig
 from models.queue_types import IngressQueue
 
 
-def _make_fff_get_configuration(config_store: Any | None = None):
+def _make_fff_get_configuration(config_store: ConfigStore):
     """Return a get_configuration callable for fanficfare.geturls.GetURLs using ConfigStore."""
-    if config_store is None:
-        config_store = ConfigStore()
     return config_store.get_fff_configuration
 
 
@@ -187,7 +182,7 @@ class EmailInfo:
 
     Example:
         ```python
-        email_info = EmailInfo("config.toml")
+        email_info = EmailInfo(config.email, config_store)
 
         # Extract URLs from email
         urls = email_info.get_urls()
@@ -215,15 +210,15 @@ class EmailInfo:
     def __init__(
         self,
         email_config: EmailConfig,
-        config_store: Any | None = None,
-    ):
+        config_store: ConfigStore,
+    ) -> None:
         """
-        Initialize EmailInfo with email configuration object and optional ConfigStore.
+        Initialize EmailInfo with email configuration object and ConfigStore.
 
         Args:
-            email_config (config_models.EmailConfig): Pre-loaded email configuration.
-            config_store (Any | None): Shared ConfigStore instance for live updates
-                                       and automatic INI path resolution.
+            email_config (EmailConfig): Pre-loaded email configuration.
+            config_store (ConfigStore): Shared ConfigStore instance for live updates
+                and automatic INI path resolution.
         """
         self.email = email_config.email
         self.password = email_config.password
@@ -239,14 +234,12 @@ class EmailInfo:
     @property
     def default_ini(self) -> str:
         """Resolved path to defaults.ini from ConfigStore."""
-        return self.config_store.get_resolved_default_ini() if self.config_store else ""
+        return self.config_store.get_resolved_default_ini()
 
     @property
     def personal_ini(self) -> str:
         """Resolved path to personal.ini from ConfigStore."""
-        return (
-            self.config_store.get_resolved_personal_ini() if self.config_store else ""
-        )
+        return self.config_store.get_resolved_personal_ini()
 
     # ------------------------------------------------------------------
     # Pickling support for multiprocessing (forkserver / spawn)
@@ -263,14 +256,17 @@ class EmailInfo:
         self.__dict__.update(state)
         self._build_geturls()
 
-    def update_from_config_store(self, config_store) -> bool:
+    def update_from_config_store(self, config_store: ConfigStore) -> bool:
         """Sync email credentials from ConfigStore.
 
         Called at the top of each poll cycle so credential changes
         made via the web dashboard are picked up without restarting the process.
 
+        Args:
+            config_store (ConfigStore): Shared ConfigStore instance holding live values.
+
         Returns:
-            True if any field changed.
+            bool: True if any field changed.
         """
         changed = False
         mapping = [
@@ -385,9 +381,7 @@ class EmailInfo:
 
         return urls
 
-    def _idle_wait_for_notification(
-        self, shutdown_event: threading.Event | None = None
-    ) -> bool:
+    def _idle_wait_for_notification(self, shutdown_event: threading.Event) -> bool:
         """
         Block using IMAP IDLE until the server signals new mail or shutdown.
 
@@ -399,7 +393,7 @@ class EmailInfo:
         after DONE to flush any messages that arrived in the DONE/re-IDLE gap.
 
         Args:
-            shutdown_event: Optional event; when set the method exits cleanly.
+            shutdown_event (threading.Event): Event signalling graceful shutdown.
 
         Returns:
             True  – new mail notification received (or re-IDLE timeout fired),
@@ -421,7 +415,7 @@ class EmailInfo:
                 ff_logging.log_debug("EmailWatcher: entered IMAP IDLE mode")
 
                 while True:
-                    if shutdown_event and shutdown_event.is_set():
+                    if shutdown_event.is_set():
                         client.idle_done()
                         return False
 
@@ -454,7 +448,7 @@ class EmailInfo:
                                 "EmailWatcher: IMAP IDLE notification received via NOOP"
                             )
                             return True
-                        if shutdown_event and shutdown_event.is_set():
+                        if shutdown_event.is_set():
                             return False
                         client.idle()
                         idle_start = time.monotonic()
@@ -472,32 +466,36 @@ def email_watcher(
     notification_info: notification_wrapper.NotificationWrapper,
     ingress_queue: IngressQueue,
     url_parsers: dict,
-    active_urls: MutableMapping[str, Any] | None = None,
-    verbose: bool = False,
-    shutdown_event: threading.Event | None = None,
-    history_recorder=None,
-    config_store=None,
-):
+    active_urls: MutableMapping[str, Any],
+    verbose: bool,
+    shutdown_event: threading.Event,
+    history_recorder: HistoryRecorder,
+    config_store: ConfigStore,
+) -> None:
     """
-    Continuously monitor email for fanfiction URLs and route to processing queues.
+    Continuously monitor email for fanfiction URLs and route to the ingress queue.
 
     This function implements the main email monitoring loop for the AutomatedFanfic
-    application. It polls the configured email account at regular intervals,
-    extracts fanfiction URLs, identifies the source sites, and routes URLs to
-    appropriate processing queues.
+    application. It polls (or uses IMAP IDLE on) the configured email account,
+    extracts fanfiction URLs, identifies the source sites, deduplicates against
+    `active_urls`, and routes new `FanficInfo` items to `ingress_queue`.
 
     Args:
         email_info (EmailInfo): Configured email account information including
-                               credentials, server details, and polling settings.
-        notification_info (notification_wrapper.NotificationWrapper): Notification
-                                                                     system for sending alerts about new URLs.
-        ingress_queue (mp.Queue): Queue for all new fanfiction tasks.
-        url_parsers (dict): Dictionary of compiled regex patterns for site recognition.
-                           Generated from FanFicFare adapters in the main process.
-        active_urls (dict, optional): Shared dictionary tracking URLs currently in
-                                     queues or being processed to prevent duplicates.
-        verbose (bool): Enable verbose logging.
-        shutdown_event (threading.Event, optional): Event to signal shutdown.
+            credentials, server details, and polling settings.
+        notification_info (NotificationWrapper): Notification system for sending
+            alerts when URLs from disabled sites are encountered.
+        ingress_queue (IngressQueue): Unified task ingress queue for new fanfiction tasks.
+        url_parsers (dict): Dictionary of compiled regex patterns for site recognition,
+            generated from FanFicFare adapters in the main process.
+        active_urls (MutableMapping[str, Any]): Shared dictionary tracking URLs
+            currently in queues or being processed to prevent duplicates.
+        verbose (bool): Enable verbose debug logging.
+        shutdown_event (threading.Event): Event to signal graceful shutdown.
+        history_recorder (HistoryRecorder): Recorder for persisting email check
+            and download creation events to the history database.
+        config_store (ConfigStore): Shared ConfigStore instance for hot-reloading
+            email credentials and settings between poll cycles.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
@@ -505,17 +503,16 @@ def email_watcher(
 
     while True:
         # Check for shutdown signal
-        if shutdown_event and shutdown_event.is_set():
+        if shutdown_event.is_set():
             ff_logging.log_debug("EmailWatcher received shutdown signal")
             break
 
         # Hot-reload: sync credentials from ConfigStore if they changed
-        if config_store is not None:
-            if email_info.update_from_config_store(config_store):
-                ff_logging.log_debug(
-                    "EmailWatcher: credentials updated from ConfigStore, rebuilding URL extractor"
-                )
-                email_info._build_geturls()
+        if email_info.update_from_config_store(config_store):
+            ff_logging.log_debug(
+                "EmailWatcher: credentials updated from ConfigStore, rebuilding URL extractor"
+            )
+            email_info._build_geturls()
 
         # Extract URLs from the configured email account
         urls = email_info.get_urls()
@@ -571,28 +568,21 @@ def email_watcher(
             )
             # Route to ingress queue
             ingress_queue.put(fic)
-            if history_recorder:
-                history_recorder.record_download_created(
-                    fic.url, fic.site, fic.behavior
-                )
+            history_recorder.record_download_created(fic.url, fic.site, fic.behavior)
 
         # Record email check event
-        if history_recorder:
-            history_recorder.record_email_check(
-                urls_found=urls_found,
-                urls_new=urls_new,
-                urls_duplicate=urls_duplicate,
-                urls_disabled_site=urls_disabled_site,
-                trigger="idle" if email_info.imap_idle else "poll",
-            )
+        history_recorder.record_email_check(
+            urls_found=urls_found,
+            urls_new=urls_new,
+            urls_duplicate=urls_duplicate,
+            urls_disabled_site=urls_disabled_site,
+            trigger="idle" if email_info.imap_idle else "poll",
+        )
 
         # Wait before next email check cycle
         if email_info.imap_idle:
             # Push mode: block in IMAP IDLE until the server notifies us
             if not email_info._idle_wait_for_notification(shutdown_event):
                 break  # shutdown signalled inside IDLE wait
-        elif shutdown_event:
-            if shutdown_event.wait(timeout=email_info.sleep_time):
-                break
-        else:
-            time.sleep(email_info.sleep_time)
+        elif shutdown_event.wait(timeout=email_info.sleep_time):
+            break

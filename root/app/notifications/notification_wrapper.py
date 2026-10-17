@@ -8,8 +8,8 @@ for efficient and reliable notification delivery.
 Key Features:
     - Unified interface for multiple notification providers
     - Concurrent notification dispatch using ThreadPoolExecutor
-    - Automatic worker initialization and validation
-    - Configuration-driven notification provider setup
+    - Automatic worker initialization and validation from AppConfig
+    - Hot-reload support via ConfigStore change detection
     - Error handling and logging for failed worker initialization
     - Dynamic worker filtering based on enabled status
 
@@ -17,19 +17,21 @@ Classes:
     NotificationWrapper: Main coordinator for all notification providers
 
 Architecture:
-    The wrapper initializes notification workers based on configuration,
-    manages their enabled/disabled state, and provides a single send_notification
-    interface that dispatches to all enabled workers concurrently. This design
-    allows for easy addition of new notification providers and ensures reliable
-    delivery through multiple channels.
+    The wrapper initializes notification workers based on AppConfig and
+    ConfigStore settings, manages their enabled/disabled state, and provides
+    a single send_notification interface that dispatches to all enabled
+    workers concurrently.
 
 Example:
-    >>> wrapper = NotificationWrapper("config.toml")
+    >>> wrapper = NotificationWrapper(app_config, config_store=config_store)
     >>> wrapper.send_notification("New Chapter", "Story updated", "ao3")
 """
 
 from . import notification_base
 from concurrent.futures import ThreadPoolExecutor
+from config.config_store import ConfigStore
+from history.recorder import HistoryRecorder
+from models.config_models import AppConfig
 from .apprise_notification import AppriseNotification
 from utils import ff_logging
 
@@ -38,67 +40,62 @@ class NotificationWrapper:
     """Unified notification coordinator managing multiple notification providers.
 
     Provides a single interface for dispatching notifications to multiple enabled
-    notification workers concurrently. Handles worker initialization, lifecycle
-    management, and concurrent notification delivery using ThreadPoolExecutor
-    for optimal performance and reliability.
-
-    The wrapper automatically initializes notification workers based on
-    configuration settings, validates their enabled status, and provides
-    error handling for failed worker initialization. All enabled workers
-    receive notifications concurrently for efficient delivery.
+    notification workers concurrently. Handles worker initialization, live
+    configuration hot-reload via ConfigStore, and concurrent notification
+    delivery using ThreadPoolExecutor.
 
     Attributes:
-        notification_workers (List[NotificationBase]): List of initialized
-                                                      notification worker instances.
-        toml_path (str): Path to the TOML configuration file used for
-                        worker initialization and configuration.
+        notification_workers (list[NotificationBase]): List of initialized
+            notification worker instances.
+        config (AppConfig): Base validated application configuration.
+        history_recorder (HistoryRecorder): History recorder for persisting
+            sent notification events.
 
     Example:
-        >>> wrapper = NotificationWrapper("config.toml")
+        >>> wrapper = NotificationWrapper(app_config, config_store, history_recorder)
         >>> wrapper.send_notification("Title", "Message", "site")
     """
 
     def __init__(
         self,
-        toml_path: str = "/config/config.toml",
-        history_recorder=None,
-        *,
-        app_config=None,
+        config: AppConfig,
+        config_store: ConfigStore,
+        history_recorder: HistoryRecorder,
     ) -> None:
         """Initializes the notification wrapper and its notification workers.
 
-        Sets up the notification coordination system by initializing the
-        configuration path and automatically discovering and initializing
-        available notification workers based on configuration settings.
-
         Args:
-            toml_path (str, optional): Path to the TOML configuration file
-                                     containing notification provider settings.
-                                     Defaults to "/config/config.toml" for
-                                     Docker container compatibility.
-            history_recorder (optional): HistoryRecorder for recording notifications.
-            app_config (AppConfig | None, optional): Pre-loaded AppConfig object to avoid
-                re-reading the TOML file from disk during initial startup.
+            config (AppConfig): Validated application configuration containing
+                notification provider settings.
+            config_store (ConfigStore): Shared ConfigStore instance for live
+                credential/URL hot-reloading.
+            history_recorder (HistoryRecorder): HistoryRecorder for recording
+                sent notification events to the history database.
         """
-        # Initialize empty worker list and store configuration path
         self.notification_workers: list[notification_base.NotificationBase] = []
-        self.toml_path = toml_path
+        self.config = config
+        self._config_store = config_store
         self.history_recorder = history_recorder
-        self._app_config = app_config
-        self._config_store = None
-        self._notification_hash: int | None = None
+        self._notification_hash: int = self._compute_notification_hash()
         # Automatically initialize all available notification workers
         self._initialize_workers()
 
-    def set_config_store(self, config_store) -> None:
-        """Attach a ConfigStore so send_notification() can detect credential changes."""
+    def set_config_store(self, config_store: ConfigStore) -> None:
+        """Attach a ConfigStore so send_notification() can detect credential changes.
+
+        Args:
+            config_store (ConfigStore): Shared ConfigStore instance holding live
+                configuration values.
+        """
         self._config_store = config_store
         self._notification_hash = self._compute_notification_hash()
 
-    def _compute_notification_hash(self) -> int | None:
-        """Hash of notification-related ConfigStore values."""
-        if self._config_store is None:
-            return None
+    def _compute_notification_hash(self) -> int:
+        """Compute a hash of notification-related ConfigStore values.
+
+        Returns:
+            int: Hash of the current notification settings in ConfigStore.
+        """
         keys = [
             "pushbullet.enabled",
             "pushbullet.api_key",
@@ -109,8 +106,6 @@ class NotificationWrapper:
 
     def _refresh_if_changed(self) -> None:
         """Rebuild Apprise workers if notification config changed in ConfigStore."""
-        if self._config_store is None:
-            return
         new_hash = self._compute_notification_hash()
         if new_hash != self._notification_hash:
             ff_logging.log_debug(
@@ -124,19 +119,9 @@ class NotificationWrapper:
         # Reset worker list to ensure clean initialization state
         self.notification_workers = []
         try:
-            # Initialize AppriseNotification as the primary notification handler
-            if getattr(self, "_config_store", None) is not None:
-                apprise_worker = AppriseNotification(
-                    toml_path=self.toml_path, config_store=self._config_store
-                )
-            elif getattr(self, "_app_config", None) is not None:
-                apprise_worker = AppriseNotification(
-                    toml_path=self.toml_path, app_config=self._app_config
-                )
-            else:
-                apprise_worker = AppriseNotification(toml_path=self.toml_path)
+            apprise_worker = AppriseNotification(self.config, self._config_store)
             # Validate worker is properly configured and enabled
-            if apprise_worker.is_enabled():  # Preferred over direct .enabled access
+            if apprise_worker.is_enabled():
                 self.notification_workers.append(apprise_worker)
             else:
                 ff_logging.log_failure(
@@ -148,7 +133,13 @@ class NotificationWrapper:
             ff_logging.log_failure(f"Failed to initialize AppriseNotification: {e}")
 
     def send_notification(self, title: str, body: str, site: str) -> None:
-        """Sends notifications concurrently to all enabled notification workers."""
+        """Sends notifications concurrently to all enabled notification workers.
+
+        Args:
+            title (str): Notification title/subject line.
+            body (str): Notification message body.
+            site (str): Fanfiction site identifier for logging and history recording.
+        """
         # Hot-reload: rebuild Apprise client if notification config changed
         self._refresh_if_changed()
 
@@ -185,5 +176,4 @@ class NotificationWrapper:
                 future.result()  # This will raise an exception if the worker raised one
 
         # Record notification in history
-        if self.history_recorder:
-            self.history_recorder.record_notification(title, body, site)
+        self.history_recorder.record_notification(title, body, site)

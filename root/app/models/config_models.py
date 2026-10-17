@@ -34,10 +34,11 @@ scenarios with comprehensive validation to prevent runtime configuration errors.
 from pathlib import Path
 import os
 import re
-from typing import Any, Literal
+from typing import Literal
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import tomllib
+from config.config_store import ConfigStore
 from utils import ff_logging
 import multiprocessing
 from enum import Enum
@@ -474,9 +475,9 @@ class RetryConfig(BaseModel):
         description="Maximum number of normal retry attempts before Hail-Mary",
     )
 
-    _config_store: Any = PrivateAttr(default=None)
+    _config_store: ConfigStore | None = PrivateAttr(default=None)
 
-    def set_config_store(self, config_store: Any) -> None:
+    def set_config_store(self, config_store: ConfigStore) -> None:
         """Attach a shared ConfigStore for hot-reloading retry settings."""
         self._config_store = config_store
 

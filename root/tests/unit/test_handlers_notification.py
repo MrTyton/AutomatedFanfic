@@ -29,6 +29,8 @@ class TestHandlersNotification(unittest.TestCase):
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_queue,
             retry_config=self.mock_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
     @patch("workers.handlers.update_strategies")

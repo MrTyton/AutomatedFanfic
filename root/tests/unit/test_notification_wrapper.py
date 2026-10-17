@@ -45,7 +45,9 @@ class TestNotificationWrapper(unittest.TestCase):
     ):
         # Patch AppriseNotification to not add any real workers
         mock_apprise_notification.return_value.is_enabled.return_value = False
-        wrapper = NotificationWrapper()
+        mock_store = MagicMock()
+        mock_store.get.return_value = None
+        wrapper = NotificationWrapper(MagicMock(), mock_store, MagicMock())
         wrapper.notification_workers = []  # Clear any workers added by __init__
         mock_workers = []
         for enabled in workers:
@@ -108,6 +110,23 @@ class TestNotificationWrapper(unittest.TestCase):
                             found_call = True
                             break
                     self.assertFalse(found_call, "Submit called for disabled worker")
+
+    @patch("notifications.notification_wrapper.AppriseNotification")
+    def test_init_passes_config_and_config_store_to_apprise(
+        self, mock_apprise_notification
+    ):
+        """NotificationWrapper passes config and config_store directly to AppriseNotification."""
+        mock_apprise_notification.return_value.is_enabled.return_value = True
+        mock_cfg = MagicMock()
+        mock_store = MagicMock()
+        mock_store.get.return_value = None
+        mock_recorder = MagicMock()
+
+        wrapper = NotificationWrapper(mock_cfg, mock_store, mock_recorder)
+
+        mock_apprise_notification.assert_called_once_with(mock_cfg, mock_store)
+        self.assertEqual(len(wrapper.notification_workers), 1)
+        self.assertIs(wrapper.history_recorder, mock_recorder)
 
 
 if __name__ == "__main__":

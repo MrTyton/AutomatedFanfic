@@ -89,18 +89,23 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def setup_logging(verbose: bool) -> None:
-    """Configures application logging based on verbosity settings."""
+    """Configures application logging based on verbosity settings.
+
+    Args:
+        verbose (bool): True to enable debug-level logging output, False for standard output.
+    """
     ff_logging.set_verbose(verbose)
 
 
 def load_configuration(config_path: str) -> config_models.AppConfig:
-    """Loads and validates the application configuration.
+    """Loads and validates the application configuration from a TOML file.
 
     Args:
-        config_path: Path to the configuration file.
+        config_path (str): Path to the TOML configuration file.
 
     Returns:
-        AppConfig: Validated configuration object or None on failure (sys.exit).
+        AppConfig: Validated application configuration object. Exits the process
+            with status code 1 if configuration loading or validation fails.
     """
     try:
         return config_models.ConfigManager.load_config(config_path)
@@ -118,7 +123,12 @@ def load_configuration(config_path: str) -> config_models.AppConfig:
 def log_configuration_details(
     config: config_models.AppConfig, args: argparse.Namespace
 ) -> None:
-    """Logs detailed configuration information for debugging."""
+    """Logs detailed startup and configuration information for diagnostics.
+
+    Args:
+        config (AppConfig): Validated application configuration object.
+        args (argparse.Namespace): Parsed command-line arguments.
+    """
     # --- Log Version and General Configuration ---
     ff_logging.log(f"Starting AutomatedFanfic v{__version__}")
     ff_logging.log(
@@ -202,7 +212,15 @@ def register_processes(
     manager: SyncManager,
     url_parsers: dict,
 ) -> None:
-    """Registers all worker processes with the ProcessManager."""
+    """Initializes shared IPC resources and registers all worker processes with the ProcessManager.
+
+    Args:
+        process_manager (ProcessManager): Lifecycle manager for registering child processes.
+        config (AppConfig): Validated application configuration object.
+        args (argparse.Namespace): Parsed command-line arguments.
+        manager (SyncManager): Multiprocessing SyncManager for shared dicts and queues.
+        url_parsers (dict): Mapping of site identifiers to compiled URL parser pairs.
+    """
     # Register Worker Pool (Single Process with Threads)
     # We use all available slots for threads as they are lightweight, but we respect the
     # max_workers limit as a "System Process Limit" since each thread spawns a subprocess.
@@ -237,19 +255,9 @@ def register_processes(
     config_store.initialize_from_config(config)
 
     # Initialize Calibre components
-    cdb_info = calibre_info.CalibreInfo(args.config, manager, app_config=config)
+    cdb_info = calibre_info.CalibreInfo(config.calibre, manager)
     cdb_info.check_installed()
-    calibre_client = calibredb_utils.CalibreDBClient(cdb_info)
-
-    # Initialize external resources using ConfigStore as single source of truth.
-    email_info = url_ingester.EmailInfo(
-        config.email,
-        config_store=config_store,
-    )
-    notification_info = notification_wrapper.NotificationWrapper(
-        toml_path=args.config, app_config=config
-    )
-    notification_info.set_config_store(config_store)
+    calibre_client = calibredb_utils.CalibreDBClient(cdb_info, config_store)
 
     # Initialize history recording infrastructure
     history_queue = mp.Queue(maxsize=10000)
@@ -269,8 +277,16 @@ def register_processes(
     history_writer.start()
     process_manager._history_writer = history_writer
 
-    # Wire up notification history recording (must happen after both are created)
-    notification_info.history_recorder = history_recorder
+    # Initialize external resources using ConfigStore as single source of truth.
+    email_info = url_ingester.EmailInfo(
+        config.email,
+        config_store,
+    )
+    notification_info = notification_wrapper.NotificationWrapper(
+        config,
+        config_store,
+        history_recorder,
+    )
 
     # Shared event: web server sets it when web.host/port/enabled change;
     # ProcessManager detects it and restarts only the web_server process.

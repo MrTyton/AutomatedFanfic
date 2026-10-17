@@ -20,6 +20,7 @@ from subprocess import (
 from typing import Any
 
 from . import calibre_info
+from config.config_store import ConfigStore
 from models import fanfic_info
 from utils import ff_logging
 from parsers import regex_parsing
@@ -37,17 +38,28 @@ class CalibreDBClient:
     library path management, and concurrency locking.
     """
 
-    def __init__(self, cdb_info: calibre_info.CalibreInfo):
+    def __init__(
+        self,
+        cdb_info: calibre_info.CalibreInfo,
+        config_store: ConfigStore,
+    ) -> None:
         """Initialize the CalibreDB client.
 
         Args:
-            cdb_info: Configuration object containing library path, credentials, etc.
+            cdb_info (CalibreInfo): Configuration object containing library path,
+                credentials, and lock.
+            config_store (ConfigStore): Shared ConfigStore instance for hot-reloading
+                Calibre settings before each CLI execution.
         """
         self.cdb_info = cdb_info
-        self._config_store = None
+        self._config_store = config_store
 
-    def set_config_store(self, config_store) -> None:
-        """Attach a ConfigStore so calibre settings are refreshed before each call."""
+    def set_config_store(self, config_store: ConfigStore) -> None:
+        """Attach a ConfigStore so calibre settings are refreshed before each call.
+
+        Args:
+            config_store (ConfigStore): Shared ConfigStore instance.
+        """
         self._config_store = config_store
 
     def refresh_if_changed(self) -> None:

@@ -29,6 +29,8 @@ class TestPipeline(unittest.TestCase):
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
             retry_config=self.retry_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
     @patch("workers.pipeline.command")
@@ -167,6 +169,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
             retry_config=self.retry_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
     @patch("workers.pipeline.ff_logging")

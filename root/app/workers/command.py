@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 import importlib.metadata
 from pathlib import Path
+from typing import Any
 
 lazy from fanficfare import cli as fff_cli
 from config.config_store import read_ini_file_cached
@@ -36,7 +37,7 @@ from parsers import regex_parsing
 class _ThreadLocalStdout:
     """Thread-safe sys.stdout proxy with per-thread capture capability."""
 
-    def __init__(self, wrapped: object) -> None:
+    def __init__(self, wrapped: Any) -> None:
         self._wrapped = wrapped
         self._local = threading.local()
 
@@ -44,18 +45,18 @@ class _ThreadLocalStdout:
         buf = getattr(self._local, "capture_buffer", None)
         if buf is not None:
             return buf.write(s)
-        return self._wrapped.write(s)  # type: ignore[attr-defined]
+        return self._wrapped.write(s)
 
     def flush(self) -> None:
         buf = getattr(self._local, "capture_buffer", None)
         if buf is not None:
             buf.flush()
         else:
-            self._wrapped.flush()  # type: ignore[attr-defined]
+            self._wrapped.flush()
 
     def fileno(self) -> int:
         try:
-            return self._wrapped.fileno()  # type: ignore[attr-defined]
+            return self._wrapped.fileno()
         except AttributeError, io.UnsupportedOperation:
             raise io.UnsupportedOperation("fileno")
 

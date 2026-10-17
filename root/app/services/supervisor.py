@@ -10,8 +10,8 @@ while maintaining isolation from the main process.
 import threading
 import signal
 import time
-from typing import Any
 
+from notifications import notification_wrapper
 from utils import ff_logging
 from services import url_ingester, ff_waiter, coordinator
 from models.context import SharedIPCContext
@@ -20,16 +20,22 @@ from models.context import SharedIPCContext
 def run_supervisor(
     ipc: SharedIPCContext,
     email_info: url_ingester.EmailInfo,
-    notification_info: Any,
+    notification_info: notification_wrapper.NotificationWrapper,
     url_parsers: dict,
 ) -> None:
-    """
-    Entry point for the Supervisor process.
+    """Entry point for the Supervisor process.
 
-    Hosts the following services as threads:
-    - Email Watcher
-    - Fanfic Waiter
-    - Coordinator
+    Hosts the Email Watcher, Fanfic Waiter, and Coordinator services as threads
+    within a single process, monitoring their health and coordinating graceful
+    shutdown on SIGTERM/SIGINT.
+
+    Args:
+        ipc (SharedIPCContext): Shared multiprocessing queues, active_urls map,
+            history_recorder, config_store, log_queue, and verbosity flag.
+        email_info (EmailInfo): Configured email ingestion settings and credentials.
+        notification_info (NotificationWrapper): Notification dispatcher for disabled
+            site alerts.
+        url_parsers (dict): Compiled URL regex parsers for site identification.
     """
     worker_queues = ipc.worker_queues
     ingress_queue = ipc.ingress_queue

@@ -18,39 +18,41 @@ from models.config_models import (
 
 class TestNotificationBase(unittest.TestCase):
     def setUp(self):
-        # Create a mock config for testing
         self.mock_config = AppConfig(
             email=EmailConfig(),
             calibre=CalibreConfig(path="/tmp/calibre"),
             apprise=AppriseConfig(),
             pushbullet=PushbulletConfig(),
         )
-
-        # Patch ConfigManager.load_config to return our mock config
-        patcher_config = patch(
-            "models.config_models.ConfigManager.load_config",
-            return_value=self.mock_config,
-        )
-        self.mock_load_config = patcher_config.start()
-        self.addCleanup(patcher_config.stop)
-
-        self.notification = NotificationBase("fake_path")
+        self.mock_config_store = MagicMock()
+        self.mock_config_store.get.return_value = None
+        self.notification = NotificationBase(self.mock_config, self.mock_config_store)
 
     def test_initialization(self):
-        # Test initialization and config loading
-        self.mock_load_config.assert_called_once_with("fake_path")
         self.assertFalse(self.notification.enabled)
         self.assertEqual(self.notification.config, self.mock_config)
 
-    def test_initialization_with_app_config_skips_disk_load(self):
-        # Test that passing app_config directly skips ConfigManager.load_config
-        self.mock_load_config.reset_mock()
-        notification = NotificationBase("fake_path", app_config=self.mock_config)
-        self.mock_load_config.assert_not_called()
-        self.assertEqual(notification.config, self.mock_config)
+    def test_initialization_with_config_store_overlays_live_fields(self):
+        store = MagicMock()
+        store_data = {
+            "pushbullet.enabled": True,
+            "pushbullet.api_key": "live_pb_key",
+            "pushbullet.device": "live_device",
+            "apprise.urls": ["discord://webhook"],
+        }
+        store.get.side_effect = lambda key, default=None: store_data.get(key, default)
+
+        notification = NotificationBase(self.mock_config, store)
+        assert notification.config is not None
+        self.assertTrue(notification.config.pushbullet.enabled)
+        self.assertEqual(notification.config.pushbullet.api_key, "live_pb_key")
+        self.assertEqual(notification.config.pushbullet.device, "live_device")
+        self.assertEqual(notification.config.apprise.urls, ["discord://webhook"])
+        # Original AppConfig must not be mutated
+        self.assertFalse(self.mock_config.pushbullet.enabled)
+        self.assertEqual(self.mock_config.apprise.urls, [])
 
     def test_send_notification_not_implemented(self):
-        # Test that send_notification raises NotImplementedError
         with self.assertRaises(NotImplementedError):
             self.notification.send_notification("title", "body", "site")
 

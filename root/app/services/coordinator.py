@@ -25,6 +25,8 @@ from typing import Any
 
 from queue import Empty
 from enum import Enum
+from config.config_store import ConfigStore
+from history.recorder import HistoryRecorder
 from utils import ff_logging
 from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
@@ -83,16 +85,40 @@ class CoordinatorState:
 
 
 class Coordinator:
+    """Central task coordinator enforcing site-level domain locking across workers.
+
+    Consumes `FanficInfo` tasks and `('WORKER_IDLE', worker_id, site)` signals from
+    `ingress_queue`, expands series URLs into individual story URLs when needed,
+    buffers tasks per site in `self.state.backlog`, and assigns each site's backlog
+    to at most one idle worker at a time.
+    """
+
     def __init__(
         self,
         ingress_queue: IngressQueue,
         worker_queues: WorkerQueues,
-        shutdown_event: threading.Event | None = None,
-        active_urls: MutableMapping[str, Any] | None = None,
-        history_recorder=None,
-        url_parsers: dict | None = None,
-        config_store: Any | None = None,
-    ):
+        shutdown_event: threading.Event,
+        active_urls: MutableMapping[str, Any],
+        history_recorder: HistoryRecorder,
+        url_parsers: dict,
+        config_store: ConfigStore,
+    ) -> None:
+        """Initialize the Coordinator.
+
+        Args:
+            ingress_queue (IngressQueue): Unified queue receiving FanficInfo tasks
+                and worker idle signals.
+            worker_queues (WorkerQueues): Mapping of worker_id to worker-specific queues.
+            shutdown_event (threading.Event): Event signalling graceful shutdown.
+            active_urls (MutableMapping[str, Any]): Shared map of active URLs and
+                their current status.
+            history_recorder (HistoryRecorder): Recorder for persisting download
+                creation events (e.g., during series expansion).
+            url_parsers (dict): Compiled URL parsers for normalizing and classifying
+                story URLs extracted from series pages.
+            config_store (ConfigStore): Shared ConfigStore providing FanFicFare
+                configuration for series expansion.
+        """
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
         self.shutdown_event = shutdown_event
@@ -408,14 +434,26 @@ class Coordinator:
 def start_coordinator(
     ingress_queue: IngressQueue,
     worker_queues: WorkerQueues,
-    verbose: bool = False,
-    shutdown_event: threading.Event | None = None,
-    active_urls: MutableMapping[str, Any] | None = None,
-    history_recorder=None,
-    url_parsers: dict | None = None,
-    config_store: Any | None = None,
-):
-    """Entry point for the coordinator process."""
+    verbose: bool,
+    shutdown_event: threading.Event,
+    active_urls: MutableMapping[str, Any],
+    history_recorder: HistoryRecorder,
+    url_parsers: dict,
+    config_store: ConfigStore,
+) -> None:
+    """Entry point for the coordinator thread/process.
+
+    Args:
+        ingress_queue (IngressQueue): Unified queue receiving FanficInfo tasks
+            and worker idle signals.
+        worker_queues (WorkerQueues): Mapping of worker_id to worker-specific queues.
+        verbose (bool): Enable verbose debug logging.
+        shutdown_event (threading.Event): Event signalling graceful shutdown.
+        active_urls (MutableMapping[str, Any]): Shared map of active URLs.
+        history_recorder (HistoryRecorder): Recorder for history events.
+        url_parsers (dict): Compiled URL parsers for series expansion.
+        config_store (ConfigStore): Shared ConfigStore instance.
+    """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[95m")  # Magenta
@@ -423,11 +461,11 @@ def start_coordinator(
     coordinator = Coordinator(
         ingress_queue,
         worker_queues,
-        shutdown_event=shutdown_event,
-        active_urls=active_urls,
-        history_recorder=history_recorder,
-        url_parsers=url_parsers,
-        config_store=config_store,
+        shutdown_event,
+        active_urls,
+        history_recorder,
+        url_parsers,
+        config_store,
     )
     try:
         coordinator.run()

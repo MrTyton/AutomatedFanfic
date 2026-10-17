@@ -587,8 +587,10 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
 
     def test_process_manager_no_config(self):
         """Test ProcessManager initialization without configuration."""
+        with self.assertRaises(TypeError):
+            ProcessManager()  # type: ignore
         with self.assertRaises(ValueError):
-            ProcessManager()
+            ProcessManager(None)  # type: ignore
 
     def test_start_process_exception(self):
         """Test handling of exception during process start."""
@@ -806,7 +808,7 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
             self.assertIsNotNone(sigterm_handler)
 
             with patch.object(self.manager, "stop_all") as mock_stop_all:
-                sigterm_handler(signal.SIGTERM, None)  # type: ignore[misc]
+                sigterm_handler(signal.SIGTERM, None)  # type: ignore
 
                 result = self.manager.wait_for_all(timeout=1.0)
 
@@ -908,7 +910,7 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
     def test_process_start_with_invalid_target(self):
         """Test that manager handles process with None target gracefully."""
         # Register a process with None target
-        self.manager.register_process("bad_process", None)  # type: ignore[arg-type]
+        self.manager.register_process("bad_process", None)  # type: ignore
 
         # Attempting to start should not crash the manager
         result = self.manager.start_process("bad_process")

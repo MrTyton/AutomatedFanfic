@@ -7,10 +7,9 @@ for handling transient notification failures.
 
 Key Features:
     - Abstract base class ensuring consistent notification interface
-    - Configuration loading and validation via ConfigManager integration
+    - Direct initialization from validated AppConfig with live ConfigStore overlay
     - Retry decorator with exponential backoff for failure resilience
     - Enabled/disabled state management for notification providers
-    - Error handling and logging for configuration failures
 
 Classes:
     NotificationBase: Abstract base class for all notification implementations
@@ -24,23 +23,24 @@ Constants:
 
 Architecture:
     Notification providers inherit from NotificationBase and implement
-    send_notification(). The base class handles configuration loading,
-    state management, and provides retry capabilities through decorators.
+    send_notification(). The base class handles configuration storage,
+    live ConfigStore synchronization, state management, and provides
+    retry capabilities through decorators.
 
 Example:
     >>> class MyNotifier(NotificationBase):
     ...     def send_notification(self, title, body, site):
     ...         # Implementation here
     ...         return True
-    >>> notifier = MyNotifier("config.toml")
+    >>> notifier = MyNotifier(app_config, config_store=config_store)
     >>> if notifier.enabled:
     ...     notifier.send_notification("Title", "Body", "site")
 """
 
 import time
 from typing import Callable, Any
-from models.config_models import ConfigManager, ConfigError, ConfigValidationError
-from utils import ff_logging
+from config.config_store import ConfigStore
+from models.config_models import AppConfig
 
 # Base sleep time in seconds for retry delays between notification attempts
 kSleepTime = 10
@@ -52,27 +52,22 @@ class NotificationBase:
     """Abstract base class for all notification system implementations.
 
     Provides the foundation for notification providers in the AutomatedFanfic
-    application. Handles configuration loading, validation, and state management
-    while defining the interface that all concrete notification implementations
-    must follow.
-
-    The class loads and validates configuration from TOML files using ConfigManager,
-    manages the enabled/disabled state of notification providers, and provides
-    error handling for configuration failures. Derived classes must implement
-    the abstract send_notification method and set self.enabled appropriately.
+    application. Stores validated application configuration, overlays live
+    settings from ConfigStore, and defines the interface that all concrete
+    notification implementations must follow.
 
     Attributes:
         enabled (bool): Flag indicating whether the notification provider is
-                       operational and ready to send notifications. Derived
-                       classes must set this to True if properly configured.
-        config (AppConfig | None): Loaded and validated configuration object
-                                  from ConfigManager, or None if loading failed.
+            operational and ready to send notifications. Derived classes must
+            set this to True if properly configured.
+        config (AppConfig): Validated application configuration object with
+            active ConfigStore overrides applied.
 
     Example:
         >>> class EmailNotifier(NotificationBase):
-        ...     def __init__(self, toml_path):
-        ...         super().__init__(toml_path)
-        ...         if self.config and self.config.email.enabled:
+        ...     def __init__(self, config: AppConfig, config_store: ConfigStore):
+        ...         super().__init__(config, config_store)
+        ...         if self.config.email.enabled:
         ...             self.enabled = True
         ...     def send_notification(self, title, body, site):
         ...         # Send email notification
@@ -81,64 +76,37 @@ class NotificationBase:
 
     def __init__(
         self,
-        toml_path: str = "/config/config.toml",
-        sleep_time: int = 10,
-        config_store=None,
-        app_config: Any | None = None,
+        config: AppConfig,
+        config_store: ConfigStore,
     ) -> None:
-        """Initializes the notification base class with configuration loading.
+        """Initializes the notification base class from a validated AppConfig and ConfigStore.
 
-        Loads and validates the TOML configuration file using ConfigManager (or uses
-        a pre-loaded AppConfig), initializes the notification provider state, and
-        handles configuration errors gracefully. Derived classes should call this
-        constructor and then set self.enabled based on their specific configuration
-        validation.
+        Stores a copy of the provided AppConfig with live notification fields
+        overlaid from `config_store`, and initializes the provider in a disabled
+        state until a derived class validates its configuration.
 
         Args:
-            toml_path (str): Path to the TOML configuration file containing
-                           notification settings and other application config.
-            sleep_time (int, optional): Sleep time for retry delays. Defaults to 10 seconds.
-            config_store (optional): Shared ConfigStore instance for live updates.
-            app_config (AppConfig | None, optional): Pre-loaded AppConfig object to avoid
-                re-reading the TOML file from disk.
+            config (AppConfig): Validated application configuration object.
+            config_store (ConfigStore): Shared ConfigStore instance for applying
+                live notification setting updates.
         """
         # Initialize as disabled until derived class validates configuration
         self.enabled = False
 
-        # Load the configuration using ConfigManager with comprehensive error handling
-        try:
-            if app_config is not None and config_store is None:
-                loaded_config = app_config
-            elif config_store is not None:
-                loaded_config = (
-                    app_config
-                    if app_config is not None
-                    else ConfigManager.load_config(toml_path, force_reload=True)
-                )
-            else:
-                loaded_config = ConfigManager.load_config(toml_path)
-            if loaded_config is not None and config_store is not None:
-                try:
-                    loaded_config = loaded_config.model_copy(deep=True)
-                except Exception:
-                    pass
-                pb_enabled = config_store.get("pushbullet.enabled")
-                if pb_enabled is not None and hasattr(loaded_config, "pushbullet"):
-                    loaded_config.pushbullet.enabled = pb_enabled
-                pb_key = config_store.get("pushbullet.api_key")
-                if pb_key is not None and hasattr(loaded_config, "pushbullet"):
-                    loaded_config.pushbullet.api_key = pb_key
-                pb_device = config_store.get("pushbullet.device")
-                if pb_device is not None and hasattr(loaded_config, "pushbullet"):
-                    loaded_config.pushbullet.device = pb_device
-                apprise_urls = config_store.get("apprise.urls")
-                if apprise_urls is not None and hasattr(loaded_config, "apprise"):
-                    loaded_config.apprise.urls = list(apprise_urls)
-            self.config = loaded_config
-        except (ConfigError, ConfigValidationError) as e:
-            ff_logging.log_failure(f"Failed to load configuration: {e}")
-            # Set to None to indicate configuration loading failed
-            self.config = None
+        loaded_config = config.model_copy(deep=True)
+        pb_enabled = config_store.get("pushbullet.enabled")
+        if pb_enabled is not None:
+            loaded_config.pushbullet.enabled = pb_enabled
+        pb_key = config_store.get("pushbullet.api_key")
+        if pb_key is not None:
+            loaded_config.pushbullet.api_key = pb_key
+        pb_device = config_store.get("pushbullet.device")
+        if pb_device is not None:
+            loaded_config.pushbullet.device = pb_device
+        apprise_urls = config_store.get("apprise.urls")
+        if apprise_urls is not None:
+            loaded_config.apprise.urls = list(apprise_urls)
+        self.config: AppConfig = loaded_config
 
     def send_notification(self, title: str, body: str, site: str) -> bool:
         """Sends a notification with the specified title, body, and site context.

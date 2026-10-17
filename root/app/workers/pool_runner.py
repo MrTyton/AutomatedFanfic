@@ -25,7 +25,18 @@ def _spawn_worker_thread(
     ctx: WorkerContext,
     verbose: bool,
 ) -> threading.Thread:
-    """Create and start a daemon worker thread running pipeline.url_worker."""
+    """Create and start a daemon worker thread running `pipeline.url_worker`.
+
+    Args:
+        worker_id (str): Unique identifier for the worker thread (e.g., 'worker_0').
+        queue (WorkerQueue): Dedicated task queue assigned to this worker.
+        ctx (WorkerContext): Shared worker dependencies (Calibre client, notifications,
+            queues, retry config, history recorder, and active_urls).
+        verbose (bool): Whether verbose debug logging is enabled.
+
+    Returns:
+        threading.Thread: The started daemon thread instance.
+    """
     thread = threading.Thread(
         target=pipeline.url_worker,
         args=(queue, ctx, worker_id, verbose),

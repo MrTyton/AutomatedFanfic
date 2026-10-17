@@ -35,7 +35,10 @@ Example:
 import heapq
 import threading
 import time
+from collections.abc import MutableMapping
+from typing import Any
 
+from history.recorder import HistoryRecorder
 from models import active_urls as active_urls_utils
 from models import fanfic_info
 from models.queue_types import IngressQueue, WaitingQueue
@@ -113,10 +116,10 @@ def _get_delay_seconds(fanfic: fanfic_info.FanficInfo) -> int | None:
 def wait_processor(
     ingress_queue: IngressQueue,
     waiting_queue: WaitingQueue,
-    verbose: bool = False,
-    shutdown_event: threading.Event | None = None,
-    history_recorder=None,
-    active_urls=None,
+    verbose: bool,
+    shutdown_event: threading.Event,
+    history_recorder: HistoryRecorder,
+    active_urls: MutableMapping[str, Any],
 ) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 
@@ -128,12 +131,16 @@ def wait_processor(
     thread count at O(1) regardless of failure volume.
 
     Args:
-        ingress_queue (mp.Queue): The single ingress queue for all tasks.
-        waiting_queue (mp.Queue): The shared multiprocessing queue containing
-                                 failed fanfiction entries awaiting delayed retry.
-                                 Supports poison pill (None) shutdown pattern.
-        verbose (bool): Enable verbose logging.
-        shutdown_event (threading.Event, optional): Event to signal shutdown.
+        ingress_queue (IngressQueue): Unified task ingress queue for re-submitting
+            tasks once their backoff delay expires.
+        waiting_queue (WaitingQueue): Shared queue containing failed FanficInfo
+            entries awaiting delayed retry. Supports poison pill (None) shutdown.
+        verbose (bool): Enable verbose debug logging.
+        shutdown_event (threading.Event): Event to signal graceful shutdown.
+        history_recorder (HistoryRecorder): Recorder for logging `retry_fired`
+            events when delayed retries are re-enqueued.
+        active_urls (MutableMapping[str, Any]): Shared dictionary tracking active
+            URLs and their `heap_gen` / `cancelled` states.
     """
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[96m")  # Bright Cyan
@@ -148,7 +155,7 @@ def wait_processor(
 
     while True:
         # Check for shutdown signal
-        if shutdown_event and shutdown_event.is_set():
+        if shutdown_event.is_set():
             ff_logging.log_debug("Waiter received shutdown signal")
             break
 
@@ -160,29 +167,27 @@ def wait_processor(
             # A stale entry is one whose heap_gen no longer matches active_urls —
             # which happens when retry-now creates a fresh dict (no heap_gen)
             # or cancel-retry sets status="cancelled".
-            if active_urls is not None:
-                try:
-                    meta = dict(active_urls.get(fanfic.url, {}))
-                    is_cancelled = meta.get("status") == "cancelled"
-                    is_stale = meta.get("heap_gen") != heap_gen
-                    if is_cancelled or is_stale:
-                        if is_cancelled:
-                            active_urls_utils.remove_active_url(active_urls, fanfic.url)
-                        ff_logging.log_debug(
-                            f"Waiter: Dropped {'cancelled' if is_cancelled else 'stale'} retry for {fanfic.url}"
-                        )
-                        continue
-                    active_urls_utils.mark_url_queued(
-                        active_urls,
-                        fanfic.url,
-                        merge=True,
-                        pop_keys=("heap_gen",),
+            try:
+                meta = dict(active_urls.get(fanfic.url, {}))
+                is_cancelled = meta.get("status") == "cancelled"
+                is_stale = meta.get("heap_gen") != heap_gen
+                if is_cancelled or is_stale:
+                    if is_cancelled:
+                        active_urls_utils.remove_active_url(active_urls, fanfic.url)
+                    ff_logging.log_debug(
+                        f"Waiter: Dropped {'cancelled' if is_cancelled else 'stale'} retry for {fanfic.url}"
                     )
-                except Exception:
-                    pass
+                    continue
+                active_urls_utils.mark_url_queued(
+                    active_urls,
+                    fanfic.url,
+                    merge=True,
+                    pop_keys=("heap_gen",),
+                )
+            except Exception:
+                pass
             ingress_queue.put(fanfic)
-            if history_recorder:
-                history_recorder.record_retry_fired(fanfic.url, fanfic.repeats or 0)
+            history_recorder.record_retry_fired(fanfic.url, fanfic.repeats or 0)
 
         # --- Calculate how long we can sleep ---
         if pending_heap:
@@ -212,16 +217,15 @@ def wait_processor(
         # entries: any user action (retry-now, cancel-retry) that writes a fresh
         # dict to active_urls without heap_gen will cause a mismatch on firing.
         heap_gen = seq
-        if active_urls is not None:
-            if not active_urls_utils.mark_url_waiting(
-                active_urls,
-                fanfic_item.url,
-                site=fanfic_item.site,
-                title=getattr(fanfic_item, "title", None),
-                calibre_id=getattr(fanfic_item, "calibre_id", None),
-                heap_gen=heap_gen,
-                delete_if_cancelled=True,
-            ):
-                continue
+        if not active_urls_utils.mark_url_waiting(
+            active_urls,
+            fanfic_item.url,
+            site=fanfic_item.site,
+            title=getattr(fanfic_item, "title", None),
+            calibre_id=getattr(fanfic_item, "calibre_id", None),
+            heap_gen=heap_gen,
+            delete_if_cancelled=True,
+        ):
+            continue
         heapq.heappush(pending_heap, (expiry, seq, fanfic_item, heap_gen))
         seq += 1

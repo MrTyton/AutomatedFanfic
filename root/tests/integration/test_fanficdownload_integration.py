@@ -547,6 +547,8 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             ingress_queue=MagicMock(),
             waiting_queue=mock_queue,
             retry_config=retry_config,
+            history_recorder=MagicMock(),
+            active_urls={},
         )
 
         # Test failure handling

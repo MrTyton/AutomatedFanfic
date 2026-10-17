@@ -360,6 +360,7 @@ class TestUpdateStrategies(unittest.TestCase):
             waiting_queue=waiting_q,
             retry_config=self.retry_config,
             history_recorder=recorder,
+            active_urls={},
         )
 
         should_remove = handlers.process_fanfic_addition(

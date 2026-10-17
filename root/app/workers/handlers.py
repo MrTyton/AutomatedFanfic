@@ -118,10 +118,14 @@ def handle_failure(
 
 
 def check_active_removal(fanfic: fanfic_info.FanficInfo) -> bool:
-    """
-    Helper to determine if a failed fanfic should be removed from active_urls.
-    Returns True if it should be removed (abandoned or finished),
-    False if it's waiting for retry (Hail Mary/Retry).
+    """Determine if a fanfic should be removed from `active_urls`.
+
+    Args:
+        fanfic (FanficInfo): Fanfiction task object with optional `retry_decision`.
+
+    Returns:
+        bool: True if the URL should be removed from `active_urls` (abandoned or
+            finished), False if it is waiting for retry (`RETRY` or `HAIL_MARY`).
     """
     if hasattr(fanfic, "retry_decision") and fanfic.retry_decision:
         action = fanfic.retry_decision.action

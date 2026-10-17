@@ -21,26 +21,8 @@ class TestWorkerContext(unittest.TestCase):
         self.mock_recorder = MagicMock()
         self.active_urls = {"https://archiveofourown.org/works/1": {"status": "queued"}}
 
-    def test_worker_context_bundles_dependencies_and_defaults(self):
-        """WorkerContext stores core worker dependencies and defaults optional ones to None."""
-        ctx = WorkerContext(
-            calibre_client=self.mock_client,
-            notification_info=self.mock_notification,
-            ingress_queue=self.mock_ingress_queue,
-            waiting_queue=self.mock_waiting_queue,
-            retry_config=self.retry_config,
-        )
-        self.assertIs(ctx.calibre_client, self.mock_client)
-        self.assertIs(ctx.notification_info, self.mock_notification)
-        self.assertIs(ctx.ingress_queue, self.mock_ingress_queue)
-        self.assertIs(ctx.waiting_queue, self.mock_waiting_queue)
-        self.assertIs(ctx.retry_config, self.retry_config)
-        self.assertIsNone(ctx.history_recorder)
-        self.assertIsNone(ctx.active_urls)
-        self.assertIs(ctx.cdb_info, self.mock_cdb_info)
-
-    def test_worker_context_with_optional_fields(self):
-        """WorkerContext accepts history_recorder and active_urls."""
+    def test_worker_context_bundles_dependencies(self):
+        """WorkerContext stores all worker dependencies and exposes cdb_info."""
         ctx = WorkerContext(
             calibre_client=self.mock_client,
             notification_info=self.mock_notification,
@@ -50,19 +32,14 @@ class TestWorkerContext(unittest.TestCase):
             history_recorder=self.mock_recorder,
             active_urls=self.active_urls,
         )
+        self.assertIs(ctx.calibre_client, self.mock_client)
+        self.assertIs(ctx.notification_info, self.mock_notification)
+        self.assertIs(ctx.ingress_queue, self.mock_ingress_queue)
+        self.assertIs(ctx.waiting_queue, self.mock_waiting_queue)
+        self.assertIs(ctx.retry_config, self.retry_config)
         self.assertIs(ctx.history_recorder, self.mock_recorder)
         self.assertIs(ctx.active_urls, self.active_urls)
-
-    def test_worker_context_cdb_info_when_calibre_client_none(self):
-        """WorkerContext.cdb_info safely returns None if calibre_client is None."""
-        ctx = WorkerContext(
-            calibre_client=None,  # type: ignore[arg-type]
-            notification_info=self.mock_notification,
-            ingress_queue=self.mock_ingress_queue,
-            waiting_queue=self.mock_waiting_queue,
-            retry_config=self.retry_config,
-        )
-        self.assertIsNone(ctx.cdb_info)
+        self.assertIs(ctx.cdb_info, self.mock_cdb_info)
 
 
 class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
@@ -72,14 +49,14 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
         from models.context import SharedIPCContext
 
         ipc = SharedIPCContext(
-            ingress_queue=None,  # type: ignore[arg-type]
-            waiting_queue=None,  # type: ignore[arg-type]
-            worker_queues={"worker_0": None},  # type: ignore[dict-item]
+            ingress_queue=None,  # type: ignore
+            waiting_queue=None,  # type: ignore
+            worker_queues={"worker_0": None},  # type: ignore
             active_urls={"url": {"status": "queued"}},
+            history_recorder=None,  # type: ignore
+            config_store=None,  # type: ignore
         )
         self.assertEqual(ipc.active_urls, {"url": {"status": "queued"}})
-        self.assertIsNone(ipc.history_recorder)
-        self.assertIsNone(ipc.config_store)
         self.assertIsNone(ipc.log_queue)
         self.assertFalse(ipc.verbose)
 
@@ -187,7 +164,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             web_server.run_web_server(
                 ipc,
                 app_config=mock_cfg,
-                config_path=None,
+                config_path="/config/config.toml",
                 web_restart_event=mock_restart_event,
                 process_status_callable=None,
             )

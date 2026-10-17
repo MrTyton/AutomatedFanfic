@@ -159,7 +159,7 @@ class SyncHistoryDB:
         )
         if commit:
             self._conn.commit()
-        return cur.lastrowid  # type: ignore[return-value]
+        return cur.lastrowid or 0
 
     def update_download(
         self,
@@ -265,7 +265,7 @@ class SyncHistoryDB:
         )
         if commit:
             self._conn.commit()
-        return cur.lastrowid  # type: ignore[return-value]
+        return cur.lastrowid or 0
 
     def update_retry_fired(
         self, url: str, attempt_number: int, fired_at: datetime, *, commit: bool = True
@@ -309,7 +309,7 @@ class SyncHistoryDB:
         )
         if commit:
             self._conn.commit()
-        return cur.lastrowid  # type: ignore[return-value]
+        return cur.lastrowid or 0
 
     def insert_notification(
         self, event: NotificationEvent, *, commit: bool = True
@@ -341,7 +341,7 @@ class SyncHistoryDB:
         )
         if commit:
             self._conn.commit()
-        return cur.lastrowid  # type: ignore[return-value]
+        return cur.lastrowid or 0
 
 
 # ---------------------------------------------------------------------------

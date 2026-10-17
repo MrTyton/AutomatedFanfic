@@ -321,6 +321,40 @@ class TestControlRoutes(unittest.TestCase):
         self.assertEqual(queued.url, "https://ao3.org/works/1")
         self.assertEqual(queued.behavior, "force")
 
+    @patch("calibre_integration.calibredb_utils.CalibreDBClient")
+    @patch("calibre_integration.calibre_info.CalibreInfo")
+    def test_remove_from_calibre_if_possible_uses_config_and_config_store(
+        self, mock_calibre_info_cls, mock_calibre_client_cls
+    ):
+        """_remove_from_calibre_if_possible constructs CalibreInfo from state.config.calibre and passes state.config_store."""
+        from web.routes.controls import _remove_from_calibre_if_possible
+
+        fanfic = FanficInfo(url="https://ao3.org/works/1", site="ao3", calibre_id="42")
+
+        # Missing state.config returns False
+        self.state.config = None
+        ok, msg = _remove_from_calibre_if_possible(self.state, fanfic)
+        self.assertFalse(ok)
+        self.assertIn("Calibre configuration unavailable", msg)
+
+        # Valid state.config.calibre and state.config_store
+        mock_cfg = MagicMock()
+        mock_cfg.calibre = MagicMock()
+        mock_store = MagicMock()
+        self.state.config = mock_cfg
+        self.state.config_store = mock_store
+
+        ok, msg = _remove_from_calibre_if_possible(self.state, fanfic)
+        self.assertTrue(ok)
+        mock_calibre_info_cls.assert_called_once()
+        self.assertEqual(mock_calibre_info_cls.call_args.args[0], mock_cfg.calibre)
+        mock_calibre_client_cls.assert_called_once_with(
+            mock_calibre_info_cls.return_value, mock_store
+        )
+        mock_calibre_client_cls.return_value.remove_story.assert_called_once_with(
+            fanfic
+        )
+
 
 class TestConfigRoutes(unittest.TestCase):
     """Tests for /api/config endpoints."""

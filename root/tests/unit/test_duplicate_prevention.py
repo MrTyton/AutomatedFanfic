@@ -1,3 +1,4 @@
+import threading
 import unittest
 from unittest.mock import patch, MagicMock
 from services.url_ingester import email_watcher, EmailInfo
@@ -19,6 +20,9 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.email_info.imap_idle = False
         self.ingress_queue = MagicMock()
         self.url_parsers = {}
+        self.shutdown_event = threading.Event()
+        self.history_recorder = MagicMock()
+        self.config_store = MagicMock()
 
     @patch("services.url_ingester.time.sleep")
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
@@ -39,6 +43,10 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.ingress_queue,
                 self.url_parsers,
                 self.active_urls,
+                False,
+                self.shutdown_event,
+                self.history_recorder,
+                self.config_store,
             )
         except KeyboardInterrupt:
             pass
@@ -65,6 +73,10 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.ingress_queue,
                 self.url_parsers,
                 self.active_urls,
+                False,
+                self.shutdown_event,
+                self.history_recorder,
+                self.config_store,
             )
         except KeyboardInterrupt:
             pass
@@ -112,6 +124,7 @@ class TestDuplicatePrevention(unittest.TestCase):
             ingress_queue=ingress_queue,
             waiting_queue=waiting_queue,
             retry_config=retry_config,
+            history_recorder=self.history_recorder,
             active_urls=self.active_urls,
         )
 
@@ -166,6 +179,7 @@ class TestDuplicatePrevention(unittest.TestCase):
             ingress_queue=ingress_queue,
             waiting_queue=waiting_queue,
             retry_config=retry_config,
+            history_recorder=self.history_recorder,
             active_urls=self.active_urls,
         )
 
@@ -220,6 +234,7 @@ class TestDuplicatePrevention(unittest.TestCase):
             ingress_queue=ingress_queue,
             waiting_queue=waiting_queue,
             retry_config=retry_config,
+            history_recorder=self.history_recorder,
             active_urls=self.active_urls,
         )
 

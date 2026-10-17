@@ -21,12 +21,14 @@ Dependencies:
     - requests: For Pushbullet API device resolution
 
 Example:
-    >>> notifier = AppriseNotification("config.toml")
+    >>> notifier = AppriseNotification(app_config)
     >>> if notifier.is_enabled():
     ...     notifier.send_notification("Title", "Message", "site")
 """
 
 lazy import apprise
+from config.config_store import ConfigStore
+from models.config_models import AppConfig
 from utils import ff_logging
 from . import notification_base
 lazy import requests
@@ -40,57 +42,47 @@ class AppriseNotification(notification_base.NotificationBase):
     integrates Pushbullet configuration with device ID resolution and supports
     multiple notification targets simultaneously.
 
-    The class handles configuration loading, URL validation, device ID resolution
-    for Pushbullet, and maintains a set of unique notification targets. It
-    provides comprehensive error handling and logging for all operations.
+    The class processes validated configuration settings, validates URLs,
+    resolves device IDs for Pushbullet, and maintains a list of unique
+    notification targets. It provides comprehensive error handling and logging
+    for all operations.
 
     Attributes:
-        apprise_urls (list): List of validated notification service URLs.
+        apprise_urls (list[str]): List of validated notification service URLs.
         apobj (apprise.Apprise): The Apprise object managing notification targets.
         enabled (bool): Whether the service is configured and ready for notifications.
 
     Example:
-        >>> notifier = AppriseNotification("config.toml")
+        >>> notifier = AppriseNotification(app_config, config_store)
         >>> if notifier.is_enabled():
         ...     success = notifier.send_notification("Title", "Body", "site")
     """
 
     def __init__(
         self,
-        toml_path: str = "/config/config.toml",
-        config_store=None,
-        app_config=None,
+        config: AppConfig,
+        config_store: ConfigStore,
     ) -> None:
-        """Initializes Apprise notification provider with configuration loading.
+        """Initializes the Apprise notification provider from a validated AppConfig and ConfigStore.
 
-        Sets up the Apprise notification system by loading configuration,
-        processing Apprise URLs, automatically integrating Pushbullet settings,
-        and validating all notification targets. Handles device ID resolution
-        for Pushbullet and ensures no duplicate URLs are added.
+        Sets up the Apprise notification system by processing Apprise URLs,
+        automatically integrating Pushbullet settings, and validating all
+        notification targets. Handles device ID resolution for Pushbullet and
+        ensures no duplicate URLs are added.
 
         Args:
-            toml_path (str): Path to the TOML configuration file containing
-                           Apprise URLs and Pushbullet configuration settings.
-            config_store (optional): Shared ConfigStore instance for live updates.
-            app_config (AppConfig | None, optional): Pre-loaded AppConfig object.
+            config (AppConfig): Validated application configuration object
+                containing Apprise URLs and Pushbullet settings.
+            config_store (ConfigStore): Shared ConfigStore instance for applying
+                live notification setting updates.
         """
-        # Initialize parent class with configuration loading
-        kwargs = {}
-        if config_store is not None:
-            kwargs["config_store"] = config_store
-        if app_config is not None:
-            kwargs["app_config"] = app_config
-        super().__init__(toml_path, **kwargs)
+        super().__init__(config, config_store)
         # Use set initially to prevent URL duplicates during configuration
         self.apprise_urls: set[str] | list[str] = set()
         # Create Apprise object for notification management
         self.apobj = apprise.Apprise()
         # Start disabled until configuration validation completes
         self.enabled = False
-
-        # Skip initialization if config loading failed
-        if self.config is None:
-            return
 
         try:
             # Load configured Apprise notification URLs
@@ -251,7 +243,7 @@ class AppriseNotification(notification_base.NotificationBase):
                  targets configured, False if disabled or misconfigured.
 
         Example:
-            >>> notifier = AppriseNotification("config.toml")
+            >>> notifier = AppriseNotification(app_config)
             >>> if notifier.is_enabled():
             ...     notifier.send_notification("Title", "Body", "site")
         """
@@ -267,7 +259,7 @@ class AppriseNotification(notification_base.NotificationBase):
             str: The service name "Apprise" identifying this notification provider.
 
         Example:
-            >>> notifier = AppriseNotification("config.toml")
+            >>> notifier = AppriseNotification(app_config)
             >>> print(f"Using {notifier.get_service_name()} for notifications")
             Using Apprise for notifications
         """

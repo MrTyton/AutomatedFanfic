@@ -7,7 +7,9 @@ Provides:
 
 import signal
 import threading
+from collections.abc import Callable
 from contextlib import asynccontextmanager
+from multiprocessing.synchronize import Event
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-lazy from models.config_models import ConfigManager
+from models.config_models import AppConfig, ConfigManager
 from history.database import AsyncHistoryDB
 from models.context import SharedIPCContext
 from utils import ff_logging
@@ -119,15 +121,26 @@ def create_app(web_state: WebState) -> FastAPI:
 
 def run_web_server(
     ipc: SharedIPCContext,
-    app_config: Any = None,
-    config_path: str | None = None,
-    web_restart_event: Any = None,
-    process_status_callable: Any = None,
+    app_config: AppConfig,
+    config_path: str,
+    web_restart_event: Event,
+    process_status_callable: Callable[[], dict[str, Any]] | None = None,
 ) -> None:
     """Process entry point for the web server.
 
-    Compatible with ProcessManager.register_process(). Runs uvicorn in the
+    Compatible with `ProcessManager.register_process()`. Runs uvicorn in the
     subprocess with signal handling for graceful shutdown.
+
+    Args:
+        ipc (SharedIPCContext): Shared multiprocessing queues, active_urls,
+            history_recorder, config_store, log_queue, and verbosity flag.
+        app_config (AppConfig): Validated application configuration object.
+        config_path (str): Path to the TOML configuration file for persisting
+            configuration edits made through the web UI.
+        web_restart_event (Event): Shared event set when `web.host` or
+            `web.port` changes require a web server restart.
+        process_status_callable (Callable[[], dict[str, Any]] | None, optional):
+            Optional callable returning process health status dictionary.
     """
     ff_logging.init_process_logging(
         ipc.verbose,

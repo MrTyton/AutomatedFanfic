@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from queue import Queue
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
@@ -95,14 +96,17 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 worker_q = Queue()
                 worker_queues = {"worker_0": worker_q}
                 active_urls = {}
+                store = ConfigStore()
 
                 url_parsers = generate_url_parsers_from_fanficfare()
                 coordinator = Coordinator(
                     ingress_q,
                     worker_queues,
+                    shutdown_event=threading.Event(),
                     active_urls=active_urls,
                     history_recorder=recorder,
                     url_parsers=url_parsers,
+                    config_store=store,
                 )
 
                 # Step 1: Ingest URL (as email_watcher or add-url does)
@@ -215,6 +219,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     ingress_q,
                     waiting_q,
                     verbose=False,
+                    shutdown_event=threading.Event(),
                     history_recorder=recorder,
                     active_urls=active_urls,
                 )
@@ -306,9 +311,11 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
         coordinator = Coordinator(
             ingress_q,
             worker_queues,
+            shutdown_event=threading.Event(),
             active_urls=active_urls,
             history_recorder=recorder,
             url_parsers=url_parsers,
+            config_store=ConfigStore(),
         )
 
         ingress_q.put(FanficInfo(url=series_url, site="archiveofourown"))
@@ -355,7 +362,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
 
             # 1. CalibreInfo does not spam log_failure on repeated update_from_config_store when INI files are absent
             dummy_mgr = MagicMock()
-            cdb_info = CalibreInfo(cfg_path, dummy_mgr)
+            cdb_info = CalibreInfo(cfg.calibre, dummy_mgr)
             with patch(
                 "calibre_integration.calibre_info.ff_logging.log_failure"
             ) as mock_log_fail:
@@ -371,8 +378,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             self.assertEqual(Path(cdb_info.personal_ini), Path(personal_ini_path))
 
             # 2. NotificationWrapper hot-reloads new Apprise URLs from ConfigStore even without editing config.toml
-            wrapper = NotificationWrapper(toml_path=cfg_path)
-            wrapper.set_config_store(store)
+            recorder = HistoryRecorder(Queue())
+            wrapper = NotificationWrapper(cfg, store, recorder)
             self.assertEqual(len(wrapper.notification_workers), 0)
 
             store.update("apprise.urls", ["json://localhost:8080/notify"])
@@ -408,6 +415,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 ingress_queue=Queue(),
                 waiting_queue=waiting_q,
                 retry_config=retry_cfg,
+                history_recorder=recorder,
+                active_urls={},
             )
             handlers.handle_failure(fanfic, ctx)
             self.assertEqual(retry_cfg.max_normal_retries, 1)
@@ -443,13 +452,13 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 store.update("calibre.update_method", "force")
                 store.update("fanficfare.default_ini", defaults_ini)
 
-                email_info = EmailInfo(cfg.email, config_store=store)
-                cdb_info = CalibreInfo(cfg_path, manager)
-                calibre_client = CalibreDBClient(cdb_info)
-                notification_info = NotificationWrapper(toml_path=cfg_path)
-                retry_config = cfg.retry
                 history_q = manager.Queue()
                 recorder = HistoryRecorder(history_q)
+                email_info = EmailInfo(cfg.email, store)
+                cdb_info = CalibreInfo(cfg.calibre, manager)
+                calibre_client = CalibreDBClient(cdb_info, store)
+                notification_info = NotificationWrapper(cfg, store, recorder)
+                retry_config = cfg.retry
                 result_q = manager.Queue()
 
                 ctx = mp.get_context("spawn")
