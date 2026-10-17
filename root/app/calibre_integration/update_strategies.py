@@ -7,14 +7,10 @@ way to switch between preservation modes (Metadata, Format Only, or Remove-Add).
 """
 
 from abc import ABC, abstractmethod
-from typing import Callable
 
 from . import calibredb_utils
-from models import config_models
 from models import fanfic_info
-from models.queue_types import WaitingQueue
 from utils import ff_logging
-from notifications import notification_wrapper
 
 
 class UpdateStrategy(ABC):
@@ -26,14 +22,8 @@ class UpdateStrategy(ABC):
         fanfic: fanfic_info.FanficInfo,
         calibre_client: calibredb_utils.CalibreDBClient,
         temp_dir: str,
-        site: str,
         path_or_url: str,
-        waiting_queue: WaitingQueue,
-        notification_info: notification_wrapper.NotificationWrapper,
-        retry_config: config_models.RetryConfig,
-        failure_handler: Callable,
-        history_recorder=None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
         """
         Execute the update strategy.
 
@@ -41,16 +31,10 @@ class UpdateStrategy(ABC):
             fanfic: Fanfiction information object
             calibre_client: CalibreDB client
             temp_dir: Temporary directory with downloaded story
-            site: Site identifier for logging
             path_or_url: Path or URL being processed
-            waiting_queue: Queue for retry handling
-            notification_info: Notification system
-            retry_config: Retry configuration
-            failure_handler: Callable to handle failures (typically handle_failure from url_worker)
-            history_recorder: Optional HistoryRecorder for recording retry/failure events
 
         Returns:
-            bool: True if successful, False if failed
+            tuple[bool, str | None]: (True, None) on success, or (False, error_message) on failure.
         """
         pass
 
@@ -63,14 +47,9 @@ class AddFormatStrategy(UpdateStrategy):
         fanfic: fanfic_info.FanficInfo,
         calibre_client: calibredb_utils.CalibreDBClient,
         temp_dir: str,
-        site: str,
         path_or_url: str,
-        waiting_queue: WaitingQueue,
-        notification_info: notification_wrapper.NotificationWrapper,
-        retry_config: config_models.RetryConfig,
-        failure_handler: Callable,
-        history_recorder=None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
+        site = fanfic.site
         ff_logging.log_debug(
             f"\t({site}) Using add_format mode - replacing EPUB file only"
         )
@@ -86,22 +65,13 @@ class AddFormatStrategy(UpdateStrategy):
         if not success:
             error_msg = f"Failed to replace format for {path_or_url}"
             ff_logging.log_failure(f"\t({site}) {error_msg}")
-            failure_handler(
-                fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-                history_recorder=history_recorder,
-                error_message=error_msg,
-            )
-            return False
+            return False, error_msg
 
         # Get metadata after to verify preservation (verbose only)
         if ff_logging.is_verbose():
             new_metadata = calibre_client.get_metadata(fanfic)
             calibre_client.log_metadata_comparison(fanfic, old_metadata, new_metadata)
-        return True
+        return True, None
 
 
 class PreserveMetadataStrategy(UpdateStrategy):
@@ -112,14 +82,9 @@ class PreserveMetadataStrategy(UpdateStrategy):
         fanfic: fanfic_info.FanficInfo,
         calibre_client: calibredb_utils.CalibreDBClient,
         temp_dir: str,
-        site: str,
         path_or_url: str,
-        waiting_queue: WaitingQueue,
-        notification_info: notification_wrapper.NotificationWrapper,
-        retry_config: config_models.RetryConfig,
-        failure_handler: Callable,
-        history_recorder=None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
+        site = fanfic.site
         ff_logging.log_debug(
             f"\t({site}) Using preserve_metadata mode - will export and restore metadata fields"
         )
@@ -143,16 +108,7 @@ class PreserveMetadataStrategy(UpdateStrategy):
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
             error_msg = f"Failed to add {path_or_url} to Calibre"
             ff_logging.log_failure(f"\t({site}) {error_msg}")
-            failure_handler(
-                fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-                history_recorder=history_recorder,
-                error_message=error_msg,
-            )
-            return False
+            return False, error_msg
 
         # Restore custom metadata fields
         if old_metadata:
@@ -168,7 +124,7 @@ class PreserveMetadataStrategy(UpdateStrategy):
                     fanfic, old_metadata, new_metadata
                 )
 
-        return True
+        return True, None
 
 
 class RemoveAddStrategy(UpdateStrategy):
@@ -179,14 +135,9 @@ class RemoveAddStrategy(UpdateStrategy):
         fanfic: fanfic_info.FanficInfo,
         calibre_client: calibredb_utils.CalibreDBClient,
         temp_dir: str,
-        site: str,
         path_or_url: str,
-        waiting_queue: WaitingQueue,
-        notification_info: notification_wrapper.NotificationWrapper,
-        retry_config: config_models.RetryConfig,
-        failure_handler: Callable,
-        history_recorder=None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
+        site = fanfic.site
         ff_logging.log_debug(
             f"\t({site}) Using remove_add mode - custom metadata will NOT be preserved"
         )
@@ -207,16 +158,7 @@ class RemoveAddStrategy(UpdateStrategy):
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
             error_msg = f"Failed to add {path_or_url} to Calibre"
             ff_logging.log_failure(f"\t({site}) {error_msg}")
-            failure_handler(
-                fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-                history_recorder=history_recorder,
-                error_message=error_msg,
-            )
-            return False
+            return False, error_msg
 
         # Log metadata comparison to show what was lost (verbose only — spawns a subprocess)
         if ff_logging.is_verbose():
@@ -229,7 +171,7 @@ class RemoveAddStrategy(UpdateStrategy):
                     fanfic, old_metadata, new_metadata
                 )
 
-        return True
+        return True, None
 
 
 class AddNewStoryStrategy(UpdateStrategy):
@@ -240,14 +182,9 @@ class AddNewStoryStrategy(UpdateStrategy):
         fanfic: fanfic_info.FanficInfo,
         calibre_client: calibredb_utils.CalibreDBClient,
         temp_dir: str,
-        site: str,
         path_or_url: str,
-        waiting_queue: WaitingQueue,
-        notification_info: notification_wrapper.NotificationWrapper,
-        retry_config: config_models.RetryConfig,
-        failure_handler: Callable,
-        history_recorder=None,
-    ) -> bool:
+    ) -> tuple[bool, str | None]:
+        site = fanfic.site
         ff_logging.log_debug(f"\t({site}) Using add_new_story mode")
 
         # Add the new story
@@ -257,15 +194,6 @@ class AddNewStoryStrategy(UpdateStrategy):
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
             error_msg = f"Failed to add {path_or_url} to Calibre"
             ff_logging.log_failure(f"\t({site}) {error_msg}")
-            failure_handler(
-                fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-                history_recorder=history_recorder,
-                error_message=error_msg,
-            )
-            return False
+            return False, error_msg
 
-        return True
+        return True, None

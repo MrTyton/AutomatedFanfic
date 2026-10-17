@@ -52,7 +52,6 @@ class ProcessManager:
         """
         # Process tracking and state management
         self.processes: dict[str, ProcessInfo] = {}
-        self.pool = None  # Worker pool for CPU-bound tasks
 
         # Synchronization primitives for thread coordination
         self._shutdown_event = threading.Event()
@@ -293,15 +292,6 @@ class ProcessManager:
         if self._monitor_thread:
             self._monitor_thread.join(timeout=5)
             self._monitor_thread = None
-
-        # Stop worker pool if exists
-        if self.pool:
-            try:
-                self.pool.terminate()
-                self.pool.join()
-                self.pool = None
-            except (OSError, ValueError) as e:
-                ff_logging.log_failure(f"Error stopping pool: {e}")
 
         # Use configured timeout if none provided
         timeout = (
@@ -640,25 +630,6 @@ class ProcessManager:
 
         self._signal_handlers_set = True
         ff_logging.log_debug("Signal handlers configured")
-
-    def create_worker_pool(self, worker_count: int | None = None):
-        """
-        Create a worker pool for CPU-bound tasks.
-        """
-        if self.pool:
-            ff_logging.log_failure("Worker pool already exists")
-            return self.pool
-
-        worker_count = worker_count or self.config.max_workers
-
-        try:
-            self.pool = mp.Pool(worker_count)
-            ff_logging.log_debug(f"Created worker pool with {worker_count} workers")
-            return self.pool
-
-        except (OSError, RuntimeError) as e:
-            ff_logging.log_failure(f"Failed to create worker pool: {e}")
-            raise
 
     def __enter__(self):
         """Context manager entry."""

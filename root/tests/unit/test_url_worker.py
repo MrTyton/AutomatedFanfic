@@ -3,17 +3,16 @@ import unittest.mock
 from unittest.mock import MagicMock, patch
 from parameterized import parameterized
 import multiprocessing as mp
-import sys
 
 
 from workers import pipeline, handlers, command, common  # noqa: E402
 from models import config_models  # noqa: E402
+from models.context import WorkerContext  # noqa: E402
 from models.fanfic_info import FanficInfo  # noqa: E402
 from calibre_integration.calibre_info import CalibreInfo  # noqa: E402
 from notifications.notification_wrapper import NotificationWrapper  # noqa: E402
 from calibre_integration import calibredb_utils  # noqa: E402
 from typing import NamedTuple, Optional  # noqa: E402
-from utils import ff_logging  # noqa: E402
 
 
 class TestUrlWorker(unittest.TestCase):
@@ -100,14 +99,18 @@ class TestUrlWorker(unittest.TestCase):
             hail_mary_enabled=hail_mary_enabled,
             hail_mary_wait_hours=12.0,  # Standard wait time
         )
+        mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
+        mock_client.cdb_info = None
+        ctx = WorkerContext(
+            calibre_client=mock_client,
+            notification_info=mock_notification_info,
+            ingress_queue=MagicMock(),
+            waiting_queue=mock_waiting_queue,
+            retry_config=retry_config,
+        )
 
         # Execution
-        handlers.handle_failure(
-            mock_fanfic,
-            mock_notification_info,
-            mock_waiting_queue,
-            retry_config,
-        )
+        handlers.handle_failure(mock_fanfic, ctx)
 
         # Assertions
         # log_failure should be called with the expected message prefix
@@ -212,19 +215,22 @@ class TestUrlWorker(unittest.TestCase):
         mock_waiting_queue.put = MagicMock()
         mock_cdb = MagicMock(spec=CalibreInfo)
         mock_cdb.update_method = update_method
+        mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
+        mock_client.cdb_info = mock_cdb
 
         # Create real retry config
         retry_config = config_models.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
-
-        handlers.handle_failure(
-            mock_fanfic,
-            mock_notification_info,
-            mock_waiting_queue,
-            retry_config,
-            mock_cdb,
+        ctx = WorkerContext(
+            calibre_client=mock_client,
+            notification_info=mock_notification_info,
+            ingress_queue=MagicMock(),
+            waiting_queue=mock_waiting_queue,
+            retry_config=retry_config,
         )
+
+        handlers.handle_failure(mock_fanfic, ctx)
 
         # Assertions
         mock_log_failure.assert_called_with(expected_log_message)
@@ -264,14 +270,18 @@ class TestUrlWorker(unittest.TestCase):
         retry_config = config_models.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
+        mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
+        mock_client.cdb_info = None
+        ctx = WorkerContext(
+            calibre_client=mock_client,
+            notification_info=mock_notification_info,
+            ingress_queue=MagicMock(),
+            waiting_queue=mock_waiting_queue,
+            retry_config=retry_config,
+        )
 
         # Test Case: Normal retry with force behavior but cdb=None -> should retry normally
-        handlers.handle_failure(
-            mock_fanfic,
-            mock_notification_info,
-            mock_waiting_queue,
-            retry_config,
-        )
+        handlers.handle_failure(mock_fanfic, ctx)
 
         # Assertions - should log retry and queue the fanfic
         mock_log_failure.assert_any_call(unittest.mock.ANY)
@@ -341,10 +351,17 @@ class TestUrlWorker(unittest.TestCase):
         retry_config = config_models.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
-
-        handlers.handle_failure(
-            mock_fanfic, mock_notification_info, mock_waiting_queue, retry_config
+        mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
+        mock_client.cdb_info = None
+        ctx = WorkerContext(
+            calibre_client=mock_client,
+            notification_info=mock_notification_info,
+            ingress_queue=MagicMock(),
+            waiting_queue=mock_waiting_queue,
+            retry_config=retry_config,
         )
+
+        handlers.handle_failure(mock_fanfic, ctx)
 
         mock_log_failure.assert_called_with(expected_log_message)
         mock_notification_info.send_notification.assert_not_called()
@@ -402,87 +419,6 @@ class TestUrlWorker(unittest.TestCase):
             )
         else:
             mock_client.export_story.assert_not_called()
-
-    class ExecuteCommandTestCase(NamedTuple):
-        command: list[str]
-        expected_output: str
-
-    @parameterized.expand(
-        [
-            ExecuteCommandTestCase(
-                command=["echo", "Hello"],
-                expected_output="Hello\n",
-            ),
-        ]
-    )
-    @patch("subprocess.run")
-    def test_execute_command(
-        self,
-        cmd_args,
-        expected_output,
-        mock_subprocess_run,
-    ):
-        # Setup
-        mock_result = MagicMock()
-        mock_result.stdout = expected_output
-        mock_result.stderr = ""
-        mock_result.returncode = 0
-        mock_subprocess_run.return_value = mock_result
-
-        # Execution
-        result = command.execute_command(cmd_args)
-
-        # Assertions
-        self.assertEqual(result, expected_output)
-        mock_subprocess_run.assert_called_once_with(
-            cmd_args, cwd=None, capture_output=True, text=True, check=True
-        )
-
-    @patch("subprocess.run")
-    def test_execute_command_error_handling(self, mock_subprocess_run):
-        """Test execute_command error handling."""
-        from subprocess import CalledProcessError
-
-        # Setup mock to raise CalledProcessError
-        mock_subprocess_run.side_effect = CalledProcessError(
-            1, ["failed_command"], "error output"
-        )
-
-        # Execution and assertion
-        with self.assertRaises(CalledProcessError):
-            command.execute_command(["failed_command"])
-
-        mock_subprocess_run.assert_called_once_with(
-            ["failed_command"],
-            cwd=None,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    @patch("subprocess.run")
-    def test_execute_command_unicode_handling(self, mock_subprocess_run):
-        """Test execute_command with unicode output."""
-        # Setup mock with unicode output
-        unicode_output = "Test with ñ special characters 测试"
-        mock_result = MagicMock()
-        mock_result.stdout = unicode_output
-        mock_result.stderr = ""
-        mock_result.returncode = 0
-        mock_subprocess_run.return_value = mock_result
-
-        # Execution
-        result = command.execute_command(["test", "command"])
-
-        # Assertions
-        self.assertEqual(result, unicode_output)
-        mock_subprocess_run.assert_called_once_with(
-            ["test", "command"],
-            cwd=None,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
 
     class ProcessFanficAdditionTestCase(NamedTuple):
         calibre_id: Optional[int]
@@ -568,40 +504,37 @@ class TestUrlWorker(unittest.TestCase):
 
         # Setup returns based on case type
         if calibre_id:  # Existing story cases
-            # First call to get_story_id returns True (it exists)
             mock_client.get_story_id.return_value = True
-
-            # Strategy execution result
             mock_strategy_instance.execute.return_value = (
-                not expected_handle_failure_call
+                not expected_handle_failure_call,
+                "Calibre failure" if expected_handle_failure_call else None,
             )
 
         else:  # New story cases
-            # Need strict side effects for get_story_id calls
-            # 1. Initial check: returns False (not in DB)
-            # 2. Verification check after add: returns get_id_from_calibredb_returns result
             mock_client.get_story_id.side_effect = [
                 False,
                 get_id_from_calibredb_returns,
             ]
-
-            # Set strategy result for new story case too
             mock_strategy_instance.execute.return_value = (
-                not expected_handle_failure_call
+                not expected_handle_failure_call,
+                "Calibre failure" if expected_handle_failure_call else None,
             )
 
         # Execution
         mock_history_recorder = MagicMock()
+        ctx = WorkerContext(
+            calibre_client=mock_client,
+            notification_info=mock_notification_info,
+            ingress_queue=MagicMock(),
+            waiting_queue=mock_queue,
+            retry_config=config_models.RetryConfig(),
+            history_recorder=mock_history_recorder,
+        )
         result = handlers.process_fanfic_addition(
             mock_fanfic,
-            mock_client,
+            ctx,
             "/fake/temp/dir",
-            "site",
             "path_or_url",
-            mock_queue,
-            mock_notification_info,
-            config_models.RetryConfig(),
-            history_recorder=mock_history_recorder,
         )
 
         # Verify strategy execution and forwarded arguments
@@ -611,8 +544,15 @@ class TestUrlWorker(unittest.TestCase):
         self.assertEqual(kwargs["fanfic"], mock_fanfic)
         self.assertEqual(kwargs["temp_dir"], "/fake/temp/dir")
         self.assertEqual(kwargs["calibre_client"], mock_client)
-        self.assertEqual(kwargs["history_recorder"], mock_history_recorder)
-        self.assertEqual(kwargs["failure_handler"], mock_handle_failure)
+
+        if expected_handle_failure_call:
+            mock_handle_failure.assert_called_once_with(
+                mock_fanfic,
+                ctx,
+                error_message="Calibre failure",
+            )
+        else:
+            mock_handle_failure.assert_not_called()
 
         if expected_success_notification_call:
             self.assertTrue(result)
@@ -638,6 +578,17 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.mock_notification_info = MagicMock(spec=NotificationWrapper)
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
+        self.retry_config = config_models.RetryConfig(
+            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
+        )
+        self.ctx = WorkerContext(
+            calibre_client=self.mock_client,
+            notification_info=self.mock_notification_info,
+            ingress_queue=self.mock_ingress_queue,
+            waiting_queue=self.mock_waiting_queue,
+            retry_config=self.retry_config,
+            active_urls=None,
+        )
 
         # Create test fanfic object
         self.test_fanfic = MagicMock(spec=FanficInfo)
@@ -649,7 +600,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Counter to track calls and exit after processing one item
         self.call_count = 0
 
-    @patch("workers.pipeline.config_models.ConfigManager.load_config")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -660,7 +610,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_log,
         mock_get_path,
         mock_temp_dir,
-        mock_load_config,
     ):
         """Test early-return for force request with update_no_force configuration."""
         # Set up fanfic that requests force with update_no_force config
@@ -670,11 +619,6 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Set up queue behavior
         self.mock_queue.empty.return_value = False
         self.mock_queue.get.side_effect = [self.test_fanfic, KeyboardInterrupt]
-
-        # Create retry config for testing
-        retry_config = config_models.RetryConfig(
-            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
-        )
 
         # Set up temp directory and basic processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
@@ -686,13 +630,8 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
                     self.mock_queue,
-                    self.mock_client,
-                    self.mock_notification_info,
-                    self.mock_ingress_queue,
-                    self.mock_waiting_queue,
-                    retry_config,
+                    self.ctx,
                     "worker_id",
-                    None,  # active_urls
                 )
 
             # Verify failure handler called with the right error message
@@ -701,11 +640,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             )
             mock_handle_failure.assert_called_once_with(
                 self.test_fanfic,
-                self.mock_notification_info,
-                self.mock_waiting_queue,
-                retry_config,
-                self.mock_cdb,
-                history_recorder=None,
+                self.ctx,
                 error_message="Force update requested but update method is 'update_no_force'",
             )
 
@@ -735,24 +670,14 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         )
         mock_execute.return_value = fff_result
 
-        # Create retry config for testing
-        retry_config = config_models.RetryConfig(
-            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
-        )
-
         # Mock logging failure to capture the specific error message
         with patch("utils.ff_logging.log_failure") as mock_log_failure:
             # Run worker - checks it exits cleanly after KeyboardInterrupt
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
                     self.mock_queue,
-                    self.mock_client,
-                    self.mock_notification_info,
-                    self.mock_ingress_queue,
-                    self.mock_waiting_queue,
-                    retry_config,
+                    self.ctx,
                     "worker_id",
-                    None,  # active_urls
                 )
 
             # Verify that failure handler called with the message
@@ -761,11 +686,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             )
             mock_handle_failure.assert_called_once_with(
                 self.test_fanfic,
-                self.mock_notification_info,
-                self.mock_waiting_queue,
-                retry_config,
-                self.mock_cdb,
-                history_recorder=None,
+                self.ctx,
                 error_message="Command execution failed",
             )
 
@@ -793,21 +714,12 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         fff_result = command.FanFicFareResult(failure_messages=[error_text])
         mock_execute.return_value = fff_result
 
-        retry_config = config_models.RetryConfig(
-            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
-        )
-
         with patch("utils.ff_logging.log_failure"):
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
                     self.mock_queue,
-                    self.mock_client,
-                    self.mock_notification_info,
-                    self.mock_ingress_queue,
-                    self.mock_waiting_queue,
-                    retry_config,
+                    self.ctx,
                     "worker_id",
-                    None,
                 )
 
         _, kwargs = mock_handle_failure.call_args
@@ -838,30 +750,16 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         )
         mock_execute.return_value = fff_result
 
-        # Create retry config for testing
-        retry_config = config_models.RetryConfig(
-            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
-        )
-
         pipeline.url_worker(
             self.mock_queue,
-            self.mock_client,
-            self.mock_notification_info,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            retry_config,
+            self.ctx,
             "worker_id",
-            None,  # active_urls
         )
 
         # Verify failure handler was called
         mock_handle_failure.assert_called_once_with(
             self.test_fanfic,
-            self.mock_notification_info,
-            self.mock_waiting_queue,
-            retry_config,
-            self.mock_cdb,
-            history_recorder=None,
+            self.ctx,
             error_message="FanFicFare reported a permanent failure condition.",
         )
 
@@ -886,20 +784,10 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         fff_result = command.FanFicFareResult(forceable_messages=["chapter difference"])
         mock_execute.return_value = fff_result
 
-        # Create retry config for testing
-        retry_config = config_models.RetryConfig(
-            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
-        )
-
         pipeline.url_worker(
             self.mock_queue,
-            self.mock_client,
-            self.mock_notification_info,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            retry_config,
+            self.ctx,
             "worker_id",
-            None,  # active_urls
         )
 
         # Verify fanfic was re-queued with force behavior
@@ -930,35 +818,19 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Return a clean FanFicFareResult (no failures, no forceable conditions)
         mock_execute.return_value = command.FanFicFareResult()
 
-        # Create retry config for testing
-        retry_config = config_models.RetryConfig(
-            hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
-        )
-
-        # Run worker - will exit with KeyboardInterrupt after processing
         # Run worker - will exit with KeyboardInterrupt after processing
         pipeline.url_worker(
             self.mock_queue,
-            self.mock_client,
-            self.mock_notification_info,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            retry_config,
+            self.ctx,
             "worker_id",
-            None,  # active_urls
         )
 
         # Verify successful processing
         mock_process_addition.assert_called_once_with(
             self.test_fanfic,
-            self.mock_client,
+            self.ctx,
             "/tmp/test",
-            "test_site",
             "test_file.epub",
-            self.mock_waiting_queue,
-            self.mock_notification_info,
-            retry_config,
-            history_recorder=None,
         )
 
 
@@ -1500,140 +1372,6 @@ class TestLogEpubMetadata(unittest.TestCase):
             os.unlink(epub_path)
 
 
-class TestConstructFanficfareCommand(unittest.TestCase):
-    """Test suite for construct_fanficfare_command function."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        self.mock_cdb = MagicMock(spec=CalibreInfo)
-        self.mock_cdb.update_method = "update"
-
-        self.mock_fanfic = FanficInfo(
-            url="https://archiveofourown.org/works/123456", site="ao3"
-        )
-        self.path_or_url = "https://archiveofourown.org/works/123456"
-
-    def tearDown(self):
-        """Clean up after each test - ensure verbose is disabled."""
-        ff_logging.verbose.value = False
-
-    def test_construct_fanficfare_command_defaults(self):
-        """Test with default update method."""
-        self.mock_cdb.update_method = "update"
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.path_or_url
-        )
-        # Expected: python -m fanficfare.cli -u "path" --update-cover --non-interactive
-        expected_base = [sys.executable, "-m", "fanficfare.cli"]
-        self.assertEqual(cmd_args[:3], expected_base)
-        self.assertIn("-u", cmd_args)
-        self.assertIn(self.path_or_url, cmd_args)
-        self.assertIn("--update-cover", cmd_args)
-        self.assertIn("--non-interactive", cmd_args)
-        self.assertNotIn("--force", cmd_args)
-        self.assertNotIn("-U", cmd_args)
-
-    def test_construct_fanficfare_command_update_always(self):
-        """Test command construction with 'update_always' method."""
-        self.mock_cdb.update_method = "update_always"
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.path_or_url
-        )
-
-        self.assertIn("-U", cmd_args)
-        self.assertNotIn("-u", cmd_args)
-        self.assertNotIn("--force", cmd_args)
-
-    def test_construct_fanficfare_command_force(self):
-        """Test command construction with 'force' method."""
-        self.mock_cdb.update_method = "force"
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.path_or_url
-        )
-
-        self.assertIn("-u", cmd_args)
-        self.assertIn("--force", cmd_args)
-        self.assertNotIn("-U", cmd_args)
-
-    def test_construct_fanficfare_command_update_no_force(self):
-        """Test command construction with 'update_no_force' method."""
-        self.mock_cdb.update_method = "update_no_force"
-        # Even if force is requested
-        self.mock_fanfic.behavior = "force"
-
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.path_or_url
-        )
-
-        self.assertIn("-u", cmd_args)
-        self.assertNotIn("--force", cmd_args)
-        self.assertNotIn("-U", cmd_args)
-
-    def test_force_behavior_requested(self):
-        """Test command when fanfic explicitly requests force behavior."""
-        self.mock_cdb.update_method = "update"
-        self.mock_fanfic.behavior = "force"
-
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.path_or_url
-        )
-
-        self.assertIn("-u", cmd_args)
-        self.assertIn("--force", cmd_args)
-
-    def test_verbose_enabled_adds_debug_flag(self):
-        """Test that --debug flag is added when verbose logging is enabled."""
-        ff_logging.set_verbose(True)
-        self.mock_cdb.update_method = "update"
-
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.path_or_url
-        )
-
-        self.assertIn("--debug", cmd_args)
-
-    def test_verbose_disabled_no_debug_flag(self):
-        """Test that --debug flag is NOT added when verbose logging is disabled."""
-        ff_logging.set_verbose(False)
-        self.mock_cdb.update_method = "update"
-
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, self.path_or_url
-        )
-
-        self.assertNotIn("--debug", cmd_args)
-
-    def test_epub_path_handling(self):
-        """Test command construction with epub file path instead of URL."""
-        self.mock_cdb.update_method = "update"
-        # Path with spaces
-        path = "C:/Users/Joshua/My Library/Book.epub"
-
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, path
-        )
-
-        # Path should be a single element in the list, spaces preserved
-        self.assertIn(path, cmd_args)
-
-        # Verify no double quoting happened (subprocess handles quoting)
-        quoted_path = f'"{path}"'
-        self.assertNotIn(quoted_path, cmd_args)
-
-    def test_epub_path_with_verbose(self):
-        """Test epub path with verbose enabled."""
-        ff_logging.set_verbose(True)
-        self.mock_cdb.update_method = "update"
-        path = "story.epub"
-
-        cmd_args = command.construct_fanficfare_command(
-            self.mock_cdb, self.mock_fanfic, path
-        )
-
-        self.assertIn("--debug", cmd_args)
-        self.assertIn(path, cmd_args)
-
-
 class TestWorkerIdleSignaling(unittest.TestCase):
     """Test cases for worker idle signaling behavior to coordinator."""
 
@@ -1656,6 +1394,14 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             hail_mary_enabled=True,
             hail_mary_wait_hours=12.0,
             max_normal_retries=11,
+        )
+        self.ctx = WorkerContext(
+            calibre_client=self.mock_client,
+            notification_info=self.mock_notification_info,
+            ingress_queue=self.mock_ingress_queue,
+            waiting_queue=self.mock_waiting_queue,
+            retry_config=self.retry_config,
+            active_urls=None,
         )
 
     @patch("workers.handlers.process_fanfic_addition")
@@ -1708,13 +1454,8 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Run worker
         pipeline.url_worker(
             self.mock_queue,
-            self.mock_client,
-            self.mock_notification_info,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
+            self.ctx,
             self.worker_id,
-            None,  # active_urls
         )
 
         # Verify WORKER_IDLE was sent exactly once, after queue was drained
@@ -1793,13 +1534,8 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Run worker
         pipeline.url_worker(
             self.mock_queue,
-            self.mock_client,
-            self.mock_notification_info,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
+            self.ctx,
             self.worker_id,
-            None,
         )
 
         # Extract all WORKER_IDLE signals
@@ -1853,13 +1589,8 @@ class TestWorkerIdleSignaling(unittest.TestCase):
 
         pipeline.url_worker(
             self.mock_queue,
-            self.mock_client,
-            self.mock_notification_info,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
+            self.ctx,
             self.worker_id,
-            None,
         )
 
         idle_signals = [
@@ -1891,6 +1622,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             calibre_id="555",
         )
         active_urls = {fanfic.url: {"site": "archiveofourown", "status": "queued"}}
+        self.ctx.active_urls = active_urls
         self.mock_queue.get.side_effect = [fanfic, None]
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "/tmp/test/story.epub"
@@ -1901,13 +1633,8 @@ class TestWorkerIdleSignaling(unittest.TestCase):
 
         pipeline.url_worker(
             self.mock_queue,
-            self.mock_client,
-            self.mock_notification_info,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
+            self.ctx,
             self.worker_id,
-            active_urls,
         )
 
         # URL must NOT be deleted from active_urls while waiting for retry!

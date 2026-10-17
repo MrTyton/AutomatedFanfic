@@ -19,12 +19,14 @@ Architecture Note:
 """
 
 import collections
+from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from queue import Empty
 from enum import Enum
 from utils import ff_logging
+from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
 from models.queue_types import IngressQueue, WorkerQueue, WorkerQueues
 import threading
@@ -86,7 +88,7 @@ class Coordinator:
         ingress_queue: IngressQueue,
         worker_queues: WorkerQueues,
         shutdown_event: threading.Event | None = None,
-        active_urls: dict | None = None,
+        active_urls: MutableMapping[str, Any] | None = None,
         history_recorder=None,
         url_parsers: dict | None = None,
         config_store: Any | None = None,
@@ -213,27 +215,17 @@ class Coordinator:
 
                 # Remove the parent series URL from active_urls since workers only
                 # process and clean up the individual child story URLs.
-                if self.active_urls is not None:
-                    try:
-                        if task.url in self.active_urls:
-                            del self.active_urls[task.url]
-                    except Exception:
-                        pass
+                active_urls_utils.remove_active_url(self.active_urls, task.url)
             elif expansion_result["count"] == 0:
                 # Detected as series, but expansion produced 0 stories (e.g. 403 or network error)
                 ff_logging.log_failure(
                     f"Coordinator: Failed to expand series {task.url} into story URLs"
                 )
-                if self.active_urls is not None and task.url in self.active_urls:
-                    try:
-                        entry = dict(self.active_urls[task.url])
-                        entry["status"] = "failed"
-                        entry["error"] = (
-                            "Failed to expand series (check credentials/login in personal.ini or network)"
-                        )
-                        self.active_urls[task.url] = entry
-                    except Exception:
-                        pass
+                active_urls_utils.mark_url_failed(
+                    self.active_urls,
+                    task.url,
+                    "Failed to expand series (check credentials/login in personal.ini or network)",
+                )
                 return
 
             for story_url in expansion_result["urls"]:
@@ -241,13 +233,8 @@ class Coordinator:
                 child_site = site
                 if self.url_parsers:
                     try:
-                        norm_url = (
-                            story_url
-                            if story_url.startswith(("http://", "https://"))
-                            else f"https://{story_url}"
-                        )
                         parsed = regex_parsing.generate_FanficInfo_from_url(
-                            norm_url, self.url_parsers
+                            story_url, self.url_parsers
                         )
                         child_url = parsed.url
                         if parsed.site and parsed.site != "other":
@@ -264,14 +251,9 @@ class Coordinator:
                     repeats=0,  # Individual stories start fresh, never inherit series repeats
                     retry_decision=task.retry_decision,
                 )
-                if self.active_urls is not None:
-                    try:
-                        self.active_urls[story_task.url] = {
-                            "site": story_task.site,
-                            "status": "queued",
-                        }
-                    except Exception:
-                        pass
+                active_urls_utils.mark_url_queued(
+                    self.active_urls, story_task.url, site=story_task.site
+                )
                 if self.history_recorder is not None:
                     try:
                         self.history_recorder.record_download_created(
@@ -428,7 +410,7 @@ def start_coordinator(
     worker_queues: WorkerQueues,
     verbose: bool = False,
     shutdown_event: threading.Event | None = None,
-    active_urls: dict | None = None,
+    active_urls: MutableMapping[str, Any] | None = None,
     history_recorder=None,
     url_parsers: dict | None = None,
     config_store: Any | None = None,

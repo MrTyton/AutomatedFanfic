@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+from models import active_urls as active_urls_utils
+
 router = APIRouter()
 
 # Active WebSocket connections
@@ -104,25 +106,9 @@ async def _build_snapshot(state: Any) -> dict:
     }
 
     # ── Queue depths ────────────────────────────────────────────
-    queues: dict[str, Any] = {}
-    for name, queue in [
-        ("ingress", state.ingress_queue),
-        ("waiting", state.waiting_queue),
-    ]:
-        if queue is not None:
-            try:
-                queues[name] = queue.qsize()
-            except NotImplementedError, OSError:
-                queues[name] = -1
-    if state.worker_queues:
-        worker_depths = {}
-        for wid, q in state.worker_queues.items():
-            try:
-                worker_depths[wid] = q.qsize()
-            except NotImplementedError, OSError:
-                worker_depths[wid] = -1
-        queues["workers"] = worker_depths
-    snapshot["queues"] = queues
+    snapshot["queues"] = active_urls_utils.get_queue_depths(
+        state.ingress_queue, state.waiting_queue, state.worker_queues
+    )
 
     # ── Process status ──────────────────────────────────────────
     if state.process_status_callable:

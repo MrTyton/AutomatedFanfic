@@ -1,8 +1,7 @@
 import os
 import re
 import unittest
-from typing import NamedTuple, Optional
-from unittest.mock import patch
+from typing import NamedTuple
 
 from parameterized import parameterized
 
@@ -44,122 +43,36 @@ class TestRegexParsing(unittest.TestCase):
     def test_extract_filename(self, input, expected):
         self.assertEqual(regex_parsing.extract_filename(input), expected)
 
-    class CheckRegexesTestCase(NamedTuple):
-        output: str
-        match: str
-        message: str
-        expected: bool
+    class NormalizeUrlTestCase(NamedTuple):
+        input_url: str
+        expected: str
 
     @parameterized.expand(
         [
-            # Test case: 'test' is in 'test output'
-            CheckRegexesTestCase(
-                output="test output",
-                match="test",
-                message="test message",
-                expected=True,
+            NormalizeUrlTestCase(
+                input_url="archiveofourown.org/works/12345",
+                expected="https://archiveofourown.org/works/12345",
             ),
-            # Test case: 'not match' is not in 'test output'
-            CheckRegexesTestCase(
-                output="test output",
-                match="not match",
-                message="test message",
-                expected=False,
+            NormalizeUrlTestCase(
+                input_url="  www.fanfiction.net/s/123/1/  ",
+                expected="https://www.fanfiction.net/s/123/1/",
             ),
-        ]
-    )
-    @patch("parsers.regex_parsing.ff_logging.log_failure")
-    def test_check_regexes(
-        self,
-        test_output,
-        test_pattern,
-        test_message,
-        expected_result,
-        mock_log_failure,
-    ):
-        self.assertEqual(
-            regex_parsing.check_regexes(
-                test_output, re.compile(test_pattern), test_message
+            NormalizeUrlTestCase(
+                input_url="https://archiveofourown.org/works/12345",
+                expected="https://archiveofourown.org/works/12345",
             ),
-            expected_result,
-        )
-        if expected_result:
-            mock_log_failure.assert_called_once_with(test_message)
-        else:
-            mock_log_failure.assert_not_called()
-
-    class CheckRegexFailuresTestCase(NamedTuple):
-        output: str
-        expected: Optional[str]  # None = success; string = the specific failure message
-
-    @parameterized.expand(
-        [
-            # Test case: Output contains 5 chapters, expected failure, with a specific message
-            CheckRegexFailuresTestCase(
-                output="test output already contains 5 chapters.",
-                expected="Issue with story, site is broken. Story likely hasn't updated on site yet.",
+            NormalizeUrlTestCase(
+                input_url="http://fanfiction.net/s/12345",
+                expected="http://fanfiction.net/s/12345",
             ),
-            # Test case: Output doesn't contain any recognizable chapters, expected failure, with a specific message
-            CheckRegexFailuresTestCase(
-                output="test output doesn't contain any recognizable chapters, probably from a different source.  Not updating.",
-                expected="Something is messed up with the site or the epub. No chapters found.",
-            ),
-            # Test case: Generic output, expected success (None)
-            CheckRegexFailuresTestCase(output="test output", expected=None),
-            # Test case: 403 only in STDERR section (e.g. cover image load) - should NOT trigger failure
-            CheckRegexFailuresTestCase(
-                output="Updating story.epub, URL: https://www.royalroad.com/fiction/15935\nDo update - epub(261) vs url(262)\nSTDERR:\nFFF: INFO: story.py(1757): Failed to load or convert image,\nskipping:https://www.royalroadcdn.com/public/covers-large/15935.jpg\nException: HTTP Error in FFF '403 Client Error: Forbidden for url: https://www.royalroadcdn.com/public/covers-large/15935.jpg'(403)",
-                expected=None,
-            ),
-            # Test case: 403 in stdout - should trigger failure
-            CheckRegexFailuresTestCase(
-                output="403 Client Error: Forbidden for url: https://www.royalroad.com/fiction/15935",
-                expected="Forbidden client. Check the URL. If this is ff.net, check that you have Flaresolverr installed, or cry.",
+            NormalizeUrlTestCase(
+                input_url="   ",
+                expected="",
             ),
         ]
     )
-    @patch("parsers.regex_parsing.ff_logging.log_failure")
-    def test_check_failure_regexes(self, input, expected, mock_log_failure):
-        self.assertEqual(regex_parsing.check_failure_regexes(input), expected)
-        if expected:
-            mock_log_failure.assert_called_once_with(expected)
-        else:
-            mock_log_failure.assert_not_called()
-
-    class CheckForceableRegexTestCase(NamedTuple):
-        output: str
-        expected: bool
-        message: Optional[str]
-
-    @parameterized.expand(
-        [
-            # Test case: Output contains 5 chapters, more than source: 3, expected True, with a specific message
-            CheckForceableRegexTestCase(
-                output="test output contains 5 chapters, more than source: 3.",
-                expected=True,
-                message="Chapter difference between source and destination. Forcing update.",
-            ),
-            # Test case: File has been updated more recently than the story, expected True, with a specific message
-            CheckForceableRegexTestCase(
-                output="File(test.epub) Updated(2022-01-01) more recently than Story(2021-12-31) - Skipping",
-                expected=True,
-                message="File has been updated more recently than the story, this is likely a metadata bug. Forcing update.",
-            ),
-            # Test case: Generic output, expected False, no specific message
-            CheckForceableRegexTestCase(
-                output="test output", expected=False, message=None
-            ),
-        ]
-    )
-    @patch("parsers.regex_parsing.ff_logging.log_failure")
-    def test_check_forceable_regexes(
-        self, input, expected, log_message, mock_log_failure
-    ):
-        self.assertEqual(regex_parsing.check_forceable_regexes(input), expected)
-        if log_message:
-            mock_log_failure.assert_called_once_with(log_message)
-        else:
-            mock_log_failure.assert_not_called()
+    def test_normalize_url(self, input_url, expected):
+        self.assertEqual(regex_parsing.normalize_url(input_url), expected)
 
     class CheckGenerateFanficInfoTestCase(NamedTuple):
         input_url: str
@@ -179,6 +92,11 @@ class TestRegexParsing(unittest.TestCase):
                 expected_url="www.fanfiction.net/s/12345678/1/",
                 expected_site="fanfiction",
             ),
+            CheckGenerateFanficInfoTestCase(
+                input_url="www.fanfiction.net/s/12345678/1/",
+                expected_url="www.fanfiction.net/s/12345678/1/",
+                expected_site="fanfiction",
+            ),
             # Archive of Our Own (AO3) tests
             CheckGenerateFanficInfoTestCase(
                 input_url="https://archiveofourown.org/works/12345678/chapters/98765432",
@@ -187,6 +105,11 @@ class TestRegexParsing(unittest.TestCase):
             ),
             CheckGenerateFanficInfoTestCase(
                 input_url="http://archiveofourown.org/works/12345678",
+                expected_url="archiveofourown.org/works/12345678",
+                expected_site="archiveofourown",
+            ),
+            CheckGenerateFanficInfoTestCase(
+                input_url="archiveofourown.org/works/12345678",
                 expected_url="archiveofourown.org/works/12345678",
                 expected_site="archiveofourown",
             ),
@@ -229,6 +152,11 @@ class TestRegexParsing(unittest.TestCase):
             CheckGenerateFanficInfoTestCase(
                 input_url="http://another-unknown.net/fic/abc",
                 expected_url="another-unknown.net/fic/abc",
+                expected_site="other",
+            ),
+            CheckGenerateFanficInfoTestCase(
+                input_url="schemeless-unknown.net/fic/abc",
+                expected_url="schemeless-unknown.net/fic/abc",
                 expected_site="other",
             ),
         ]

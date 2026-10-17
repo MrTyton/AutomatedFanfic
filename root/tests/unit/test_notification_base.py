@@ -42,6 +42,13 @@ class TestNotificationBase(unittest.TestCase):
         self.assertFalse(self.notification.enabled)
         self.assertEqual(self.notification.config, self.mock_config)
 
+    def test_initialization_with_app_config_skips_disk_load(self):
+        # Test that passing app_config directly skips ConfigManager.load_config
+        self.mock_load_config.reset_mock()
+        notification = NotificationBase("fake_path", app_config=self.mock_config)
+        self.mock_load_config.assert_not_called()
+        self.assertEqual(notification.config, self.mock_config)
+
     def test_send_notification_not_implemented(self):
         # Test that send_notification raises NotImplementedError
         with self.assertRaises(NotImplementedError):

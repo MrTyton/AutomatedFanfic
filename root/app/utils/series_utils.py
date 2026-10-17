@@ -23,25 +23,27 @@ from typing import Any
 
 lazy from fanficfare import adapters, configurable, exceptions, geturls
 lazy from config.config_store import ConfigStore
+from parsers.regex_parsing import normalize_url as _normalize_url
 from utils import ff_logging
 
 
-def _normalize_url(url: str) -> str:
-    """Prepend https:// scheme if the URL has no scheme."""
-    if url and "://" not in url:
-        return "https://" + url
-    return url
-
-
 def _call_get_urls_from_page(
-    adapter, url: str, config: configurable.Configuration
+    adapter,
+    url: str,
+    config: configurable.Configuration,
+    _page_cache: dict[str, Any] | None = None,
 ) -> dict | None:
     """Invoke adapter.get_urls_from_page, supplying a GetURLs helper when accepted."""
+    if _page_cache is not None and url in _page_cache:
+        return _page_cache[url]
     try:
         gu = geturls.GetURLs(config=config)
-        return adapter.get_urls_from_page(url, geturls=gu, normalize=False)
+        res = adapter.get_urls_from_page(url, geturls=gu, normalize=False)
     except TypeError:
-        return adapter.get_urls_from_page(url, normalize=False)
+        res = adapter.get_urls_from_page(url, normalize=False)
+    if _page_cache is not None:
+        _page_cache[url] = res
+    return res
 
 
 def _is_known_series_url_pattern(adapter: Any, url: str) -> bool:
@@ -98,6 +100,7 @@ def is_series_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: Any | None = None,
+    _page_cache: dict[str, Any] | None = None,
 ) -> bool:
     """
     Determine if a URL points to a series, collection, or single story.
@@ -109,6 +112,7 @@ def is_series_url(
         url: The fanfiction URL to check
         config: FanFicFare Configuration object (created if not provided)
         config_store: Optional ConfigStore instance
+        _page_cache: Optional per-call cache dict for get_urls_from_page results
 
     Returns:
         True if the URL is a series/collection, False if single story or unknown
@@ -136,7 +140,9 @@ def is_series_url(
         # Method 2: Check if this is a site with get_urls_from_page support
         if hasattr(adapter, "get_urls_from_page"):
             try:
-                result = _call_get_urls_from_page(adapter, url, config)
+                result = _call_get_urls_from_page(
+                    adapter, url, config, _page_cache=_page_cache
+                )
                 if isinstance(result, dict) and "urllist" in result:
                     urllist = result.get("urllist", [])
 
@@ -168,6 +174,7 @@ def expand_series_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: Any | None = None,
+    _page_cache: dict[str, Any] | None = None,
 ) -> list[str]:
     """
     Extract individual story URLs from a series or collection URL.
@@ -179,6 +186,7 @@ def expand_series_url(
         url: The series/collection URL to expand
         config: FanFicFare Configuration object (created if not provided)
         config_store: Optional ConfigStore instance
+        _page_cache: Optional per-call cache dict for get_urls_from_page results
 
     Returns:
         List of individual story URLs extracted from the series.
@@ -223,7 +231,9 @@ def expand_series_url(
         # Method 2: Use generic get_urls_from_page (for other sites with list support)
         if hasattr(adapter, "get_urls_from_page"):
             try:
-                result = _call_get_urls_from_page(adapter, url, config)
+                result = _call_get_urls_from_page(
+                    adapter, url, config, _page_cache=_page_cache
+                )
                 if isinstance(result, dict) and "urllist" in result:
                     urllist = result.get("urllist", [])
                     if len(urllist) > 1:
@@ -284,26 +294,19 @@ def process_url(
     try:
         # Cache any _call_get_urls_from_page result during this process_url call
         # so collection URLs are only scraped once across is_series_url + expand_series_url.
-        cached_page_res: dict[str, Any] = {}
-        orig_call = _call_get_urls_from_page
-
-        def _memoized_call(adapter_obj, target_url, cfg):
-            if target_url not in cached_page_res:
-                cached_page_res[target_url] = orig_call(adapter_obj, target_url, cfg)
-            return cached_page_res[target_url]
-
-        globals()["_call_get_urls_from_page"] = _memoized_call
-        try:
-            if is_series_url(url, config, config_store=config_store):
-                expanded = expand_series_url(url, config, config_store=config_store)
-                result["is_series"] = True
-                result["urls"] = expanded
-                result["count"] = len(expanded)
-            else:
-                result["urls"] = [url]
-                result["count"] = 1
-        finally:
-            globals()["_call_get_urls_from_page"] = orig_call
+        page_cache: dict[str, Any] = {}
+        if is_series_url(
+            url, config, config_store=config_store, _page_cache=page_cache
+        ):
+            expanded = expand_series_url(
+                url, config, config_store=config_store, _page_cache=page_cache
+            )
+            result["is_series"] = True
+            result["urls"] = expanded
+            result["count"] = len(expanded)
+        else:
+            result["urls"] = [url]
+            result["count"] = 1
 
     except Exception as e:
         ff_logging.log_debug(f"Error processing URL: {e}")

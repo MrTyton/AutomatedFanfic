@@ -14,22 +14,15 @@ from typing import Any
 
 from utils import ff_logging
 from services import url_ingester, ff_waiter, coordinator
-from models.queue_types import IngressQueue, LogQueue, WaitingQueue, WorkerQueues
+from models.context import SharedIPCContext
 
 
 def run_supervisor(
-    worker_queues: WorkerQueues,
-    ingress_queue: IngressQueue,
-    waiting_queue: WaitingQueue,
+    ipc: SharedIPCContext,
     email_info: url_ingester.EmailInfo,
     notification_info: Any,
     url_parsers: dict,
-    active_urls: dict,
-    verbose: bool = False,
-    history_recorder=None,
-    config_store=None,
-    log_queue: LogQueue | None = None,
-):
+) -> None:
     """
     Entry point for the Supervisor process.
 
@@ -38,14 +31,23 @@ def run_supervisor(
     - Fanfic Waiter
     - Coordinator
     """
+    worker_queues = ipc.worker_queues
+    ingress_queue = ipc.ingress_queue
+    waiting_queue = ipc.waiting_queue
+    active_urls = ipc.active_urls
+    verbose = ipc.verbose
+    history_recorder = ipc.history_recorder
+    config_store = ipc.config_store
+    log_queue = ipc.log_queue
+
     # Initialize logging for this process
-    ff_logging.set_verbose(verbose)
-    if log_queue is not None:
-        ff_logging.set_web_enabled(True)
-    elif config_store is not None:
-        ff_logging.set_web_enabled(False)
-    ff_logging.set_log_forward_queue(log_queue)
-    ff_logging.set_thread_color("\033[92m")  # Green for Supervisor
+    ff_logging.init_process_logging(
+        verbose,
+        color="\033[92m",  # Green for Supervisor
+        log_queue=log_queue,
+        config_store=config_store,
+        is_web_server=False,
+    )
 
     shutdown_event = threading.Event()
     threads = []

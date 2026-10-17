@@ -79,38 +79,42 @@ class NotificationBase:
         ...         return True
     """
 
-    def __init__(self, toml_path: str, sleep_time: int = 10, config_store=None) -> None:
+    def __init__(
+        self,
+        toml_path: str = "/config/config.toml",
+        sleep_time: int = 10,
+        config_store=None,
+        app_config: Any | None = None,
+    ) -> None:
         """Initializes the notification base class with configuration loading.
 
-        Loads and validates the TOML configuration file using ConfigManager,
-        initializes the notification provider state, and handles configuration
-        errors gracefully. Derived classes should call this constructor and
-        then set self.enabled based on their specific configuration validation.
+        Loads and validates the TOML configuration file using ConfigManager (or uses
+        a pre-loaded AppConfig), initializes the notification provider state, and
+        handles configuration errors gracefully. Derived classes should call this
+        constructor and then set self.enabled based on their specific configuration
+        validation.
 
         Args:
             toml_path (str): Path to the TOML configuration file containing
                            notification settings and other application config.
-            sleep_time (int, optional): Sleep time for retry delays. Currently
-                                      unused but maintained for backward compatibility.
-                                      Defaults to 10 seconds.
-
-        Note:
-            If configuration loading fails, self.config will be None and
-            self.enabled will remain False. Derived classes should check
-            self.config before attempting to use configuration values.
-
-        Example:
-            >>> notifier = MyNotifier("config.toml")
-            >>> if notifier.config is None:
-            ...     print("Configuration failed to load")
+            sleep_time (int, optional): Sleep time for retry delays. Defaults to 10 seconds.
+            config_store (optional): Shared ConfigStore instance for live updates.
+            app_config (AppConfig | None, optional): Pre-loaded AppConfig object to avoid
+                re-reading the TOML file from disk.
         """
         # Initialize as disabled until derived class validates configuration
         self.enabled = False
 
         # Load the configuration using ConfigManager with comprehensive error handling
         try:
-            if config_store is not None:
-                loaded_config = ConfigManager.load_config(toml_path, force_reload=True)
+            if app_config is not None and config_store is None:
+                loaded_config = app_config
+            elif config_store is not None:
+                loaded_config = (
+                    app_config
+                    if app_config is not None
+                    else ConfigManager.load_config(toml_path, force_reload=True)
+                )
             else:
                 loaded_config = ConfigManager.load_config(toml_path)
             if loaded_config is not None and config_store is not None:

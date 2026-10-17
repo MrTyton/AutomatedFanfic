@@ -59,7 +59,11 @@ class NotificationWrapper:
     """
 
     def __init__(
-        self, toml_path: str = "/config/config.toml", history_recorder=None
+        self,
+        toml_path: str = "/config/config.toml",
+        history_recorder=None,
+        *,
+        app_config=None,
     ) -> None:
         """Initializes the notification wrapper and its notification workers.
 
@@ -72,20 +76,15 @@ class NotificationWrapper:
                                      containing notification provider settings.
                                      Defaults to "/config/config.toml" for
                                      Docker container compatibility.
-
-        Note:
-            Worker initialization happens automatically during construction.
-            Failed worker initialization is logged but does not prevent
-            wrapper creation - only successfully initialized workers are used.
-
-        Example:
-            >>> wrapper = NotificationWrapper()  # Uses default path
-            >>> wrapper = NotificationWrapper("custom/config.toml")  # Custom path
+            history_recorder (optional): HistoryRecorder for recording notifications.
+            app_config (AppConfig | None, optional): Pre-loaded AppConfig object to avoid
+                re-reading the TOML file from disk during initial startup.
         """
         # Initialize empty worker list and store configuration path
         self.notification_workers: list[notification_base.NotificationBase] = []
         self.toml_path = toml_path
         self.history_recorder = history_recorder
+        self._app_config = app_config
         self._config_store = None
         self._notification_hash: int | None = None
         # Automatically initialize all available notification workers
@@ -121,27 +120,7 @@ class NotificationWrapper:
             self._notification_hash = new_hash
 
     def _initialize_workers(self) -> None:
-        """Initializes and validates notification workers from configuration.
-
-        Discovers, initializes, and validates available notification workers
-        based on configuration settings. Currently initializes AppriseNotification
-        as the primary notification handler, which supports multiple notification
-        providers through a unified interface.
-
-        The method handles worker initialization errors gracefully, logging
-        failures without preventing wrapper operation. Only successfully
-        initialized and enabled workers are added to the active worker list.
-
-        Note:
-            This is a private method called automatically during wrapper
-            initialization. It resets the worker list to ensure clean state
-            and validates each worker's enabled status before adding it.
-
-        Raises:
-            No exceptions are raised - all errors are caught and logged.
-            Failed worker initialization results in warning logs but does
-            not prevent wrapper operation.
-        """
+        """Initializes and validates notification workers from configuration."""
         # Reset worker list to ensure clean initialization state
         self.notification_workers = []
         try:
@@ -149,6 +128,10 @@ class NotificationWrapper:
             if getattr(self, "_config_store", None) is not None:
                 apprise_worker = AppriseNotification(
                     toml_path=self.toml_path, config_store=self._config_store
+                )
+            elif getattr(self, "_app_config", None) is not None:
+                apprise_worker = AppriseNotification(
+                    toml_path=self.toml_path, app_config=self._app_config
                 )
             else:
                 apprise_worker = AppriseNotification(toml_path=self.toml_path)

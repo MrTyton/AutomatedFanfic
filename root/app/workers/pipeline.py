@@ -17,10 +17,9 @@ import time
 from queue import Empty
 
 from utils import ff_logging
-from calibre_integration import calibredb_utils
-from models import config_models
-from models.queue_types import IngressQueue, WaitingQueue, WorkerQueue
-from notifications import notification_wrapper
+from models import active_urls as active_urls_utils
+from models.context import WorkerContext
+from models.queue_types import IngressQueue, WorkerQueue
 from utils import system_utils
 from models import fanfic_info
 
@@ -30,21 +29,29 @@ from . import command
 from . import handlers
 
 
-def _exception_to_error_message(exc: BaseException) -> str:
-    """Return the most informative available failure text from an exception."""
-    return str(exc).strip() or str(exc)
+def _signal_worker_idle(
+    ingress_queue: IngressQueue,
+    worker_id: str,
+    current_site: str | None,
+    *,
+    suppress_errors: bool = True,
+) -> None:
+    """Signal WORKER_IDLE to the coordinator if the worker was holding a site lock."""
+    if current_site is None:
+        return
+    if suppress_errors:
+        try:
+            ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
+        except Exception:
+            pass
+    else:
+        ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
+    ff_logging.set_thread_site(None)
 
 
 def _process_task(
     fanfic: fanfic_info.FanficInfo,
-    calibre_client: calibredb_utils.CalibreDBClient,
-    notification_info: notification_wrapper.NotificationWrapper,
-    ingress_queue: IngressQueue,
-    waiting_queue: WaitingQueue,
-    retry_config: config_models.RetryConfig,
-    worker_id: str,
-    history_recorder=None,
-    active_urls: dict | None = None,
+    ctx: WorkerContext,
 ) -> bool:
     """
     Process a single fanfiction task.
@@ -53,6 +60,10 @@ def _process_task(
         bool: True if the URL should be removed from active_urls, False otherwise.
     """
     site = fanfic.site
+    calibre_client = ctx.calibre_client
+    ingress_queue = ctx.ingress_queue
+    history_recorder = ctx.history_recorder
+    active_urls = ctx.active_urls
 
     # Create temporary directory for processing
     with system_utils.temporary_directory() as temp_dir:
@@ -72,19 +83,12 @@ def _process_task(
                 )
                 # Push title to active_urls so the web UI can show it immediately.
                 # Merge into the existing entry to preserve heap_gen and other fields.
-                if active_urls is not None:
-                    try:
-                        existing = dict(active_urls.get(fanfic.url, {}))
-                        existing.update(
-                            {
-                                "site": fanfic.site,
-                                "title": fanfic.title,
-                                "status": "processing",
-                            }
-                        )
-                        active_urls[fanfic.url] = existing
-                    except Exception:
-                        pass
+                active_urls_utils.update_url_title(
+                    active_urls,
+                    fanfic.url,
+                    title=fanfic.title,
+                    site=fanfic.site,
+                )
                 # Update the pending history DB row with the title
                 if history_recorder:
                     history_recorder.record_download_title_update(
@@ -107,11 +111,7 @@ def _process_task(
             )
             handlers.handle_failure(
                 fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-                history_recorder=history_recorder,
+                ctx,
                 error_message="Force update requested but update method is 'update_no_force'",
             )
             return handlers.check_active_removal(fanfic)
@@ -134,11 +134,7 @@ def _process_task(
             )
             handlers.handle_failure(
                 fanfic,
-                notification_info,
-                waiting_queue,
-                retry_config,
-                calibre_client.cdb_info,
-                history_recorder=history_recorder,
+                ctx,
                 error_message=error_msg,
             )
             return handlers.check_active_removal(fanfic)
@@ -146,28 +142,21 @@ def _process_task(
         if fff_result.is_forceable:
             # Conditions that can be resolved by force-retrying
             fanfic.behavior = "force"
-            if active_urls is not None:
-                try:
-                    existing = dict(active_urls.get(fanfic.url, {}))
-                    existing["status"] = "queued"
-                    existing["behavior"] = "force"
-                    active_urls[fanfic.url] = existing
-                except Exception:
-                    pass
+            active_urls_utils.mark_url_queued(
+                active_urls,
+                fanfic.url,
+                behavior="force",
+                merge=True,
+            )
             ingress_queue.put(fanfic)
             return False  # Keep in active_urls; re-queued for force retry
 
         # 5. Integrate with Calibre (Process Addition)
         result = handlers.process_fanfic_addition(
             fanfic,
-            calibre_client,
+            ctx,
             temp_dir,
-            site,
             path_or_url,
-            waiting_queue,
-            notification_info,
-            retry_config,
-            history_recorder=history_recorder,
         )
 
         # If process_fanfic_addition was mocked in a test and returned None,
@@ -179,18 +168,12 @@ def _process_task(
 
 def url_worker(
     queue: WorkerQueue,
-    calibre_client: calibredb_utils.CalibreDBClient,
-    notification_info: notification_wrapper.NotificationWrapper,
-    ingress_queue: IngressQueue,
-    waiting_queue: WaitingQueue,
-    retry_config: config_models.RetryConfig,
+    ctx: WorkerContext,
     worker_id: str,
-    active_urls: dict | None = None,
     verbose: bool = False,
-    history_recorder=None,
 ) -> None:
     """
-    Main worker function for processing fanfiction downloads in a dedicated process.
+    Main worker function for processing fanfiction downloads in a dedicated process/thread.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
@@ -207,8 +190,11 @@ def url_worker(
 
     ff_logging.log(f"Worker {worker_id} started")
 
+    ingress_queue = ctx.ingress_queue
+    active_urls = ctx.active_urls
+
     # Track current site being processed
-    current_site = None
+    current_site: str | None = None
 
     while True:
         try:
@@ -220,36 +206,31 @@ def url_worker(
 
                 # Check for Poison Pill (None)
                 if fanfic is None:
-                    if current_site is not None:
-                        try:
-                            ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
-                        except Exception:
-                            pass
-                        current_site = None
-                        ff_logging.set_thread_site(None)
+                    _signal_worker_idle(ingress_queue, worker_id, current_site)
+                    current_site = None
                     ff_logging.log(f"Worker {worker_id} stopping", "HEADER")
                     break
 
             except Empty:
                 # Queue is empty - signal idle if we were processing a site
                 if current_site is not None:
-                    ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
+                    finished_site = current_site
+                    _signal_worker_idle(
+                        ingress_queue,
+                        worker_id,
+                        finished_site,
+                        suppress_errors=False,
+                    )
                     ff_logging.log_debug(
-                        f"Worker {worker_id} signaling idle after draining {current_site} queue"
+                        f"Worker {worker_id} signaling idle after draining {finished_site} queue"
                     )
                     current_site = None
-                    ff_logging.set_thread_site(None)
                 # Continue waiting for more work
                 continue
             except Exception as e:
                 if isinstance(e, ValueError):  # Queue closed
-                    if current_site is not None:
-                        try:
-                            ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
-                        except Exception:
-                            pass
-                        current_site = None
-                        ff_logging.set_thread_site(None)
+                    _signal_worker_idle(ingress_queue, worker_id, current_site)
+                    current_site = None
                     ff_logging.log(f"Worker {worker_id} queue closed", "WARNING")
                     break
                 ff_logging.log_failure(f"Worker {worker_id} error waiting: {e}")
@@ -261,29 +242,14 @@ def url_worker(
             ff_logging.set_thread_site(fanfic.site)
 
             # Mark as actively being processed by this worker thread
-            if active_urls is not None:
-                try:
-                    existing = dict(active_urls.get(fanfic.url, {}))
-                    existing.setdefault("site", fanfic.site)
-                    existing["status"] = "processing"
-                    active_urls[fanfic.url] = existing
-                except Exception:
-                    pass
+            active_urls_utils.mark_url_processing(
+                active_urls, fanfic.url, site=fanfic.site
+            )
 
             # Process Task
             should_remove = True
             try:
-                should_remove = _process_task(
-                    fanfic,
-                    calibre_client,
-                    notification_info,
-                    ingress_queue,
-                    waiting_queue,
-                    retry_config,
-                    worker_id,
-                    history_recorder=history_recorder,
-                    active_urls=active_urls,
-                )
+                should_remove = _process_task(fanfic, ctx)
             except Exception as e:
                 ff_logging.log_failure(
                     f"Worker {worker_id} crashed on task {fanfic.url}: {e}"
@@ -291,11 +257,7 @@ def url_worker(
                 # Ensure we retry even on deep crashes
                 handlers.handle_failure(
                     fanfic,
-                    notification_info,
-                    waiting_queue,
-                    retry_config,
-                    calibre_client.cdb_info,
-                    history_recorder=history_recorder,
+                    ctx,
                     error_message=str(e),
                 )
                 should_remove = handlers.check_active_removal(fanfic)

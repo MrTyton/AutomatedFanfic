@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from workers import pipeline
 from models.fanfic_info import FanficInfo
 from models import config_models
+from models.context import WorkerContext
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
 
@@ -22,6 +23,13 @@ class TestPipeline(unittest.TestCase):
         self.mock_waiting_queue = MagicMock()
         self.retry_config = config_models.RetryConfig()
         self.worker_id = "worker_1"
+        self.ctx = WorkerContext(
+            calibre_client=self.mock_client,
+            notification_info=self.mock_notification,
+            ingress_queue=self.mock_ingress_queue,
+            waiting_queue=self.mock_waiting_queue,
+            retry_config=self.retry_config,
+        )
 
     @patch("workers.pipeline.command")
     @patch("workers.pipeline.handlers")
@@ -33,7 +41,6 @@ class TestPipeline(unittest.TestCase):
     ):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
-        # Simulate a failure result from execute_fanficfare_direct
         from workers.command import FanFicFareResult
 
         mock_command.FanFicFareResult = FanFicFareResult
@@ -41,17 +48,13 @@ class TestPipeline(unittest.TestCase):
             failure_messages=["Construction Failed"]
         )
 
-        pipeline._process_task(
-            self.fanfic,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline._process_task(self.fanfic, self.ctx)
 
-        mock_handlers.handle_failure.assert_called_once()
+        mock_handlers.handle_failure.assert_called_once_with(
+            self.fanfic,
+            self.ctx,
+            error_message="Construction Failed",
+        )
 
     @patch("workers.pipeline.command")
     @patch("workers.pipeline.handlers")
@@ -71,15 +74,7 @@ class TestPipeline(unittest.TestCase):
             failure_messages=["Bytes Output"]
         )
 
-        pipeline._process_task(
-            self.fanfic,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline._process_task(self.fanfic, self.ctx)
 
         mock_handlers.handle_failure.assert_called_once()
         _, kwargs = mock_handlers.handle_failure.call_args
@@ -104,15 +99,7 @@ class TestPipeline(unittest.TestCase):
 
         mock_logging.is_verbose.return_value = True
 
-        pipeline._process_task(
-            self.fanfic,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline._process_task(self.fanfic, self.ctx)
 
         mock_common.log_epub_metadata.assert_called_once_with("file.epub", "site")
 
@@ -121,15 +108,7 @@ class TestPipeline(unittest.TestCase):
         queue = MagicMock()
         queue.get.return_value = None
 
-        pipeline.url_worker(
-            queue,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
 
     @patch("workers.pipeline.ff_logging")
     @patch("workers.pipeline.time")
@@ -138,20 +117,32 @@ class TestPipeline(unittest.TestCase):
         queue = MagicMock()
         queue.get.side_effect = [Exception("Queue Error"), None, KeyboardInterrupt]
 
-        pipeline.url_worker(
-            queue,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
 
         mock_logging.log_failure.assert_called_with(
             "Worker worker_1 error waiting: Queue Error"
         )
         mock_time.sleep.assert_called_with(1)
+
+    @patch("workers.pipeline.ff_logging")
+    def test_signal_worker_idle_helper_behavior(self, mock_logging):
+        """_signal_worker_idle sends WORKER_IDLE when current_site is set and skips when None."""
+        # None site -> no-op
+        pipeline._signal_worker_idle(self.mock_ingress_queue, "worker_1", None)
+        self.mock_ingress_queue.put.assert_not_called()
+
+        # Non-None site -> emits WORKER_IDLE and clears thread site
+        pipeline._signal_worker_idle(self.mock_ingress_queue, "worker_1", "ao3")
+        self.mock_ingress_queue.put.assert_called_once_with(
+            ("WORKER_IDLE", "worker_1", "ao3")
+        )
+        mock_logging.set_thread_site.assert_called_once_with(None)
+
+        # Suppress errors when queue raises on shutdown
+        self.mock_ingress_queue.put.side_effect = OSError("Queue closed")
+        pipeline._signal_worker_idle(
+            self.mock_ingress_queue, "worker_1", "ao3", suppress_errors=True
+        )
 
 
 class TestPipelineEdgeCases(unittest.TestCase):
@@ -170,6 +161,13 @@ class TestPipelineEdgeCases(unittest.TestCase):
         self.mock_waiting_queue = MagicMock()
         self.retry_config = config_models.RetryConfig()
         self.worker_id = "worker_1"
+        self.ctx = WorkerContext(
+            calibre_client=self.mock_client,
+            notification_info=self.mock_notification,
+            ingress_queue=self.mock_ingress_queue,
+            waiting_queue=self.mock_waiting_queue,
+            retry_config=self.retry_config,
+        )
 
     @patch("workers.pipeline.ff_logging")
     @patch("workers.pipeline.time")
@@ -178,15 +176,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         queue = MagicMock()
         queue.get.side_effect = [ValueError("Queue closed"), None]
 
-        pipeline.url_worker(
-            queue,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
 
         # Should log warning about queue closed
         calls = [str(call) for call in mock_logging.log.call_args_list]
@@ -198,15 +188,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         queue = MagicMock()
         queue.get.side_effect = KeyboardInterrupt
 
-        pipeline.url_worker(
-            queue,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
 
         # Should log interruption
         calls = [str(call) for call in mock_logging.log.call_args_list]
@@ -226,20 +208,11 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
-        # execute_fanficfare_direct should NOT be reached (early return)
         from workers.command import FanFicFareResult
 
         mock_command.FanFicFareResult = FanFicFareResult
 
-        pipeline._process_task(
-            self.fanfic,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline._process_task(self.fanfic, self.ctx)
 
         # Should trigger failure handler
         mock_handlers.handle_failure.assert_called_once()
@@ -254,19 +227,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
         queue = MagicMock()
         queue.get.return_value = None
 
-        # Worker ID without underscore number
-        pipeline.url_worker(
-            queue,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            "invalid_worker_id_format",
-        )
+        pipeline.url_worker(queue, self.ctx, "invalid_worker_id_format")
 
-        # Should not crash, defaults to index 0
-        # Verify worker started and stopped cleanly
         self.assertTrue(mock_logging.log.called)
 
     @patch("workers.pipeline._process_task")
@@ -278,15 +240,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         queue = MagicMock()
         queue.get.side_effect = [Empty, self.fanfic, Empty, None]
 
-        pipeline.url_worker(
-            queue,
-            self.mock_client,
-            self.mock_notification,
-            self.mock_ingress_queue,
-            self.mock_waiting_queue,
-            self.retry_config,
-            self.worker_id,
-        )
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
 
         timeouts = [call.kwargs.get("timeout") for call in queue.get.call_args_list]
         self.assertEqual(timeouts, [2.0, 2.0, 0.05, 2.0])

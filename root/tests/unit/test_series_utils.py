@@ -320,6 +320,26 @@ class TestProcessUrl:
         assert result["count"] == 2
         assert mock_get_req.call_count == 1
 
+    def test_process_url_passes_page_cache_without_mutating_globals(self):
+        """process_url uses an explicit _page_cache dict rather than mutating globals()['_call_get_urls_from_page']."""
+        url = "https://archiveofourown.org/collections/TestCollection2026/works"
+        orig_fn = series_utils._call_get_urls_from_page
+
+        with patch.object(
+            BaseSiteAdapter,
+            "get_request",
+            return_value=_AO3_COLLECTION_HTML,
+        ) as mock_get_req:
+            cache: dict = {}
+            assert series_utils.is_series_url(url, _page_cache=cache) is True
+            assert url in cache
+            assert mock_get_req.call_count == 1
+            expanded = series_utils.expand_series_url(url, _page_cache=cache)
+            assert len(expanded) == 2
+            # Because cache already held the page result, get_request was not called again
+            assert mock_get_req.call_count == 1
+            assert series_utils._call_get_urls_from_page is orig_fn
+
 
 class TestEdgeCases:
     """Tests for edge cases and error conditions."""

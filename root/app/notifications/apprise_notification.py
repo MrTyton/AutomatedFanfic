@@ -55,7 +55,12 @@ class AppriseNotification(notification_base.NotificationBase):
         ...     success = notifier.send_notification("Title", "Body", "site")
     """
 
-    def __init__(self, toml_path: str, config_store=None) -> None:
+    def __init__(
+        self,
+        toml_path: str = "/config/config.toml",
+        config_store=None,
+        app_config=None,
+    ) -> None:
         """Initializes Apprise notification provider with configuration loading.
 
         Sets up the Apprise notification system by loading configuration,
@@ -66,23 +71,18 @@ class AppriseNotification(notification_base.NotificationBase):
         Args:
             toml_path (str): Path to the TOML configuration file containing
                            Apprise URLs and Pushbullet configuration settings.
-
-        Note:
-            If configuration loading fails, the service will be disabled.
-            Pushbullet integration is automatic if enabled in configuration.
-            Device nicknames are resolved to device IDs via Pushbullet API.
-
-        Raises:
-            No exceptions are raised - all errors are caught and logged.
-            Configuration or API failures result in service being disabled.
+            config_store (optional): Shared ConfigStore instance for live updates.
+            app_config (AppConfig | None, optional): Pre-loaded AppConfig object.
         """
         # Initialize parent class with configuration loading
+        kwargs = {}
         if config_store is not None:
-            super().__init__(toml_path, config_store=config_store)
-        else:
-            super().__init__(toml_path)
+            kwargs["config_store"] = config_store
+        if app_config is not None:
+            kwargs["app_config"] = app_config
+        super().__init__(toml_path, **kwargs)
         # Use set initially to prevent URL duplicates during configuration
-        self.apprise_urls = set()
+        self.apprise_urls: set[str] | list[str] = set()
         # Create Apprise object for notification management
         self.apobj = apprise.Apprise()
         # Start disabled until configuration validation completes

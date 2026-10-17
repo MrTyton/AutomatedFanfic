@@ -185,11 +185,17 @@ class TestFanficDownloadMain(unittest.TestCase):
                         config=self.mock_config
                     )
 
-                    # Verify CalibreInfo setup
+                    # Verify CalibreInfo setup receives pre-loaded app_config
                     mock_calibre_info.assert_called_once_with(
-                        "test_config.toml", mock_manager_instance
+                        "test_config.toml",
+                        mock_manager_instance,
+                        app_config=self.mock_config,
                     )
                     mock_cdb.check_installed.assert_called_once()
+                    mock_notification.assert_called_once_with(
+                        toml_path="test_config.toml",
+                        app_config=self.mock_config,
+                    )
 
                     # Verify process registration calls
                     # 1 supervisor

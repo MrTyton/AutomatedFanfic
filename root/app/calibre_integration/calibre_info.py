@@ -24,10 +24,14 @@ and configuration consistency across all worker processes.
 import os
 from pathlib import Path
 from subprocess import call
-import shutil
 from utils import ff_logging  # Custom logging module for failure logging
 from utils.system_utils import resolve_ini_path
-from models.config_models import ConfigManager, ConfigError, ConfigValidationError
+from models.config_models import (
+    AppConfig,
+    ConfigManager,
+    ConfigError,
+    ConfigValidationError,
+)
 
 
 class CalibreInfo:
@@ -53,29 +57,41 @@ class CalibreInfo:
         lock (multiprocessing.Lock): Thread-safe lock for concurrent access.
     """
 
-    def __init__(self, toml_path: str, manager):
+    def __init__(
+        self,
+        toml_path: str,
+        manager,
+        *,
+        app_config: AppConfig | None = None,
+    ):
         """Initializes the CalibreInfo object by loading and validating Calibre configuration.
 
-        This constructor loads configuration from the specified TOML file, validates
-        all required settings, and sets up INI file paths for FanFicFare integration.
-        It establishes a multiprocessing lock for thread-safe access and performs
-        comprehensive validation of the Calibre library path and authentication settings.
+        This constructor loads configuration from the specified TOML file (or uses a
+        pre-loaded AppConfig), validates all required settings, and sets up INI file paths
+        for FanFicFare integration. It establishes a multiprocessing lock for thread-safe
+        access and performs comprehensive validation of the Calibre library path and
+        authentication settings.
 
         Args:
             toml_path (str): Path to the TOML configuration file containing Calibre settings.
             manager: A multiprocessing.Manager object used to create shared resources
-            like locks for concurrent access protection.
+                like locks for concurrent access protection.
+            app_config (AppConfig | None, optional): Pre-loaded AppConfig object to avoid
+                re-reading the TOML file from disk.
 
         Raises:
             ValueError: If the configuration file cannot be loaded, is invalid, or if
-            the Calibre library location is not specified in the configuration.
+                the Calibre library location is not specified in the configuration.
         """
-        try:
-            config = ConfigManager.load_config(toml_path)
-        except (ConfigError, ConfigValidationError) as e:
-            message = f"Failed to load configuration from {toml_path}: {e}"
-            ff_logging.log_failure(message)
-            raise ValueError(message)
+        if app_config is not None:
+            config = app_config
+        else:
+            try:
+                config = ConfigManager.load_config(toml_path)
+            except (ConfigError, ConfigValidationError) as e:
+                message = f"Failed to load configuration from {toml_path}: {e}"
+                ff_logging.log_failure(message)
+                raise ValueError(message)
 
         self.location = config.calibre.path
         if not self.location:
@@ -255,39 +271,3 @@ class CalibreInfo:
 
         # Join all parts into a single command-line string
         return " ".join(parts)
-
-    def copy_configs_to_temp_dir(self, temp_dir: str) -> None:
-        """
-        Copy Calibre configuration files to a temporary directory.
-
-        This method safely copies Calibre's default and personal configuration
-        files to a temporary directory, typically for use in isolated FanFicFare
-        operations. Only existing configuration files are copied.
-
-        Args:
-            temp_dir (str): Destination directory path where configuration files
-                           should be copied. Must be a valid, writable directory.
-
-        File Mapping:
-            - self.default_ini -> {temp_dir}/defaults.ini
-            - self.personal_ini -> {temp_dir}/personal.ini
-
-        Raises:
-            OSError: If temp_dir is not writable or source files cannot be read.
-            shutil.SameFileError: If source and destination are the same file.
-        """
-        # Copy default configuration if it exists
-        if self.default_ini and Path(self.default_ini).is_file():
-            path = str(Path(temp_dir) / "defaults.ini")
-            shutil.copyfile(self.default_ini, path)
-            ff_logging.log(f"\tCopied defaults.ini to {path}")
-        else:
-            ff_logging.log_debug("\tNo defaults.ini found to copy")
-
-        # Copy personal configuration if it exists
-        if self.personal_ini and Path(self.personal_ini).is_file():
-            path = str(Path(temp_dir) / "personal.ini")
-            shutil.copyfile(self.personal_ini, path)
-            ff_logging.log(f"\tCopied personal.ini to {path}")
-        else:
-            ff_logging.log_debug("\tNo personal.ini found to copy")

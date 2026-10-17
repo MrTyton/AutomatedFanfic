@@ -72,6 +72,7 @@ import socket
 import time
 import logging
 import threading
+from collections.abc import MutableMapping
 from typing import Any
 from contextlib import contextmanager
 lazy from fanficfare import geturls
@@ -80,6 +81,7 @@ lazy import imapclient
 from utils import ff_logging
 from parsers import regex_parsing
 from notifications import notification_wrapper
+from models import active_urls as active_urls_utils
 from models.config_models import EmailConfig
 from models.queue_types import IngressQueue
 
@@ -319,8 +321,8 @@ class EmailInfo:
             self.config_store.get("calibre.default_ini")
             or self.config_store.get("calibre.personal_ini")
         ):
-            _get_config = self.config_store.get_fff_configuration
-            _initial_config = self.config_store.get_fff_configuration("test1.com")
+            _get_config = _make_fff_get_configuration(self.config_store)
+            _initial_config = _get_config("test1.com")
 
         self._geturls = geturls.GetURLs(config=_initial_config, get_config=_get_config)
         self._geturls_ini_mtime = self._ini_mtime()
@@ -470,7 +472,7 @@ def email_watcher(
     notification_info: notification_wrapper.NotificationWrapper,
     ingress_queue: IngressQueue,
     url_parsers: dict,
-    active_urls: dict | None = None,
+    active_urls: MutableMapping[str, Any] | None = None,
     verbose: bool = False,
     shutdown_event: threading.Event | None = None,
     history_recorder=None,
@@ -530,9 +532,6 @@ def email_watcher(
 
         # Process each URL found in email messages
         for url in urls:
-            # Normalize URL: add https:// if no protocol present (parsers require it for site detection)
-            if url and not url.startswith(("http://", "https://")):
-                url = "https://" + url
             # Parse URL to identify site and normalize format
             fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
 
@@ -550,26 +549,20 @@ def email_watcher(
                 continue
 
             # Check if URL is already active (ignore cancelled entries awaiting heap cleanup)
-            if active_urls is not None and fanfic.url in active_urls:
-                existing_meta = active_urls.get(fanfic.url, {})
-                if not (
-                    isinstance(existing_meta, dict)
-                    and existing_meta.get("status") == "cancelled"
-                ):
-                    urls_duplicate += 1
-                    ff_logging.log(
-                        f"Skipping {fanfic.url} - already in queue or processing",
-                        "WARNING",
-                    )
-                    continue
+            if active_urls_utils.is_url_active(active_urls, fanfic.url):
+                urls_duplicate += 1
+                ff_logging.log(
+                    f"Skipping {fanfic.url} - already in queue or processing",
+                    "WARNING",
+                )
+                continue
 
             # Add to processing set for queue routing
             urls_new += 1
             fics_to_add.add(fanfic)
 
             # Mark as active
-            if active_urls is not None:
-                active_urls[fanfic.url] = {"site": fanfic.site, "status": "queued"}
+            active_urls_utils.mark_url_queued(active_urls, fanfic.url, site=fanfic.site)
 
         # Route each fanfiction to appropriate processing queue
         for fic in fics_to_add:

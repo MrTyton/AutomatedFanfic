@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 lazy from models.config_models import ConfigManager
 from history.database import AsyncHistoryDB
-from models.queue_types import IngressQueue, LogQueue, WaitingQueue, WorkerQueues
+from models.context import SharedIPCContext
 from utils import ff_logging
 from web.dependencies import WebState
 from web.routes import (
@@ -118,37 +118,24 @@ def create_app(web_state: WebState) -> FastAPI:
 
 
 def run_web_server(
-    host: str = "0.0.0.0",
-    port: int = 8080,
-    history_db_path: str | None = None,
-    active_urls: dict | None = None,
-    ingress_queue: IngressQueue | None = None,
-    worker_queues: WorkerQueues | None = None,
-    waiting_queue: WaitingQueue | None = None,
-    process_status_callable: Any = None,
+    ipc: SharedIPCContext,
     app_config: Any = None,
     config_path: str | None = None,
-    config_store: Any = None,
-    history_recorder: Any = None,
-    verbose: bool = False,
-    log_queue: LogQueue | None = None,
     web_restart_event: Any = None,
+    process_status_callable: Any = None,
 ) -> None:
     """Process entry point for the web server.
 
     Compatible with ProcessManager.register_process(). Runs uvicorn in the
     subprocess with signal handling for graceful shutdown.
     """
-    ff_logging.set_verbose(verbose)
-    ff_logging.set_thread_color("\033[95m")  # Magenta for web server
-
-    # This process should NOT forward its own log() calls back onto the queue
-    # (it would cause duplicates since the drain thread below also appends them
-    # to _log_buffer).  Clear the inherited forward-queue reference first, then
-    # start the drain thread so entries from all OTHER processes flow in.
-    ff_logging.set_log_forward_queue(None)
-    if log_queue is not None:
-        ff_logging.start_log_drain_thread(log_queue)
+    ff_logging.init_process_logging(
+        ipc.verbose,
+        color="\033[95m",  # Magenta for web server
+        log_queue=ipc.log_queue,
+        config_store=ipc.config_store,
+        is_web_server=True,
+    )
 
     shutdown_event = threading.Event()
 
@@ -159,20 +146,25 @@ def run_web_server(
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
+    web_cfg = getattr(app_config, "web", None)
+    host = getattr(web_cfg, "host", "0.0.0.0") or "0.0.0.0"
+    port = int(getattr(web_cfg, "port", 8080) or 8080)
+    history_db_path = getattr(web_cfg, "history_db_path", None)
+
     # Build shared state
     web_state = WebState(
         history_db=AsyncHistoryDB(history_db_path) if history_db_path else None,
-        active_urls=active_urls,
-        ingress_queue=ingress_queue,
-        worker_queues=worker_queues,
-        waiting_queue=waiting_queue,
+        active_urls=ipc.active_urls,
+        ingress_queue=ipc.ingress_queue,
+        worker_queues=ipc.worker_queues,
+        waiting_queue=ipc.waiting_queue,
         process_status_callable=process_status_callable,
-        history_recorder=history_recorder,
+        history_recorder=ipc.history_recorder,
         config=app_config,
         config_path=config_path,
-        config_store=config_store,
+        config_store=ipc.config_store,
         web_restart_event=web_restart_event,
-        verbose=verbose,
+        verbose=ipc.verbose,
     )
 
     app = create_app(web_state)

@@ -4,22 +4,15 @@ Failure and success handling logic for worker processes.
 
 from models import config_models
 from models import retry_types
-from calibre_integration import calibre_info
 from models import fanfic_info
-from models.queue_types import WaitingQueue
-from notifications import notification_wrapper
-from calibre_integration import calibredb_utils
+from models.context import WorkerContext
 from utils import ff_logging
 from calibre_integration import update_strategies
 
 
 def handle_failure(
     fanfic: fanfic_info.FanficInfo,
-    notification_info: notification_wrapper.NotificationWrapper,
-    waiting_queue: WaitingQueue,
-    retry_config: config_models.RetryConfig,
-    cdb: calibre_info.CalibreInfo | None = None,
-    history_recorder=None,
+    ctx: WorkerContext,
     error_message: str | None = None,
 ) -> None:
     """
@@ -29,12 +22,17 @@ def handle_failure(
     based on the number of failures and configuration.
 
     Args:
-        fanfic (fanfic_info.FanficInfo): The fanfiction story object.
-        notification_info (notification_wrapper.NotificationWrapper): Notification wrapper.
-        waiting_queue (mp.Queue): Queue to put the task back into for retry.
-        retry_config (config_models.RetryConfig): Retry configuration.
-        cdb (calibre_info.CalibreInfo, optional): Calibre configuration info.
+        fanfic: The fanfiction story object.
+        ctx: WorkerContext containing notification_info, waiting_queue, retry_config,
+             calibre_client, and optional history_recorder.
+        error_message: Optional detailed failure message.
     """
+    retry_config = ctx.retry_config
+    notification_info = ctx.notification_info
+    waiting_queue = ctx.waiting_queue
+    cdb = ctx.cdb_info
+    history_recorder = ctx.history_recorder
+
     # Sync hot-reloaded retry settings if ConfigStore is attached
     if hasattr(retry_config, "update_from_config_store"):
         retry_config.update_from_config_store()
@@ -137,32 +135,28 @@ def check_active_removal(fanfic: fanfic_info.FanficInfo) -> bool:
 
 def process_fanfic_addition(
     fanfic: fanfic_info.FanficInfo,
-    calibre_client: calibredb_utils.CalibreDBClient,
+    ctx: WorkerContext,
     temp_dir: str,
-    site: str,
     path_or_url: str,
-    waiting_queue: WaitingQueue,
-    notification_info: notification_wrapper.NotificationWrapper,
-    retry_config: config_models.RetryConfig,
-    history_recorder=None,
 ) -> bool:
     """
     Integrate downloaded fanfic with Calibre library.
 
     Args:
         fanfic: Fanfiction info
-        calibre_client: CalibreDB client
+        ctx: WorkerContext bundling calibre_client, notification_info, waiting_queue, retry_config, etc.
         temp_dir: Temporary directory path
-        site: Site identifier
         path_or_url: Path or URL being processed
-        waiting_queue: Queue for retries
-        notification_info: Notification wrapper
-        retry_config: Retry configuration
 
     Returns:
         bool: True if the URL should be removed from active_urls (succeeded or abandoned),
               False if it is waiting for retry.
     """
+    site = fanfic.site
+    calibre_client = ctx.calibre_client
+    notification_info = ctx.notification_info
+    history_recorder = ctx.history_recorder
+
     try:
         # Determine if the story exists in Calibre
         # We already checked in pipeline.py (common.get_path_or_url), so fanfic.calibre_id should be set if it exists.
@@ -174,7 +168,9 @@ def process_fanfic_addition(
             mode = calibre_client.cdb_info.metadata_preservation_mode
 
             if mode == config_models.MetadataPreservationMode.ADD_FORMAT:
-                strategy = update_strategies.AddFormatStrategy()
+                strategy: update_strategies.UpdateStrategy = (
+                    update_strategies.AddFormatStrategy()
+                )
             elif mode == config_models.MetadataPreservationMode.PRESERVE_METADATA:
                 strategy = update_strategies.PreserveMetadataStrategy()
             else:
@@ -184,23 +180,19 @@ def process_fanfic_addition(
             strategy = update_strategies.AddNewStoryStrategy()
 
         # Execute the chosen strategy
-        success = strategy.execute(
+        outcome = strategy.execute(
             fanfic=fanfic,
             calibre_client=calibre_client,
             temp_dir=temp_dir,
-            site=site,
             path_or_url=path_or_url,
-            waiting_queue=waiting_queue,
-            notification_info=notification_info,
-            retry_config=retry_config,
-            failure_handler=handle_failure,
-            history_recorder=history_recorder,
         )
+        if isinstance(outcome, tuple):
+            success, error_msg = outcome
+        else:
+            success, error_msg = bool(outcome), None
 
         if success:
             fanfic.retry_decision = None
-            # Retrieve the new/current Story ID to confirm
-            # Redundant call removed - strategy updates fanfic.calibre_id
             if fanfic.calibre_id:
                 ff_logging.log(f"\t({site}) Story ID: {fanfic.calibre_id}")
 
@@ -221,7 +213,12 @@ def process_fanfic_addition(
                 "New Fanfiction Download", fanfic.title or "Unknown Title", site
             )
             return True
-        # Note: Failures are handled within the strategy.execute calls via failure_handler
+
+        handle_failure(
+            fanfic,
+            ctx,
+            error_message=error_msg,
+        )
         return check_active_removal(fanfic)
 
     except Exception as e:
@@ -232,11 +229,7 @@ def process_fanfic_addition(
             )
         handle_failure(
             fanfic,
-            notification_info,
-            waiting_queue,
-            retry_config,
-            calibre_client.cdb_info,
-            history_recorder=history_recorder,
+            ctx,
             error_message=str(e),
         )
         return check_active_removal(fanfic)

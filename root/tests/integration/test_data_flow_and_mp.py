@@ -140,6 +140,18 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     hail_mary_wait_hours=12.0,
                 )
 
+                from models.context import WorkerContext
+
+                worker_ctx = WorkerContext(
+                    calibre_client=mock_client,
+                    notification_info=mock_notif,
+                    ingress_queue=ingress_q,
+                    waiting_queue=waiting_q,
+                    retry_config=retry_cfg,
+                    history_recorder=recorder,
+                    active_urls=active_urls,
+                )
+
                 # Step 2: Run worker for Attempt 1 (fails in FanFicFare)
                 worker_q.put(None)  # Poison pill after 1st item
                 with (
@@ -157,15 +169,9 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     mock_td.return_value.__enter__.return_value = tmp_dir
                     pipeline.url_worker(
                         worker_q,
-                        mock_client,
-                        mock_notif,
-                        ingress_q,
-                        waiting_q,
-                        retry_cfg,
+                        worker_ctx,
                         "worker_0",
-                        active_urls,
                         False,
-                        recorder,
                     )
 
                 # Drain Coordinator's WORKER_IDLE signal from worker_0 exit
@@ -238,15 +244,9 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     mock_td.return_value.__enter__.return_value = tmp_dir
                     pipeline.url_worker(
                         worker_q,
-                        mock_client,
-                        mock_notif,
-                        ingress_q,
-                        waiting_q,
-                        retry_cfg,
+                        worker_ctx,
                         "worker_0",
-                        active_urls,
                         False,
-                        recorder,
                     )
 
             finally:
@@ -393,6 +393,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             store.update("retry.max_normal_retries", 1)
             store.update("retry.hail_mary_enabled", False)
 
+            from models.context import WorkerContext
+
             fanfic = FanficInfo(
                 url="archiveofourown.org/works/1",
                 site="archiveofourown",
@@ -400,7 +402,14 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 repeats=0,
             )
             waiting_q = Queue()
-            handlers.handle_failure(fanfic, MagicMock(), waiting_q, retry_cfg)
+            ctx = WorkerContext(
+                calibre_client=MagicMock(cdb_info=None),
+                notification_info=MagicMock(),
+                ingress_queue=Queue(),
+                waiting_queue=waiting_q,
+                retry_config=retry_cfg,
+            )
+            handlers.handle_failure(fanfic, ctx)
             self.assertEqual(retry_cfg.max_normal_retries, 1)
             self.assertFalse(retry_cfg.hail_mary_enabled)
             # With max_normal_retries=1 and hail_mary_enabled=False, repeats=0 -> 1 is ABANDON!

@@ -45,6 +45,7 @@ from services import supervisor
 from workers import pipeline as url_worker, pool_runner
 from models import config_models
 from models.config_models import ConfigError, ConfigValidationError
+from models.context import SharedIPCContext
 from process_management import ProcessManager
 from history.recorder import HistoryRecorder, HistoryWriter
 from config.config_store import ConfigStore
@@ -236,7 +237,7 @@ def register_processes(
     config_store.initialize_from_config(config)
 
     # Initialize Calibre components
-    cdb_info = calibre_info.CalibreInfo(args.config, manager)
+    cdb_info = calibre_info.CalibreInfo(args.config, manager, app_config=config)
     cdb_info.check_installed()
     calibre_client = calibredb_utils.CalibreDBClient(cdb_info)
 
@@ -245,7 +246,9 @@ def register_processes(
         config.email,
         config_store=config_store,
     )
-    notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
+    notification_info = notification_wrapper.NotificationWrapper(
+        toml_path=args.config, app_config=config
+    )
     notification_info.set_config_store(config_store)
 
     # Initialize history recording infrastructure
@@ -284,22 +287,26 @@ def register_processes(
     # drain the queue into its ring buffer.
     ff_logging.set_log_forward_queue(log_queue)
 
+    ipc = SharedIPCContext(
+        ingress_queue=ingress_queue,
+        waiting_queue=waiting_queue,
+        worker_queues=worker_queues,
+        active_urls=active_urls,
+        history_recorder=history_recorder,
+        config_store=config_store,
+        log_queue=log_queue,
+        verbose=args.verbose,
+    )
+
     # Register Supervisor Process (Hosts Email, Waiter, Coordinator)
     process_manager.register_process(
         "supervisor",
         supervisor.run_supervisor,
         args=(
-            worker_queues,
-            ingress_queue,
-            waiting_queue,
+            ipc,
             email_info,
             notification_info,
             url_parsers,
-            active_urls,
-            args.verbose,
-            history_recorder,
-            config_store,
-            log_queue,
         ),
     )
 
@@ -308,17 +315,10 @@ def register_processes(
         "worker_pool",
         pool_runner.run_worker_pool,
         args=(
-            worker_queues,
+            ipc,
             calibre_client,
             notification_info,
-            ingress_queue,
-            waiting_queue,
             config.retry,
-            active_urls,
-            args.verbose,
-            history_recorder,
-            config_store,
-            log_queue,
         ),
     )
 
@@ -329,21 +329,11 @@ def register_processes(
             "web_server",
             web_server.run_web_server,
             args=(
-                config.web.host,
-                config.web.port,
-                config.web.history_db_path,
-                active_urls,
-                ingress_queue,
-                worker_queues,
-                waiting_queue,
-                None,  # process_status_callable — not cross-process safe yet
+                ipc,
                 config,
                 args.config,
-                config_store,
-                history_recorder,
-                args.verbose,
-                log_queue,
                 web_restart_event,
+                None,  # process_status_callable — not cross-process safe yet
             ),
         )
 

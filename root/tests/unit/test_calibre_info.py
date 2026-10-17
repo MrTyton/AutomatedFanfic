@@ -275,50 +275,26 @@ class TestCalibreInfoEdgeCases(unittest.TestCase):
 
     @patch("models.config_models.ConfigManager.load_config")
     @patch("multiprocessing.Manager")
-    @patch("pathlib.Path.is_file")
-    @patch("shutil.copyfile")
-    @patch("utils.ff_logging.log_debug")
-    def test_copy_configs_to_temp_dir_missing_files(
-        self, mock_log_debug, mock_copyfile, mock_isfile, mock_manager, mock_load_config
-    ):
-        """Test copy_configs_to_temp_dir when ini files don't exist."""
-        import tempfile
-
+    def test_init_with_app_config_skips_disk_load(self, mock_manager, mock_load_config):
+        """Test that passing app_config to CalibreInfo skips ConfigManager.load_config."""
         mock_config = AppConfig(
             email=EmailConfig(),
             calibre=CalibreConfig(
-                path="/test/path",
-                default_ini="/path/to/defaults.ini",
-                personal_ini="/path/to/personal.ini",
+                path="/preloaded/library",
+                username="preloaded_user",
+                password="preloaded_password",
             ),
             apprise=AppriseConfig(),
             pushbullet=PushbulletConfig(),
         )
-        mock_load_config.return_value = mock_config
         mock_manager.return_value = MagicMock()
 
-        # Simulate that ini files don't exist
-        mock_isfile.return_value = False
+        calibre_info = CalibreInfo("test.toml", mock_manager(), app_config=mock_config)
 
-        calibre_info = CalibreInfo("test.toml", mock_manager())
-
-        # Create a temp directory and try to copy configs
-        with tempfile.TemporaryDirectory() as temp_dir:
-            calibre_info.copy_configs_to_temp_dir(temp_dir)
-
-            # copyfile should not have been called since files don't exist
-            mock_copyfile.assert_not_called()
-
-            # Should have logged that files weren't found
-            debug_calls = [call[0][0] for call in mock_log_debug.call_args_list]
-            self.assertTrue(
-                any("No defaults.ini found" in call for call in debug_calls),
-                "Should log that defaults.ini was not found",
-            )
-            self.assertTrue(
-                any("No personal.ini found" in call for call in debug_calls),
-                "Should log that personal.ini was not found",
-            )
+        mock_load_config.assert_not_called()
+        self.assertEqual(calibre_info.location, "/preloaded/library")
+        self.assertEqual(calibre_info.username, "preloaded_user")
+        self.assertEqual(calibre_info.password, "preloaded_password")
 
 
 class TestCalibreInfoUpdateFromConfigStore(unittest.TestCase):

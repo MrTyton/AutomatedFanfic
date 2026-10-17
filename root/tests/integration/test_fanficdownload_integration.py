@@ -308,12 +308,9 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_fanfic.behavior = config_data["fanfic_behavior"]
         mock_fanfic.url = "http://test.site/story/123"
 
-        # Test command construction
-        command = worker_command.construct_fanficfare_command(
-            mock_cdb, mock_fanfic, "http://test.site/story/123"
-        )
+        # Test command argument construction
+        command = worker_command._build_argv(mock_cdb, mock_fanfic)
 
-        # Validate expected behaviors
         # Validate expected behaviors
         if expected_behavior == "normal_update":
             self.assertIn("-u", command)
@@ -540,11 +537,21 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
 
+        from models.context import WorkerContext
+
+        mock_client = MagicMock()
+        mock_client.cdb_info = mock_cdb
+        ctx = WorkerContext(
+            calibre_client=mock_client,
+            notification_info=mock_notification,
+            ingress_queue=MagicMock(),
+            waiting_queue=mock_queue,
+            retry_config=retry_config,
+        )
+
         # Test failure handling
         with patch("workers.handlers.ff_logging") as mock_logging:
-            worker_handlers.handle_failure(
-                mock_fanfic, mock_notification, mock_queue, retry_config, mock_cdb
-            )
+            worker_handlers.handle_failure(mock_fanfic, ctx)
 
             # Validate expected behaviors
             if expected_behavior == "hail_mary_activation":

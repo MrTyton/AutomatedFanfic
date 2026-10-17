@@ -4,6 +4,7 @@ WebState holds references to all shared multiprocessing objects and config,
 injected into route handlers via FastAPI's Depends() mechanism.
 """
 
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,7 +24,7 @@ class WebState:
     history_db: AsyncHistoryDB | None = None
 
     # Shared multiprocessing objects (read-only from web server)
-    active_urls: dict | None = None
+    active_urls: MutableMapping[str, Any] | None = None
     ingress_queue: IngressQueue | None = None
     worker_queues: WorkerQueues | None = None
     waiting_queue: WaitingQueue | None = None

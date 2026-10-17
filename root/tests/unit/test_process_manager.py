@@ -121,7 +121,6 @@ class TestProcessManager(unittest.TestCase):
         self.assertIsNotNone(self.manager.config)
         self.assertIsInstance(self.manager.process_config, ProcessConfig)
         self.assertEqual(len(self.manager.processes), 0)
-        self.assertIsNone(self.manager.pool)
         self.assertFalse(self.manager._shutdown_event.is_set())
         self.assertIsNone(self.manager._monitor_thread)
         self.assertFalse(self.manager._signal_handlers_set)
@@ -351,22 +350,6 @@ class TestProcessManager(unittest.TestCase):
 
         # Clean up
         self.manager.stop_process("test")
-
-    def test_create_worker_pool(self):
-        """Test creating worker pool."""
-        pool = self.manager.create_worker_pool(worker_count=2)
-
-        self.assertIsNotNone(pool)
-        self.assertEqual(self.manager.pool, pool)
-
-        # Test that creating again returns the same pool
-        pool2 = self.manager.create_worker_pool()
-        self.assertEqual(pool, pool2)
-
-        # Clean up
-        if pool:
-            pool.terminate()
-            pool.join()
 
     def test_setup_signal_handlers(self):
         """Test signal handler setup."""

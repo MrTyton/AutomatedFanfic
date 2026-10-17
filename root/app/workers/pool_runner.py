@@ -13,46 +13,60 @@ import signal
 from utils import ff_logging
 from workers import pipeline
 from models import config_models
-from models.queue_types import IngressQueue, LogQueue, WaitingQueue, WorkerQueues
+from models.context import SharedIPCContext, WorkerContext
+from models.queue_types import WorkerQueue
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
 
 
+def _spawn_worker_thread(
+    worker_id: str,
+    queue: WorkerQueue,
+    ctx: WorkerContext,
+    verbose: bool,
+) -> threading.Thread:
+    """Create and start a daemon worker thread running pipeline.url_worker."""
+    thread = threading.Thread(
+        target=pipeline.url_worker,
+        args=(queue, ctx, worker_id, verbose),
+        name=worker_id,
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
 def run_worker_pool(
-    worker_queues: WorkerQueues,
+    ipc: SharedIPCContext,
     calibre_client: calibredb_utils.CalibreDBClient,
     notification_info: notification_wrapper.NotificationWrapper,
-    ingress_queue: IngressQueue,
-    waiting_queue: WaitingQueue,
     retry_config: config_models.RetryConfig,
-    active_urls: dict,
-    verbose: bool = False,
-    history_recorder=None,
-    config_store=None,
-    log_queue: LogQueue | None = None,
 ) -> None:
     """
     Runs a pool of worker threads within a single process.
 
     Args:
-        worker_queues: Dictionary mapping worker_ids to their input queues.
+        ipc: SharedIPCContext bundling queues, active_urls, history_recorder, config_store, log_queue, verbose.
         calibre_client: Shared Calibre client instance.
         notification_info: Shared notification wrapper.
-        ingress_queue: Shared ingress queue for WORKER_IDLE signals and force re-queues.
-        waiting_queue: Shared queue for retry backoff (consumed by ff_waiter).
         retry_config: Retry configuration.
-        active_urls: Shared dictionary of active URLs.
-        verbose: Verbose logging flag.
-        config_store: Optional ConfigStore for hot-reloading calibre/notification config.
-        log_queue: Optional cross-process queue for forwarding log entries to the web server.
     """
+    worker_queues = ipc.worker_queues
+    ingress_queue = ipc.ingress_queue
+    waiting_queue = ipc.waiting_queue
+    active_urls = ipc.active_urls
+    verbose = ipc.verbose
+    history_recorder = ipc.history_recorder
+    config_store = ipc.config_store
+    log_queue = ipc.log_queue
+
     # Initialize logging for this process
-    ff_logging.set_verbose(verbose)
-    if log_queue is not None:
-        ff_logging.set_web_enabled(True)
-    elif config_store is not None:
-        ff_logging.set_web_enabled(False)
-    ff_logging.set_log_forward_queue(log_queue)
+    ff_logging.init_process_logging(
+        verbose,
+        log_queue=log_queue,
+        config_store=config_store,
+        is_web_server=False,
+    )
 
     # Attach ConfigStore so workers pick up credential changes at runtime
     if config_store is not None:
@@ -60,6 +74,16 @@ def run_worker_pool(
         notification_info.set_config_store(config_store)
         if hasattr(retry_config, "set_config_store"):
             retry_config.set_config_store(config_store)
+
+    worker_ctx = WorkerContext(
+        calibre_client=calibre_client,
+        notification_info=notification_info,
+        ingress_queue=ingress_queue,
+        waiting_queue=waiting_queue,
+        retry_config=retry_config,
+        history_recorder=history_recorder,
+        active_urls=active_urls,
+    )
 
     ff_logging.log_debug(f"Worker Pool Process using {len(worker_queues)} threads")
 
@@ -70,8 +94,6 @@ def run_worker_pool(
     def signal_handler(signum, frame):
         ff_logging.log_debug("Worker Pool received shutdown signal")
         shutdown_event.set()
-        # We don't need to do anything else, the threads are daemon threads
-        # or we can wait for them. Ideally we wait.
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -79,25 +101,7 @@ def run_worker_pool(
     try:
         # Spawn threads for each worker queue
         for worker_id, queue in worker_queues.items():
-            t = threading.Thread(
-                target=pipeline.url_worker,
-                args=(
-                    queue,
-                    calibre_client,
-                    notification_info,
-                    ingress_queue,
-                    waiting_queue,
-                    retry_config,
-                    worker_id,
-                    active_urls,
-                    verbose,
-                    history_recorder,
-                ),
-                name=worker_id,
-                daemon=True,  # Important: Allows process to exit if threads are stuck
-            )
-            t.start()
-            threads.append(t)
+            threads.append(_spawn_worker_thread(worker_id, queue, worker_ctx, verbose))
 
         # Main loop: Wait for shutdown and periodically check thread health / scale-up
         while not shutdown_event.is_set():
@@ -111,25 +115,12 @@ def run_worker_pool(
                         ff_logging.log_failure(
                             f"Thread {worker_id} died unexpectedly - Restarting..."
                         )
-                        new_thread = threading.Thread(
-                            target=pipeline.url_worker,
-                            args=(
-                                worker_queues[worker_id],
-                                calibre_client,
-                                notification_info,
-                                ingress_queue,
-                                waiting_queue,
-                                retry_config,
-                                worker_id,
-                                active_urls,
-                                verbose,
-                                history_recorder,
-                            ),
-                            name=worker_id,
-                            daemon=True,
+                        threads[i] = _spawn_worker_thread(
+                            worker_id,
+                            worker_queues[worker_id],
+                            worker_ctx,
+                            verbose,
                         )
-                        new_thread.start()
-                        threads[i] = new_thread  # Replace the dead thread
                     else:
                         ff_logging.log_debug(
                             f"Thread {worker_id} stopped (queue removed - intentional scale-down)"
@@ -140,25 +131,14 @@ def run_worker_pool(
             for worker_id in list(worker_queues.keys()):
                 if worker_id not in tracked_ids:
                     ff_logging.log(f"Worker Pool: spawning new thread for {worker_id}")
-                    new_thread = threading.Thread(
-                        target=pipeline.url_worker,
-                        args=(
-                            worker_queues[worker_id],
-                            calibre_client,
-                            notification_info,
-                            ingress_queue,
-                            waiting_queue,
-                            retry_config,
+                    threads.append(
+                        _spawn_worker_thread(
                             worker_id,
-                            active_urls,
+                            worker_queues[worker_id],
+                            worker_ctx,
                             verbose,
-                            history_recorder,
-                        ),
-                        name=worker_id,
-                        daemon=True,
+                        )
                     )
-                    new_thread.start()
-                    threads.append(new_thread)
                     # Notify coordinator that this worker is now available
                     ingress_queue.put(("WORKER_IDLE", worker_id, None))
 
@@ -166,10 +146,4 @@ def run_worker_pool(
         ff_logging.log("Worker Pool interrupted", "WARNING")
     finally:
         ff_logging.log_debug("Worker Pool shutting down threads...")
-        # Since threads are daemon, we can just exit.
-        # But if we wanted clean shutdown, we'd need to signal them.
-        # url_worker checks for None in queue, but we have 32 queues.
-        # We'd need to put None in all of them.
-        # Given they are mostly I/O bound on subprocess or sleep, daemon exit is safe enough
-        # provided `process_manager` handles the heavy lifting of killing this process.
         pass

@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, Request
 
+from models import active_urls as active_urls_utils
+
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 
 
@@ -28,27 +30,9 @@ async def active_downloads(request: Request):
 async def queue_depths(request: Request):
     """Current queue sizes across the system."""
     state = request.app.state.web_state
-    result = {}
-
-    for name, queue in [
-        ("ingress", state.ingress_queue),
-        ("waiting", state.waiting_queue),
-    ]:
-        if queue is not None:
-            try:
-                result[name] = queue.qsize()
-            except NotImplementedError:
-                result[name] = -1
-
-    if state.worker_queues:
-        result["workers"] = {}
-        for worker_id, queue in state.worker_queues.items():
-            try:
-                result["workers"][worker_id] = queue.qsize()
-            except NotImplementedError:
-                result["workers"][worker_id] = -1
-
-    return result
+    return active_urls_utils.get_queue_depths(
+        state.ingress_queue, state.waiting_queue, state.worker_queues
+    )
 
 
 @router.get("/workers")

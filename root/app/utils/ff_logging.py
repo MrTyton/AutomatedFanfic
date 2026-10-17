@@ -235,6 +235,37 @@ def set_thread_color(ansi_code: str) -> None:
     _thread_local.color = ansi_code
 
 
+def init_process_logging(
+    verbose_flag: bool,
+    *,
+    color: str | None = None,
+    log_queue: LogQueue | None = None,
+    config_store: object | None = None,
+    is_web_server: bool = False,
+) -> None:
+    """Initialize logging for a spawned process.
+
+    Centralizes verbose flag setup, thread color, web ring-buffer toggling,
+    and cross-process log forwarding or draining.
+    """
+    set_verbose(verbose_flag)
+    if color is not None:
+        set_thread_color(color)
+
+    if is_web_server:
+        # The web server drains the cross-process log queue into its own ring buffer
+        # rather than forwarding its own logs back onto the queue.
+        set_log_forward_queue(None)
+        if log_queue is not None:
+            start_log_drain_thread(log_queue)
+    else:
+        if log_queue is not None:
+            set_web_enabled(True)
+        elif config_store is not None:
+            set_web_enabled(False)
+        set_log_forward_queue(log_queue)
+
+
 def set_thread_site(site: str | None) -> None:
     """Sets (or clears) the site tag for the current thread's log output.
 

@@ -1,9 +1,9 @@
 import unittest
 from unittest.mock import MagicMock, call, patch
-import multiprocessing as mp
 
 from calibre_integration import update_strategies, calibredb_utils
 from models import fanfic_info, config_models
+from models.context import WorkerContext
 from notifications import notification_wrapper
 
 
@@ -21,13 +21,10 @@ class TestUpdateStrategies(unittest.TestCase):
         self.temp_dir = "/tmp/test"
         self.path_or_url = "/tmp/test/story.epub"
 
-        self.mock_queue = MagicMock(spec=mp.Queue)
         self.mock_notification = MagicMock(
             spec=notification_wrapper.NotificationWrapper
         )
         self.retry_config = config_models.RetryConfig()
-
-        self.mock_failure_handler = MagicMock()
 
     # --- AddFormatStrategy Tests ---
 
@@ -43,19 +40,15 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.get_metadata.side_effect = [old_metadata, new_metadata]
         self.mock_client.add_format_to_existing_story.return_value = True
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         self.mock_client.get_metadata.assert_has_calls(
             [call(self.fanfic), call(self.fanfic)]
         )
@@ -65,7 +58,6 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.log_metadata_comparison.assert_called_once_with(
             self.fanfic, old_metadata, new_metadata
         )
-        self.mock_failure_handler.assert_not_called()
 
     @patch(
         "calibre_integration.update_strategies.ff_logging.is_verbose",
@@ -77,19 +69,15 @@ class TestUpdateStrategies(unittest.TestCase):
 
         self.mock_client.add_format_to_existing_story.return_value = True
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         self.mock_client.get_metadata.assert_not_called()
         self.mock_client.log_metadata_comparison.assert_not_called()
         self.mock_client.add_format_to_existing_story.assert_called_once()
@@ -101,29 +89,16 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.get_metadata.return_value = {}
         self.mock_client.add_format_to_existing_story.return_value = False
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertFalse(result)
+        self.assertFalse(success)
+        self.assertEqual(error_msg, f"Failed to replace format for {self.path_or_url}")
         self.mock_client.add_format_to_existing_story.assert_called_once()
-        self.mock_failure_handler.assert_called_once_with(
-            self.fanfic,
-            self.mock_notification,
-            self.mock_queue,
-            self.retry_config,
-            self.mock_client.cdb_info,
-            history_recorder=None,
-            error_message=f"Failed to replace format for {self.path_or_url}",
-        )
 
     # --- PreserveMetadataStrategy Tests ---
 
@@ -139,19 +114,15 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.get_metadata.side_effect = [old_metadata, new_metadata]
         self.mock_client.get_story_id.return_value = "124"  # New ID
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         # get_metadata called twice: once for restoration, once for verbose comparison
         self.assertEqual(self.mock_client.get_metadata.call_count, 2)
         self.mock_client.remove_story.assert_called_once_with(self.fanfic)
@@ -175,19 +146,15 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.get_metadata.return_value = old_metadata
         self.mock_client.get_story_id.return_value = "124"
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         # get_metadata called only once (pre-removal for restoration)
         self.mock_client.get_metadata.assert_called_once_with(self.fanfic)
         self.mock_client.set_metadata_fields.assert_called_once_with(
@@ -202,19 +169,15 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.get_metadata.return_value = {}
         self.mock_client.get_story_id.return_value = "124"
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         self.mock_client.remove_story.assert_called_once()
         self.mock_client.add_story.assert_called_once()
         self.mock_client.set_metadata_fields.assert_not_called()
@@ -232,30 +195,17 @@ class TestUpdateStrategies(unittest.TestCase):
 
         self.mock_client.get_story_id.return_value = None  # Failed to find ID after add
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertFalse(result)
+        self.assertFalse(success)
+        self.assertEqual(error_msg, f"Failed to add {self.path_or_url} to Calibre")
         self.mock_client.remove_story.assert_called_once()
         self.mock_client.add_story.assert_called_once()
-        self.mock_failure_handler.assert_called_once_with(
-            self.fanfic,
-            self.mock_notification,
-            self.mock_queue,
-            self.retry_config,
-            self.mock_client.cdb_info,
-            history_recorder=None,
-            error_message=f"Failed to add {self.path_or_url} to Calibre",
-        )
 
     # --- RemoveAddStrategy Tests ---
 
@@ -277,19 +227,15 @@ class TestUpdateStrategies(unittest.TestCase):
 
         self.mock_client.get_story_id.return_value = "125"
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         self.mock_client.remove_story.assert_called_once_with(self.fanfic)
         self.mock_client.add_story.assert_called_once()
         self.mock_client.log_metadata_comparison.assert_called_once()
@@ -308,19 +254,15 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_client.remove_story.side_effect = remove_side_effect
         self.mock_client.get_story_id.return_value = "125"
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         self.mock_client.get_metadata.assert_not_called()
         self.mock_client.log_metadata_comparison.assert_not_called()
 
@@ -337,28 +279,15 @@ class TestUpdateStrategies(unittest.TestCase):
 
         self.mock_client.get_story_id.return_value = None
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertFalse(result)
-        self.mock_failure_handler.assert_called_once_with(
-            self.fanfic,
-            self.mock_notification,
-            self.mock_queue,
-            self.retry_config,
-            self.mock_client.cdb_info,
-            history_recorder=None,
-            error_message=f"Failed to add {self.path_or_url} to Calibre",
-        )
+        self.assertFalse(success)
+        self.assertEqual(error_msg, f"Failed to add {self.path_or_url} to Calibre")
 
     # --- AddNewStoryStrategy Tests ---
 
@@ -374,25 +303,20 @@ class TestUpdateStrategies(unittest.TestCase):
 
         self.mock_client.add_story.side_effect = add_story_side_effect
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertTrue(result)
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
         self.mock_client.add_story.assert_called_once_with(
             location=self.temp_dir, fanfic=self.fanfic
         )
         # Verify optimization: get_story_id should NOT be called if ID is already set
         self.mock_client.get_story_id.assert_not_called()
-        self.mock_failure_handler.assert_not_called()
 
     def test_add_new_story_failure(self):
         strategy = update_strategies.AddNewStoryStrategy()
@@ -402,32 +326,19 @@ class TestUpdateStrategies(unittest.TestCase):
 
         self.mock_client.get_story_id.return_value = None
 
-        result = strategy.execute(
+        success, error_msg = strategy.execute(
             self.fanfic,
             self.mock_client,
             self.temp_dir,
-            "site",
             self.path_or_url,
-            self.mock_queue,
-            self.mock_notification,
-            self.retry_config,
-            self.mock_failure_handler,
         )
 
-        self.assertFalse(result)
+        self.assertFalse(success)
+        self.assertEqual(error_msg, f"Failed to add {self.path_or_url} to Calibre")
         self.mock_client.add_story.assert_called_once()
-        self.mock_failure_handler.assert_called_once_with(
-            self.fanfic,
-            self.mock_notification,
-            self.mock_queue,
-            self.retry_config,
-            self.mock_client.cdb_info,
-            history_recorder=None,
-            error_message=f"Failed to add {self.path_or_url} to Calibre",
-        )
 
-    def test_strategies_with_real_handle_failure_and_history_recorder(self):
-        """Real handle_failure + HistoryRecorder records Calibre failure reason and retry event."""
+    def test_process_fanfic_addition_with_real_strategy_and_history_recorder(self):
+        """process_fanfic_addition + real strategy + HistoryRecorder records Calibre failure reason and retry event."""
         from queue import Queue
         from history.recorder import HistoryRecorder
         from workers import handlers
@@ -435,24 +346,31 @@ class TestUpdateStrategies(unittest.TestCase):
         history_q = Queue()
         recorder = HistoryRecorder(history_q)
         waiting_q = Queue()
+        ingress_q = Queue()
 
+        self.mock_client.cdb_info.metadata_preservation_mode = (
+            config_models.MetadataPreservationMode.ADD_FORMAT
+        )
         self.mock_client.add_format_to_existing_story.return_value = False
-        strategy = update_strategies.AddFormatStrategy()
 
-        result = strategy.execute(
-            self.fanfic,
-            self.mock_client,
-            self.temp_dir,
-            "site",
-            self.path_or_url,
-            waiting_q,
-            self.mock_notification,
-            self.retry_config,
-            handlers.handle_failure,
+        ctx = WorkerContext(
+            calibre_client=self.mock_client,
+            notification_info=self.mock_notification,
+            ingress_queue=ingress_q,
+            waiting_queue=waiting_q,
+            retry_config=self.retry_config,
             history_recorder=recorder,
         )
 
-        self.assertFalse(result)
+        should_remove = handlers.process_fanfic_addition(
+            self.fanfic,
+            ctx,
+            self.temp_dir,
+            self.path_or_url,
+        )
+
+        # Since retry was scheduled, URL should NOT be removed from active_urls
+        self.assertFalse(should_remove)
         # Fanfic should be queued onto waiting_q with retry decision
         queued_fanfic = waiting_q.get_nowait()
         self.assertEqual(queued_fanfic.url, self.fanfic.url)

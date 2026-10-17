@@ -61,7 +61,6 @@ Note:
 from pathlib import Path
 import re
 from models import fanfic_info
-from utils import ff_logging
 
 # Note: url_parsers is now passed as a parameter to avoid loading
 # FanFicFare adapters in every worker process
@@ -170,182 +169,19 @@ def check_forceable_from_message(msg: str) -> bool:
     return any(p.search(msg) for p in forceable_patterns)
 
 
-def check_regexes(output: str, regex: re.Pattern, message: str) -> bool:
-    """
-    Test output against a regex pattern and log a failure message if matched.
-
-    This is a utility function used by the failure and forceable regex
-    checkers to test FanFicFare output against specific error patterns.
+def normalize_url(url: str) -> str:
+    """Normalize a raw URL string by stripping whitespace and ensuring a scheme prefix.
 
     Args:
-        output: The FanFicFare command output text to test
-        regex: Compiled regular expression pattern to match against
-        message: Error message to log if the pattern matches
+        url: Raw URL string that may or may not include an http(s):// scheme.
 
     Returns:
-        bool: True if the regex pattern matches the output text,
-              False otherwise
-
-    Side Effects:
-        Logs a failure message via ff_logging if the pattern matches
-
-    Example:
-        ```python
-        failed_login_pattern = re.compile(r"Login Failed")
-        if check_regexes(output, failed_login_pattern, "Authentication failed"):
-            # Handle login failure
-            pass
-        ```
-
-    Note:
-        This function is primarily used internally by check_failure_regexes
-        and check_forceable_regexes to provide consistent logging behavior
-        across all error detection patterns.
+        str: Trimmed URL guaranteed to start with http:// or https:// (or empty string if blank).
     """
-    if regex.search(output):
-        ff_logging.log_failure(message)
-        return True
-    return False
-
-
-def check_failure_regexes(output: str) -> str | None:
-    """
-    Test FanFicFare output for permanent failure conditions.
-
-    This function checks the FanFicFare command output against a series of
-    regular expressions that identify permanent failure conditions. These
-    are errors that typically cannot be resolved by retrying the operation.
-
-    Args:
-        output: The complete text output from a FanFicFare command execution
-
-    Returns:
-        Optional[str]: None if NO failure patterns were detected (success case),
-                       or the specific failure message string if a failure was found
-
-    Failure Categories Detected:
-        - Chapter mismatch errors (story already contains X chapters)
-        - Metadata corruption (no recognizable chapters found)
-        - Missing URL metadata (no story URL found in epub)
-        - Authentication failures (login failed)
-        - HTTP client errors (400 Bad Request, 403 Forbidden)
-        - Infrastructure failures (Flaresolverr connection issues)
-
-    Example:
-        ```python
-        fanficfare_output = run_fanficfare_command(url)
-
-        if check_failure_regexes(fanficfare_output):
-            print("Download completed successfully")
-            send_success_notification()
-        else:
-            print("Download failed with permanent error")
-            handle_permanent_failure()
-        ```
-
-    Note:
-        This function returns True for success (no failures detected) to
-        maintain backward compatibility with existing code that expects
-        a success boolean. Each detected failure is logged via ff_logging.
-
-        Only the stdout portion of the combined output is checked. The STDERR
-        section (appended by execute_command with a "\\nSTDERR:\\n" separator)
-        contains FanFicFare debug/info logs that may include transient HTTP
-        errors (e.g. 403 on a cover image) that FanFicFare handles gracefully.
-        Actual story-level HTTP failures cause a non-zero exit code, which is
-        caught by CalledProcessError before this function is reached.
-    """
-    # Only check stdout: STDERR debug logs may contain 403s from image loads
-    # that FanFicFare handles gracefully and still exits 0.
-    stdout_only = output.split("\nSTDERR:\n")[0]
-
-    # Define permanent failure patterns and their user-friendly messages
-    failure_regexes = [
-        (
-            equal_chapters,
-            "Issue with story, site is broken. Story likely hasn't updated on site yet.",
-        ),
-        (
-            bad_chapters,
-            "Something is messed up with the site or the epub. No chapters found.",
-        ),
-        (no_url, "No URL in epub to update from. Fix the metadata."),
-        (failed_login, "Login failed. Check your username and password."),
-        (bad_request, "Bad request. Check the URL."),
-        (
-            forbidden_client,
-            "Forbidden client. Check the URL. If this is ff.net, check that you have Flaresolverr installed, or cry.",
-        ),
-        (
-            flaresolverr,
-            "Flaresolverr connection failed. Check your Flaresolverr installation.",
-        ),
-    ]
-
-    # Return the specific failure message, or None if no failures detected
-    for regex, message in failure_regexes:
-        if check_regexes(stdout_only, regex, message):
-            return message
-    return None
-
-
-def check_forceable_regexes(output: str) -> bool:
-    """
-    Test FanFicFare output for conditions that can be resolved with force update.
-
-    This function identifies specific error conditions in FanFicFare output
-    that indicate the download failed due to timing or metadata issues that
-    can typically be resolved by forcing an update with the --force flag.
-
-    Args:
-        output: The complete text output from a FanFicFare command execution
-
-    Returns:
-        bool: True if any forceable condition was detected (retry with --force),
-              False if no forceable conditions were found
-
-    Forceable Conditions Detected:
-        - Chapter count mismatch between source and destination
-        - File timestamp newer than story timestamp (metadata bug)
-        - Other timing-related inconsistencies that --force can resolve
-
-    Example:
-        ```python
-        fanficfare_output = run_fanficfare_command(url)
-
-        if not check_failure_regexes(fanficfare_output):
-            if check_forceable_regexes(fanficfare_output):
-                print("Retrying with force update...")
-                retry_with_force_flag(url)
-            else:
-                print("Permanent failure - cannot retry")
-        ```
-
-    Integration with Retry Logic:
-        This function is used by the application's retry logic to determine
-        whether a failed download should be retried with the --force flag.
-        It helps distinguish between retryable conditions and permanent failures.
-
-    Note:
-        Each detected forceable condition is logged via ff_logging with
-        a descriptive message explaining why the force update is needed.
-    """
-    # Define conditions that can be resolved with --force flag
-    forceable_regexes = [
-        (
-            chapter_difference,
-            "Chapter difference between source and destination. Forcing update.",
-        ),
-        (
-            more_chapters,
-            "File has been updated more recently than the story, this is likely a metadata bug. Forcing update.",
-        ),
-    ]
-
-    # Return True if ANY forceable condition is detected
-    return any(
-        check_regexes(output, regex, message) for regex, message in forceable_regexes
-    )
+    cleaned = url.strip()
+    if cleaned and not cleaned.startswith(("http://", "https://")):
+        return f"https://{cleaned}"
+    return cleaned
 
 
 def generate_FanficInfo_from_url(url: str, url_parsers: dict) -> fanfic_info.FanficInfo:
@@ -365,42 +201,15 @@ def generate_FanficInfo_from_url(url: str, url_parsers: dict) -> fanfic_info.Fan
                                identification. Site will be "other" if not recognized.
 
     Processing Flow:
-        1. Test URL against each auto-generated site parser
-        2. Extract story ID or URL components using regex capture groups
-        3. Reconstruct normalized URL using site's prefix pattern
-        4. Create FanficInfo object with site identification
-        5. Fall back to "other" site for unrecognized URLs
-
-    Example:
-        ```python
-        # Archive of Our Own URL
-        info = generate_FanficInfo_from_url("https://archiveofourown.org/works/12345", url_parsers)
-        # Returns: FanficInfo(url="https://archiveofourown.org/works/12345", site="archiveofourown.org")
-
-        # FanFiction.Net URL
-        info = generate_FanficInfo_from_url("https://www.fanfiction.net/s/789123/1/", url_parsers)
-        # Returns: FanficInfo(url="https://www.fanfiction.net/s/789123", site="fanfiction.net")
-
-        # Unrecognized site
-        info = generate_FanficInfo_from_url("https://unknown-site.com/story/456", url_parsers)
-        # Returns: FanficInfo(url="https://unknown-site.com/story/456", site="other")
-        ```
-
-    URL Normalization:
-        The function normalizes URLs by extracting the essential story
-        identifier and reconstructing the URL using the site's standard
-        format. This ensures consistent URL handling across the application.
-
-    Site Recognition:
-        Site identification is based on auto-generated parsers from FanFicFare's
-        adapter definitions. This automatically supports new sites as they are
-        added to FanFicFare without requiring manual updates to this code.
-
-    Note:
-        The "other" site classification is used for URLs that don't match
-        any known fanfiction site patterns. These URLs are passed through
-        unchanged but may not be supported by FanFicFare.
+        1. Ensure URL has a scheme via normalize_url()
+        2. Test URL against each auto-generated site parser
+        3. Extract story ID or URL components using regex capture groups
+        4. Reconstruct normalized URL using site's prefix pattern
+        5. Create FanficInfo object with site identification
+        6. Fall back to "other" site for unrecognized URLs
     """
+    url = normalize_url(url)
+
     # Test URL against all auto-generated site parsers
     for site, (parser, prefix) in url_parsers.items():
         if match := parser.search(url):

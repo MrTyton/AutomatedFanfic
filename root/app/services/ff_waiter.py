@@ -36,6 +36,7 @@ import heapq
 import threading
 import time
 
+from models import active_urls as active_urls_utils
 from models import fanfic_info
 from models.queue_types import IngressQueue, WaitingQueue
 from utils import ff_logging
@@ -166,17 +167,17 @@ def wait_processor(
                     is_stale = meta.get("heap_gen") != heap_gen
                     if is_cancelled or is_stale:
                         if is_cancelled:
-                            try:
-                                del active_urls[fanfic.url]
-                            except Exception:
-                                pass
+                            active_urls_utils.remove_active_url(active_urls, fanfic.url)
                         ff_logging.log_debug(
                             f"Waiter: Dropped {'cancelled' if is_cancelled else 'stale'} retry for {fanfic.url}"
                         )
                         continue
-                    meta["status"] = "queued"
-                    meta.pop("heap_gen", None)
-                    active_urls[fanfic.url] = meta
+                    active_urls_utils.mark_url_queued(
+                        active_urls,
+                        fanfic.url,
+                        merge=True,
+                        pop_keys=("heap_gen",),
+                    )
                 except Exception:
                     pass
             ingress_queue.put(fanfic)
@@ -212,23 +213,15 @@ def wait_processor(
         # dict to active_urls without heap_gen will cause a mismatch on firing.
         heap_gen = seq
         if active_urls is not None:
-            try:
-                existing_meta = dict(active_urls.get(fanfic_item.url, {}))
-                if existing_meta.get("status") == "cancelled":
-                    try:
-                        del active_urls[fanfic_item.url]
-                    except Exception:
-                        pass
-                    continue
-                existing_meta.setdefault("site", fanfic_item.site)
-                if getattr(fanfic_item, "title", None):
-                    existing_meta["title"] = fanfic_item.title
-                if getattr(fanfic_item, "calibre_id", None):
-                    existing_meta["calibre_id"] = fanfic_item.calibre_id
-                existing_meta["status"] = "waiting"
-                existing_meta["heap_gen"] = heap_gen
-                active_urls[fanfic_item.url] = existing_meta
-            except Exception:
-                pass
+            if not active_urls_utils.mark_url_waiting(
+                active_urls,
+                fanfic_item.url,
+                site=fanfic_item.site,
+                title=getattr(fanfic_item, "title", None),
+                calibre_id=getattr(fanfic_item, "calibre_id", None),
+                heap_gen=heap_gen,
+                delete_if_cancelled=True,
+            ):
+                continue
         heapq.heappush(pending_heap, (expiry, seq, fanfic_item, heap_gen))
         seq += 1

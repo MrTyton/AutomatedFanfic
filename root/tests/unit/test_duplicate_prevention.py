@@ -4,6 +4,7 @@ from services.url_ingester import email_watcher, EmailInfo
 from workers.pipeline import url_worker
 from models.fanfic_info import FanficInfo
 from models.config_models import RetryConfig
+from models.context import WorkerContext
 from models import retry_types
 
 
@@ -25,14 +26,12 @@ class TestDuplicatePrevention(unittest.TestCase):
     def test_email_watcher_adds_to_active_urls(
         self, mock_log, mock_generate, mock_sleep
     ):
-        # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         self.email_info.get_urls.side_effect = [[url], KeyboardInterrupt()]
 
         fanfic = FanficInfo(site="fanfiction", url=url)
         mock_generate.return_value = fanfic
 
-        # Execute
         try:
             email_watcher(
                 self.email_info,
@@ -44,7 +43,6 @@ class TestDuplicatePrevention(unittest.TestCase):
         except KeyboardInterrupt:
             pass
 
-        # Verify
         self.assertIn(url, self.active_urls)
         self.ingress_queue.put.assert_called_with(fanfic)
 
@@ -52,7 +50,6 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
     @patch("services.url_ingester.ff_logging.log")
     def test_email_watcher_skips_active_url(self, mock_log, mock_generate, mock_sleep):
-        # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         self.active_urls[url] = {"site": "fanfiction"}
 
@@ -61,7 +58,6 @@ class TestDuplicatePrevention(unittest.TestCase):
         fanfic = FanficInfo(site="fanfiction", url=url)
         mock_generate.return_value = fanfic
 
-        # Execute
         try:
             email_watcher(
                 self.email_info,
@@ -73,14 +69,11 @@ class TestDuplicatePrevention(unittest.TestCase):
         except KeyboardInterrupt:
             pass
 
-        # Verify
         self.ingress_queue.put.assert_not_called()
-        # Should log a warning
         mock_log.assert_any_call(
             f"Skipping {url} - already in queue or processing", "WARNING"
         )
 
-    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.command.execute_fanficfare_direct")
@@ -93,23 +86,19 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_exec,
         mock_get_path,
         mock_temp_dir,
-        mock_copy_configs,
     ):
-        # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         fanfic = FanficInfo(site="fanfiction", url=url)
         self.active_urls[url] = {"site": "fanfiction"}
 
-        # Queue returns fanfic then raises KeyboardInterrupt to exit loop
         self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
-        # Mocks for successful execution
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
         from workers.command import FanFicFareResult
 
-        mock_exec.return_value = FanFicFareResult()  # clean result = success
+        mock_exec.return_value = FanFicFareResult()
 
         cdb = MagicMock()
         cdb.cdb_info.update_method = "update"
@@ -117,26 +106,22 @@ class TestDuplicatePrevention(unittest.TestCase):
         retry_config.max_normal_retries = 3
         ingress_queue = MagicMock()
         waiting_queue = MagicMock()
+        ctx = WorkerContext(
+            calibre_client=cdb,
+            notification_info=self.notification_info,
+            ingress_queue=ingress_queue,
+            waiting_queue=waiting_queue,
+            retry_config=retry_config,
+            active_urls=self.active_urls,
+        )
 
-        # Execute
         try:
-            url_worker(
-                self.queue,
-                cdb,
-                self.notification_info,
-                ingress_queue,
-                waiting_queue,
-                retry_config,
-                "test_worker",
-                self.active_urls,
-            )
+            url_worker(self.queue, ctx, "test_worker")
         except KeyboardInterrupt:
             pass
 
-        # Verify
         self.assertNotIn(url, self.active_urls)
 
-    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
@@ -149,9 +134,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_handle_failure,
         mock_get_path,
         mock_temp_dir,
-        mock_copy_configs,
     ):
-        # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         fanfic = FanficInfo(site="fanfiction", url=url)
         self.active_urls[url] = {"site": "fanfiction"}
@@ -159,16 +142,13 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
-        # Mocks
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
 
-        # Return a failure result (keeps in active_urls via handle_failure)
         from workers.command import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 
-        # Mock handle_failure to set retry decision
         def side_effect_handle_failure(fanfic, *args, **kwargs):
             fanfic.retry_decision = MagicMock()
             fanfic.retry_decision.action = retry_types.FailureAction.RETRY
@@ -180,26 +160,22 @@ class TestDuplicatePrevention(unittest.TestCase):
         retry_config.max_normal_retries = 3
         ingress_queue = MagicMock()
         waiting_queue = MagicMock()
+        ctx = WorkerContext(
+            calibre_client=cdb,
+            notification_info=self.notification_info,
+            ingress_queue=ingress_queue,
+            waiting_queue=waiting_queue,
+            retry_config=retry_config,
+            active_urls=self.active_urls,
+        )
 
-        # Execute
         try:
-            url_worker(
-                self.queue,
-                cdb,
-                self.notification_info,
-                ingress_queue,
-                waiting_queue,
-                retry_config,
-                "test_worker",
-                self.active_urls,
-            )
+            url_worker(self.queue, ctx, "test_worker")
         except KeyboardInterrupt:
             pass
 
-        # Verify
         self.assertIn(url, self.active_urls)
 
-    @patch("workers.pipeline.system_utils.copy_configs_to_temp_dir")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
@@ -212,9 +188,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_handle_failure,
         mock_get_path,
         mock_temp_dir,
-        mock_copy_configs,
     ):
-        # Setup
         url = "https://www.fanfiction.net/s/12345/1/"
         fanfic = FanficInfo(site="fanfiction", url=url)
         self.active_urls[url] = {"site": "fanfiction"}
@@ -222,16 +196,13 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.queue.get.side_effect = [fanfic, KeyboardInterrupt]
         self.queue.empty.return_value = False
 
-        # Mocks
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
 
-        # Return a failure result
         from workers.command import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 
-        # Mock handle_failure to set abandon decision
         def side_effect_handle_failure(fanfic, *args, **kwargs):
             fanfic.retry_decision = MagicMock()
             fanfic.retry_decision.action = retry_types.FailureAction.ABANDON
@@ -243,23 +214,20 @@ class TestDuplicatePrevention(unittest.TestCase):
         retry_config.max_normal_retries = 3
         ingress_queue = MagicMock()
         waiting_queue = MagicMock()
+        ctx = WorkerContext(
+            calibre_client=cdb,
+            notification_info=self.notification_info,
+            ingress_queue=ingress_queue,
+            waiting_queue=waiting_queue,
+            retry_config=retry_config,
+            active_urls=self.active_urls,
+        )
 
-        # Execute
         try:
-            url_worker(
-                self.queue,
-                cdb,
-                self.notification_info,
-                ingress_queue,
-                waiting_queue,
-                retry_config,
-                "test_worker",
-                self.active_urls,
-            )
+            url_worker(self.queue, ctx, "test_worker")
         except KeyboardInterrupt:
             pass
 
-        # Verify
         self.assertNotIn(url, self.active_urls)
 
 

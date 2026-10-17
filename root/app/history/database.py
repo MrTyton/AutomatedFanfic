@@ -88,10 +88,6 @@ def _dt_to_str(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
-def _str_to_dt(s: str | None) -> datetime | None:
-    return datetime.fromisoformat(s) if s else None
-
-
 # ---------------------------------------------------------------------------
 # Synchronous helpers (used by HistoryWriter thread only)
 # ---------------------------------------------------------------------------
@@ -363,7 +359,7 @@ class AsyncHistoryDB:
     async def _get_conn(self) -> aiosqlite.Connection:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = aiosqlite.connect(self._db_path)
-        conn.daemon = True
+        setattr(conn, "daemon", True)
         await conn
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA busy_timeout=5000")

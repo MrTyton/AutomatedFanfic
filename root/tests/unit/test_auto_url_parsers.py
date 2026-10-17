@@ -267,7 +267,7 @@ class TestAutoUrlParsers(unittest.TestCase):
 
             # Find if this URL matches any of our generated patterns
             matched_site = None
-            for site_id, (pattern, prefix) in self.url_parsers.items():
+            for site_id, (pattern, _prefix) in self.url_parsers.items():
                 try:
                     match = pattern.match(example_url)
                     if match:
@@ -325,7 +325,7 @@ class TestAutoUrlParsers(unittest.TestCase):
             # Find the matching pattern
             matched_site = None
 
-            for site_id, (pattern, prefix) in self.url_parsers.items():
+            for site_id, (pattern, _prefix) in self.url_parsers.items():
                 match = pattern.match(example_url)
                 if match:
                     matched_site = site_id
@@ -348,7 +348,7 @@ class TestAutoUrlParsers(unittest.TestCase):
         """Test that all generated regex patterns compile successfully."""
         compilation_failures = []
 
-        for site_id, (pattern, prefix) in self.url_parsers.items():
+        for site_id, (pattern, _prefix) in self.url_parsers.items():
             try:
                 # Test basic compilation
                 self.assertIsInstance(pattern, type(re.compile("")))
@@ -598,7 +598,7 @@ class TestAutoUrlParsers(unittest.TestCase):
 
         vulnerable_patterns = []
 
-        for site, (pattern, prefix) in self.url_parsers.items():
+        for site, (pattern, _prefix) in self.url_parsers.items():
             pattern_str = pattern.pattern
 
             # Check for dangerous patterns

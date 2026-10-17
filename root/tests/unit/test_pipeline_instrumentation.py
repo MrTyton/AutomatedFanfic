@@ -187,24 +187,31 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
     """Tests for handle_failure history recording."""
 
     def setUp(self):
+        from models.context import WorkerContext
+
         self.fanfic = FanficInfo(url="https://ao3.org/works/1", site="ao3")
         self.notification_info = MagicMock()
+        self.ingress_queue = MagicMock()
         self.waiting_queue = MagicMock()
         self.retry_config = RetryConfig()
         self.recorder = MagicMock()
+        self.calibre_client = MagicMock()
+        self.calibre_client.cdb_info = None
+        self.ctx = WorkerContext(
+            calibre_client=self.calibre_client,
+            notification_info=self.notification_info,
+            ingress_queue=self.ingress_queue,
+            waiting_queue=self.waiting_queue,
+            retry_config=self.retry_config,
+            history_recorder=self.recorder,
+        )
 
     def test_records_retry_event_on_retry(self):
         """handle_failure records a retry event when decision is RETRY."""
         from workers.handlers import handle_failure
 
         # First failure → RETRY
-        handle_failure(
-            self.fanfic,
-            self.notification_info,
-            self.waiting_queue,
-            self.retry_config,
-            history_recorder=self.recorder,
-        )
+        handle_failure(self.fanfic, self.ctx)
 
         self.recorder.record_retry.assert_called_once()
         call_kwargs = self.recorder.record_retry.call_args
@@ -217,10 +224,7 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
 
         handle_failure(
             self.fanfic,
-            self.notification_info,
-            self.waiting_queue,
-            self.retry_config,
-            history_recorder=self.recorder,
+            self.ctx,
             error_message="calibredb: duplicate format",
         )
 
@@ -241,13 +245,7 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
         self.fanfic.repeats = self.retry_config.max_normal_retries + 1
         self.retry_config.hail_mary_enabled = False
 
-        handle_failure(
-            self.fanfic,
-            self.notification_info,
-            self.waiting_queue,
-            self.retry_config,
-            history_recorder=self.recorder,
-        )
+        handle_failure(self.fanfic, self.ctx)
 
         self.recorder.record_download_abandoned.assert_called_once()
         self.recorder.record_retry.assert_not_called()
@@ -260,13 +258,7 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
         self.fanfic.repeats = self.retry_config.max_normal_retries - 1
         self.retry_config.hail_mary_enabled = True
 
-        handle_failure(
-            self.fanfic,
-            self.notification_info,
-            self.waiting_queue,
-            self.retry_config,
-            history_recorder=self.recorder,
-        )
+        handle_failure(self.fanfic, self.ctx)
 
         self.recorder.record_retry.assert_called_once()
         call_kwargs = self.recorder.record_retry.call_args
@@ -276,19 +268,17 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
         """handle_failure works without a history_recorder."""
         from workers.handlers import handle_failure
 
+        self.ctx.history_recorder = None
         # Should not raise
-        handle_failure(
-            self.fanfic,
-            self.notification_info,
-            self.waiting_queue,
-            self.retry_config,
-        )
+        handle_failure(self.fanfic, self.ctx)
 
 
 class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
     """Tests for process_fanfic_addition history recording."""
 
     def setUp(self):
+        from models.context import WorkerContext
+
         self.fanfic = FanficInfo(
             url="https://ao3.org/works/1", site="ao3", title="Test Story"
         )
@@ -296,9 +286,18 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
         self.calibre_client = MagicMock()
         self.calibre_client.cdb_info.metadata_preservation_mode = "remove_add"
         self.notification_info = MagicMock()
+        self.ingress_queue = MagicMock()
         self.waiting_queue = MagicMock()
         self.retry_config = RetryConfig()
         self.recorder = MagicMock()
+        self.ctx = WorkerContext(
+            calibre_client=self.calibre_client,
+            notification_info=self.notification_info,
+            ingress_queue=self.ingress_queue,
+            waiting_queue=self.waiting_queue,
+            retry_config=self.retry_config,
+            history_recorder=self.recorder,
+        )
 
     @patch("workers.handlers.update_strategies")
     def test_records_success(self, mock_strategies):
@@ -306,19 +305,14 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
         from workers.handlers import process_fanfic_addition
 
         mock_strategy = MagicMock()
-        mock_strategy.execute.return_value = True
+        mock_strategy.execute.return_value = (True, None)
         mock_strategies.RemoveAddStrategy.return_value = mock_strategy
 
         process_fanfic_addition(
             self.fanfic,
-            self.calibre_client,
+            self.ctx,
             "/tmp/test",
-            "ao3",
             "test.epub",
-            self.waiting_queue,
-            self.notification_info,
-            self.retry_config,
-            history_recorder=self.recorder,
         )
 
         self.recorder.record_download_success.assert_called_once_with(
@@ -337,14 +331,9 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
 
         process_fanfic_addition(
             self.fanfic,
-            self.calibre_client,
+            self.ctx,
             "/tmp/test",
-            "ao3",
             "test.epub",
-            self.waiting_queue,
-            self.notification_info,
-            self.retry_config,
-            history_recorder=self.recorder,
         )
 
         self.recorder.record_download_failed.assert_called_once_with(
@@ -357,19 +346,16 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
         from workers.handlers import process_fanfic_addition
 
         mock_strategy = MagicMock()
-        mock_strategy.execute.return_value = True
+        mock_strategy.execute.return_value = (True, None)
         mock_strategies.RemoveAddStrategy.return_value = mock_strategy
 
+        self.ctx.history_recorder = None
         # Should not raise
         process_fanfic_addition(
             self.fanfic,
-            self.calibre_client,
+            self.ctx,
             "/tmp/test",
-            "ao3",
             "test.epub",
-            self.waiting_queue,
-            self.notification_info,
-            self.retry_config,
         )
 
 
