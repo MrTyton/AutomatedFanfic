@@ -185,12 +185,15 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
     def test_make_fff_get_configuration_with_real_GetURLs_html_extraction(self):
         """Real _make_fff_get_configuration + GetURLs extracts URLs from HTML without AttributeError."""
         from pathlib import Path
+        from config.config_store import ConfigStore
         from services.url_ingester import _make_fff_get_configuration
 
         defaults_ini = (
             Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini"
         )
-        get_config_fn = _make_fff_get_configuration(str(defaults_ini), "")
+        store = ConfigStore()
+        store.update("calibre.default_ini", str(defaults_ini))
+        get_config_fn = _make_fff_get_configuration(store)
         initial_config = get_config_fn("test1.com")
         gu = geturls.GetURLs(config=initial_config, get_config=get_config_fn)
 

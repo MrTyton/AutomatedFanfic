@@ -157,90 +157,90 @@ class TestUrlIngester(unittest.TestCase):
         ]
     )
     def test_email_info_init_stores_ini_paths(self, name, default_ini, personal_ini):
-        """EmailInfo stores the ini paths passed as kwargs."""
+        """EmailInfo resolves the ini paths from ConfigStore."""
+        from config.config_store import ConfigStore
+
+        store = ConfigStore()
+        if default_ini:
+            store.update("calibre.default_ini", default_ini)
+        if personal_ini:
+            store.update("calibre.personal_ini", personal_ini)
         email_config = EmailConfig(
             email="testuser", password="pass", server="srv", mailbox="INBOX"
         )
-        email_info = EmailInfo(
-            email_config, default_ini=default_ini, personal_ini=personal_ini
+        email_info = EmailInfo(email_config, config_store=store)
+        self.assertEqual(
+            email_info.default_ini, default_ini or store.get_resolved_default_ini()
         )
-        self.assertEqual(email_info.default_ini, default_ini or "")
         self.assertEqual(email_info.personal_ini, personal_ini or "")
 
     def test_email_info_init_defaults_ini_paths_to_empty_string(self):
-        """When no ini kwargs provided, paths default to empty string."""
+        """When no personal_ini set in ConfigStore, personal_ini defaults to empty string."""
         email_config = EmailConfig(
             email="testuser", password="pass", server="srv", mailbox="INBOX"
         )
         email_info = EmailInfo(email_config)
-        self.assertEqual(email_info.default_ini, "")
         self.assertEqual(email_info.personal_ini, "")
 
     @patch("services.url_ingester.geturls.GetURLs")
     def test_email_info_get_urls_without_ini_passes_none_to_geturls(
         self, mock_get_urls_class
     ):
-        """Without ini paths GetURLs is constructed with config=None, get_config=None."""
+        """Without ini paths configured in ConfigStore, GetURLs is constructed with config=None, get_config=None."""
+        from config.config_store import ConfigStore
+
         email_config = EmailConfig(
             email="testuser", password="pass", server="srv", mailbox="INBOX"
         )
         mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
-        email_info = EmailInfo(email_config)
+        store = ConfigStore()
+        email_info = EmailInfo(email_config, config_store=store)
         email_info.get_urls()
         mock_get_urls_class.assert_called_once_with(config=None, get_config=None)
 
     @patch("services.url_ingester.geturls.GetURLs")
-    @patch("services.url_ingester._make_fff_get_configuration")
     def test_email_info_get_urls_with_ini_passes_get_config_to_geturls(
-        self, mock_make_config, mock_get_urls_class
+        self, mock_get_urls_class
     ):
-        """With ini paths get_urls builds a get_config callable and passes it to GetURLs."""
+        """With ini paths in ConfigStore, get_urls builds a get_config callable and passes it to GetURLs."""
+        from config.config_store import ConfigStore
+
         email_config = EmailConfig(
             email="testuser", password="pass", server="srv", mailbox="INBOX"
         )
-
-        mock_get_config_fn = MagicMock()
-        mock_make_config.return_value = mock_get_config_fn
-        mock_initial_config = MagicMock()
-        mock_get_config_fn.return_value = mock_initial_config
         mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
 
-        email_info = EmailInfo(
-            email_config,
-            default_ini="/a/defaults.ini",
-            personal_ini="/a/personal.ini",
-        )
+        store = ConfigStore()
+        store.update("calibre.default_ini", "/a/defaults.ini")
+        store.update("calibre.personal_ini", "/a/personal.ini")
+
+        email_info = EmailInfo(email_config, config_store=store)
         email_info.get_urls()
 
-        # _make_fff_get_configuration called with stored ini paths
-        mock_make_config.assert_called_once_with("/a/defaults.ini", "/a/personal.ini")
-        # Initial config seeded via get_config_fn("test1.com") to avoid chicken-and-egg crash
-        mock_get_config_fn.assert_called_once_with("test1.com")
         # GetURLs constructed with both config= and get_config= populated
         mock_get_urls_class.assert_called_once_with(
-            config=mock_initial_config, get_config=mock_get_config_fn
+            config=mock_get_urls_class.call_args[1]["config"],
+            get_config=store.get_fff_configuration,
         )
 
     @patch("services.url_ingester.geturls.GetURLs")
-    @patch("services.url_ingester._make_fff_get_configuration")
-    def test_email_info_get_urls_rebuilds_on_ini_change(
-        self, mock_make_config, mock_get_urls_class
-    ):
+    def test_email_info_get_urls_rebuilds_on_ini_change(self, mock_get_urls_class):
         """GetURLs is rebuilt when ini files have been modified since last build."""
+        from config.config_store import ConfigStore
+
         email_config = EmailConfig(
             email="testuser", password="pass", server="srv", mailbox="INBOX"
         )
-        mock_make_config.return_value = MagicMock(return_value=MagicMock())
         mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
+
+        store = ConfigStore()
+        store.update("calibre.default_ini", "/a/defaults.ini")
+        store.update("calibre.personal_ini", "/a/personal.ini")
 
         with patch("services.url_ingester.os.path.getmtime") as mock_mtime:
             # First call (during __init__ -> _build_geturls): mtime = 1.0
             mock_mtime.return_value = 1.0
-            email_info = EmailInfo(
-                email_config,
-                default_ini="/a/defaults.ini",
-                personal_ini="/a/personal.ini",
-            )
+            email_info = EmailInfo(email_config, config_store=store)
             assert mock_get_urls_class.call_count == 1
 
             # ini file changes between polls
@@ -294,6 +294,8 @@ class TestUrlIngester(unittest.TestCase):
 
     def test_email_info_getstate_includes_all_config_fields(self):
         """__getstate__ retains every field needed to reconstruct EmailInfo."""
+        from config.config_store import ConfigStore
+
         email_config = EmailConfig(
             email="u",
             password="p",
@@ -303,7 +305,10 @@ class TestUrlIngester(unittest.TestCase):
             imap_idle=True,
             disabled_sites=["fanfiction"],
         )
-        ei = EmailInfo(email_config, default_ini="/d.ini", personal_ini="/p.ini")
+        store = ConfigStore()
+        store.update("calibre.default_ini", "/d.ini")
+        store.update("calibre.personal_ini", "/p.ini")
+        ei = EmailInfo(email_config, config_store=store)
         state = ei.__getstate__()
         for field in (
             "email",
@@ -313,8 +318,7 @@ class TestUrlIngester(unittest.TestCase):
             "sleep_time",
             "imap_idle",
             "disabled_sites",
-            "default_ini",
-            "personal_ini",
+            "config_store",
         ):
             self.assertIn(
                 field, state, msg=f"Field '{field}' missing from __getstate__"
@@ -346,31 +350,27 @@ class TestUrlIngester(unittest.TestCase):
         self.assertIsNotNone(ei2._geturls)
 
     @patch("services.url_ingester.geturls.GetURLs")
-    @patch("services.url_ingester._make_fff_get_configuration")
-    def test_email_info_pickle_roundtrip_with_closure(
-        self, mock_make_config, mock_geturls
-    ):
+    def test_email_info_pickle_roundtrip_with_closure(self, mock_geturls):
         """EmailInfo whose _geturls was built from a closure must be picklable.
 
         This is the direct regression test: before the __getstate__ fix,
         pickle.dumps raised PicklingError because the closure returned by
         _make_fff_get_configuration cannot be serialised.
         """
+        from config.config_store import ConfigStore
 
-        # Use a real (non-picklable) local function to simulate the closure.
-        def _unpicklable_closure(url):  # noqa: WPS430 – intentional local fn
-            return MagicMock()
-
-        mock_make_config.return_value = _unpicklable_closure
         mock_geturls.return_value = MagicMock()
 
         email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
-        ei = EmailInfo(email_config, default_ini="/d.ini", personal_ini="/p.ini")
+        store = ConfigStore()
+        store.update("calibre.default_ini", "/d/defaults.ini")
+        store.update("calibre.personal_ini", "/p/personal.ini")
+        ei = EmailInfo(email_config, config_store=store)
 
         # Must not raise, even though _geturls holds an unpicklable closure.
         ei2 = pickle.loads(pickle.dumps(ei))
         self.assertEqual(ei2.email, "u")
-        self.assertEqual(ei2.default_ini, "/d.ini")
+        self.assertEqual(ei2.default_ini, "/d/defaults.ini")
         self.assertIsNotNone(ei2._geturls)
 
     def test_email_info_picklable_via_spawn_process(self):
@@ -399,33 +399,27 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
     def _call(
         self,
         url,
-        default_ini=None,
-        personal_ini=None,
+        store=None,
         sections=None,
-        isfile_side_effect=None,
     ):
         """Helper: patch FFF internals, invoke the factory, call the inner fn."""
         sections = sections or ["www.royalroad.com", "test1.com"]
-        isfile_side_effect = isfile_side_effect or (lambda _: False)
 
         with (
             patch(
                 "fanficfare.adapters.getConfigSectionsFor", return_value=sections
             ) as mock_secs,
             patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
-            patch(
-                "services.url_ingester.os.path.isfile", side_effect=isfile_side_effect
-            ),
         ):
             mock_cfg = MagicMock()
             mock_cfg_cls.return_value = mock_cfg
-            fn = _make_fff_get_configuration(default_ini, personal_ini)
+            fn = _make_fff_get_configuration(store)
             result = fn(url)
             return result, mock_secs, mock_cfg_cls, mock_cfg
 
     def test_returns_callable(self):
-        """Factory always returns a callable regardless of ini path values."""
-        fn = _make_fff_get_configuration(None, None)
+        """Factory always returns a callable regardless of store value."""
+        fn = _make_fff_get_configuration()
         self.assertTrue(callable(fn))
 
     def test_callable_uses_sections_from_url(self):
@@ -447,51 +441,94 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
                 side_effect=Exception("UnknownSite"),
             ),
             patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
-            patch("services.url_ingester.os.path.isfile", return_value=False),
         ):
             mock_cfg_cls.return_value = MagicMock()
-            fn = _make_fff_get_configuration(None, None)
+            fn = _make_fff_get_configuration()
             fn(url)
         mock_cfg_cls.assert_called_once_with(["test1.com"], "EPUB")
 
     def test_callable_loads_both_ini_files_when_present(self):
-        """Both ini paths are read when both files exist."""
-        result, _, _, mock_cfg = self._call(
-            "https://www.royalroad.com/fiction/1/t",
-            default_ini="/d/defaults.ini",
-            personal_ini="/d/personal.ini",
-            isfile_side_effect=lambda _: True,
-        )
-        mock_cfg.read.assert_called_once_with(["/d/defaults.ini", "/d/personal.ini"])
+        """Both ini paths configured in ConfigStore are read when both files exist."""
+        from config.config_store import ConfigStore
+
+        store = ConfigStore()
+        store.update("calibre.default_ini", "/d/defaults.ini")
+        store.update("calibre.personal_ini", "/d/personal.ini")
+
+        with (
+            patch(
+                "fanficfare.adapters.getConfigSectionsFor", return_value=["test1.com"]
+            ),
+            patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
+            patch("os.path.isfile", return_value=True),
+        ):
+            mock_cfg = MagicMock()
+            mock_cfg_cls.return_value = mock_cfg
+            fn = _make_fff_get_configuration(store)
+            fn("https://www.royalroad.com/fiction/1/t")
+            mock_cfg.read.assert_called_once_with(
+                ["/d/defaults.ini", "/d/personal.ini"]
+            )
 
     def test_callable_skips_missing_ini_files(self):
         """config.read is never called when neither ini file exists on disk."""
-        result, _, _, mock_cfg = self._call(
-            "https://www.royalroad.com/fiction/1/t",
-            default_ini="/missing/defaults.ini",
-            personal_ini="/missing/personal.ini",
-            isfile_side_effect=lambda _: False,
-        )
-        mock_cfg.read.assert_not_called()
+        from config.config_store import ConfigStore
+
+        store = ConfigStore()
+        store.update("calibre.default_ini", "/missing/defaults.ini")
+        store.update("calibre.personal_ini", "/missing/personal.ini")
+
+        with (
+            patch(
+                "fanficfare.adapters.getConfigSectionsFor", return_value=["test1.com"]
+            ),
+            patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
+            patch("os.path.isfile", return_value=False),
+        ):
+            mock_cfg = MagicMock()
+            mock_cfg_cls.return_value = mock_cfg
+            fn = _make_fff_get_configuration(store)
+            fn("https://www.royalroad.com/fiction/1/t")
+            mock_cfg.read.assert_not_called()
 
     def test_callable_loads_only_personal_ini_when_default_missing(self):
         """Only the personal.ini is loaded when the defaults file does not exist."""
-        result, _, _, mock_cfg = self._call(
-            "https://www.royalroad.com/fiction/1/t",
-            default_ini="/missing/defaults.ini",
-            personal_ini="/exists/personal.ini",
-            isfile_side_effect=lambda p: p == "/exists/personal.ini",
-        )
-        mock_cfg.read.assert_called_once_with(["/exists/personal.ini"])
+        from config.config_store import ConfigStore
 
-    def test_callable_handles_none_ini_paths(self):
-        """Passing None for both ini paths is safe and skips config.read."""
-        result, _, _, mock_cfg = self._call(
-            "https://www.royalroad.com/fiction/1/t",
-            default_ini=None,
-            personal_ini=None,
-        )
-        mock_cfg.read.assert_not_called()
+        store = ConfigStore()
+        store.update("calibre.default_ini", "/missing/defaults.ini")
+        store.update("calibre.personal_ini", "/exists/personal.ini")
+
+        with (
+            patch(
+                "fanficfare.adapters.getConfigSectionsFor", return_value=["test1.com"]
+            ),
+            patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
+            patch("os.path.isfile", side_effect=lambda p: p == "/exists/personal.ini"),
+        ):
+            mock_cfg = MagicMock()
+            mock_cfg_cls.return_value = mock_cfg
+            fn = _make_fff_get_configuration(store)
+            fn("https://www.royalroad.com/fiction/1/t")
+            mock_cfg.read.assert_called_once_with(["/exists/personal.ini"])
+
+    def test_callable_handles_empty_config_store(self):
+        """An empty ConfigStore skips config.read when no ini files exist."""
+        from config.config_store import ConfigStore
+
+        store = ConfigStore()
+        with (
+            patch(
+                "fanficfare.adapters.getConfigSectionsFor", return_value=["test1.com"]
+            ),
+            patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
+            patch("os.path.isfile", return_value=False),
+        ):
+            mock_cfg = MagicMock()
+            mock_cfg_cls.return_value = mock_cfg
+            fn = _make_fff_get_configuration(store)
+            fn("https://www.royalroad.com/fiction/1/t")
+            mock_cfg.read.assert_not_called()
 
     """Test the email_watcher main loop function."""
 
