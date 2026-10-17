@@ -86,9 +86,9 @@ class Coordinator:
         active_urls: dict | None = None,
         history_recorder=None,
         url_parsers: dict | None = None,
+        config_store: Any | None = None,
         default_ini: str | None = None,
         personal_ini: str | None = None,
-        config_store: Any | None = None,
     ):
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
@@ -96,9 +96,9 @@ class Coordinator:
         self.active_urls = active_urls
         self.history_recorder = history_recorder
         self.url_parsers = url_parsers
+        self.config_store = config_store
         self.default_ini = default_ini
         self.personal_ini = personal_ini
-        self.config_store = config_store
 
         # Encapsulated coordinator state
         self.state = CoordinatorState(idle_workers=set(worker_queues.keys()))
@@ -187,26 +187,6 @@ class Coordinator:
             # Timeout path used by targeted tests and optional timeout callers.
             pass
 
-    def _get_personal_ini(self) -> str | None:
-        if self.config_store:
-            try:
-                val = self.config_store.get("calibre.personal_ini")
-                if val:
-                    return val
-            except Exception:
-                pass
-        return self.personal_ini
-
-    def _get_default_ini(self) -> str | None:
-        if self.config_store:
-            try:
-                val = self.config_store.get("calibre.default_ini")
-                if val:
-                    return val
-            except Exception:
-                pass
-        return self.default_ini
-
     def _handle_new_task(self, task: FanficInfo):
         """Route new task to appropriate worker or backlog.
 
@@ -220,9 +200,9 @@ class Coordinator:
         # Check if this is a series/collection URL
         expansion_result = series_utils.process_url(
             task.url,
-            default_ini=self._get_default_ini(),
-            personal_ini=self._get_personal_ini(),
             config_store=self.config_store,
+            default_ini=self.default_ini,
+            personal_ini=self.personal_ini,
         )
 
         if expansion_result["is_series"]:
@@ -458,9 +438,9 @@ def start_coordinator(
     active_urls: dict | None = None,
     history_recorder=None,
     url_parsers: dict | None = None,
+    config_store: Any | None = None,
     default_ini: str | None = None,
     personal_ini: str | None = None,
-    config_store: Any | None = None,
 ):
     """Entry point for the coordinator process."""
     # Initialize logging for this process
@@ -474,9 +454,9 @@ def start_coordinator(
         active_urls=active_urls,
         history_recorder=history_recorder,
         url_parsers=url_parsers,
+        config_store=config_store,
         default_ini=default_ini,
         personal_ini=personal_ini,
-        config_store=config_store,
     )
     try:
         coordinator.run()

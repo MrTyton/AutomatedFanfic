@@ -228,19 +228,22 @@ def register_processes(
     # /api/logs shows logs from every process, not just the web server's own.
     log_queue = manager.Queue()
 
+    # Initialize ConfigStore for hot-reloadable settings
+    config_store = ConfigStore(manager.dict())
+    config_store.initialize_from_config(config)
+
     # Initialize Calibre components
     cdb_info = calibre_info.CalibreInfo(args.config, manager)
     cdb_info.check_installed()
     calibre_client = calibredb_utils.CalibreDBClient(cdb_info)
 
-    # Initialize external resources.  Pass ini paths so GetURLs can login to
-    # RoyalRoad when following email-click redirect links (FFF issue #1429).
+    # Initialize external resources using ConfigStore as single source of truth.
     email_info = url_ingester.EmailInfo(
         config.email,
-        default_ini=cdb_info.default_ini,
-        personal_ini=cdb_info.personal_ini,
+        config_store=config_store,
     )
     notification_info = notification_wrapper.NotificationWrapper(toml_path=args.config)
+    notification_info.set_config_store(config_store)
 
     # Initialize history recording infrastructure
     history_queue = manager.Queue(maxsize=10000)
@@ -262,13 +265,6 @@ def register_processes(
 
     # Wire up notification history recording (must happen after both are created)
     notification_info.history_recorder = history_recorder
-
-    # Initialize ConfigStore for hot-reloadable settings
-    config_store = ConfigStore(manager.dict())
-    config_store.initialize_from_config(config)
-
-    # Attach ConfigStore so notification_info reacts to credential changes in-process
-    notification_info.set_config_store(config_store)
 
     # Shared event: web server sets it when web.host/port/enabled change;
     # ProcessManager detects it and restarts only the web_server process.

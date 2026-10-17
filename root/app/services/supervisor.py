@@ -113,8 +113,6 @@ def run_supervisor(
                 active_urls,
                 history_recorder,
                 url_parsers,
-                getattr(email_info, "default_ini", None),
-                getattr(email_info, "personal_ini", None),
                 config_store,
             ),
             name="Coordinator",

@@ -45,6 +45,47 @@ class TestConfigStoreBasics(unittest.TestCase):
         snapshot["z"] = 30
         self.assertIsNone(store.get("z"))
 
+    def test_get_resolved_default_ini(self):
+        store = ConfigStore()
+        # Default without config falls back to packaged defaults.ini
+        resolved = store.get_resolved_default_ini()
+        self.assertTrue(resolved.endswith("defaults.ini"))
+
+        # Explicit directory appends defaults.ini
+        store.update("calibre.default_ini", "/custom/dir")
+        self.assertTrue(store.get_resolved_default_ini().endswith("defaults.ini"))
+
+    def test_get_resolved_personal_ini(self):
+        store = ConfigStore()
+        # Default without config returns empty string
+        self.assertEqual(store.get_resolved_personal_ini(), "")
+
+        # Explicit directory appends personal.ini
+        store.update("calibre.personal_ini", "/custom/dir")
+        self.assertTrue(store.get_resolved_personal_ini().endswith("personal.ini"))
+
+    def test_get_fff_configuration_and_callable(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            p_ini = os.path.join(tmp_dir, "personal.ini")
+            with open(p_ini, "w", encoding="utf-8") as f:
+                f.write("[archiveofourown.org]\nusername=storeuser\n")
+
+            store = ConfigStore()
+            store.update("calibre.personal_ini", p_ini)
+
+            config = store.get_fff_configuration(
+                "https://archiveofourown.org/series/12345"
+            )
+            self.assertTrue(config.has_section("archiveofourown.org"))
+            self.assertEqual(config.get("archiveofourown.org", "username"), "storeuser")
+
+            callable_fn = store.get_fff_get_configuration_callable()
+            self.assertTrue(callable(callable_fn))
+            config2 = callable_fn("https://archiveofourown.org/series/12345")
+            self.assertEqual(
+                config2.get("archiveofourown.org", "username"), "storeuser"
+            )
+
 
 class TestConfigStoreInitFromConfig(unittest.TestCase):
     def _make_config(self):
