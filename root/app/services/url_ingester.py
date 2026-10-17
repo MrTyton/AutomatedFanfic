@@ -83,27 +83,40 @@ from models.queue_types import IngressQueue
 
 
 def _make_fff_get_configuration(
-    default_ini_path: str | None = None,
+    config_store_or_default_ini: Any | None = None,
     personal_ini_path: str | None = None,
+    *,
     config_store: Any | None = None,
 ):
-    """
-    Return a get_configuration callable for fanficfare.geturls.GetURLs.
+    """Return a get_configuration callable for fanficfare.geturls.GetURLs.
 
-    The callable receives a URL from FFF and returns a Configuration object
-    loaded with our defaults.ini and personal.ini so that site-specific
-    credentials (e.g. Royal Road username/password) are available during
-    email URL extraction – required since RR email-click links now need an
-    authenticated session to resolve to a story URL (FFF issue #1429).
+    If a ConfigStore is provided, returns its get_fff_configuration method.
+    Otherwise creates a configuration factory loaded with the provided INI paths.
     """
-    if config_store is not None and not default_ini_path and not personal_ini_path:
-        return config_store.get_fff_get_configuration_callable()
+    actual_store = (
+        config_store
+        if config_store is not None
+        else (
+            config_store_or_default_ini
+            if hasattr(config_store_or_default_ini, "get_fff_configuration")
+            else None
+        )
+    )
+    if actual_store is not None:
+        return actual_store.get_fff_configuration
 
-    def get_configuration(url: str):
+    default_ini_path = (
+        config_store_or_default_ini
+        if isinstance(config_store_or_default_ini, str)
+        else None
+    )
+
+    def get_configuration(url: str) -> configurable.Configuration:
         try:
             sections = adapters.getConfigSectionsFor(url)
         except Exception:
             sections = ["test1.com"]
+
         config = configurable.Configuration(sections, "EPUB")
         ini_files = []
         if default_ini_path and os.path.isfile(default_ini_path):
@@ -239,38 +252,20 @@ class EmailInfo:
     def __init__(
         self,
         email_config: EmailConfig,
+        config_store: Any | None = None,
         default_ini: str | None = None,
         personal_ini: str | None = None,
-        config_store: Any | None = None,
     ):
         """
-        Initialize EmailInfo with email configuration object.
-
-        Takes a pre-loaded and validated email configuration object instead of
-        loading from file. This avoids redundant config parsing when the
-        configuration has already been loaded in the main process.
+        Initialize EmailInfo with email configuration object and optional ConfigStore.
 
         Args:
-            email_config (config_models.EmailConfig): Pre-loaded email configuration
-                                                     containing all email settings.
-            default_ini (str | None): Path to FanFicFare defaults.ini, passed through
-                                     to GetURLs so site-specific settings are available
-                                     during email URL extraction (e.g. RR login).
-            personal_ini (str | None): Path to FanFicFare personal.ini, passed through
-                                       to GetURLs so credentials are available during
-                                       email URL extraction (e.g. RR login).
+            email_config (config_models.EmailConfig): Pre-loaded email configuration.
             config_store (Any | None): Shared ConfigStore instance for live updates
                                        and automatic INI path resolution.
-
-        Example:
-            ```python
-            # In main process
-            config = ConfigManager.load_config("config.toml")
-            email_info = EmailInfo(config.email, config_store=config_store)
-            print(f"Monitoring {email_info.email}@{email_info.server}")
-            ```
+            default_ini (str | None): Optional defaults.ini path override.
+            personal_ini (str | None): Optional personal.ini path override.
         """
-        # Set instance attributes from the provided configuration object
         self.email = email_config.email
         self.password = email_config.password
         self.server = email_config.server
@@ -278,21 +273,17 @@ class EmailInfo:
         self.sleep_time = email_config.sleep_time
         self.disabled_sites = email_config.disabled_sites
         self.imap_idle = email_config.imap_idle
+
         self.config_store = config_store
+        self.default_ini = default_ini or ""
+        self.personal_ini = personal_ini or ""
+
         if config_store is not None:
-            self.default_ini = (
-                default_ini
-                if default_ini is not None
-                else config_store.get_resolved_default_ini()
-            )
-            self.personal_ini = (
-                personal_ini
-                if personal_ini is not None
-                else config_store.get_resolved_personal_ini()
-            )
-        else:
-            self.default_ini = default_ini or ""
-            self.personal_ini = personal_ini or ""
+            if not self.default_ini and config_store.get("calibre.default_ini"):
+                self.default_ini = config_store.get_resolved_default_ini()
+            if not self.personal_ini and config_store.get("calibre.personal_ini"):
+                self.personal_ini = config_store.get_resolved_personal_ini()
+
         self._build_geturls()
 
     # ------------------------------------------------------------------
@@ -313,11 +304,11 @@ class EmailInfo:
     def update_from_config_store(self, config_store) -> bool:
         """Sync email credentials and INI paths from ConfigStore.
 
-        Called at the top of each poll cycle so credential or INI path changes
+        Called at the top of each poll cycle so credential changes
         made via the web dashboard are picked up without restarting the process.
 
         Returns:
-            True if any field changed (caller should rebuild GetURLs).
+            True if any field changed.
         """
         changed = False
         mapping = [
@@ -337,13 +328,21 @@ class EmailInfo:
 
         self.config_store = config_store
         ini_changed = False
-        resolved_default = config_store.get_resolved_default_ini()
+        resolved_default = (
+            config_store.get_resolved_default_ini()
+            if config_store.get("calibre.default_ini")
+            else ""
+        )
         if resolved_default != self.default_ini:
             self.default_ini = resolved_default
             changed = True
             ini_changed = True
 
-        resolved_personal = config_store.get_resolved_personal_ini()
+        resolved_personal = (
+            config_store.get_resolved_personal_ini()
+            if config_store.get("calibre.personal_ini")
+            else ""
+        )
         if resolved_personal != self.personal_ini:
             self.personal_ini = resolved_personal
             changed = True
@@ -366,29 +365,29 @@ class EmailInfo:
         return latest
 
     def _build_geturls(self) -> None:
-        """(Re)create the GetURLs instance from the current ini files.
+        """(Re)create the GetURLs instance from current ini files or ConfigStore.
 
         Stores the ini modification time so get_urls() can detect when
         personal.ini or defaults.ini has changed and rebuild accordingly.
         """
         _get_config = None
         _initial_config = None
-        if self.config_store is not None or self.default_ini or self.personal_ini:
-            if self.config_store is not None:
-                _get_config = _make_fff_get_configuration(
-                    self.default_ini or None,
-                    self.personal_ini or None,
-                    config_store=self.config_store,
-                )
-            else:
-                _get_config = _make_fff_get_configuration(
-                    self.default_ini or None,
-                    self.personal_ini or None,
-                )
+
+        if self.config_store is not None and (
+            self.config_store.get("calibre.default_ini")
+            or self.config_store.get("calibre.personal_ini")
+        ):
+            _get_config = self.config_store.get_fff_configuration
+            _initial_config = self.config_store.get_fff_configuration("test1.com")
+        elif self.default_ini or self.personal_ini:
+            _get_config = _make_fff_get_configuration(
+                self.default_ini or None, self.personal_ini or None
+            )
             # Pre-build the initial Configuration so GetURLs.__init__ can set
             # self.configuration before any get_configuration() call tries to
             # copy the cache from it (chicken-and-egg guard).
             _initial_config = _get_config("test1.com")
+
         self._geturls = geturls.GetURLs(config=_initial_config, get_config=_get_config)
         self._geturls_ini_mtime = self._ini_mtime()
 
