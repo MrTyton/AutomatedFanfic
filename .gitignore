@@ -26,6 +26,10 @@ wheels/
 .vscode/
 .github/skills/
 .github/instructions/
+.agents/
+.agent/
+AGENTS.md
+GEMINI.md
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
