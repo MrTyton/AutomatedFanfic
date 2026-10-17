@@ -70,6 +70,7 @@ def _child_verify_spawn_objects(
                 "email_changed": email_changed,
                 "retry_changed": retry_changed,
                 "calibre_changed": calibre_changed,
+                "default_ini": email_info.default_ini,
             }
         )
     except Exception as exc:
@@ -431,10 +432,9 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 store.update("email.email", "hotreloaded@example.com")
                 store.update("retry.max_normal_retries", 7)
                 store.update("calibre.update_method", "force")
+                store.update("fanficfare.default_ini", defaults_ini)
 
-                email_info = EmailInfo(
-                    cfg.email, default_ini=defaults_ini, personal_ini=""
-                )
+                email_info = EmailInfo(cfg.email, config_store=store)
                 cdb_info = CalibreInfo(cfg_path, manager)
                 calibre_client = CalibreDBClient(cdb_info)
                 notification_info = NotificationWrapper(toml_path=cfg_path)
@@ -469,6 +469,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 self.assertTrue(res["email_changed"])
                 self.assertTrue(res["retry_changed"])
                 self.assertTrue(res["calibre_changed"])
+                self.assertEqual(res["default_ini"], defaults_ini)
 
                 # Verify child's HistoryRecorder event reached parent's queue
                 msg = history_q.get(timeout=5)

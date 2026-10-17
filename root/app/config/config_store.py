@@ -137,12 +137,20 @@ class ConfigStore:
 
     def get_resolved_default_ini(self) -> str:
         """Return the resolved path to defaults.ini (or packaged fallback)."""
-        raw = self.get("calibre.default_ini")
+        raw = (
+            self.get("calibre.default_ini")
+            or self.get("fanficfare.default_ini")
+            or self.get("default_ini")
+        )
         return resolve_ini_path(raw, "defaults.ini")
 
     def get_resolved_personal_ini(self) -> str:
         """Return the resolved path to personal.ini (or empty string if not configured)."""
-        raw = self.get("calibre.personal_ini")
+        raw = (
+            self.get("calibre.personal_ini")
+            or self.get("fanficfare.personal_ini")
+            or self.get("personal_ini")
+        )
         if not raw:
             try:
                 from models.config_models import ConfigManager

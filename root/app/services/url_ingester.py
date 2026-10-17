@@ -74,7 +74,7 @@ import logging
 import threading
 from typing import Any
 from contextlib import contextmanager
-lazy from fanficfare import adapters, configurable, geturls
+lazy from fanficfare import geturls
 from utils import ff_logging
 from parsers import regex_parsing
 from notifications import notification_wrapper
@@ -82,52 +82,13 @@ from models.config_models import EmailConfig
 from models.queue_types import IngressQueue
 
 
-def _make_fff_get_configuration(
-    config_store_or_default_ini: Any | None = None,
-    personal_ini_path: str | None = None,
-    *,
-    config_store: Any | None = None,
-):
-    """Return a get_configuration callable for fanficfare.geturls.GetURLs.
+def _make_fff_get_configuration(config_store: Any | None = None):
+    """Return a get_configuration callable for fanficfare.geturls.GetURLs using ConfigStore."""
+    if config_store is None:
+        from config.config_store import ConfigStore
 
-    If a ConfigStore is provided, returns its get_fff_configuration method.
-    Otherwise creates a configuration factory loaded with the provided INI paths.
-    """
-    actual_store = (
-        config_store
-        if config_store is not None
-        else (
-            config_store_or_default_ini
-            if hasattr(config_store_or_default_ini, "get_fff_configuration")
-            else None
-        )
-    )
-    if actual_store is not None:
-        return actual_store.get_fff_configuration
-
-    default_ini_path = (
-        config_store_or_default_ini
-        if isinstance(config_store_or_default_ini, str)
-        else None
-    )
-
-    def get_configuration(url: str) -> configurable.Configuration:
-        try:
-            sections = adapters.getConfigSectionsFor(url)
-        except Exception:
-            sections = ["test1.com"]
-
-        config = configurable.Configuration(sections, "EPUB")
-        ini_files = []
-        if default_ini_path and os.path.isfile(default_ini_path):
-            ini_files.append(default_ini_path)
-        if personal_ini_path and os.path.isfile(personal_ini_path):
-            ini_files.append(personal_ini_path)
-        if ini_files:
-            config.read(ini_files)
-        return config
-
-    return get_configuration
+        config_store = ConfigStore()
+    return config_store.get_fff_configuration
 
 
 @contextmanager
@@ -253,8 +214,6 @@ class EmailInfo:
         self,
         email_config: EmailConfig,
         config_store: Any | None = None,
-        default_ini: str | None = None,
-        personal_ini: str | None = None,
     ):
         """
         Initialize EmailInfo with email configuration object and optional ConfigStore.
@@ -263,8 +222,6 @@ class EmailInfo:
             email_config (config_models.EmailConfig): Pre-loaded email configuration.
             config_store (Any | None): Shared ConfigStore instance for live updates
                                        and automatic INI path resolution.
-            default_ini (str | None): Optional defaults.ini path override.
-            personal_ini (str | None): Optional personal.ini path override.
         """
         self.email = email_config.email
         self.password = email_config.password
@@ -275,16 +232,19 @@ class EmailInfo:
         self.imap_idle = email_config.imap_idle
 
         self.config_store = config_store
-        self.default_ini = default_ini or ""
-        self.personal_ini = personal_ini or ""
-
-        if config_store is not None:
-            if not self.default_ini and config_store.get("calibre.default_ini"):
-                self.default_ini = config_store.get_resolved_default_ini()
-            if not self.personal_ini and config_store.get("calibre.personal_ini"):
-                self.personal_ini = config_store.get_resolved_personal_ini()
-
         self._build_geturls()
+
+    @property
+    def default_ini(self) -> str:
+        """Resolved path to defaults.ini from ConfigStore."""
+        return self.config_store.get_resolved_default_ini() if self.config_store else ""
+
+    @property
+    def personal_ini(self) -> str:
+        """Resolved path to personal.ini from ConfigStore."""
+        return (
+            self.config_store.get_resolved_personal_ini() if self.config_store else ""
+        )
 
     # ------------------------------------------------------------------
     # Pickling support for multiprocessing (forkserver / spawn)
@@ -302,7 +262,7 @@ class EmailInfo:
         self._build_geturls()
 
     def update_from_config_store(self, config_store) -> bool:
-        """Sync email credentials and INI paths from ConfigStore.
+        """Sync email credentials from ConfigStore.
 
         Called at the top of each poll cycle so credential changes
         made via the web dashboard are picked up without restarting the process.
@@ -326,29 +286,11 @@ class EmailInfo:
                 setattr(self, attr, val)
                 changed = True
 
+        old_default = self.default_ini
+        old_personal = self.personal_ini
         self.config_store = config_store
-        ini_changed = False
-        resolved_default = (
-            config_store.get_resolved_default_ini()
-            if config_store.get("calibre.default_ini")
-            else ""
-        )
-        if resolved_default != self.default_ini:
-            self.default_ini = resolved_default
+        if self.default_ini != old_default or self.personal_ini != old_personal:
             changed = True
-            ini_changed = True
-
-        resolved_personal = (
-            config_store.get_resolved_personal_ini()
-            if config_store.get("calibre.personal_ini")
-            else ""
-        )
-        if resolved_personal != self.personal_ini:
-            self.personal_ini = resolved_personal
-            changed = True
-            ini_changed = True
-
-        if ini_changed:
             self._build_geturls()
 
         return changed
@@ -365,7 +307,7 @@ class EmailInfo:
         return latest
 
     def _build_geturls(self) -> None:
-        """(Re)create the GetURLs instance from current ini files or ConfigStore.
+        """(Re)create the GetURLs instance from ConfigStore.
 
         Stores the ini modification time so get_urls() can detect when
         personal.ini or defaults.ini has changed and rebuild accordingly.
@@ -379,14 +321,6 @@ class EmailInfo:
         ):
             _get_config = self.config_store.get_fff_configuration
             _initial_config = self.config_store.get_fff_configuration("test1.com")
-        elif self.default_ini or self.personal_ini:
-            _get_config = _make_fff_get_configuration(
-                self.default_ini or None, self.personal_ini or None
-            )
-            # Pre-build the initial Configuration so GetURLs.__init__ can set
-            # self.configuration before any get_configuration() call tries to
-            # copy the cache from it (chicken-and-egg guard).
-            _initial_config = _get_config("test1.com")
 
         self._geturls = geturls.GetURLs(config=_initial_config, get_config=_get_config)
         self._geturls_ini_mtime = self._ini_mtime()

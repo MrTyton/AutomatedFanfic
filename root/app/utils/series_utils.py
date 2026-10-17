@@ -57,24 +57,12 @@ def _is_single_story_url(config: configurable.Configuration, url: str) -> bool:
 def get_series_configuration(
     url: str,
     config_store: Any | None = None,
-    **legacy_kwargs,
 ) -> configurable.Configuration:
     """Build a FanFicFare Configuration for *url* using ConfigStore."""
     if config_store is None:
         from config.config_store import ConfigStore
 
-        store = ConfigStore()
-        default_ini_path = legacy_kwargs.get("default_ini_path") or legacy_kwargs.get(
-            "default_ini"
-        )
-        if default_ini_path:
-            store.update("calibre.default_ini", default_ini_path)
-        personal_ini_path = legacy_kwargs.get("personal_ini_path") or legacy_kwargs.get(
-            "personal_ini"
-        )
-        if personal_ini_path:
-            store.update("calibre.personal_ini", personal_ini_path)
-        return store.get_fff_configuration(url)
+        config_store = ConfigStore()
     return config_store.get_fff_configuration(url)
 
 
@@ -83,7 +71,6 @@ def is_series_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: Any | None = None,
-    **legacy_kwargs,
 ) -> bool:
     """
     Determine if a URL points to a series, collection, or single story.
@@ -101,9 +88,7 @@ def is_series_url(
     """
     url = _normalize_url(url)
     if not config:
-        config = get_series_configuration(
-            url, config_store=config_store, **legacy_kwargs
-        )
+        config = get_series_configuration(url, config_store=config_store)
 
     try:
         # Try to get the adapter for this URL
@@ -165,7 +150,6 @@ def expand_series_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: Any | None = None,
-    **legacy_kwargs,
 ) -> list[str]:
     """
     Extract individual story URLs from a series or collection URL.
@@ -184,9 +168,7 @@ def expand_series_url(
     """
     url = _normalize_url(url)
     if not config:
-        config = get_series_configuration(
-            url, config_store=config_store, **legacy_kwargs
-        )
+        config = get_series_configuration(url, config_store=config_store)
 
     try:
         adapter = adapters.getAdapter(config, url, anyurl=True)
@@ -241,7 +223,6 @@ def process_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: Any | None = None,
-    **legacy_kwargs,
 ) -> dict[str, Any]:
     """
     Unified handler: detect if URL is series and expand or return as single.
@@ -262,9 +243,7 @@ def process_url(
             - 'source_url': original URL
     """
     if not config and url:
-        config = get_series_configuration(
-            url, config_store=config_store, **legacy_kwargs
-        )
+        config = get_series_configuration(url, config_store=config_store)
 
     result = {"is_series": False, "urls": [], "count": 0, "source_url": url}
 
@@ -273,14 +252,12 @@ def process_url(
             url,
             config,
             config_store=config_store,
-            **legacy_kwargs,
         ):
             # Expand the series URL
             expanded = expand_series_url(
                 url,
                 config,
                 config_store=config_store,
-                **legacy_kwargs,
             )
             if expanded:
                 result["is_series"] = True

@@ -299,15 +299,19 @@ class TestEdgeCases:
         assert result["count"] == 2
 
     def test_get_series_configuration_loads_site_sections_and_ini_files(self, tmp_path):
-        """get_series_configuration creates configuration with site sections and INI files."""
+        """get_series_configuration creates configuration with site sections and INI files via ConfigStore."""
+        from config.config_store import ConfigStore
+
         ini_file = tmp_path / "personal.ini"
         ini_file.write_text(
             "[archiveofourown.org]\nusername=testuser\n", encoding="utf-8"
         )
 
+        store = ConfigStore()
+        store.update("calibre.personal_ini", str(ini_file))
         config = series_utils.get_series_configuration(
             "https://archiveofourown.org/series/12345",
-            personal_ini_path=str(ini_file),
+            config_store=store,
         )
 
         assert config.has_section("archiveofourown.org")
