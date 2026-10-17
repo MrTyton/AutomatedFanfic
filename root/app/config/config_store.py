@@ -129,6 +129,53 @@ class ConfigStore:
         except Exception:
             return {}
 
+    # ── FanFicFare INI & Configuration Helpers ───────────────────
+
+    def get_resolved_default_ini(self) -> str:
+        """Return the resolved path to defaults.ini (or packaged fallback)."""
+        from utils.system_utils import resolve_ini_path
+
+        raw = self.get("calibre.default_ini")
+        return resolve_ini_path(raw, "defaults.ini")
+
+    def get_resolved_personal_ini(self) -> str:
+        """Return the resolved path to personal.ini (or empty string if not configured)."""
+        from utils.system_utils import resolve_ini_path
+
+        raw = self.get("calibre.personal_ini")
+        return resolve_ini_path(raw, "personal.ini") if raw else ""
+
+    def get_fff_configuration(self, url: str):
+        """Return a FanFicFare Configuration loaded with site sections and INI files."""
+        import os
+        from fanficfare import adapters
+        from fanficfare.configurable import Configuration
+
+        try:
+            sections = adapters.getConfigSectionsFor(url)
+        except Exception:
+            sections = ["test1.com"]
+
+        config = Configuration(sections, "EPUB")
+        ini_files = []
+
+        default_ini = self.get_resolved_default_ini()
+        if default_ini and os.path.isfile(default_ini):
+            ini_files.append(default_ini)
+
+        personal_ini = self.get_resolved_personal_ini()
+        if personal_ini and os.path.isfile(personal_ini):
+            ini_files.append(personal_ini)
+
+        if ini_files:
+            config.read(ini_files)
+
+        return config
+
+    def get_fff_get_configuration_callable(self):
+        """Return a callable(url: str) -> Configuration for use with fanficfare.geturls.GetURLs."""
+        return self.get_fff_configuration
+
     # ── Write ───────────────────────────────────────────────────
 
     def update(self, key: str, value: Any) -> None:

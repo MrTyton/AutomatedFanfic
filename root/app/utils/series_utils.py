@@ -65,6 +65,9 @@ def get_series_configuration(
     This ensures site-specific authentication (credentials, cookies, is_adult flags)
     is available when scraping series/collection pages (such as locked AO3 series).
     """
+    if config_store is not None and not default_ini_path and not personal_ini_path:
+        return config_store.get_fff_configuration(url)
+
     from utils.system_utils import get_packaged_defaults_ini_path, resolve_ini_path
     import os
 
@@ -79,7 +82,7 @@ def get_series_configuration(
 
     # 1. Resolve defaults.ini
     if not default_ini_path and config_store is not None:
-        default_ini_path = config_store.get("calibre.default_ini")
+        default_ini_path = config_store.get_resolved_default_ini()
 
     if not default_ini_path:
         default_ini_path = get_packaged_defaults_ini_path()
@@ -91,7 +94,7 @@ def get_series_configuration(
 
     # 2. Resolve personal.ini
     if not personal_ini_path and config_store is not None:
-        personal_ini_path = config_store.get("calibre.personal_ini")
+        personal_ini_path = config_store.get_resolved_personal_ini()
 
     if not personal_ini_path:
         try:
