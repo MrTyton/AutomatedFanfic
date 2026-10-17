@@ -735,6 +735,37 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         # (which will fail since we're not mocking expand_series_url)
         self.assertLessEqual(len(received_tasks), 1)
 
+    @patch("utils.series_utils.process_url")
+    def test_series_expansion_failure_marks_active_url_failed_and_does_not_route(
+        self, mock_process_url
+    ):
+        """When series expansion fails (returns count=0), it must not route to workers and mark failed."""
+        series_url = "https://archiveofourown.org/series/403forbidden"
+        mock_process_url.return_value = {
+            "is_series": True,
+            "urls": [],
+            "count": 0,
+            "source_url": series_url,
+        }
+
+        self.coordinator.active_urls = {
+            series_url: {"status": "queued", "site": "archiveofourown"}
+        }
+
+        task = FanficInfo(url=series_url, site="archiveofourown")
+        self.coordinator._handle_new_task(task)
+
+        # Must not be routed to any worker queue
+        for worker_id, queue in self.worker_queues.items():
+            self.assertTrue(queue.empty(), f"Worker {worker_id} queue should be empty")
+
+        # Must be marked failed in active_urls
+        self.assertEqual(self.coordinator.active_urls[series_url]["status"], "failed")
+        self.assertIn(
+            "Failed to expand series",
+            self.coordinator.active_urls[series_url]["error"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
