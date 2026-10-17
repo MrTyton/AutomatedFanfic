@@ -25,6 +25,7 @@ wheels/
 *.egg
 .vscode/
 .github/skills/
+.github/instructions/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
