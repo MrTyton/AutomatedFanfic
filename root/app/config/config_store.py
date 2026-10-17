@@ -5,8 +5,12 @@ between all processes. Services read from this store each iteration instead
 of their local config copies.
 """
 
+import os
 from enum import Enum
 from typing import Any
+
+lazy from fanficfare import adapters, configurable
+lazy from utils.system_utils import resolve_ini_path
 
 
 class ReloadBehavior(str, Enum):
@@ -133,30 +137,22 @@ class ConfigStore:
 
     def get_resolved_default_ini(self) -> str:
         """Return the resolved path to defaults.ini (or packaged fallback)."""
-        from utils.system_utils import resolve_ini_path
-
         raw = self.get("calibre.default_ini")
         return resolve_ini_path(raw, "defaults.ini")
 
     def get_resolved_personal_ini(self) -> str:
         """Return the resolved path to personal.ini (or empty string if not configured)."""
-        from utils.system_utils import resolve_ini_path
-
         raw = self.get("calibre.personal_ini")
         return resolve_ini_path(raw, "personal.ini") if raw else ""
 
     def get_fff_configuration(self, url: str):
         """Return a FanFicFare Configuration loaded with site sections and INI files."""
-        import os
-        from fanficfare import adapters
-        from fanficfare.configurable import Configuration
-
         try:
             sections = adapters.getConfigSectionsFor(url)
         except Exception:
             sections = ["test1.com"]
 
-        config = Configuration(sections, "EPUB")
+        config = configurable.Configuration(sections, "EPUB")
         ini_files = []
 
         default_ini = self.get_resolved_default_ini()

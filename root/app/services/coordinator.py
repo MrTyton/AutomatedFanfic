@@ -29,6 +29,8 @@ from models.fanfic_info import FanficInfo
 from models.queue_types import IngressQueue, WorkerQueue, WorkerQueues
 import threading
 
+lazy from utils import series_utils
+
 
 class SignalType(Enum):
     """Types of signals that can be sent to the coordinator."""
@@ -193,8 +195,6 @@ class Coordinator:
         Automatically detects and expands series/collection URLs into individual
         story tasks before routing.
         """
-        from utils import series_utils
-
         site = task.site
 
         # Check if this is a series/collection URL
