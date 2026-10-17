@@ -48,6 +48,10 @@ def run_worker_pool(
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+    if log_queue is not None:
+        ff_logging.set_web_enabled(True)
+    elif config_store is not None:
+        ff_logging.set_web_enabled(False)
     ff_logging.set_log_forward_queue(log_queue)
 
     # Attach ConfigStore so workers pick up credential changes at runtime
@@ -95,9 +99,9 @@ def run_worker_pool(
             t.start()
             threads.append(t)
 
-        # Main loop: Just wait for shutdown
+        # Main loop: Wait for shutdown and periodically check thread health / scale-up
         while not shutdown_event.is_set():
-            time.sleep(0.5)
+            time.sleep(2.0)
 
             # Check if any threads have died and restart them
             for i, t in enumerate(threads):

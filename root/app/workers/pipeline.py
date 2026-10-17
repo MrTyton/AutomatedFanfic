@@ -212,9 +212,11 @@ def url_worker(
 
     while True:
         try:
-            # Blocking get with timeout to check for queue empty
+            # Blocking get: short timeout when assigned a site to detect queue drain quickly,
+            # longer timeout when already idle to avoid 100ms IPC polling against SyncManager.
             try:
-                fanfic = queue.get(timeout=0.1)
+                poll_timeout = 0.05 if current_site is not None else 2.0
+                fanfic = queue.get(timeout=poll_timeout)
 
                 # Check for Poison Pill (None)
                 if fanfic is None:

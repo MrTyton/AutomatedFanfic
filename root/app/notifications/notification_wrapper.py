@@ -183,19 +183,23 @@ class NotificationWrapper:
                 ff_logging.set_thread_color(color)
             return worker.send_notification(title, body, site)
 
-        # Send notifications concurrently using thread pool for performance
-        with ThreadPoolExecutor() as executor:
-            # Submit notification tasks for all enabled workers
-            futures = [
-                executor.submit(
-                    _send_with_color, worker, title, body, site, current_color
-                )
-                for worker in enabled_workers
-            ]
+        # Send notifications directly for the common single-worker case, or
+        # concurrently using a thread pool when multiple workers are enabled.
+        if len(enabled_workers) == 1:
+            enabled_workers[0].send_notification(title, body, site)
+        elif len(enabled_workers) > 1:
+            with ThreadPoolExecutor() as executor:
+                # Submit notification tasks for all enabled workers
+                futures = [
+                    executor.submit(
+                        _send_with_color, worker, title, body, site, current_color
+                    )
+                    for worker in enabled_workers
+                ]
 
-        # Wait for all notifications to complete and handle any exceptions
-        for future in futures:
-            future.result()  # This will raise an exception if the worker raised one
+            # Wait for all notifications to complete and handle any exceptions
+            for future in futures:
+                future.result()  # This will raise an exception if the worker raised one
 
         # Record notification in history
         if self.history_recorder:

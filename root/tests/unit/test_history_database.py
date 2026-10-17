@@ -497,3 +497,56 @@ class TestAsyncHistoryDB(unittest.TestCase):
 
         result = self._run(_inner())
         self.assertEqual(result, -65536)
+
+    def test_persistent_connection_lifecycle_and_get_stats(self):
+        """AsyncHistoryDB.connect() reuses a persistent connection across queries and get_stats() returns consolidated counts."""
+        self.sync_db.insert_download(
+            DownloadEvent(
+                url="https://ao3.org/works/1",
+                site="ao3",
+                title="Story 1",
+                status=DownloadStatus.SUCCESS,
+            )
+        )
+        self.sync_db.insert_download(
+            DownloadEvent(
+                url="https://ao3.org/works/2",
+                site="ao3",
+                title="Story 2",
+                status=DownloadStatus.FAILED,
+                error_message="Connection timeout",
+            )
+        )
+        self.sync_db.insert_retry(
+            RetryEvent(
+                url="https://ao3.org/works/2",
+                site="ao3",
+                attempt_number=1,
+                action=RetryAction.HAIL_MARY,
+            )
+        )
+        self.sync_db.insert_email_check(
+            EmailCheckEvent(urls_found=4, urls_new=2, urls_duplicate=1)
+        )
+        self.sync_db.insert_notification(
+            NotificationEvent(title="Done", body="Body", site="ao3")
+        )
+
+        async def _inner():
+            await self.async_db.connect()
+            try:
+                self.assertIsNotNone(self.async_db._conn)
+                stats = await self.async_db.get_stats()
+                return stats
+            finally:
+                await self.async_db.close()
+                self.assertIsNone(self.async_db._conn)
+
+        stats = self._run(_inner())
+        self.assertEqual(stats["total_downloads"], 2)
+        self.assertEqual(stats["total_success"], 1)
+        self.assertEqual(stats["total_failed"], 1)
+        self.assertEqual(stats["total_retries"], 1)
+        self.assertEqual(stats["period_downloads"], 2)
+        self.assertEqual(stats["period_success"], 1)
+        self.assertEqual(stats["period_failed"], 1)

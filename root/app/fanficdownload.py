@@ -215,19 +215,21 @@ def register_processes(
         f"to match max_workers={config.max_workers}"
     )
 
-    ingress_queue = manager.Queue()
+    ingress_queue = mp.Queue()
     worker_queues = manager.dict()
     for i in range(worker_pool_size):
         worker_id = f"worker_{i}"
         worker_queues[worker_id] = manager.Queue()
 
-    waiting_queue = manager.Queue()
+    waiting_queue = mp.Queue()
     active_urls = manager.dict()
 
-    # Cross-process log forwarding queue: all non-web-server processes push
-    # log entries here; the web server drains it into its own ring buffer so
-    # /api/logs shows logs from every process, not just the web server's own.
-    log_queue = manager.Queue()
+    # Cross-process log forwarding queue: when the web server is enabled, all
+    # non-web-server processes push log entries here; the web server drains it
+    # into its own ring buffer so /api/logs shows logs from every process.
+    is_web_enabled = bool(getattr(config.web, "enabled", False))
+    ff_logging.set_web_enabled(is_web_enabled)
+    log_queue = mp.Queue() if is_web_enabled else None
 
     # Initialize ConfigStore for hot-reloadable settings
     config_store = ConfigStore(manager.dict())
@@ -247,7 +249,7 @@ def register_processes(
     notification_info.set_config_store(config_store)
 
     # Initialize history recording infrastructure
-    history_queue = manager.Queue(maxsize=10000)
+    history_queue = mp.Queue(maxsize=10000)
     history_recorder = HistoryRecorder(history_queue)
     history_db_path = (
         config.web.history_db_path
@@ -269,7 +271,7 @@ def register_processes(
 
     # Shared event: web server sets it when web.host/port/enabled change;
     # ProcessManager detects it and restarts only the web_server process.
-    web_restart_event = manager.Event()
+    web_restart_event = mp.Event()
 
     # Inject hot-reload helpers into ProcessManager (created before the Manager context)
     process_manager.set_config_store(config_store)

@@ -184,12 +184,13 @@ async def _build_and_push_snapshot(state: Any) -> dict:
 
 
 async def _snapshot_loop(state: Any) -> None:
-    """Background task: build and push one snapshot per second indefinitely."""
+    """Background task: build and push one snapshot per second while clients are connected."""
     while True:
-        try:
-            await _build_and_push_snapshot(state)
-        except Exception:
-            pass
+        if _connections:
+            try:
+                await _build_and_push_snapshot(state)
+            except Exception:
+                pass
         await asyncio.sleep(1)
 
 

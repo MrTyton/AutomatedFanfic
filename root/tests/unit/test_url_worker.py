@@ -1915,6 +1915,21 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.assertEqual(active_urls[fanfic.url]["status"], "waiting")
         self.mock_waiting_queue.put.assert_called_once_with(fanfic)
 
+    def test_extract_output_filename_template_cached_and_execute_uses_read_ini_file_cached(
+        self,
+    ):
+        """command._extract_output_filename_template is LRU-cached and execute_fanficfare_direct reads INI files via read_ini_file_cached."""
+        command._extract_output_filename_template.cache_clear()
+        ini_text = "[defaults]\noutput_filename: /some/dir/${title}-${siteabbrev}${formatext}\n"
+
+        t1 = command._extract_output_filename_template(ini_text, "archiveofourown")
+        t2 = command._extract_output_filename_template(ini_text, "archiveofourown")
+        self.assertEqual(t1, "${title}-${siteabbrev}${formatext}")
+        self.assertEqual(t1, t2)
+        cache_info = command._extract_output_filename_template.cache_info()
+        self.assertEqual(cache_info.misses, 1)
+        self.assertEqual(cache_info.hits, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

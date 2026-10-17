@@ -14,6 +14,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -42,6 +43,8 @@ async def _lifespan(app: FastAPI):
 
     # Connect async history DB if configured
     if state.history_db is not None:
+        if hasattr(state.history_db, "connect"):
+            await state.history_db.connect()
         await state.history_db.ensure_schema()
         ff_logging.log("WebServer: History database connection established")
 
@@ -71,6 +74,9 @@ def create_app(web_state: WebState) -> FastAPI:
 
     # Store shared state on app for access in route handlers
     app.state.web_state = web_state
+
+    # Compress large JSON responses (e.g. /api/logs, /api/config/fff, /api/stats)
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     # CORS — allow all origins for local/Docker usage (no auth)
     app.add_middleware(

@@ -472,6 +472,51 @@ class TestCalibreInfoUpdateFromConfigStore(unittest.TestCase):
         changed = cdb.update_from_config_store(self._store())
         self.assertFalse(changed)
 
+    @patch("pathlib.Path.is_file", return_value=True)
+    def test_version_short_circuit_skips_reload(self, _mock_isfile):
+        """When __version__ has not changed and INI paths are already resolved, update_from_config_store short-circuits."""
+        cdb = self._make_cdb(
+            personal_ini=self._p("/config/personal.ini"),
+            default_ini=self._p("/config/defaults.ini"),
+            location="/library",
+        )
+        store = MagicMock()
+        store_data = {
+            "__version__": 3,
+            "calibre.path": "/library",
+            "calibre.personal_ini": "/config",
+            "calibre.default_ini": "/config",
+        }
+        store.get.side_effect = lambda key, default=None: store_data.get(key, default)
+
+        # First call records _last_config_version = 3
+        self.assertFalse(cdb.update_from_config_store(store))
+        self.assertEqual(cdb._last_config_version, 3)
+
+        # Second call with same __version__ short-circuits after only checking __version__
+        store.get.reset_mock()
+        self.assertFalse(cdb.update_from_config_store(store))
+        store.get.assert_called_once_with("__version__")
+
+    def test_version_short_circuit_still_detects_newly_created_ini_file(self):
+        """Even if __version__ is unchanged, if personal_ini was empty (missing file) it re-checks disk."""
+        cdb = self._make_cdb(
+            personal_ini="",
+            default_ini=self._p("/config/defaults.ini"),
+        )
+        cdb._raw_personal_ini = "/config"
+        cdb._last_config_version = 5
+        store = self._store(
+            **{
+                "__version__": 5,
+                "calibre.personal_ini": "/config",
+            }
+        )
+        with patch("pathlib.Path.is_file", return_value=True):
+            changed = cdb.update_from_config_store(store)
+        self.assertTrue(changed)
+        self.assertEqual(cdb.personal_ini, self._p("/config", "personal.ini"))
+
 
 if __name__ == "__main__":
     unittest.main()

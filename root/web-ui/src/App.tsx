@@ -1,10 +1,12 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import { useDashboardSocket } from './hooks/useWebSocket'
 import Dashboard from './pages/Dashboard'
-import History from './pages/History'
-import Logs from './pages/Logs'
-import Stats from './pages/Stats'
-import Config from './pages/Config'
+
+const History = lazy(() => import('./pages/History'))
+const Logs = lazy(() => import('./pages/Logs'))
+const Stats = lazy(() => import('./pages/Stats'))
+const Config = lazy(() => import('./pages/Config'))
 
 export default function App() {
     const { data, connected } = useDashboardSocket()
@@ -34,13 +36,15 @@ export default function App() {
                 </div>
             </nav>
             <main className="content">
-                <Routes>
-                    <Route path="/" element={<Dashboard data={data} />} />
-                    <Route path="/history" element={<History />} />
-                    <Route path="/logs" element={<Logs />} />
-                    <Route path="/stats" element={<Stats />} />
-                    <Route path="/config" element={<Config />} />
-                </Routes>
+                <Suspense fallback={<div style={{ padding: '2rem', color: 'var(--text-muted)' }}>Loading…</div>}>
+                    <Routes>
+                        <Route path="/" element={<Dashboard data={data} />} />
+                        <Route path="/history" element={<History />} />
+                        <Route path="/logs" element={<Logs />} />
+                        <Route path="/stats" element={<Stats />} />
+                        <Route path="/config" element={<Config />} />
+                    </Routes>
+                </Suspense>
             </main>
         </div>
     )

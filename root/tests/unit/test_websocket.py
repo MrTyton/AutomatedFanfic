@@ -302,3 +302,23 @@ class TestWebSocketDashboard(unittest.TestCase):
             )
             self.assertEqual(data["active_downloads"]["count"], 0)
             self.assertEqual(data["queued_downloads"]["count"], 0)
+
+    def test_snapshot_loop_skips_build_when_no_clients_connected(self):
+        """_snapshot_loop must not call _build_and_push_snapshot when _connections is empty."""
+        from unittest.mock import AsyncMock, patch
+        from web.routes.websocket import _snapshot_loop, _connections
+
+        _connections.clear()
+
+        async def _stop_sleep(_delay):
+            raise asyncio.CancelledError()
+
+        with (
+            patch(
+                "web.routes.websocket._build_and_push_snapshot", new_callable=AsyncMock
+            ) as mock_build,
+            patch("web.routes.websocket.asyncio.sleep", side_effect=_stop_sleep),
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(_snapshot_loop(self.state))
+            mock_build.assert_not_called()

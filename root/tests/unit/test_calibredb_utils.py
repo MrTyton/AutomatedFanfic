@@ -424,15 +424,39 @@ class TestCalibreDBClient(unittest.TestCase):
         with patch.object(self.client, "_execute_command") as mock_execute:
             self.client.set_metadata_fields(mock_fanfic, old_metadata)
 
-            # Should be called 3 times, once for each custom field
-            self.assertEqual(mock_execute.call_count, 3)
+            # Should be called once with batched set_metadata
+            self.assertEqual(mock_execute.call_count, 1)
 
-            # Verify the calls
-            calls = mock_execute.call_args_list
-            for call_obj in calls:
-                command = call_obj[0][0]  # first arg of call
-                self.assertIsInstance(command, list)
-                self.assertEqual(command[0], "set_custom")
+            command = mock_execute.call_args[0][0]
+            self.assertIsInstance(command, list)
+            self.assertEqual(command[:2], ["set_metadata", "123"])
+            self.assertIn("#mytag:custom value", command)
+            self.assertIn("#status:Complete", command)
+            self.assertIn("#rating:5 stars", command)
+
+    def test_set_metadata_fields_fallback_to_set_custom(self):
+        """Test fallback to per-field set_custom when batch set_metadata fails."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "fanfiction.net"
+
+        old_metadata = {
+            "#mytag": "custom value",
+            "#status": "Complete",
+        }
+
+        with patch.object(
+            self.client,
+            "_execute_command",
+            side_effect=[OSError("batch failed"), None, None],
+        ) as mock_execute:
+            self.client.set_metadata_fields(mock_fanfic, old_metadata)
+
+            # 1 batch call + 2 per-field fallback calls
+            self.assertEqual(mock_execute.call_count, 3)
+            self.assertEqual(mock_execute.call_args_list[0][0][0][0], "set_metadata")
+            self.assertEqual(mock_execute.call_args_list[1][0][0][0], "set_custom")
+            self.assertEqual(mock_execute.call_args_list[2][0][0][0], "set_custom")
 
     def test_set_metadata_fields_no_custom_fields(self):
         """Test with no custom fields to restore."""

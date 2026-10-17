@@ -254,6 +254,72 @@ class TestProcessUrl:
         assert result["urls"] == [url]
         assert result["count"] == 1
 
+    def test_tth_series_detection_and_expansion(self):
+        """Twisting the Hellmouth Series-<id> URLs are detected without HTTP and expanded via get_series_from_page."""
+        url = "https://www.tthfanfic.org/Series-2329"
+        tth_html = """
+        <html><head><title>TtH • Series • Test TtH Series</title></head>
+        <body>
+          <div class="storybody">Series description</div>
+          <div class="storylistitem"><a class="storylink" href="/Story-111">One</a></div>
+          <div class="storylistitem"><a class="storylink" href="/Story-222">Two</a></div>
+        </body></html>
+        """
+        with patch.object(
+            BaseSiteAdapter,
+            "get_request",
+            side_effect=AssertionError("TtH series detection must not make HTTP calls"),
+        ):
+            assert series_utils.is_series_url(url) is True
+
+        with patch.object(BaseSiteAdapter, "get_request", return_value=tth_html):
+            result = series_utils.process_url(url)
+
+        assert result["is_series"] is True
+        assert result["count"] == 2
+        assert result["urls"] == [
+            "https://www.tthfanfic.org/Story-111",
+            "https://www.tthfanfic.org/Story-222",
+        ]
+
+    def test_efiction_series_detection_and_expansion(self):
+        """eFiction viewseries.php?seriesid=<id> URLs are detected and expanded with GetURLs helper."""
+        url = "https://www. fanfictalk.com/viewseries.php?seriesid=45".replace(" ", "")
+        efiction_html = """
+        <html><body>
+          <div id="pagetitle">Series Title</div>
+          <div class="summarytext">Summary</div>
+          <a href="viewstory.php?sid=101">Story 101</a>
+          <a href="viewstory.php?sid=102">Story 102</a>
+        </body></html>
+        """
+        with patch.object(
+            BaseSiteAdapter,
+            "get_request",
+            side_effect=AssertionError(
+                "eFiction series detection must not make HTTP calls"
+            ),
+        ):
+            assert series_utils.is_series_url(url) is True
+
+        with patch.object(BaseSiteAdapter, "get_request", return_value=efiction_html):
+            result = series_utils.process_url(url)
+
+        assert result["is_series"] is True
+        assert result["count"] == 2
+
+    def test_collection_process_url_scrapes_page_only_once(self):
+        """process_url on a collection URL must only scrape the collection page once (not twice)."""
+        url = "https://archiveofourown.org/collections/TestCollection2026/works"
+        with patch.object(
+            BaseSiteAdapter, "get_request", return_value=_AO3_COLLECTION_HTML
+        ) as mock_get_req:
+            result = series_utils.process_url(url)
+
+        assert result["is_series"] is True
+        assert result["count"] == 2
+        assert mock_get_req.call_count == 1
+
 
 class TestEdgeCases:
     """Tests for edge cases and error conditions."""

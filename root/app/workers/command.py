@@ -3,6 +3,7 @@ Command execution logic for FanFicFare integration.
 """
 
 import configparser
+import functools
 import io
 import sys
 import shlex
@@ -14,6 +15,7 @@ import importlib.metadata
 from pathlib import Path
 
 lazy from fanficfare import cli as fff_cli
+from config.config_store import read_ini_file_cached
 from utils import ff_logging
 from calibre_integration import calibre_info
 from models import fanfic_info
@@ -119,6 +121,7 @@ class FanFicFareResult:
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=64)
 def _extract_output_filename_template(ini_text: str, site: str | None = None) -> str:
     """Return the filename-only portion of the user's output_filename template.
 
@@ -229,7 +232,9 @@ def execute_fanficfare_direct(
         )
     else:
         try:
-            passed_defaultsini = Path(cdb.default_ini).read_text(encoding="utf-8")
+            passed_defaultsini = read_ini_file_cached(Path(cdb.default_ini))
+            if passed_defaultsini is None:
+                passed_defaultsini = Path(cdb.default_ini).read_text(encoding="utf-8")
             ff_logging.log_debug(
                 f"\tdefaults.ini: loaded {len(passed_defaultsini)} bytes from {cdb.default_ini}"
             )
@@ -259,7 +264,12 @@ def execute_fanficfare_direct(
         )
     else:
         try:
-            personal_ini_base = Path(cdb.personal_ini).read_text(encoding="utf-8")
+            cached_personal = read_ini_file_cached(Path(cdb.personal_ini))
+            personal_ini_base = (
+                cached_personal
+                if cached_personal is not None
+                else Path(cdb.personal_ini).read_text(encoding="utf-8")
+            )
             ff_logging.log_debug(
                 f"\tpersonal.ini: loaded {len(personal_ini_base)} bytes from {cdb.personal_ini}"
             )

@@ -438,7 +438,7 @@ class CalibreDBClient:
             f"\t({fanfic.site}) Attempting to restore {len(fields_to_restore)} metadata fields"
         )
 
-        restored_count = 0
+        field_pairs: list[tuple[str, str]] = []
         for field_name in fields_to_restore:
             if field_name not in metadata:
                 continue
@@ -447,23 +447,41 @@ class CalibreDBClient:
             if field_value is None or field_value == "":
                 continue
 
-            try:
-                if isinstance(field_value, list):
-                    value_str = ",".join(str(v) for v in field_value)
-                else:
-                    value_str = str(field_value)
+            if isinstance(field_value, list):
+                value_str = ",".join(str(v) for v in field_value)
+            else:
+                value_str = str(field_value)
+            field_pairs.append((field_name, value_str))
 
-                command = [
-                    "set_custom",
-                    field_name,
-                    value_str,
-                    str(fanfic.calibre_id),
-                ]
-                self._execute_command(command, fanfic)
+        if not field_pairs:
+            return
 
-                restored_count += 1
-            except (OSError, TimeoutExpired) as e:
-                ff_logging.log_failure(f"\t  Failed to restore field {field_name}: {e}")
+        restored_count = 0
+        batch_command = ["set_metadata", str(fanfic.calibre_id)]
+        for field_name, value_str in field_pairs:
+            batch_command.extend(["--field", f"{field_name}:{value_str}"])
+
+        try:
+            self._execute_command(batch_command, fanfic)
+            restored_count = len(field_pairs)
+        except (OSError, TimeoutExpired) as batch_err:
+            ff_logging.log_debug(
+                f"\t({fanfic.site}) Batch set_metadata failed ({batch_err}), falling back to per-field set_custom"
+            )
+            for field_name, value_str in field_pairs:
+                try:
+                    command = [
+                        "set_custom",
+                        field_name,
+                        value_str,
+                        str(fanfic.calibre_id),
+                    ]
+                    self._execute_command(command, fanfic)
+                    restored_count += 1
+                except (OSError, TimeoutExpired) as e:
+                    ff_logging.log_failure(
+                        f"\t  Failed to restore field {field_name}: {e}"
+                    )
 
         ff_logging.log_debug(
             f"\t({fanfic.site}) Successfully restored {restored_count}/{len(fields_to_restore)} metadata fields"

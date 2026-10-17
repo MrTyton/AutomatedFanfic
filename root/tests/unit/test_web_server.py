@@ -1040,6 +1040,36 @@ port = 8080
             self.assertEqual(state.config.process.max_workers, 6)
             self.assertEqual(state.config.max_workers, 6)
 
+    def test_gzip_middleware_and_history_db_lifespan_connect(self):
+        """create_app registers GZipMiddleware and connects/closes AsyncHistoryDB during lifespan."""
+        from unittest.mock import AsyncMock
+
+        mock_history_db = MagicMock()
+        mock_history_db.connect = AsyncMock()
+        mock_history_db.ensure_schema = AsyncMock()
+        mock_history_db.close = AsyncMock()
+        mock_history_db.get_downloads = AsyncMock(
+            return_value=[
+                {"url": f"https://ao3.org/works/{i}", "title": "A" * 200}
+                for i in range(10)
+            ]
+        )
+        mock_history_db.get_download_count = AsyncMock(return_value=10)
+
+        state = WebState(history_db=mock_history_db)
+        app = create_app(state)
+
+        with TestClient(app) as client:
+            mock_history_db.connect.assert_awaited_once()
+            resp = client.get(
+                "/api/history/downloads",
+                headers={"Accept-Encoding": "gzip"},
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.headers.get("content-encoding"), "gzip")
+
+        mock_history_db.close.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -44,12 +44,40 @@ def _call_get_urls_from_page(
         return adapter.get_urls_from_page(url, normalize=False)
 
 
+def _is_known_series_url_pattern(adapter: Any, url: str) -> bool:
+    """Return True if *url* matches a known FanFicFare series URL pattern without HTTP requests.
+
+    Covers:
+    - OTW/AO3 sites (``/works/`` in site pattern replaced with ``/series/``)
+    - Twisting the Hellmouth (``/Series-<id>``)
+    - eFiction sites (``viewseries.php?seriesid=<id>`` / ``series.php?ssid=<id>``)
+    """
+    site_pattern = (
+        adapter.getSiteURLPattern() if hasattr(adapter, "getSiteURLPattern") else None
+    )
+    if isinstance(site_pattern, str) and "/works/" in site_pattern:
+        series_pattern = site_pattern.replace("/works/", "/series/")
+        m = re.match(series_pattern, url)
+        if m and m.group("id"):
+            return True
+
+    # Twisting the Hellmouth (adapter_tthfanficorg.py)
+    if re.match(r"https?://(?:www\.)?tthfanfic\.org/Series-(?P<id>\d+)", url):
+        return True
+
+    # eFiction sites (base_adapter.py get_series_from_page)
+    if re.match(r".*(?:view)?series\.php\?s(?:erie)?sid=\d+.*", url):
+        return True
+
+    return False
+
+
 def _is_single_story_url(config: configurable.Configuration, url: str) -> bool:
     """Return True if *url* is accepted by FanFicFare as a single-story URL."""
-    if "/series/" in url.lower():
-        return False
     try:
-        adapters.getAdapter(config, url, anyurl=False)
+        adapter = adapters.getAdapter(config, url, anyurl=False)
+        if _is_known_series_url_pattern(adapter, url):
+            return False
         return True
     except Exception:
         return False
@@ -93,20 +121,11 @@ def is_series_url(
         # Try to get the adapter for this URL
         adapter = adapters.getAdapter(config, url, anyurl=True)
 
-        # Method 1: Check if this is an OTW adapter (AO3) with series support
-        if hasattr(adapter, "get_series_from_page"):
-            # Try to match series pattern: /series/<ID>
-            site_pattern = (
-                adapter.getSiteURLPattern()
-                if hasattr(adapter, "getSiteURLPattern")
-                else None
-            )
-            if isinstance(site_pattern, str) and "/works/" in site_pattern:
-                series_pattern = site_pattern.replace("/works/", "/series/")
-                m = re.match(series_pattern, url)
-                if m and m.group("id"):
-                    ff_logging.log_debug(f"Series URL detected (AO3 series): {url}")
-                    return True
+        # Method 1: Fast zero-network check for known series URL patterns
+        # (OTW/AO3, Twisting the Hellmouth, eFiction sites)
+        if _is_known_series_url_pattern(adapter, url):
+            ff_logging.log_debug(f"Series URL detected: {url}")
+            return True
 
         # Fast-path: if FanFicFare validates the URL as a single story (anyurl=False),
         # never make a network call to scrape the page for list URLs.
@@ -177,14 +196,19 @@ def expand_series_url(
         if _is_single_story_url(config, url):
             return []
 
-        # Method 1: Use AO3's native get_series_from_page (handles pagination)
-        if hasattr(adapter, "get_series_from_page"):
+        # Method 1: Use adapter's get_series_from_page (OTW/AO3, TtH, eFiction)
+        if hasattr(adapter, "get_series_from_page") and _is_known_series_url_pattern(
+            adapter, url
+        ):
             try:
-                # First, we need to fetch the page data
                 data = adapter.get_request(url)
-
-                # Then parse it for series URLs
-                result = adapter.get_series_from_page(url, data, normalize=False)
+                gu = geturls.GetURLs(config=config)
+                try:
+                    result = adapter.get_series_from_page(
+                        url, data, normalize=False, geturls=gu
+                    )
+                except TypeError:
+                    result = adapter.get_series_from_page(url, data, normalize=False)
 
                 if isinstance(result, dict) and "urllist" in result:
                     urllist = result.get("urllist", [])
@@ -227,7 +251,9 @@ def process_url(
     Unified handler: detect if URL is series and expand or return as single.
 
     This is the primary interface for processing URLs in the ingestion pipeline.
-    It handles both individual stories and series/collections transparently.
+    It handles both individual stories and series/collections transparently, and
+    caches any collection page scrape so ``get_urls_from_page`` is never invoked
+    twice over HTTP during the same ``process_url`` call.
 
     Args:
         url: The fanfiction URL to process
@@ -241,44 +267,47 @@ def process_url(
             - 'count': number of URLs returned
             - 'source_url': original URL
     """
-    if not config and url:
+    result: dict[str, Any] = {
+        "is_series": False,
+        "urls": [],
+        "count": 0,
+        "source_url": url,
+    }
+    if not url:
+        result["urls"] = [url]
+        result["count"] = 1
+        return result
+
+    if not config:
         config = get_series_configuration(url, config_store=config_store)
 
-    result = {"is_series": False, "urls": [], "count": 0, "source_url": url}
-
     try:
-        if url and is_series_url(
-            url,
-            config,
-            config_store=config_store,
-        ):
-            # Expand the series URL
-            expanded = expand_series_url(
-                url,
-                config,
-                config_store=config_store,
-            )
-            if expanded:
+        # Cache any _call_get_urls_from_page result during this process_url call
+        # so collection URLs are only scraped once across is_series_url + expand_series_url.
+        cached_page_res: dict[str, Any] = {}
+        orig_call = _call_get_urls_from_page
+
+        def _memoized_call(adapter_obj, target_url, cfg):
+            if target_url not in cached_page_res:
+                cached_page_res[target_url] = orig_call(adapter_obj, target_url, cfg)
+            return cached_page_res[target_url]
+
+        globals()["_call_get_urls_from_page"] = _memoized_call
+        try:
+            if is_series_url(url, config, config_store=config_store):
+                expanded = expand_series_url(url, config, config_store=config_store)
                 result["is_series"] = True
                 result["urls"] = expanded
                 result["count"] = len(expanded)
-                return result
             else:
-                # Detected as series, but expansion returned 0 stories (e.g. error)
-                result["is_series"] = True
-                result["urls"] = []
-                result["count"] = 0
-                return result
-
-        # If not a series, treat as single story
-        result["is_series"] = False
-        result["urls"] = [url]
-        result["count"] = 1
-        return result
+                result["urls"] = [url]
+                result["count"] = 1
+        finally:
+            globals()["_call_get_urls_from_page"] = orig_call
 
     except Exception as e:
         ff_logging.log_debug(f"Error processing URL: {e}")
-        # Failsafe: return original URL as single story
         result["urls"] = [url]
         result["count"] = 1
-        return result
+
+    return result

@@ -135,19 +135,28 @@ class CalibreInfo:
         Returns:
             True if any field changed.
         """
+        store_version = config_store.get("__version__")
+        version_unchanged = (
+            isinstance(store_version, int)
+            and getattr(self, "_last_config_version", None) == store_version
+        )
+        if version_unchanged and self.default_ini and self.personal_ini:
+            return False
+
         changed = False
-        mapping = {
-            "location": "calibre.path",
-            "username": "calibre.username",
-            "password": "calibre.password",
-            "update_method": "calibre.update_method",
-            "metadata_preservation_mode": "calibre.metadata_preservation_mode",
-        }
-        for attr, key in mapping.items():
-            val = config_store.get(key)
-            if val is not None and val != getattr(self, attr, None):
-                setattr(self, attr, val)
-                changed = True
+        if not version_unchanged:
+            mapping = {
+                "location": "calibre.path",
+                "username": "calibre.username",
+                "password": "calibre.password",
+                "update_method": "calibre.update_method",
+                "metadata_preservation_mode": "calibre.metadata_preservation_mode",
+            }
+            for attr, key in mapping.items():
+                val = config_store.get(key)
+                if val is not None and val != getattr(self, attr, None):
+                    setattr(self, attr, val)
+                    changed = True
 
         # INI paths require resolution: the config store holds the raw user value
         # (which may be a directory like "/config"), but self.default_ini /
@@ -163,9 +172,15 @@ class CalibreInfo:
                 "personal.ini",
             ),
         ):
-            raw = config_store.get(key)
+            current_resolved = getattr(self, attr, "")
+            if version_unchanged and current_resolved:
+                continue
+            raw = (
+                getattr(self, raw_attr, None)
+                if version_unchanged
+                else config_store.get(key)
+            )
             if raw is not None:
-                current_resolved = getattr(self, attr, "")
                 candidate_path = resolve_ini_path(raw, filename)
                 candidate_exists = bool(
                     candidate_path and Path(candidate_path).is_file()
@@ -178,6 +193,9 @@ class CalibreInfo:
                     if resolved != current_resolved:
                         setattr(self, attr, resolved)
                         changed = True
+
+        if isinstance(store_version, int):
+            self._last_config_version = store_version
 
         return changed
 

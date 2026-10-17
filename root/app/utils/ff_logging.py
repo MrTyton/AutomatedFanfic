@@ -134,13 +134,24 @@ color_map = {
     "UNDERLINE": bcolors.UNDERLINE,
 }
 
-# Multiprocessing-safe shared variable for global verbose flag control
+# Multiprocessing-safe shared variables for global verbose and web logging control
 verbose = Value(ctypes.c_bool, False)
+web_enabled = Value(ctypes.c_bool, True)
 
 
 def set_verbose(value: bool) -> None:
     """Sets the global verbose logging flag for debug output control."""
     verbose.value = value
+
+
+def set_web_enabled(value: bool) -> None:
+    """Sets whether the web UI is enabled for ring-buffer and debug log capture."""
+    web_enabled.value = bool(value)
+
+
+def is_web_enabled() -> bool:
+    """Returns whether web UI log buffering is enabled."""
+    return bool(web_enabled.value)
 
 
 def set_log_forward_queue(queue: LogQueue | None) -> None:
@@ -331,7 +342,8 @@ def log(
             flush=True,
         )
 
-    _store_log_entry(timestamp, level, msg, forward=not _ring_buffer_only)
+    if web_enabled.value:
+        _store_log_entry(timestamp, level, msg, forward=not _ring_buffer_only)
 
 
 def log_failure(msg: str) -> None:
@@ -358,41 +370,33 @@ def log_failure(msg: str) -> None:
 def log_debug(msg: str) -> None:
     """Logs a debug message in blue color when verbose mode is enabled.
 
-    Conditional logging function that only outputs debug messages when the
-    global verbose flag is True. This allows for detailed diagnostic output
-    during development and troubleshooting while keeping production logs clean.
-    Debug messages are formatted in blue color for visual distinction.
-
-    The verbose flag is controlled globally via set_verbose() and affects all
-    processes in the multiprocessing application through shared state.
+    Conditional logging function that only outputs debug messages to the console
+    when the global verbose flag is True. When the web server is enabled, debug
+    entries are always stored and forwarded to the web UI so they can be filtered
+    or inspected for bug reports. When both verbose mode and the web server are
+    disabled, this function returns immediately with zero formatting overhead.
 
     Args:
         msg (str): The debug message to log. Should contain detailed diagnostic
                   information, variable states, or execution flow details useful
                   for development and troubleshooting purposes.
-
-    Note:
-        Messages are silently ignored when verbose mode is disabled (False).
-        This function checks the shared multiprocessing verbose flag atomically.
-
-    Example:
-        >>> set_verbose(True)
-        >>> log_debug("Processing URL: https://example.com/story")  # Outputs
-        >>> set_verbose(False)
-        >>> log_debug("This will not be displayed")  # Silent
     """
-    # Always store in ring buffer so the web UI can show debug entries.
-    # Only print and forward cross-process when verbose mode is enabled.
+    is_verb = bool(verbose.value)
+    is_web = bool(web_enabled.value)
+    if not is_verb and not is_web:
+        return
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
 
-    if verbose.value:
+    if is_verb:
         using_col = getattr(_thread_local, "color", bcolors.BOLD)
         print(
             f"{bcolors.BOLD}{timestamp}{bcolors.ENDC} - {using_col}{msg}{bcolors.ENDC}",
             flush=True,
         )
 
-    _store_log_entry(timestamp, "debug", msg, forward=verbose.value)
+    if is_web:
+        _store_log_entry(timestamp, "debug", msg, forward=True)
 
 
 def get_recent_logs(limit: int = 500) -> list[dict]:

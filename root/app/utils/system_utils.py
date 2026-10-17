@@ -43,6 +43,7 @@ Thread Safety:
 """
 
 from contextlib import contextmanager
+import functools
 import os
 from pathlib import Path
 import shutil
@@ -53,6 +54,7 @@ lazy import fanficfare
 # from calibre_integration import calibre_info
 
 
+@functools.lru_cache(maxsize=1)
 def get_packaged_defaults_ini_path() -> str:
     """Return the filesystem path to the packaged FanFicFare defaults.ini.
 

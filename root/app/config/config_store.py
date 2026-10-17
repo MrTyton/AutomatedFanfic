@@ -62,6 +62,30 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
 }
 
 
+# Cache of (mtime_ns, size, text) keyed by absolute INI path
+_ini_text_cache: dict[str, tuple[int, int, str]] = {}
+
+
+def read_ini_file_cached(path: str | os.PathLike) -> str | None:
+    """Read an INI file from disk, caching its contents by (mtime_ns, size)."""
+    key = str(path)
+    try:
+        st = os.stat(key)
+        cached = _ini_text_cache.get(key)
+        if (
+            cached is not None
+            and cached[0] == st.st_mtime_ns
+            and cached[1] == st.st_size
+        ):
+            return cached[2]
+        with open(key, encoding="utf-8") as fh:
+            text = fh.read()
+        _ini_text_cache[key] = (st.st_mtime_ns, st.st_size, text)
+        return text
+    except OSError:
+        return None
+
+
 class ConfigStore:
     """Cross-process shared configuration store for hot-reloadable fields.
 
@@ -116,6 +140,7 @@ class ConfigStore:
             config.process.max_restart_attempts
         )
         self._store["process.max_workers"] = config.process.max_workers
+        self._store["__version__"] = int(self._store.get("__version__", 0) or 0) + 1
 
     # ── Read ────────────────────────────────────────────────────
 
@@ -126,10 +151,17 @@ class ConfigStore:
         except Exception:
             return default
 
+    def get_version(self) -> int | None:
+        """Return the current configuration version counter, if tracked."""
+        val = self.get("__version__")
+        return val if isinstance(val, int) else None
+
     def get_all(self) -> dict:
         """Return a snapshot of all hot-reloadable values."""
         try:
-            return dict(self._store)
+            data = dict(self._store)
+            data.pop("__version__", None)
+            return data
         except Exception:
             return {}
 
@@ -172,7 +204,18 @@ class ConfigStore:
             ini_files.append(personal_ini)
 
         if ini_files:
-            config.read(ini_files)
+            uncached_files = []
+            for ini_path in ini_files:
+                cached_text = read_ini_file_cached(ini_path)
+                if cached_text is not None:
+                    try:
+                        config.read_string(cached_text, source=ini_path)
+                    except Exception:
+                        uncached_files.append(ini_path)
+                else:
+                    uncached_files.append(ini_path)
+            if uncached_files:
+                config.read(uncached_files)
 
         return config
 
@@ -184,10 +227,18 @@ class ConfigStore:
 
     def update(self, key: str, value: Any) -> None:
         self._store[key] = value
+        try:
+            self._store["__version__"] = int(self._store.get("__version__", 0) or 0) + 1
+        except Exception:
+            pass
 
     def update_many(self, updates: dict[str, Any]) -> None:
         for key, value in updates.items():
             self._store[key] = value
+        try:
+            self._store["__version__"] = int(self._store.get("__version__", 0) or 0) + 1
+        except Exception:
+            pass
 
     # ── Classification helpers ──────────────────────────────────
 

@@ -293,3 +293,30 @@ class TestHistoryWriter(unittest.TestCase):
         """Stopping a writer that was never started should not error."""
         writer = HistoryWriter(self.queue, self.tmp.name)
         writer.stop()
+
+    def test_drains_batch_with_single_commit_per_batch(self):
+        """HistoryWriter drains up to 50 queued messages with commit=False and commits once per batch."""
+        recorder = HistoryRecorder(self.queue)
+        for i in range(10):
+            recorder.record_download_created(
+                url=f"https://ao3.org/works/{i}", site="ao3"
+            )
+
+        with (
+            patch.object(SyncHistoryDB, "insert_download", wraps=None) as mock_insert,
+            patch.object(
+                self.writer, "_commit_safely", wraps=self.writer._commit_safely
+            ) as mock_commit,
+        ):
+            self._start_writer()
+            deadline = time.time() + 2.0
+            while time.time() < deadline and mock_insert.call_count < 10:
+                time.sleep(0.02)
+            self.shutdown.set()
+            self.writer.stop()
+
+            self.assertEqual(mock_insert.call_count, 10)
+            for call_args in mock_insert.call_args_list:
+                self.assertEqual(call_args.kwargs.get("commit"), False)
+            self.assertGreaterEqual(mock_commit.call_count, 1)
+            self.assertLess(mock_commit.call_count, 10)

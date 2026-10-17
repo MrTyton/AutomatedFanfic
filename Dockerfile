@@ -72,7 +72,16 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     # Pruning Qt/PyQt completely requires more tailored `find` which we can do here
     find /opt/calibre -name "*Gui*" -type f -delete 2>/dev/null || true && \
     find /opt/calibre -name "*Widget*" -type f -delete 2>/dev/null || true && \
-    find /opt/calibre -path "*/PyQt*/Qt*" -delete 2>/dev/null || true
+    find /opt/calibre -path "*/PyQt*/Qt*" -delete 2>/dev/null || true && \
+    find /opt/calibre -name "*Qt6WebEngine*" -delete 2>/dev/null || true && \
+    find /opt/calibre -name "*Qt6Qml*" -delete 2>/dev/null || true && \
+    find /opt/calibre -name "*Qt6Quick*" -delete 2>/dev/null || true && \
+    find /opt/calibre -name "*Qt6Pdf*" -delete 2>/dev/null || true && \
+    rm -rf /opt/calibre/resources/localization/locales \
+    /opt/calibre/resources/dictionaries \
+    /opt/calibre/resources/hyphenation \
+    /opt/calibre/resources/mathjax \
+    /opt/calibre/resources/rapydscript 2>/dev/null || true
 
 # Python Dependencies Stage
 FROM builder-tools AS python-deps
@@ -97,14 +106,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # FanFicFare Installer Stage
 FROM builder-tools AS fanficfare-installer
 ARG FANFICFARE_VERSION
-# Install build tools needed to compile C extensions (e.g. apsw on ARM64
-# where pre-built wheels may not yet exist for the current Python version).
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    build-essential \
-    libsqlite3-dev
 RUN --mount=type=cache,target=/root/.cache/pip \
     echo "*** Install FanFicFare from PyPI + TestPyPI ***" && \
     if [ -n "${FANFICFARE_VERSION}" ]; then \
@@ -112,7 +113,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     else \
     PACKAGE_SPEC="FanFicFare"; \
     fi && \
-    pip install --prefix=/install --no-warn-script-location \
+    pip install --no-deps --prefix=/install --no-warn-script-location \
     --extra-index-url https://test.pypi.org/simple/ "${PACKAGE_SPEC}"
 
 # Frontend Builder Stage: Build React SPA
@@ -152,11 +153,10 @@ RUN groupadd --gid "$PGID" abc && \
 # Copy Application Code - changes RARELY (manual commits, infrequent)
 # Placed first so the more frequent calibre/deps/FFF layers below are not
 # invalidated when code changes.
-COPY root/app/ /app/
+COPY --chown=abc:abc root/app/ /app/
 COPY root/config.default/ /config.default/
 COPY --from=frontend-builder /build/dist /web-ui/dist
-RUN chmod -R +x /app/ && \
-    chown -R abc:abc /app/
+RUN chmod -R +x /app/
 
 # Copy Calibre - changes MONTHLY (new Calibre releases)
 COPY --from=calibre-downloader /opt/calibre /opt/calibre

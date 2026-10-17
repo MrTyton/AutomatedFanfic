@@ -86,6 +86,38 @@ class TestConfigStoreBasics(unittest.TestCase):
                 config2.get("archiveofourown.org", "username"), "storeuser"
             )
 
+    def test_version_counter_increments_and_excluded_from_get_all(self):
+        store = ConfigStore()
+        self.assertIsNone(store.get_version())
+        store.update("email.sleep_time", 60)
+        v1 = store.get_version()
+        self.assertEqual(v1, 1)
+        store.update_many({"email.sleep_time": 120, "calibre.path": "/lib"})
+        v2 = store.get_version()
+        self.assertEqual(v2, 2)
+        self.assertNotIn("__version__", store.get_all())
+
+    def test_read_ini_file_cached_invalidates_on_change(self):
+        from config.config_store import read_ini_file_cached
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ini_path = os.path.join(tmp_dir, "personal.ini")
+            with open(ini_path, "w", encoding="utf-8") as f:
+                f.write("[defaults]\nval=1\n")
+
+            first = read_ini_file_cached(ini_path)
+            self.assertIn("val=1", first or "")
+
+            # Modify file content & size so (mtime_ns, size) invalidates cache
+            with open(ini_path, "w", encoding="utf-8") as f:
+                f.write("[defaults]\nval=updated_value_2\n")
+
+            second = read_ini_file_cached(ini_path)
+            self.assertIn("val=updated_value_2", second or "")
+            self.assertIsNone(
+                read_ini_file_cached(os.path.join(tmp_dir, "missing.ini"))
+            )
+
 
 class TestConfigStoreInitFromConfig(unittest.TestCase):
     def _make_config(self):

@@ -7,6 +7,7 @@ the single-threaded HistoryWriter (see recorder.py).
 """
 
 import sqlite3
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -141,7 +142,7 @@ class SyncHistoryDB:
 
     # -- writes --
 
-    def insert_download(self, event: DownloadEvent) -> int:
+    def insert_download(self, event: DownloadEvent, *, commit: bool = True) -> int:
         assert self._conn is not None
         cur = self._conn.execute(
             """INSERT INTO download_events
@@ -160,7 +161,8 @@ class SyncHistoryDB:
                 _dt_to_str(event.completed_at),
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
     def update_download(
@@ -172,6 +174,8 @@ class SyncHistoryDB:
         error_message: str | None = None,
         completed_at: datetime | None = None,
         site: str | None = None,
+        *,
+        commit: bool = True,
     ) -> None:
         """Update the most recent non-successful download_event for *url*.
 
@@ -230,9 +234,10 @@ class SyncHistoryDB:
                     None if is_in_progress else _dt_to_str(completed_at),
                 ),
             )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
-    def insert_retry(self, event: RetryEvent) -> int:
+    def insert_retry(self, event: RetryEvent, *, commit: bool = True) -> int:
         assert self._conn is not None
         # Resolve download_event_id from url if not provided
         download_event_id = event.download_event_id
@@ -262,11 +267,12 @@ class SyncHistoryDB:
                 _dt_to_str(event.fired_at),
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
     def update_retry_fired(
-        self, url: str, attempt_number: int, fired_at: datetime
+        self, url: str, attempt_number: int, fired_at: datetime, *, commit: bool = True
     ) -> None:
         assert self._conn is not None
         self._conn.execute(
@@ -287,9 +293,10 @@ class SyncHistoryDB:
                )""",
             (_dt_to_str(datetime.now(timezone.utc)), url),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
-    def insert_email_check(self, event: EmailCheckEvent) -> int:
+    def insert_email_check(self, event: EmailCheckEvent, *, commit: bool = True) -> int:
         assert self._conn is not None
         cur = self._conn.execute(
             """INSERT INTO email_events
@@ -304,10 +311,13 @@ class SyncHistoryDB:
                 event.trigger,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
-    def insert_notification(self, event: NotificationEvent) -> int:
+    def insert_notification(
+        self, event: NotificationEvent, *, commit: bool = True
+    ) -> int:
         assert self._conn is not None
         download_event_id = event.download_event_id
         if download_event_id is None and event.site:
@@ -333,7 +343,8 @@ class SyncHistoryDB:
                 event.provider,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
 
@@ -347,10 +358,13 @@ class AsyncHistoryDB:
 
     def __init__(self, db_path: str):
         self._db_path = db_path
+        self._conn: aiosqlite.Connection | None = None
 
     async def _get_conn(self) -> aiosqlite.Connection:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        conn = await aiosqlite.connect(self._db_path)
+        conn = aiosqlite.connect(self._db_path)
+        conn.daemon = True
+        await conn
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA busy_timeout=5000")
         await conn.execute("PRAGMA journal_mode=WAL")
@@ -359,9 +373,25 @@ class AsyncHistoryDB:
         await conn.execute("PRAGMA cache_size=-65536")  # 64 MB page cache
         return conn
 
+    async def connect(self) -> None:
+        """Open a persistent read connection for the lifetime of the web server."""
+        if self._conn is None:
+            self._conn = await self._get_conn()
+
+    @asynccontextmanager
+    async def _connection(self):
+        """Yield the persistent connection if open, otherwise a one-shot connection."""
+        if self._conn is not None:
+            yield self._conn
+        else:
+            conn = await self._get_conn()
+            try:
+                yield conn
+            finally:
+                await conn.close()
+
     async def ensure_schema(self) -> None:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             await conn.executescript(_SCHEMA)
             # Migrate: add updated_at if missing (existing databases)
             try:
@@ -378,12 +408,13 @@ class AsyncHistoryDB:
             except Exception:
                 pass  # Column already exists
             await conn.commit()
-        finally:
-            await conn.close()
 
     async def close(self) -> None:
-        """Close any held resources (connections are opened/closed per query)."""
-        return None
+        """Close the persistent connection if open."""
+        if self._conn is not None:
+            conn = self._conn
+            self._conn = None
+            await conn.close()
 
     async def get_downloads(
         self,
@@ -393,8 +424,7 @@ class AsyncHistoryDB:
         status: str | None = None,
         search: str | None = None,
     ) -> list[dict]:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             conditions = []
             params: list = []
             if site:
@@ -416,8 +446,6 @@ class AsyncHistoryDB:
             cursor = await conn.execute(query, params)
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
-        finally:
-            await conn.close()
 
     async def get_download_count(
         self,
@@ -425,8 +453,7 @@ class AsyncHistoryDB:
         status: str | None = None,
         search: str | None = None,
     ) -> int:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             conditions = []
             params: list = []
             if site:
@@ -446,12 +473,9 @@ class AsyncHistoryDB:
             )
             row = await cursor.fetchone()
             return row[0] if row else 0
-        finally:
-            await conn.close()
 
     async def get_retries_for_url(self, url: str) -> list[dict]:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute(
                 """SELECT * FROM retry_events
                    WHERE url = ? ORDER BY scheduled_at ASC""",
@@ -459,12 +483,9 @@ class AsyncHistoryDB:
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
-        finally:
-            await conn.close()
 
     async def get_retries(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute(
                 """WITH latest_downloads AS (
                        SELECT d1.url, d1.title
@@ -489,21 +510,15 @@ class AsyncHistoryDB:
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
-        finally:
-            await conn.close()
 
     async def get_retry_count(self) -> int:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute("SELECT COUNT(*) FROM retry_events")
             row = await cursor.fetchone()
             return row[0] if row else 0
-        finally:
-            await conn.close()
 
     async def get_email_checks(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute(
                 """SELECT * FROM email_events
                    ORDER BY checked_at DESC LIMIT ? OFFSET ?""",
@@ -511,12 +526,9 @@ class AsyncHistoryDB:
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
-        finally:
-            await conn.close()
 
     async def get_notifications(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute(
                 """SELECT * FROM notification_events
                    ORDER BY sent_at DESC LIMIT ? OFFSET ?""",
@@ -524,13 +536,10 @@ class AsyncHistoryDB:
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
-        finally:
-            await conn.close()
 
     async def get_recent_events(self, limit: int = 10) -> list[dict]:
         """Get the most recent events across all tables for dashboard feed."""
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             events = []
 
             cursor = await conn.execute(
@@ -573,13 +582,10 @@ class AsyncHistoryDB:
             # Sort all by timestamp descending and return top N
             events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
             return events[:limit]
-        finally:
-            await conn.close()
 
     async def get_recent_downloads(self, limit: int = 20) -> list[dict]:
         """Get the most recent download events for the dashboard."""
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute(
                 """SELECT id, url, site, title, calibre_id, status,
                           error_message, started_at, completed_at,
@@ -590,8 +596,6 @@ class AsyncHistoryDB:
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
-        finally:
-            await conn.close()
 
     async def get_waiting_urls(self) -> list[dict]:
         """Get URLs currently in 'waiting' status (retry backoff).
@@ -599,8 +603,7 @@ class AsyncHistoryDB:
         Only the latest waiting row per URL is shown, so older retry attempts do
         not keep stale error messages visible after the story has since moved on.
         """
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute("""WITH latest_waiting AS (
                        SELECT url,
                               MAX(started_at) AS latest_started_at
@@ -616,13 +619,10 @@ class AsyncHistoryDB:
                    WHERE d.status = 'waiting'""")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
-        finally:
-            await conn.close()
 
     async def get_latest_download(self, url: str) -> dict | None:
         """Get latest known download row for URL."""
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             cursor = await conn.execute(
                 """SELECT url, site, title, calibre_id, status, behavior,
                           started_at, completed_at, updated_at
@@ -634,8 +634,6 @@ class AsyncHistoryDB:
             )
             row = await cursor.fetchone()
             return dict(row) if row else None
-        finally:
-            await conn.close()
 
     async def get_recent_activity(self, limit: int = 20) -> list[dict]:
         """Get the most recent non-download events for the dashboard feed.
@@ -643,8 +641,7 @@ class AsyncHistoryDB:
         Excludes email check events — they fire frequently and push out
         the events users actually care about (retries, notifications).
         """
-        conn = await self._get_conn()
-        try:
+        async with self._connection() as conn:
             events: list[dict] = []
 
             cursor = await conn.execute(
@@ -668,154 +665,150 @@ class AsyncHistoryDB:
 
             events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
             return events[:limit]
-        finally:
-            await conn.close()
 
     async def get_stats(self, period_hours: int = 24) -> dict:
         """Get comprehensive statistics for the stats dashboard page."""
-        conn = await self._get_conn()
         try:
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(hours=period_hours)
-            ).isoformat()
+            async with self._connection() as conn:
+                cutoff = (
+                    datetime.now(timezone.utc) - timedelta(hours=period_hours)
+                ).isoformat()
 
-            async def _scalar_count(query: str, params: tuple = ()) -> int:
-                cur = await conn.execute(query, params)
-                r = await cur.fetchone()
-                return int(r[0]) if r and r[0] is not None else 0
+                # Single query for all download_events scalar totals (all-time + period)
+                cursor = await conn.execute(
+                    """SELECT
+                           COUNT(*),
+                           COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0),
+                           COALESCE(SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END), 0),
+                           COALESCE(SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END), 0),
+                           COALESCE(SUM(CASE WHEN status = 'success' AND started_at >= ? THEN 1 ELSE 0 END), 0),
+                           COALESCE(SUM(CASE WHEN status IN ('failed', 'abandoned') AND started_at >= ? THEN 1 ELSE 0 END), 0)
+                       FROM download_events""",
+                    (cutoff, cutoff, cutoff),
+                )
+                dl_row = await cursor.fetchone()
+                if dl_row:
+                    (
+                        total_downloads,
+                        total_success,
+                        total_failed,
+                        period_downloads,
+                        period_success,
+                        period_failed,
+                    ) = (int(v or 0) for v in dl_row)
+                else:
+                    total_downloads = total_success = total_failed = 0
+                    period_downloads = period_success = period_failed = 0
 
-            # All-time totals
-            total_downloads = await _scalar_count(
-                "SELECT COUNT(*) FROM download_events"
-            )
-            total_success = await _scalar_count(
-                "SELECT COUNT(*) FROM download_events WHERE status = 'success'"
-            )
-            total_failed = await _scalar_count(
-                "SELECT COUNT(*) FROM download_events WHERE status IN ('failed', 'abandoned')"
-            )
+                # Single query for retry_events scalar totals
+                cursor = await conn.execute(
+                    "SELECT COUNT(DISTINCT download_event_id), COUNT(*) FROM retry_events"
+                )
+                retry_row = await cursor.fetchone()
+                downloads_with_retries = int(retry_row[0] or 0) if retry_row else 0
+                total_retries = int(retry_row[1] or 0) if retry_row else 0
 
-            # Period totals
-            period_downloads = await _scalar_count(
-                "SELECT COUNT(*) FROM download_events WHERE started_at >= ?",
-                (cutoff,),
-            )
-            period_success = await _scalar_count(
-                "SELECT COUNT(*) FROM download_events WHERE status = 'success' AND started_at >= ?",
-                (cutoff,),
-            )
-            period_failed = await _scalar_count(
-                "SELECT COUNT(*) FROM download_events WHERE status IN ('failed', 'abandoned') AND started_at >= ?",
-                (cutoff,),
-            )
+                # Average retries to success
+                cursor = await conn.execute("""SELECT AVG(cnt) FROM (
+                           SELECT COUNT(*) as cnt
+                           FROM retry_events r
+                           JOIN download_events d ON r.download_event_id = d.id
+                           WHERE d.status = 'success'
+                           GROUP BY r.download_event_id
+                       )""")
+                row = await cursor.fetchone()
+                avg_retries_to_success = (
+                    round(row[0], 2) if row and row[0] is not None else 0.0
+                )
 
-            # Retry stats (all-time)
-            downloads_with_retries = await _scalar_count(
-                "SELECT COUNT(DISTINCT download_event_id) FROM retry_events"
-            )
-            total_retries = await _scalar_count("SELECT COUNT(*) FROM retry_events")
+                # Downloads by site (all-time, top 20)
+                cursor = await conn.execute("""SELECT site,
+                              COUNT(*) as total,
+                              SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+                              SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
+                       FROM download_events
+                       GROUP BY site
+                       ORDER BY total DESC
+                       LIMIT 20""")
+                downloads_by_site = [dict(r) for r in await cursor.fetchall()]
 
-            # Average retries to success
-            cursor = await conn.execute("""SELECT AVG(cnt) FROM (
-                       SELECT COUNT(*) as cnt
-                       FROM retry_events r
-                       JOIN download_events d ON r.download_event_id = d.id
-                       WHERE d.status = 'success'
-                       GROUP BY r.download_event_id
-                   )""")
-            row = await cursor.fetchone()
-            avg_retries_to_success = (
-                round(row[0], 2) if row and row[0] is not None else 0.0
-            )
+                # Downloads over time (daily buckets within period)
+                cursor = await conn.execute(
+                    """SELECT DATE(started_at) as date,
+                              COUNT(*) as total,
+                              SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+                              SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
+                       FROM download_events
+                       WHERE started_at >= ?
+                       GROUP BY DATE(started_at)
+                       ORDER BY date""",
+                    (cutoff,),
+                )
+                downloads_over_time = [dict(r) for r in await cursor.fetchall()]
 
-            # Downloads by site (all-time, top 20)
-            cursor = await conn.execute("""SELECT site,
-                          COUNT(*) as total,
-                          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
-                          SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
-                   FROM download_events
-                   GROUP BY site
-                   ORDER BY total DESC
-                   LIMIT 20""")
-            downloads_by_site = [dict(r) for r in await cursor.fetchall()]
+                # Hourly distribution (all-time)
+                cursor = await conn.execute(
+                    """SELECT CAST(strftime('%H', started_at) AS INTEGER) as hour,
+                              COUNT(*) as count
+                       FROM download_events
+                       GROUP BY hour
+                       ORDER BY hour"""
+                )
+                hourly_distribution = [dict(r) for r in await cursor.fetchall()]
 
-            # Downloads over time (daily buckets within period)
-            cursor = await conn.execute(
-                """SELECT DATE(started_at) as date,
-                          COUNT(*) as total,
-                          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
-                          SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
-                   FROM download_events
-                   WHERE started_at >= ?
-                   GROUP BY DATE(started_at)
-                   ORDER BY date""",
-                (cutoff,),
-            )
-            downloads_over_time = [dict(r) for r in await cursor.fetchall()]
+                # Weekly distribution (day of week, all-time)
+                # strftime('%w') returns 0=Sunday .. 6=Saturday
+                cursor = await conn.execute(
+                    """SELECT CAST(strftime('%w', started_at) AS INTEGER) as day_of_week,
+                              COUNT(*) as count
+                       FROM download_events
+                       GROUP BY day_of_week
+                       ORDER BY day_of_week"""
+                )
+                weekly_distribution = [dict(r) for r in await cursor.fetchall()]
 
-            # Hourly distribution (all-time)
-            cursor = await conn.execute(
-                """SELECT CAST(strftime('%H', started_at) AS INTEGER) as hour,
-                          COUNT(*) as count
-                   FROM download_events
-                   GROUP BY hour
-                   ORDER BY hour"""
-            )
-            hourly_distribution = [dict(r) for r in await cursor.fetchall()]
+                # Monthly distribution (day of month, all-time)
+                cursor = await conn.execute(
+                    """SELECT CAST(strftime('%d', started_at) AS INTEGER) as day_of_month,
+                              COUNT(*) as count
+                       FROM download_events
+                       GROUP BY day_of_month
+                       ORDER BY day_of_month"""
+                )
+                monthly_distribution = [dict(r) for r in await cursor.fetchall()]
 
-            # Weekly distribution (day of week, all-time)
-            # strftime('%w') returns 0=Sunday .. 6=Saturday
-            cursor = await conn.execute(
-                """SELECT CAST(strftime('%w', started_at) AS INTEGER) as day_of_week,
-                          COUNT(*) as count
-                   FROM download_events
-                   GROUP BY day_of_week
-                   ORDER BY day_of_week"""
-            )
-            weekly_distribution = [dict(r) for r in await cursor.fetchall()]
+                # Retry distribution by attempt number
+                cursor = await conn.execute("""SELECT attempt_number, COUNT(*) as count
+                       FROM retry_events
+                       GROUP BY attempt_number
+                       ORDER BY attempt_number""")
+                retry_distribution = [dict(r) for r in await cursor.fetchall()]
 
-            # Monthly distribution (day of month, all-time)
-            cursor = await conn.execute(
-                """SELECT CAST(strftime('%d', started_at) AS INTEGER) as day_of_month,
-                          COUNT(*) as count
-                   FROM download_events
-                   GROUP BY day_of_month
-                   ORDER BY day_of_month"""
-            )
-            monthly_distribution = [dict(r) for r in await cursor.fetchall()]
+                # Status breakdown (all-time)
+                cursor = await conn.execute("""SELECT status, COUNT(*) as count
+                       FROM download_events
+                       GROUP BY status
+                       ORDER BY count DESC""")
+                status_breakdown = [dict(r) for r in await cursor.fetchall()]
 
-            # Retry distribution by attempt number
-            cursor = await conn.execute("""SELECT attempt_number, COUNT(*) as count
-                   FROM retry_events
-                   GROUP BY attempt_number
-                   ORDER BY attempt_number""")
-            retry_distribution = [dict(r) for r in await cursor.fetchall()]
-
-            # Status breakdown (all-time)
-            cursor = await conn.execute("""SELECT status, COUNT(*) as count
-                   FROM download_events
-                   GROUP BY status
-                   ORDER BY count DESC""")
-            status_breakdown = [dict(r) for r in await cursor.fetchall()]
-
-            return {
-                "total_downloads": total_downloads,
-                "total_success": total_success,
-                "total_failed": total_failed,
-                "period_downloads": period_downloads,
-                "period_success": period_success,
-                "period_failed": period_failed,
-                "downloads_with_retries": downloads_with_retries,
-                "total_retries": total_retries,
-                "avg_retries_to_success": avg_retries_to_success,
-                "downloads_by_site": downloads_by_site,
-                "downloads_over_time": downloads_over_time,
-                "hourly_distribution": hourly_distribution,
-                "weekly_distribution": weekly_distribution,
-                "monthly_distribution": monthly_distribution,
-                "retry_distribution": retry_distribution,
-                "status_breakdown": status_breakdown,
-            }
+                return {
+                    "total_downloads": total_downloads,
+                    "total_success": total_success,
+                    "total_failed": total_failed,
+                    "period_downloads": period_downloads,
+                    "period_success": period_success,
+                    "period_failed": period_failed,
+                    "downloads_with_retries": downloads_with_retries,
+                    "total_retries": total_retries,
+                    "avg_retries_to_success": avg_retries_to_success,
+                    "downloads_by_site": downloads_by_site,
+                    "downloads_over_time": downloads_over_time,
+                    "hourly_distribution": hourly_distribution,
+                    "weekly_distribution": weekly_distribution,
+                    "monthly_distribution": monthly_distribution,
+                    "retry_distribution": retry_distribution,
+                    "status_breakdown": status_breakdown,
+                }
         except Exception:
             return {
                 "total_downloads": 0,
@@ -835,5 +828,3 @@ class AsyncHistoryDB:
                 "retry_distribution": [],
                 "status_breakdown": [],
             }
-        finally:
-            await conn.close()

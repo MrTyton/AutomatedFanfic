@@ -84,7 +84,8 @@ class TestLogForwarding(unittest.TestCase):
     """Tests for cross-process log forwarding via set_log_forward_queue."""
 
     def setUp(self):
-        # Always start each test with forwarding disabled.
+        # Always start each test with forwarding disabled and web_enabled True.
+        ff_logging.set_web_enabled(True)
         ff_logging.set_log_forward_queue(None)
         if hasattr(ff_logging._thread_local, "color"):
             del ff_logging._thread_local.color
@@ -95,6 +96,7 @@ class TestLogForwarding(unittest.TestCase):
 
     def tearDown(self):
         # Restore clean state so other tests are not affected.
+        ff_logging.set_web_enabled(True)
         ff_logging.set_log_forward_queue(None)
         if hasattr(ff_logging._thread_local, "color"):
             del ff_logging._thread_local.color
@@ -210,6 +212,38 @@ class TestLogForwarding(unittest.TestCase):
         self.assertIn("before marker", startup_messages)
         self.assertIn("All processes started successfully", startup_messages)
         self.assertNotIn("after marker", startup_messages)
+
+    @patch("builtins.print")
+    def test_log_debug_skipped_when_web_disabled_and_verbose_false(self, mock_print):
+        """When web_enabled=False and verbose=False, log_debug does zero work and neither prints nor buffers."""
+        ff_logging.set_verbose(False)
+        ff_logging.set_web_enabled(False)
+        q: queue.Queue = queue.Queue()
+        ff_logging.set_log_forward_queue(q)
+
+        ff_logging.log_debug("invisible debug log")
+
+        mock_print.assert_not_called()
+        self.assertTrue(q.empty())
+        self.assertEqual(ff_logging.get_recent_logs(), [])
+
+    @patch("builtins.print")
+    def test_log_debug_forwarded_to_web_when_web_enabled_and_verbose_false(
+        self, mock_print
+    ):
+        """When web_enabled=True and verbose=False, log_debug does not print to console but buffers and forwards to Web UI."""
+        ff_logging.set_verbose(False)
+        ff_logging.set_web_enabled(True)
+        q: queue.Queue = queue.Queue()
+        ff_logging.set_log_forward_queue(q)
+
+        ff_logging.log_debug("web debug entry")
+
+        mock_print.assert_not_called()
+        self.assertFalse(q.empty())
+        entry = q.get_nowait()
+        self.assertEqual(entry["level"], "debug")
+        self.assertEqual(entry["message"], "web debug entry")
 
 
 if __name__ == "__main__":

@@ -685,15 +685,21 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
             ("fanfiction.net", ["https://www.fanfiction.net/s/12345/1/Title"]),
         ]
 
-        with patch("fanficfare.adapters.getSiteExamples", return_value=mock_examples):
-            parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+        auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
+        try:
+            with patch(
+                "fanficfare.adapters.getSiteExamples", return_value=mock_examples
+            ):
+                parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
 
-            # Site with empty URLs should be skipped
-            self.assertNotIn("site_with_empty_urls", parsers)
+                # Site with empty URLs should be skipped
+                self.assertNotIn("site_with_empty_urls", parsers)
 
-            # Other sites should still be processed (check for fanfiction, not ffnet)
-            self.assertIn("fanfiction", parsers)
-            self.assertIn("other", parsers)
+                # Other sites should still be processed (check for fanfiction, not ffnet)
+                self.assertIn("fanfiction", parsers)
+                self.assertIn("other", parsers)
+        finally:
+            auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
 
     def test_regex_compilation_failure(self):
         """Test handling of regex compilation failures."""
@@ -704,26 +710,34 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
             ("bad_regex_site", ["https://example.com/[invalid"]),  # Invalid regex chars
         ]
 
-        with patch("fanficfare.adapters.getSiteExamples", return_value=mock_examples):
-            # Mock _generate_pattern_and_prefix to return invalid regex
+        auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
+        try:
             with patch(
-                "parsers.auto_url_parsers._generate_pattern_and_prefix",
-                return_value=("*invalid_regex[", "example.com"),
+                "fanficfare.adapters.getSiteExamples", return_value=mock_examples
             ):
-                # Capture print output to verify warning message
-                with patch("builtins.print") as mock_print:
-                    parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+                # Mock _generate_pattern_and_prefix to return invalid regex
+                with patch(
+                    "parsers.auto_url_parsers._generate_pattern_and_prefix",
+                    return_value=("*invalid_regex[", "example.com"),
+                ):
+                    # Capture print output to verify warning message
+                    with patch("builtins.print") as mock_print:
+                        parsers = (
+                            auto_url_parsers.generate_url_parsers_from_fanficfare()
+                        )
 
-                    # Should print warning and continue (lines 96-99)
-                    mock_print.assert_called()
-                    warning_call = mock_print.call_args_list[0][0][0]
-                    self.assertIn("Warning: Failed to compile regex", warning_call)
-                    self.assertIn("bad_regex_site", warning_call)
+                        # Should print warning and continue (lines 96-99)
+                        mock_print.assert_called()
+                        warning_call = mock_print.call_args_list[0][0][0]
+                        self.assertIn("Warning: Failed to compile regex", warning_call)
+                        self.assertIn("bad_regex_site", warning_call)
 
-                    # Bad site should not be in parsers
-                    self.assertNotIn("bad_regex_site", parsers)
-                    # Fallback should still exist
-                    self.assertIn("other", parsers)
+                        # Bad site should not be in parsers
+                        self.assertNotIn("bad_regex_site", parsers)
+                        # Fallback should still exist
+                        self.assertIn("other", parsers)
+        finally:
+            auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
 
     def test_path_pattern_edge_cases(self):
         """Test edge cases in path pattern generation."""

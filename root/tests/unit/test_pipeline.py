@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import MagicMock, patch
-import multiprocessing as mp
 
 from workers import pipeline
 from models.fanfic_info import FanficInfo
@@ -19,8 +18,8 @@ class TestPipeline(unittest.TestCase):
         self.mock_notification = MagicMock(
             spec=notification_wrapper.NotificationWrapper
         )
-        self.mock_ingress_queue = MagicMock(spec=mp.Queue)
-        self.mock_waiting_queue = MagicMock(spec=mp.Queue)
+        self.mock_ingress_queue = MagicMock()
+        self.mock_waiting_queue = MagicMock()
         self.retry_config = config_models.RetryConfig()
         self.worker_id = "worker_1"
 
@@ -167,8 +166,8 @@ class TestPipelineEdgeCases(unittest.TestCase):
         self.mock_notification = MagicMock(
             spec=notification_wrapper.NotificationWrapper
         )
-        self.mock_ingress_queue = MagicMock(spec=mp.Queue)
-        self.mock_waiting_queue = MagicMock(spec=mp.Queue)
+        self.mock_ingress_queue = MagicMock()
+        self.mock_waiting_queue = MagicMock()
         self.retry_config = config_models.RetryConfig()
         self.worker_id = "worker_1"
 
@@ -269,6 +268,28 @@ class TestPipelineEdgeCases(unittest.TestCase):
         # Should not crash, defaults to index 0
         # Verify worker started and stopped cleanly
         self.assertTrue(mock_logging.log.called)
+
+    @patch("workers.pipeline._process_task")
+    @patch("workers.pipeline.ff_logging")
+    def test_url_worker_adaptive_queue_timeout(self, mock_logging, mock_process_task):
+        """Worker uses 2.0s timeout when idle and 0.05s timeout while holding a site lock."""
+        from queue import Empty
+
+        queue = MagicMock()
+        queue.get.side_effect = [Empty, self.fanfic, Empty, None]
+
+        pipeline.url_worker(
+            queue,
+            self.mock_client,
+            self.mock_notification,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
+            self.retry_config,
+            self.worker_id,
+        )
+
+        timeouts = [call.kwargs.get("timeout") for call in queue.get.call_args_list]
+        self.assertEqual(timeouts, [2.0, 2.0, 0.05, 2.0])
 
 
 if __name__ == "__main__":

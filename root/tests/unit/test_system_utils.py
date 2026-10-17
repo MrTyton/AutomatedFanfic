@@ -69,6 +69,18 @@ class TestSystemUtils(unittest.TestCase):
         mock_listdir.assert_called_once_with(directory_path)
         self.assertEqual(mock_isfile.call_count, 3)
 
+    def test_get_packaged_defaults_ini_path_cached(self):
+        """get_packaged_defaults_ini_path caches result across repeated calls via lru_cache."""
+        from utils.system_utils import get_packaged_defaults_ini_path
+
+        get_packaged_defaults_ini_path.cache_clear()
+        p1 = get_packaged_defaults_ini_path()
+        p2 = get_packaged_defaults_ini_path()
+        self.assertEqual(p1, p2)
+        info = get_packaged_defaults_ini_path.cache_info()
+        self.assertEqual(info.misses, 1)
+        self.assertEqual(info.hits, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -51,6 +51,53 @@ class TestSupervisor(unittest.TestCase):
         for thread_mock in (mock_thread.return_value,):
             thread_mock.start.assert_called()
 
+        mock_logging.set_log_forward_queue.assert_called_once_with(None)
+
+    @patch("services.supervisor.ff_logging")
+    @patch("threading.Thread")
+    @patch("services.supervisor.time.sleep")
+    @patch("services.supervisor.signal.signal")
+    def test_run_supervisor_enables_web_logging_when_log_queue_provided(
+        self, mock_signal, mock_sleep, mock_thread, mock_logging
+    ):
+        """Supervisor sets web_enabled=True when log_queue is provided, and False when config_store is provided without log_queue."""
+        mock_event = MagicMock()
+        mock_event.is_set.side_effect = [True]
+        mock_log_queue = MagicMock()
+
+        with patch("threading.Event", return_value=mock_event):
+            supervisor.run_supervisor(
+                self.worker_queues,
+                self.ingress_queue,
+                self.waiting_queue,
+                self.email_info,
+                self.notification_info,
+                self.url_parsers,
+                self.active_urls,
+                verbose=False,
+                log_queue=mock_log_queue,
+            )
+
+        mock_logging.set_web_enabled.assert_called_once_with(True)
+        mock_logging.set_log_forward_queue.assert_called_once_with(mock_log_queue)
+
+        mock_logging.reset_mock()
+        mock_event.is_set.side_effect = [True]
+        with patch("threading.Event", return_value=mock_event):
+            supervisor.run_supervisor(
+                self.worker_queues,
+                self.ingress_queue,
+                self.waiting_queue,
+                self.email_info,
+                self.notification_info,
+                self.url_parsers,
+                self.active_urls,
+                verbose=False,
+                config_store=MagicMock(),
+                log_queue=None,
+            )
+        mock_logging.set_web_enabled.assert_called_once_with(False)
+
     @patch("services.supervisor.ff_logging")
     @patch("threading.Thread")
     @patch("services.supervisor.time.sleep")

@@ -32,11 +32,13 @@ Example:
     >>> match = pattern.search("https://www.fanfiction.net/s/12345/1/story")
 """
 
+import functools
 import re
 import fanficfare.adapters as adapters
 from urllib.parse import urlparse
 
 
+@functools.lru_cache(maxsize=1)
 def generate_url_parsers_from_fanficfare() -> dict[str, tuple[re.Pattern, str]]:
     """Generates URL parsers dictionary from FanFicFare adapters automatically.
 

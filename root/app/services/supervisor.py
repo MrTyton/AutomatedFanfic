@@ -40,6 +40,10 @@ def run_supervisor(
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
+    if log_queue is not None:
+        ff_logging.set_web_enabled(True)
+    elif config_store is not None:
+        ff_logging.set_web_enabled(False)
     ff_logging.set_log_forward_queue(log_queue)
     ff_logging.set_thread_color("\033[92m")  # Green for Supervisor
 

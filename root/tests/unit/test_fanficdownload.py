@@ -450,6 +450,78 @@ class TestFanficDownloadMain(unittest.TestCase):
                 )
             )
 
+    @patch("fanficdownload.ConfigStore")
+    @patch("fanficdownload.HistoryWriter")
+    @patch("fanficdownload.HistoryRecorder")
+    @patch("fanficdownload.ProcessManager")
+    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
+    @patch("fanficdownload.url_ingester.EmailInfo")
+    @patch("models.config_models.ConfigManager.load_config")
+    @patch("fanficdownload.ff_logging.set_web_enabled")
+    @patch("fanficdownload.ff_logging.set_verbose")
+    @patch("fanficdownload.ff_logging.log")
+    @patch("fanficdownload.parse_arguments")
+    @patch(
+        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        return_value="5.0.0",
+    )
+    @patch("fanficdownload.calibredb_utils.CalibreDBClient")
+    def test_main_uses_native_mp_queues_and_gates_log_queue_on_web_enabled(
+        self,
+        mock_calibre_client,
+        mock_get_calibre_version,
+        mock_parse_args,
+        mock_log,
+        mock_set_verbose,
+        mock_set_web_enabled,
+        mock_load_config,
+        mock_email_info,
+        mock_notification,
+        mock_process_manager,
+        mock_history_recorder,
+        mock_history_writer,
+        mock_config_store,
+    ):
+        """main() uses native mp.Queue for fixed queues and only allocates log_queue when web.enabled is True."""
+        mock_args = MagicMock(config="test_config.toml", verbose=False)
+        mock_parse_args.return_value = mock_args
+        mock_load_config.return_value = self.mock_config
+
+        mock_pm_instance = MagicMock()
+        mock_process_manager.return_value.__enter__.return_value = mock_pm_instance
+        mock_process_manager.return_value.__exit__.return_value = None
+
+        with (
+            patch("fanficdownload.mp.Manager") as mock_mp_manager,
+            patch("fanficdownload.mp.Queue") as mock_native_queue,
+            patch("fanficdownload.calibre_info.CalibreInfo"),
+            patch(
+                "fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare",
+                return_value={"fanfiction": None},
+            ),
+        ):
+            mock_manager_instance = MagicMock()
+            mock_mp_manager.return_value.__enter__.return_value = mock_manager_instance
+            mock_mp_manager.return_value.__exit__.return_value = None
+
+            # Case 1: web.enabled = False -> 3 native mp.Queue calls (ingress, waiting, history), no log_queue
+            self.mock_config.web.enabled = False
+            fanficdownload.main()
+            self.assertEqual(mock_native_queue.call_count, 3)
+            mock_set_web_enabled.assert_called_with(False)
+
+            # Case 2: web.enabled = True -> 4 native mp.Queue calls (ingress, waiting, log_queue, history)
+            mock_native_queue.reset_mock()
+            mock_set_web_enabled.reset_mock()
+            self.mock_config.web.enabled = True
+            self.mock_config.web.port = 8080
+            self.mock_config.web.host = "0.0.0.0"
+            with patch("fanficdownload.mp.Event") as mock_native_event:
+                fanficdownload.main()
+                self.assertEqual(mock_native_queue.call_count, 4)
+                mock_native_event.assert_called_once()
+                mock_set_web_enabled.assert_called_with(True)
+
 
 if __name__ == "__main__":
     unittest.main()

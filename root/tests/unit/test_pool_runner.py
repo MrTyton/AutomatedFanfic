@@ -205,3 +205,32 @@ class TestPoolRunner(unittest.TestCase):
         mock_logging.log_debug.assert_called_with(
             "Worker Pool shutting down threads..."
         )
+
+    @patch("workers.pool_runner.threading.Thread")
+    @patch("workers.pool_runner.time.sleep")
+    @patch("workers.pool_runner.ff_logging")
+    @patch("workers.pool_runner.threading.Event")
+    def test_run_worker_pool_web_enabled_and_sleep_interval(
+        self, mock_event_cls, mock_logging, mock_sleep, mock_thread_cls
+    ):
+        """Worker pool configures set_web_enabled based on log_queue and sleeps 2.0s per health check iteration."""
+        mock_shutdown_event = MagicMock()
+        mock_shutdown_event.is_set.side_effect = [False, True]
+        mock_event_cls.return_value = mock_shutdown_event
+        mock_log_queue = MagicMock()
+
+        pool_runner.run_worker_pool(
+            {},
+            self.mock_client,
+            self.mock_notification,
+            self.mock_ingress_queue,
+            self.mock_waiting_queue,
+            self.mock_retry_config,
+            self.active_urls,
+            verbose=False,
+            log_queue=mock_log_queue,
+        )
+
+        mock_logging.set_web_enabled.assert_called_once_with(True)
+        mock_logging.set_log_forward_queue.assert_called_once_with(mock_log_queue)
+        mock_sleep.assert_called_once_with(2.0)
