@@ -30,6 +30,7 @@ from models.queue_types import IngressQueue, WorkerQueue, WorkerQueues
 import threading
 
 lazy from utils import series_utils
+lazy from parsers import regex_parsing
 
 
 class SignalType(Enum):
@@ -240,8 +241,6 @@ class Coordinator:
                 child_site = site
                 if self.url_parsers:
                     try:
-                        from parsers import regex_parsing
-
                         norm_url = (
                             story_url
                             if story_url.startswith(("http://", "https://"))

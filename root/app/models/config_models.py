@@ -685,8 +685,6 @@ class AppConfig(BaseSettings):
             path_str = self.calibre.path.strip()
             if not path_str.startswith(("http://", "https://")):
                 # It's a local path
-                from pathlib import Path
-
                 calibre_path = Path(path_str)
                 if not calibre_path.exists():
                     ff_logging.log(

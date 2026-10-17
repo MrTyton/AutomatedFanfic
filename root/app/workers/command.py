@@ -10,8 +10,10 @@ import subprocess
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import importlib.metadata
 from pathlib import Path
 
+lazy from fanficfare import cli as fff_cli
 from utils import ff_logging
 from calibre_integration import calibre_info
 from models import fanfic_info
@@ -196,8 +198,6 @@ def execute_fanficfare_direct(
     Returns:
         FanFicFareResult containing classified failure and forceable messages.
     """
-    from fanficfare.cli import do_download, expandOptions, mkParser
-
     result = FanFicFareResult()
 
     # warn() carries: bad_chapters, chapter_difference, more_chapters,
@@ -281,9 +281,9 @@ def execute_fanficfare_direct(
     # Parse argv-equivalent flags through FanFicFare's own option parser so
     # all defaults and validation logic are applied correctly.
     argv = _build_argv(cdb, fanfic)
-    parser = mkParser(calibre=False)
+    parser = fff_cli.mkParser(calibre=False)
     options, _ = parser.parse_args(argv)
-    expandOptions(options)
+    fff_cli.expandOptions(options)
 
     ff_logging.log(f"Executing FanFicFare directly: {path_or_url}")
 
@@ -291,7 +291,7 @@ def execute_fanficfare_direct(
 
     try:
         with tl_stdout.capture() as captured_buf:
-            do_download(
+            fff_cli.do_download(
                 path_or_url,
                 options,
                 passed_defaultsini=passed_defaultsini,
@@ -354,9 +354,7 @@ def _build_argv(
 def get_fanficfare_version() -> str:
     """Return the installed FanFicFare version via importlib.metadata."""
     try:
-        from importlib.metadata import version as pkg_version
-
-        return pkg_version("fanficfare")
+        return importlib.metadata.version("fanficfare")
     except Exception as e:
         ff_logging.log(f"Failed to get FanFicFare version: {e}", "WARNING")
         return f"Error: {e}"

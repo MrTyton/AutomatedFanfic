@@ -1,12 +1,13 @@
-"""Control API routes — add URLs, trigger actions."""
-
+import multiprocessing
 import threading
 from queue import Empty
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+lazy from calibre_integration import calibre_info, calibredb_utils
 from models.fanfic_info import FanficInfo
+lazy from parsers import auto_url_parsers, regex_parsing
 
 router = APIRouter(prefix="/api/controls", tags=["controls"])
 _queue_surgery_lock = threading.Lock()
@@ -17,8 +18,6 @@ class _LockFactory:
 
     @staticmethod
     def Lock():
-        import multiprocessing
-
         return multiprocessing.Lock()
 
 
@@ -113,9 +112,6 @@ def _build_fanfic(
     raw_url: str, site: str | None = None, title: str | None = None
 ) -> FanficInfo:
     """Create a FanficInfo using parser normalization when possible."""
-    from parsers import auto_url_parsers
-    from parsers import regex_parsing
-
     url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
     try:
         fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
@@ -201,8 +197,6 @@ def _remove_from_calibre_if_possible(state, fanfic: FanficInfo) -> tuple[bool, s
         return False, "Calibre ID found but config path unavailable for removal."
 
     try:
-        from calibre_integration import calibre_info, calibredb_utils
-
         cdb_info = calibre_info.CalibreInfo(state.config_path, _LockFactory())
         client = calibredb_utils.CalibreDBClient(cdb_info)
         client.remove_story(fanfic)
@@ -231,9 +225,6 @@ async def add_url(request: Request, body: AddUrlRequest):
 
     if state.ingress_queue is None:
         return AddUrlResponse(accepted=False, message="Ingress queue not available")
-
-    from parsers import regex_parsing
-    from parsers import auto_url_parsers
 
     # Normalize URL: add https:// if no protocol present (parsers require it for site detection)
     raw_url = body.url.strip()
@@ -279,9 +270,6 @@ async def add_urls(request: Request, body: AddUrlsRequest):
                 for _ in body.urls
             ]
         )
-
-    from parsers import regex_parsing
-    from parsers import auto_url_parsers
 
     url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
     results = []

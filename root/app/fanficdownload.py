@@ -48,6 +48,7 @@ from models.config_models import ConfigError, ConfigValidationError
 from process_management import ProcessManager
 from history.recorder import HistoryRecorder, HistoryWriter
 from config.config_store import ConfigStore
+lazy from web import server as web_server
 
 # Define the application version
 __version__ = "5.1.0"
@@ -321,8 +322,6 @@ def register_processes(
 
     # Register web server process if enabled
     if config.web.enabled:
-        from web import server as web_server
-
         ff_logging.log(f"Web dashboard enabled on {config.web.host}:{config.web.port}")
         process_manager.register_process(
             "web_server",

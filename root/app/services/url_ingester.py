@@ -75,6 +75,8 @@ import threading
 from typing import Any
 from contextlib import contextmanager
 lazy from fanficfare import geturls
+lazy from config.config_store import ConfigStore
+lazy import imapclient
 from utils import ff_logging
 from parsers import regex_parsing
 from notifications import notification_wrapper
@@ -85,8 +87,6 @@ from models.queue_types import IngressQueue
 def _make_fff_get_configuration(config_store: Any | None = None):
     """Return a get_configuration callable for fanficfare.geturls.GetURLs using ConfigStore."""
     if config_store is None:
-        from config.config_store import ConfigStore
-
         config_store = ConfigStore()
     return config_store.get_fff_configuration
 
@@ -404,15 +404,13 @@ class EmailInfo:
                     caller should call get_urls().
             False – shutdown_event was set; caller should stop the loop.
         """
-        from imapclient import IMAPClient  # lazy import – only needed when idle enabled
-
         IDLE_REISSUE_SECONDS = (
             9 * 60
         )  # re-issue IDLE every 9 minutes (Gmail times out at 10)
         CHECK_INTERVAL = 30  # how often to check shutdown_event (seconds)
 
         try:
-            with IMAPClient(host=self.server, ssl=True) as client:
+            with imapclient.IMAPClient(host=self.server, ssl=True) as client:
                 client.login(self.email, self.password)
                 client.select_folder(self.mailbox)
 

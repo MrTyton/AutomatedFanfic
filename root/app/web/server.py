@@ -14,9 +14,10 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+lazy from models.config_models import ConfigManager
 from history.database import AsyncHistoryDB
 from models.queue_types import IngressQueue, LogQueue, WaitingQueue, WorkerQueues
 from utils import ff_logging
@@ -101,8 +102,6 @@ def create_app(web_state: WebState) -> FastAPI:
         async def _spa_fallback(full_path: str):
             """Serve index.html for all non-API paths (SPA client-side routing)."""
             if full_path.startswith(("api/", "ws/")):
-                from fastapi.responses import JSONResponse
-
                 return JSONResponse(
                     status_code=404,
                     content={"detail": f"API route not found: /{full_path}"},
@@ -178,8 +177,6 @@ def run_web_server(
     # restart without needing to pass them explicitly through ProcessManager.
     if config_path:
         try:
-            from models.config_models import ConfigManager
-
             fresh = ConfigManager.load_config(config_path)
             host = fresh.web.host
             port = fresh.web.port
