@@ -151,16 +151,6 @@ class ConfigStore:
             or self.get("fanficfare.personal_ini")
             or self.get("personal_ini")
         )
-        if not raw:
-            try:
-                from models.config_models import ConfigManager
-
-                for cached_config in ConfigManager._cache.values():
-                    if cached_config.calibre and cached_config.calibre.personal_ini:
-                        raw = cached_config.calibre.personal_ini
-                        break
-            except Exception:
-                pass
         return resolve_ini_path(raw, "personal.ini") if raw else ""
 
     def get_fff_configuration(self, url: str):

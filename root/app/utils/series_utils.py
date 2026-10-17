@@ -22,6 +22,7 @@ import re
 from typing import Any
 
 lazy from fanficfare import adapters, configurable, exceptions, geturls
+lazy from config.config_store import ConfigStore
 from utils import ff_logging
 
 
@@ -60,8 +61,6 @@ def get_series_configuration(
 ) -> configurable.Configuration:
     """Build a FanFicFare Configuration for *url* using ConfigStore."""
     if config_store is None:
-        from config.config_store import ConfigStore
-
         config_store = ConfigStore()
     return config_store.get_fff_configuration(url)
 

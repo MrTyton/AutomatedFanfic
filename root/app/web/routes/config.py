@@ -10,6 +10,18 @@ from config.toml_writer import TomlWriter
 from utils import ff_logging
 from utils.system_utils import resolve_ini_path
 
+lazy from models.config_models import (
+    AppConfig,
+    AppriseConfig,
+    CalibreConfig,
+    ConfigManager,
+    EmailConfig,
+    ProcessConfig,
+    PushbulletConfig,
+    RetryConfig,
+    WebConfig,
+)
+
 router = APIRouter(prefix="/api/config", tags=["config"])
 
 # Fields that contain sensitive data and should be masked in GET responses
@@ -111,8 +123,6 @@ async def validate_config(request: Request, body: ConfigUpdateRequest):
     try:
         current = state.config.model_dump()
         merged = _merge_config_dict(current, body.values)
-        from models.config_models import AppConfig
-
         AppConfig(**merged)
         return {"valid": True, "errors": []}
     except Exception as e:
@@ -149,17 +159,6 @@ async def update_config_section(
     # Validate merged configuration with AppConfig (or section model if state.config is a mock)
     validated_config = None
     try:
-        from models.config_models import (
-            AppConfig,
-            AppriseConfig,
-            CalibreConfig,
-            EmailConfig,
-            ProcessConfig,
-            PushbulletConfig,
-            RetryConfig,
-            WebConfig,
-        )
-
         if isinstance(state.config, AppConfig):
             proposed = _merge_config_dict(config_dict, {section: cleaned_values})
             validated_config = AppConfig(**proposed)
@@ -203,8 +202,6 @@ async def update_config_section(
             return {"applied": False, "error": f"Failed to write config: {e}"}
         # Reload the in-memory config so GET /api/config immediately reflects the new values
         try:
-            from models.config_models import ConfigManager
-
             state.config = ConfigManager.load_config(
                 state.config_path, force_reload=True
             )

@@ -47,6 +47,7 @@ import os
 from pathlib import Path
 import shutil
 from tempfile import mkdtemp
+lazy import fanficfare
 
 # Removed top-level import to avoid circular dependency with models.config_models
 # from calibre_integration import calibre_info
@@ -62,8 +63,6 @@ def get_packaged_defaults_ini_path() -> str:
         str: Absolute path to the packaged defaults.ini file, or empty string if not found.
     """
     try:
-        import fanficfare
-
         fff_ini = Path(fanficfare.__file__).resolve().parent / "defaults.ini"
         if fff_ini.is_file():
             return str(fff_ini)
