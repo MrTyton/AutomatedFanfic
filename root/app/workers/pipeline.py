@@ -186,6 +186,7 @@ def url_worker(
     ctx: WorkerContext,
     worker_id: str,
     verbose: bool = False,
+    idle_timeout: float | None = None,
 ) -> None:
     """Main worker loop for processing fanfiction downloads on a dedicated thread.
 
@@ -198,6 +199,9 @@ def url_worker(
         ctx (WorkerContext): Bundled worker dependencies and shared IPC state.
         worker_id (str): Unique identifier for this worker (e.g., 'worker_0').
         verbose (bool, optional): Enable verbose debug logging. Defaults to False.
+        idle_timeout (float | None, optional): Maximum idle duration in seconds
+            before terminating the worker thread. If None, the worker runs permanently.
+            Defaults to None.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
@@ -219,6 +223,7 @@ def url_worker(
 
     # Track current site being processed
     current_site: str | None = None
+    last_active_time = time.monotonic()
 
     while True:
         try:
@@ -250,8 +255,22 @@ def url_worker(
                     )
                     current_site = None
                     system_utils.reclaim_memory()
+                    last_active_time = time.monotonic()
+                    continue
+
+                if idle_timeout is not None and (
+                    time.monotonic() - last_active_time >= idle_timeout
+                ):
+                    ff_logging.log_debug(
+                        f"Worker {worker_id} reached idle timeout ({idle_timeout}s) - stopping thread"
+                    )
+                    ingress_queue.put(("WORKER_STOPPED", worker_id, None))
+                    system_utils.reclaim_memory()
+                    break
+
                 # Continue waiting for more work
                 continue
+
             except Exception as e:
                 if isinstance(e, ValueError):  # Queue closed
                     _signal_worker_idle(ingress_queue, worker_id, current_site)
@@ -307,6 +326,7 @@ def url_worker(
                         ff_logging.log_failure(
                             f"Worker {worker_id} failed to update active_urls: {e}"
                         )
+                last_active_time = time.monotonic()
 
         except KeyboardInterrupt:
             ff_logging.log(f"Worker {worker_id} interrupted", "WARNING")

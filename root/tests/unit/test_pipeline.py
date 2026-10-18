@@ -146,6 +146,100 @@ class TestPipeline(unittest.TestCase):
             self.mock_ingress_queue, "worker_1", "ao3", suppress_errors=True
         )
 
+    @patch("workers.pipeline.system_utils.reclaim_memory")
+    @patch("workers.pipeline.ff_logging")
+    @patch("workers.pipeline.time.monotonic")
+    def test_worker_idle_timeout_terminates_non_permanent_worker(
+        self, mock_monotonic, mock_logging, mock_reclaim_memory
+    ):
+        """Worker with idle_timeout=60.0 exits after staying idle for >= 60.0s."""
+        from queue import Empty
+
+        queue = MagicMock()
+        queue.get.side_effect = Empty
+        # Initial last_active_time = 0.0, intermediate idle check = 30.0, timeout check = 65.0
+        mock_monotonic.side_effect = [0.0, 30.0, 65.0]
+
+        pipeline.url_worker(queue, self.ctx, self.worker_id, idle_timeout=60.0)
+
+        self.mock_ingress_queue.put.assert_called_once_with(
+            ("WORKER_STOPPED", self.worker_id, None)
+        )
+        mock_reclaim_memory.assert_called_once()
+        mock_logging.log_debug.assert_any_call(
+            f"Worker {self.worker_id} reached idle timeout (60.0s) - stopping thread"
+        )
+
+    @patch("workers.pipeline.system_utils.reclaim_memory")
+    @patch("workers.pipeline.ff_logging")
+    @patch("workers.pipeline.time.monotonic")
+    def test_worker_permanent_worker_does_not_terminate_on_idle(
+        self, mock_monotonic, mock_logging, mock_reclaim_memory
+    ):
+        """Worker with idle_timeout=None does not exit when idle."""
+        from queue import Empty
+
+        queue = MagicMock()
+        queue.get.side_effect = [Empty, Empty, None]
+        mock_monotonic.side_effect = [0.0, 100.0, 200.0]
+
+        pipeline.url_worker(queue, self.ctx, self.worker_id, idle_timeout=None)
+
+        self.mock_ingress_queue.put.assert_not_called()
+        mock_reclaim_memory.assert_not_called()
+
+    @patch("workers.pipeline.handlers.process_fanfic_addition", return_value=True)
+    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch(
+        "workers.pipeline.common.get_path_or_url",
+        return_value="http://example.com/story",
+    )
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.pipeline.system_utils.reclaim_memory")
+    @patch("workers.pipeline.ff_logging")
+    @patch("workers.pipeline.time.monotonic")
+    def test_worker_idle_timeout_resets_after_draining_site(
+        self,
+        mock_monotonic,
+        mock_logging,
+        mock_reclaim_memory,
+        mock_temp_dir,
+        mock_path_or_url,
+        mock_fff,
+        mock_addition,
+    ):
+        """Worker resets idle timer when draining a site queue."""
+        from queue import Empty
+        from workers.command import FanFicFareResult
+
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp"
+        mock_fff.return_value = FanFicFareResult()
+
+        queue = MagicMock()
+        # 1. Receive fanfic task
+        # 2. Drain site queue (raises Empty while current_site is "site")
+        # 3. Next poll raises Empty (idle check: not timed out yet relative to site drain)
+        # 4. Next poll raises Empty (idle check: timed out)
+        queue.get.side_effect = [self.fanfic, Empty, Empty, Empty]
+
+        mock_monotonic.side_effect = [
+            0.0,  # startup last_active_time
+            10.0,  # after task completion
+            20.0,  # draining site in Empty handler (last_active_time reset to 20.0)
+            70.0,  # idle check: 70 - 20 = 50 < 60 (continues)
+            85.0,  # idle check: 85 - 20 = 65 >= 60 (times out)
+        ]
+
+        pipeline.url_worker(queue, self.ctx, self.worker_id, idle_timeout=60.0)
+
+        # Ingress queue got WORKER_IDLE for site, then WORKER_STOPPED
+        self.mock_ingress_queue.put.assert_any_call(
+            ("WORKER_IDLE", self.worker_id, "site")
+        )
+        self.mock_ingress_queue.put.assert_any_call(
+            ("WORKER_STOPPED", self.worker_id, None)
+        )
+
 
 class TestPipelineEdgeCases(unittest.TestCase):
     """Test edge cases and error paths in pipeline."""
