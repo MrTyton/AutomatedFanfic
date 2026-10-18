@@ -872,9 +872,10 @@ class TestCoordinatorWorkerLifecycle(unittest.TestCase):
         }
         coordinator = _make_coordinator(ingress_q, worker_queues, scale_queue=scale_q)
 
-        # Emulating worker_1 being idle after completing work
+        # Emulating worker_1 being idle after completing work with a stale assignment
         coordinator.state.idle_workers.add("worker_1")
         coordinator.state.dormant_workers.discard("worker_1")
+        coordinator.state.assignments["ao3"] = "worker_1"
 
         # Emitting ("WORKER_STOPPED", "worker_1", None) to ingress queue
         ingress_q.put(("WORKER_STOPPED", "worker_1", None))
@@ -883,6 +884,59 @@ class TestCoordinatorWorkerLifecycle(unittest.TestCase):
         # Discards worker_1 from idle_workers and adds worker_1 back to dormant_workers
         self.assertNotIn("worker_1", coordinator.state.idle_workers)
         self.assertIn("worker_1", coordinator.state.dormant_workers)
+        # Cleans up any stale assignments for worker_1
+        self.assertNotIn("ao3", coordinator.state.assignments)
+
+    def test_coordinator_spawns_dormant_worker_numeric_sort(self):
+        ingress_q = stdlib_queue.Queue()
+        scale_q = stdlib_queue.Queue()
+        worker_queues = {
+            "worker_0": stdlib_queue.Queue(),
+            "worker_2": stdlib_queue.Queue(),
+            "worker_10": stdlib_queue.Queue(),
+        }
+        coordinator = _make_coordinator(ingress_q, worker_queues, scale_queue=scale_q)
+
+        # Busy worker_0
+        fic1 = FanficInfo(url="http://site1.com/1", site="site1")
+        ingress_q.put(fic1)
+        coordinator._process_single_ingress_item(timeout=0.1)
+
+        # Now worker_2 and worker_10 are dormant
+        self.assertEqual(coordinator.state.idle_workers, set())
+        self.assertEqual(coordinator.state.dormant_workers, {"worker_2", "worker_10"})
+
+        # New site arrives
+        fic2 = FanficInfo(url="http://site2.com/1", site="site2")
+        ingress_q.put(fic2)
+        coordinator._process_single_ingress_item(timeout=0.1)
+
+        # worker_2 should be chosen over worker_10 due to numeric sorting
+        scaled_worker = scale_q.get_nowait()
+        self.assertEqual(scaled_worker, "worker_2")
+
+    def test_coordinator_scale_queue_put_failure_handled(self):
+        ingress_q = stdlib_queue.Queue()
+        scale_q = unittest.mock.MagicMock()
+        scale_q.put.side_effect = RuntimeError("Queue full or broken")
+        worker_queues = {
+            "worker_0": stdlib_queue.Queue(),
+            "worker_1": stdlib_queue.Queue(),
+        }
+        coordinator = _make_coordinator(ingress_q, worker_queues, scale_queue=scale_q)
+
+        # Busy worker_0
+        fic1 = FanficInfo(url="http://site1.com/1", site="site1")
+        ingress_q.put(fic1)
+        coordinator._process_single_ingress_item(timeout=0.1)
+
+        # New site arrives - triggers scale_queue.put which fails
+        fic2 = FanficInfo(url="http://site2.com/1", site="site2")
+        ingress_q.put(fic2)
+
+        # Should not raise exception
+        coordinator._process_single_ingress_item(timeout=0.1)
+        scale_q.put.assert_called_once_with("worker_1")
 
 
 if __name__ == "__main__":

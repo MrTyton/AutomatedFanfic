@@ -373,6 +373,14 @@ class Coordinator:
     def _handle_worker_stopped(self, worker_id: str) -> None:
         """Handle worker reporting it has stopped and exited."""
         self.state.idle_workers.discard(worker_id)
+        assigned_sites = [
+            site for site, w in self.state.assignments.items() if w == worker_id
+        ]
+        for site in assigned_sites:
+            del self.state.assignments[site]
+            ff_logging.log_debug(
+                f"Coordinator: Released stale assignment {site} for stopped {worker_id}"
+            )
         self.state.dormant_workers.add(worker_id)
         ff_logging.log_debug(
             f"Coordinator: Worker {worker_id} stopped and marked dormant"
@@ -463,8 +471,13 @@ class Coordinator:
 
         # If there are still unassigned sites in backlog and dormant workers available,
         # activate dormant workers
-        if self.state.backlog and self.state.dormant_workers:
-            dormant_list = sorted(list(self.state.dormant_workers))
+        if not self.state.idle_workers and self.state.dormant_workers:
+            dormant_list = sorted(
+                self.state.dormant_workers,
+                key=lambda w: (
+                    int(w.split("_")[-1]) if w.split("_")[-1].isdigit() else w
+                ),
+            )
             for worker_id in dormant_list:
                 if worker_id not in self.worker_queues:
                     self.state.dormant_workers.discard(worker_id)
@@ -483,7 +496,12 @@ class Coordinator:
                         candidate_site, worker_id, queue, tasks_pushed
                     )
                     if self.scale_queue is not None:
-                        self.scale_queue.put(worker_id)
+                        try:
+                            self.scale_queue.put(worker_id)
+                        except Exception as e:
+                            ff_logging.log_failure(
+                                f"Coordinator: Failed to signal scale_queue for {worker_id}: {e}"
+                            )
                 else:
                     break
 
