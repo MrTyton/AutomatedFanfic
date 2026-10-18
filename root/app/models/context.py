@@ -69,9 +69,9 @@ class SharedIPCContext:
         active_urls (MutableMapping[str, Any]): Shared dict tracking in-flight URLs.
         history_recorder (HistoryRecorder): Shared history event recorder.
         config_store (ConfigStore): Shared ConfigStore for runtime hot-reloading.
+        scale_queue (ScaleQueue): Queue for notifying worker pool of scaling requests.
         log_queue (LogQueue | None): Optional queue for forwarding logs to the web server.
         verbose (bool): Whether verbose debug logging is enabled across processes.
-        scale_queue (ScaleQueue | None): Optional queue for notifying worker pool of scaling requests.
     """
 
     ingress_queue: IngressQueue
@@ -80,6 +80,6 @@ class SharedIPCContext:
     active_urls: MutableMapping[str, Any]
     history_recorder: HistoryRecorder
     config_store: ConfigStore
+    scale_queue: ScaleQueue
     log_queue: LogQueue | None = None
     verbose: bool = False
-    scale_queue: ScaleQueue | None = None

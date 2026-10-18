@@ -15,6 +15,7 @@ class TestSupervisor(unittest.TestCase):
         self.active_urls = {}
         self.mock_history_recorder = MagicMock()
         self.mock_config_store = MagicMock()
+        self.scale_queue = MagicMock()
         self.ipc = SharedIPCContext(
             ingress_queue=self.ingress_queue,
             waiting_queue=self.waiting_queue,
@@ -22,6 +23,7 @@ class TestSupervisor(unittest.TestCase):
             active_urls=self.active_urls,
             history_recorder=self.mock_history_recorder,
             config_store=self.mock_config_store,
+            scale_queue=self.scale_queue,
             verbose=False,
         )
 

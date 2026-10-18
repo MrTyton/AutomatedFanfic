@@ -7,7 +7,6 @@ downloads, significantly reducing memory overhead compared to multi-process appr
 """
 
 import threading
-import time
 import signal
 from queue import Empty
 
@@ -76,6 +75,7 @@ def run_worker_pool(
     history_recorder = ipc.history_recorder
     config_store = ipc.config_store
     log_queue = ipc.log_queue
+    scale_queue = ipc.scale_queue
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
@@ -137,45 +137,39 @@ def run_worker_pool(
 
         # Main loop: Wait for shutdown and periodically check scale_queue and thread health
         while not shutdown_event.is_set():
-            if ipc.scale_queue is not None:
-                try:
-                    target_worker = ipc.scale_queue.get(timeout=0.2)
-                    while target_worker:
-                        if target_worker in worker_queues:
-                            existing_thread = active_threads.get(target_worker)
-                            if (
-                                existing_thread is not None
-                                and existing_thread.is_alive()
-                            ):
-                                # The coordinator only signals scale_queue for workers that reported WORKER_STOPPED.
-                                # Wait briefly for the dying thread to complete its exit/cleanup.
-                                existing_thread.join(timeout=1.0)
+            try:
+                target_worker = scale_queue.get(timeout=0.2)
+                while target_worker:
+                    if target_worker in worker_queues:
+                        existing_thread = active_threads.get(target_worker)
+                        if existing_thread is not None and existing_thread.is_alive():
+                            # The coordinator only signals scale_queue for workers that reported WORKER_STOPPED.
+                            # Wait briefly for the dying thread to complete its exit/cleanup.
+                            existing_thread.join(timeout=1.0)
 
-                            if (
-                                target_worker not in active_threads
-                                or not active_threads[target_worker].is_alive()
-                            ):
-                                ff_logging.log(
-                                    f"Worker Pool: spawning thread for {target_worker}"
-                                )
-                                active_threads[target_worker] = _spawn_worker_thread(
-                                    target_worker,
-                                    worker_queues[target_worker],
-                                    worker_ctx,
-                                    verbose,
-                                    idle_timeout=DEFAULT_BURST_IDLE_TIMEOUT,
-                                )
-                        try:
-                            target_worker = ipc.scale_queue.get_nowait()
-                        except Empty:
-                            break
-                except Empty:
-                    pass
-                except OSError, ValueError:
-                    ff_logging.log_debug("Worker Pool: scale_queue closed")
-                    break
-            else:
-                time.sleep(2.0)
+                        if (
+                            target_worker not in active_threads
+                            or not active_threads[target_worker].is_alive()
+                        ):
+                            ff_logging.log(
+                                f"Worker Pool: spawning thread for {target_worker}"
+                            )
+                            active_threads[target_worker] = _spawn_worker_thread(
+                                target_worker,
+                                worker_queues[target_worker],
+                                worker_ctx,
+                                verbose,
+                                idle_timeout=DEFAULT_BURST_IDLE_TIMEOUT,
+                            )
+                    try:
+                        target_worker = scale_queue.get_nowait()
+                    except Empty:
+                        break
+            except Empty:
+                pass
+            except OSError, ValueError:
+                ff_logging.log_debug("Worker Pool: scale_queue closed")
+                break
 
             # Thread health check
             for worker_id in list(active_threads.keys()):

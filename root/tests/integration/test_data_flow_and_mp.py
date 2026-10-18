@@ -107,6 +107,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     history_recorder=recorder,
                     url_parsers=url_parsers,
                     config_store=store,
+                    scale_queue=Queue(),
                 )
 
                 # Step 1: Ingest URL (as email_watcher or add-url does)
@@ -316,6 +317,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             history_recorder=recorder,
             url_parsers=url_parsers,
             config_store=ConfigStore(),
+            scale_queue=Queue(),
         )
 
         ingress_q.put(FanficInfo(url=series_url, site="archiveofourown"))

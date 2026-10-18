@@ -18,6 +18,7 @@ def _make_coordinator(ingress_queue, worker_queues, **overrides):
         "history_recorder": MagicMock(),
         "url_parsers": {},
         "config_store": ConfigStore(),
+        "scale_queue": mp.Queue(),
     }
     defaults.update(overrides)
     return Coordinator(ingress_queue, worker_queues, **defaults)
@@ -222,6 +223,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
             history_recorder=MagicMock(),
             url_parsers={},
             config_store=MagicMock(),
+            scale_queue=MagicMock(),
         )
 
         mock_logging.set_verbose.assert_called_with(True)
@@ -244,6 +246,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
             history_recorder=MagicMock(),
             url_parsers={},
             config_store=MagicMock(),
+            scale_queue=MagicMock(),
         )
 
         mock_logging.log.assert_called_with("Coordinator stopped by KeyboardInterrupt")
@@ -264,6 +267,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
             history_recorder=MagicMock(),
             url_parsers={},
             config_store=MagicMock(),
+            scale_queue=MagicMock(),
         )
 
         mock_logging.log_failure.assert_called()

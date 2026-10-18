@@ -28,6 +28,8 @@ class TestPoolRunner(unittest.TestCase):
         }
         self.mock_history_recorder = MagicMock()
         self.mock_config_store = MagicMock()
+        self.mock_scale_queue = MagicMock()
+        self.mock_scale_queue.get.side_effect = Empty
         self.ipc = SharedIPCContext(
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
@@ -35,6 +37,7 @@ class TestPoolRunner(unittest.TestCase):
             active_urls=self.active_urls,
             history_recorder=self.mock_history_recorder,
             config_store=self.mock_config_store,
+            scale_queue=self.mock_scale_queue,
             verbose=False,
         )
 
@@ -96,11 +99,8 @@ class TestPoolRunner(unittest.TestCase):
         self.assertCountEqual(worker_ids_found, ["worker_1", "worker_2"])
 
     @patch("workers.pool_runner.threading.Thread")
-    @patch("workers.pool_runner.time.sleep")
     @patch("workers.pool_runner.threading.Event")
-    def test_run_worker_pool_thread_restart(
-        self, mock_event_cls, mock_sleep, mock_thread_cls
-    ):
+    def test_run_worker_pool_thread_restart(self, mock_event_cls, mock_thread_cls):
         """Test that dead threads are restarted."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, False, True, True, True]
@@ -159,18 +159,17 @@ class TestPoolRunner(unittest.TestCase):
         mock_shutdown_event.set.assert_called_once()
 
     @patch("workers.pool_runner.threading.Thread")
-    @patch("workers.pool_runner.time.sleep")
     @patch("workers.pool_runner.threading.Event")
     @patch("workers.pool_runner.ff_logging")
     def test_run_worker_pool_keyboard_interrupt(
-        self, mock_logging, mock_event_cls, mock_sleep, mock_thread_cls
+        self, mock_logging, mock_event_cls, mock_thread_cls
     ):
         """Test handling of KeyboardInterrupt."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.return_value = False
         mock_event_cls.return_value = mock_shutdown_event
 
-        mock_sleep.side_effect = KeyboardInterrupt
+        self.mock_scale_queue.get.side_effect = KeyboardInterrupt
 
         pool_runner.run_worker_pool(
             self.ipc,
@@ -185,13 +184,12 @@ class TestPoolRunner(unittest.TestCase):
         )
 
     @patch("workers.pool_runner.threading.Thread")
-    @patch("workers.pool_runner.time.sleep")
     @patch("workers.pool_runner.ff_logging")
     @patch("workers.pool_runner.threading.Event")
-    def test_run_worker_pool_web_enabled_and_sleep_interval(
-        self, mock_event_cls, mock_logging, mock_sleep, mock_thread_cls
+    def test_run_worker_pool_web_enabled_and_scale_queue_polling(
+        self, mock_event_cls, mock_logging, mock_thread_cls
     ):
-        """Worker pool configures logging via init_process_logging and sleeps 2.0s per health check iteration."""
+        """Worker pool configures logging via init_process_logging and polls scale_queue with 0.2s timeout."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, True]
         mock_event_cls.return_value = mock_shutdown_event
@@ -212,7 +210,7 @@ class TestPoolRunner(unittest.TestCase):
             config_store=self.mock_config_store,
             is_web_server=False,
         )
-        mock_sleep.assert_called_once_with(2.0)
+        self.mock_scale_queue.get.assert_called_with(timeout=0.2)
 
     @patch("workers.pool_runner.threading.Thread")
     def test_spawn_worker_thread_creates_and_starts_daemon_thread(

@@ -55,6 +55,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             active_urls={"url": {"status": "queued"}},
             history_recorder=None,  # type: ignore
             config_store=None,  # type: ignore
+            scale_queue=None,  # type: ignore
         )
         self.assertEqual(ipc.active_urls, {"url": {"status": "queued"}})
         self.assertIsNone(ipc.log_queue)
@@ -165,6 +166,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             active_urls={"https://ao3.org/works/1": {"status": "queued"}},
             history_recorder=MagicMock(),
             config_store=MagicMock(),
+            scale_queue=MagicMock(),
             log_queue=MagicMock(),
             verbose=True,
         )

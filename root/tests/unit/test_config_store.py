@@ -276,7 +276,14 @@ class TestCoordinatorSnapshot(unittest.TestCase):
         from services.coordinator import Coordinator
 
         coord = Coordinator(
-            q, wq, threading.Event(), {}, MagicMock(), {}, ConfigStore()
+            q,
+            wq,
+            threading.Event(),
+            {},
+            MagicMock(),
+            {},
+            ConfigStore(),
+            scale_queue=mp.Queue(),
         )
         snap = coord.get_state_snapshot()
         self.assertEqual(snap["backlog"], {})
@@ -295,7 +302,14 @@ class TestCoordinatorSnapshot(unittest.TestCase):
         q = mp.Queue()
         wq = {"w-1": mp.Queue()}
         coord = Coordinator(
-            q, wq, threading.Event(), {}, MagicMock(), {}, ConfigStore()
+            q,
+            wq,
+            threading.Event(),
+            {},
+            MagicMock(),
+            {},
+            ConfigStore(),
+            scale_queue=mp.Queue(),
         )
 
         # Manually set state

@@ -110,7 +110,7 @@ class Coordinator:
         history_recorder: HistoryRecorder,
         url_parsers: dict,
         config_store: ConfigStore,
-        scale_queue: ScaleQueue | None = None,
+        scale_queue: ScaleQueue,
     ) -> None:
         """Initialize the Coordinator.
 
@@ -127,7 +127,7 @@ class Coordinator:
                 story URLs extracted from series pages.
             config_store (ConfigStore): Shared ConfigStore providing FanFicFare
                 configuration for series expansion.
-            scale_queue (ScaleQueue | None): Optional queue for signaling worker pool
+            scale_queue (ScaleQueue): Queue for signaling worker pool
                 scaling requests.
         """
         self.ingress_queue = ingress_queue
@@ -495,13 +495,12 @@ class Coordinator:
                     self._log_assignment_details(
                         candidate_site, worker_id, queue, tasks_pushed
                     )
-                    if self.scale_queue is not None:
-                        try:
-                            self.scale_queue.put(worker_id)
-                        except Exception as e:
-                            ff_logging.log_failure(
-                                f"Coordinator: Failed to signal scale_queue for {worker_id}: {e}"
-                            )
+                    try:
+                        self.scale_queue.put(worker_id)
+                    except Exception as e:
+                        ff_logging.log_failure(
+                            f"Coordinator: Failed to signal scale_queue for {worker_id}: {e}"
+                        )
                 else:
                     break
 
@@ -515,7 +514,7 @@ def start_coordinator(
     history_recorder: HistoryRecorder,
     url_parsers: dict,
     config_store: ConfigStore,
-    scale_queue: ScaleQueue | None = None,
+    scale_queue: ScaleQueue,
 ) -> None:
     """Entry point for the coordinator thread/process.
 
@@ -529,7 +528,7 @@ def start_coordinator(
         history_recorder (HistoryRecorder): Recorder for history events.
         url_parsers (dict): Compiled URL parsers for series expansion.
         config_store (ConfigStore): Shared ConfigStore instance.
-        scale_queue (ScaleQueue | None): Optional queue for signaling worker pool
+        scale_queue (ScaleQueue): Queue for signaling worker pool
             scaling requests.
     """
     # Initialize logging for this process
