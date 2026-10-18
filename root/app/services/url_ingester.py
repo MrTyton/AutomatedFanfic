@@ -375,6 +375,7 @@ class EmailInfo:
         elif self._ini_mtime() > self._geturls_ini_mtime:
             ff_logging.log("EmailWatcher: ini files changed, rebuilding URL extractor")
             self._build_geturls()
+        assert self._geturls is not None
 
         urls = set()
 

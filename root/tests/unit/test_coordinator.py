@@ -921,7 +921,7 @@ class TestCoordinatorWorkerLifecycle(unittest.TestCase):
 
     def test_coordinator_scale_queue_put_failure_handled(self):
         ingress_q = stdlib_queue.Queue()
-        scale_q = unittest.mock.MagicMock()
+        scale_q = MagicMock()
         scale_q.put.side_effect = RuntimeError("Queue full or broken")
         worker_queues = {
             "worker_0": stdlib_queue.Queue(),
