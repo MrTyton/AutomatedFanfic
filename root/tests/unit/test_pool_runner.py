@@ -396,3 +396,88 @@ class TestPoolRunner(unittest.TestCase):
         mock_logging.log_failure.assert_called_with(
             "Thread worker_0 died unexpectedly - Restarting..."
         )
+
+    @patch("workers.pool_runner.ff_logging")
+    @patch("workers.pool_runner._spawn_worker_thread")
+    @patch("workers.pool_runner.threading.Event")
+    def test_pool_runner_joins_dying_thread_before_respawn(
+        self, mock_event_cls, mock_spawn, mock_logging
+    ):
+        """Verify dying thread is joined before respawning when re-scale signal is received."""
+        mock_shutdown_event = MagicMock()
+        mock_shutdown_event.is_set.side_effect = [False, False, True]
+        mock_event_cls.return_value = mock_shutdown_event
+
+        t0 = MagicMock()
+        t0.is_alive.return_value = True
+
+        dying_thread = MagicMock()
+        is_alive_state = True
+
+        def fake_join(timeout=None):
+            nonlocal is_alive_state
+            is_alive_state = False
+
+        dying_thread.join.side_effect = fake_join
+        dying_thread.is_alive.side_effect = lambda: is_alive_state
+
+        replacement_thread = MagicMock()
+        replacement_thread.is_alive.return_value = True
+
+        mock_spawn.side_effect = [t0, dying_thread, replacement_thread]
+
+        q0 = MagicMock(spec=mp.Queue)
+        q1 = MagicMock(spec=mp.Queue)
+        scale_q = MagicMock()
+        # Iteration 1 spawns dying_thread, Iteration 2 receives worker_1 again
+        scale_q.get.side_effect = ["worker_1", "worker_1", Empty]
+        scale_q.get_nowait.side_effect = Empty
+
+        self.ipc.worker_queues = {"worker_0": q0, "worker_1": q1}
+        self.ipc.scale_queue = scale_q
+
+        pool_runner.run_worker_pool(
+            self.ipc,
+            self.mock_client,
+            self.mock_notification,
+            self.mock_retry_config,
+        )
+
+        dying_thread.join.assert_called_once_with(timeout=1.0)
+        self.assertEqual(mock_spawn.call_count, 3)
+        self.assertEqual(mock_spawn.call_args_list[2][0][0], "worker_1")
+        self.assertEqual(
+            mock_spawn.call_args_list[2][1].get("idle_timeout"),
+            pool_runner.DEFAULT_BURST_IDLE_TIMEOUT,
+        )
+
+    @patch("workers.pool_runner.ff_logging")
+    @patch("workers.pool_runner._spawn_worker_thread")
+    @patch("workers.pool_runner.threading.Event")
+    def test_pool_runner_scale_queue_value_error_terminates_cleanly(
+        self, mock_event_cls, mock_spawn, mock_logging
+    ):
+        """Verify ValueError on scale_queue.get() terminates the main loop cleanly."""
+        mock_shutdown_event = MagicMock()
+        mock_shutdown_event.is_set.return_value = False
+        mock_event_cls.return_value = mock_shutdown_event
+
+        t0 = MagicMock()
+        t0.is_alive.return_value = True
+        mock_spawn.return_value = t0
+
+        q0 = MagicMock(spec=mp.Queue)
+        scale_q = MagicMock()
+        scale_q.get.side_effect = ValueError("Queue closed")
+
+        self.ipc.worker_queues = {"worker_0": q0}
+        self.ipc.scale_queue = scale_q
+
+        pool_runner.run_worker_pool(
+            self.ipc,
+            self.mock_client,
+            self.mock_notification,
+            self.mock_retry_config,
+        )
+
+        mock_logging.log_debug.assert_any_call("Worker Pool: scale_queue closed")

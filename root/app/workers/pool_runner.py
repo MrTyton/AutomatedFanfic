@@ -19,6 +19,8 @@ from models.queue_types import WorkerQueue
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
 
+DEFAULT_BURST_IDLE_TIMEOUT: float = 60.0
+
 
 def _spawn_worker_thread(
     worker_id: str,
@@ -140,6 +142,15 @@ def run_worker_pool(
                     target_worker = ipc.scale_queue.get(timeout=0.2)
                     while target_worker:
                         if target_worker in worker_queues:
+                            existing_thread = active_threads.get(target_worker)
+                            if (
+                                existing_thread is not None
+                                and existing_thread.is_alive()
+                            ):
+                                # The coordinator only signals scale_queue for workers that reported WORKER_STOPPED.
+                                # Wait briefly for the dying thread to complete its exit/cleanup.
+                                existing_thread.join(timeout=1.0)
+
                             if (
                                 target_worker not in active_threads
                                 or not active_threads[target_worker].is_alive()
@@ -152,7 +163,7 @@ def run_worker_pool(
                                     worker_queues[target_worker],
                                     worker_ctx,
                                     verbose,
-                                    idle_timeout=60.0,
+                                    idle_timeout=DEFAULT_BURST_IDLE_TIMEOUT,
                                 )
                         try:
                             target_worker = ipc.scale_queue.get_nowait()
@@ -160,7 +171,7 @@ def run_worker_pool(
                             break
                 except Empty:
                     pass
-                except OSError:
+                except OSError, ValueError:
                     ff_logging.log_debug("Worker Pool: scale_queue closed")
                     break
             else:
