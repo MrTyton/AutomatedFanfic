@@ -241,6 +241,7 @@ def register_processes(
         worker_queues[worker_id] = manager.Queue()
 
     waiting_queue = mp.Queue()
+    scale_queue = mp.Queue()
     active_urls = manager.dict()
 
     # Cross-process log forwarding queue: when the web server is enabled, all
@@ -313,6 +314,7 @@ def register_processes(
         config_store=config_store,
         log_queue=log_queue,
         verbose=args.verbose,
+        scale_queue=scale_queue,
     )
 
     # Register Supervisor Process (Hosts Email, Waiter, Coordinator)

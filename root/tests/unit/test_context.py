@@ -59,10 +59,30 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
         self.assertEqual(ipc.active_urls, {"url": {"status": "queued"}})
         self.assertIsNone(ipc.log_queue)
         self.assertFalse(ipc.verbose)
+        self.assertIsNone(ipc.scale_queue)
 
         restored = pickle.loads(pickle.dumps(ipc))
         self.assertEqual(restored.active_urls, {"url": {"status": "queued"}})
         self.assertFalse(restored.verbose)
+        self.assertIsNone(restored.scale_queue)
+
+    def test_shared_ipc_context_includes_scale_queue(self):
+        from models.context import SharedIPCContext
+        import multiprocessing as mp
+
+        q = mp.Queue()
+        ctx = SharedIPCContext(
+            ingress_queue=q,
+            waiting_queue=q,
+            worker_queues={},
+            active_urls={},
+            history_recorder=None,
+            config_store=None,
+            log_queue=None,
+            verbose=False,
+            scale_queue=q,
+        )
+        assert ctx.scale_queue is q
 
     def test_init_process_logging_worker_and_supervisor_modes(self):
         """init_process_logging configures verbose, web_enabled, forward queue, and thread color for non-web processes."""

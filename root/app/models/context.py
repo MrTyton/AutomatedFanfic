@@ -65,6 +65,7 @@ class SharedIPCContext:
         config_store (ConfigStore): Shared ConfigStore for runtime hot-reloading.
         log_queue (LogQueue | None): Optional queue for forwarding logs to the web server.
         verbose (bool): Whether verbose debug logging is enabled across processes.
+        scale_queue (IngressQueue | None): Optional queue for notifying worker pool of scaling requests.
     """
 
     ingress_queue: IngressQueue
@@ -75,3 +76,4 @@ class SharedIPCContext:
     config_store: ConfigStore
     log_queue: LogQueue | None = None
     verbose: bool = False
+    scale_queue: IngressQueue | None = None
