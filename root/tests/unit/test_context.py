@@ -82,7 +82,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             verbose=False,
             scale_queue=q,
         )
-        assert ctx.scale_queue is q
+        self.assertIs(ctx.scale_queue, q)
 
     def test_init_process_logging_worker_and_supervisor_modes(self):
         """init_process_logging configures verbose, web_enabled, forward queue, and thread color for non-web processes."""

@@ -48,3 +48,6 @@ HistoryQueue = QueueProtocol[dict[str, Any]]
 
 # Log queue passes structured log entries cross-process to the web server
 LogQueue = QueueProtocol[dict[str, Any]]
+
+# Scale queue notifies worker pool of scaling requests
+ScaleQueue = QueueProtocol[str | None]

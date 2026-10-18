@@ -514,13 +514,13 @@ class TestFanficDownloadMain(unittest.TestCase):
             mock_mp_manager.return_value.__enter__.return_value = mock_manager_instance
             mock_mp_manager.return_value.__exit__.return_value = None
 
-            # Case 1: web.enabled = False -> 3 native mp.Queue calls (ingress, waiting, history), no log_queue
+            # Case 1: web.enabled = False -> 4 native mp.Queue calls (ingress, waiting, scale_queue, history), no log_queue
             self.mock_config.web.enabled = False
             fanficdownload.main()
-            self.assertEqual(mock_native_queue.call_count, 3)
+            self.assertEqual(mock_native_queue.call_count, 4)
             mock_set_web_enabled.assert_called_with(False)
 
-            # Case 2: web.enabled = True -> 4 native mp.Queue calls (ingress, waiting, log_queue, history)
+            # Case 2: web.enabled = True -> 5 native mp.Queue calls (ingress, waiting, scale_queue, log_queue, history)
             mock_native_queue.reset_mock()
             mock_set_web_enabled.reset_mock()
             self.mock_config.web.enabled = True
@@ -528,7 +528,7 @@ class TestFanficDownloadMain(unittest.TestCase):
             self.mock_config.web.host = "0.0.0.0"
             with patch("fanficdownload.mp.Event") as mock_native_event:
                 fanficdownload.main()
-                self.assertEqual(mock_native_queue.call_count, 4)
+                self.assertEqual(mock_native_queue.call_count, 5)
                 mock_native_event.assert_called_once()
                 mock_set_web_enabled.assert_called_with(True)
 
