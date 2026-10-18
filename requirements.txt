@@ -8,6 +8,7 @@ pydantic-settings==2.15.0
 
 # HTTP requests and web scraping
 requests==2.34.2
+requests-file==3.0.1
 cloudscraper==1.2.71
 
 # HTML parsing and processing

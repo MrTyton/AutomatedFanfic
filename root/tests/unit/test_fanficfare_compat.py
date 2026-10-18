@@ -206,3 +206,193 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
         urls = gu.get_urls_from_html(html)
         self.assertIn("https://archiveofourown.org/works/987654", urls)
         self.assertTrue(any("fanfiction.net/s/11223344" in u for u in urls))
+
+
+class TestRequirementsAndDockerDependencies(unittest.TestCase):
+    """Verify requirements.txt satisfies all runtime dependencies for Docker builds.
+
+    Because the Dockerfile installs FanFicFare with `pip install --no-deps`,
+    every runtime dependency declared by FanFicFare's package metadata MUST be
+    present in requirements.txt, and all third-party imports in root/app must
+    be covered by requirements.txt.
+    """
+
+    @staticmethod
+    def _parse_requirements_txt() -> dict[str, str]:
+        from pathlib import Path
+        from packaging.requirements import Requirement
+        from packaging.utils import canonicalize_name
+
+        req_path = Path(__file__).resolve().parents[3] / "requirements.txt"
+        parsed: dict[str, str] = {}
+        for raw_line in req_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.split("#", 1)[0].strip()
+            if not line or line.startswith("-"):
+                continue
+            req = Requirement(line)
+            parsed[canonicalize_name(req.name)] = line
+        return parsed
+
+    def test_requirements_txt_contains_all_fanficfare_runtime_dependencies(self):
+        """Every Linux runtime requirement of FanFicFare must be in requirements.txt."""
+        import importlib.metadata as m
+        from packaging.requirements import Requirement
+        from packaging.utils import canonicalize_name
+        from packaging.version import Version
+
+        reqs_txt = self._parse_requirements_txt()
+        fff_requires = m.requires("FanFicFare") or []
+        self.assertGreater(
+            len(fff_requires),
+            0,
+            "FanFicFare package metadata must declare its dependencies",
+        )
+
+        missing: list[str] = []
+        version_mismatches: list[str] = []
+
+        for extra in ("", "image-processing"):
+            env = {"extra": extra, "platform_system": "Linux"}
+            for req_str in fff_requires:
+                req = Requirement(req_str)
+                if req.marker and not req.marker.evaluate(env):
+                    continue
+                pkg_name = canonicalize_name(req.name)
+                if pkg_name not in reqs_txt:
+                    if req_str not in missing:
+                        missing.append(req_str)
+                    continue
+                pinned_req = Requirement(reqs_txt[pkg_name])
+                for spec in pinned_req.specifier:
+                    if spec.operator == "==":
+                        pinned_ver = Version(spec.version)
+                        if req.specifier and not req.specifier.contains(
+                            pinned_ver, prereleases=True
+                        ):
+                            version_mismatches.append(
+                                f"{pkg_name}: pinned {pinned_ver} does not satisfy FanFicFare requirement '{req_str}'"
+                            )
+
+        self.assertEqual(
+            missing,
+            [],
+            f"FanFicFare is installed with --no-deps in Dockerfile, so all its "
+            f"runtime dependencies must be in requirements.txt. Missing: {missing}",
+        )
+        self.assertEqual(
+            version_mismatches,
+            [],
+            f"Pinned versions in requirements.txt do not satisfy FanFicFare requirements: {version_mismatches}",
+        )
+
+    def test_requirements_txt_covers_all_app_third_party_imports(self):
+        """Every third-party module imported in root/app must be covered by requirements.txt."""
+        import ast
+        import importlib.metadata as m
+        from pathlib import Path
+        import sys
+        from packaging.requirements import Requirement
+        from packaging.utils import canonicalize_name
+
+        app_root = Path(__file__).resolve().parents[2] / "app"
+        local_modules = {p.stem for p in app_root.glob("*.py")} | {
+            p.name for p in app_root.iterdir() if p.is_dir()
+        }
+
+        imported_top: set[str] = set()
+        for pyfile in app_root.rglob("*.py"):
+            tree = ast.parse(pyfile.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imported_top.add(alias.name.split(".")[0])
+                elif (
+                    isinstance(node, ast.ImportFrom) and node.level == 0 and node.module
+                ):
+                    imported_top.add(node.module.split(".")[0])
+
+        third_party_imports = (
+            imported_top - sys.stdlib_module_names - local_modules - {"fanficfare"}
+        )
+
+        reqs_txt = self._parse_requirements_txt()
+        closure = set(reqs_txt.keys())
+        queue = list(closure)
+        while queue:
+            pkg = queue.pop()
+            try:
+                sub_reqs = m.requires(pkg) or []
+            except m.PackageNotFoundError:
+                continue
+            for sr in sub_reqs:
+                sreq = Requirement(sr)
+                if sreq.marker and not sreq.marker.evaluate(
+                    {"extra": "", "platform_system": "Linux"}
+                ):
+                    continue
+                cname = canonicalize_name(sreq.name)
+                if cname not in closure:
+                    closure.add(cname)
+                    queue.append(cname)
+
+        pkg_dist_map = m.packages_distributions()
+        uncovered: list[str] = []
+        for imp_name in sorted(third_party_imports):
+            dists = [
+                canonicalize_name(d) for d in pkg_dist_map.get(imp_name, [imp_name])
+            ]
+            if not any(d in closure for d in dists):
+                uncovered.append(f"{imp_name} (distributions: {dists})")
+
+        self.assertEqual(
+            uncovered,
+            [],
+            f"Third-party imports in root/app not covered by requirements.txt: {uncovered}",
+        )
+
+    def test_fanficdownload_entrypoint_runs_help_cleanly(self):
+        """Running fanficdownload.py --help in a subprocess must succeed with exit code 0."""
+        from pathlib import Path
+        import subprocess
+        import sys
+
+        entrypoint = Path(__file__).resolve().parents[2] / "app" / "fanficdownload.py"
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"fanficdownload.py --help failed with stderr:\n{result.stderr}",
+        )
+
+    def test_dockerfile_does_not_use_no_deps_and_verifies_entrypoint(self):
+        """Dockerfile must resolve FanFicFare dependencies (no --no-deps) and verify entrypoint imports."""
+        from pathlib import Path
+        import re
+
+        dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
+        content = dockerfile.read_text(encoding="utf-8")
+
+        non_comment_lines = [
+            line for line in content.splitlines() if not line.strip().startswith("#")
+        ]
+        active_dockerfile = "\n".join(non_comment_lines)
+
+        self.assertIsNone(
+            re.search(r"pip\s+install[^\n]*--no-deps", active_dockerfile),
+            "Dockerfile must not use 'pip install --no-deps', which skips transitive dependency resolution",
+        )
+        self.assertIn(
+            "FROM python-deps AS fanficfare-installer",
+            active_dockerfile,
+            "fanficfare-installer stage must inherit from python-deps so pip sees pre-installed packages while still resolving any missing dependencies",
+        )
+        self.assertIn(
+            "python /app/fanficdownload.py --help",
+            active_dockerfile,
+            "Dockerfile runtime stage must verify that /app/fanficdownload.py --help executes cleanly at build time",
+        )

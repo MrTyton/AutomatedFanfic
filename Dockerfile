@@ -104,7 +104,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --prefix=/install --no-warn-script-location -r /tmp/requirements.txt
 
 # FanFicFare Installer Stage
-FROM builder-tools AS fanficfare-installer
+# Inherits from python-deps with PYTHONPATH pointing at /install's site-packages
+# so pip sees all requirements.txt packages as already satisfied (avoiding
+# duplicate downloads/compilations) while still resolving any missing or newly
+# added FanFicFare transitive dependencies into /install-fff without --no-deps.
+FROM python-deps AS fanficfare-installer
 ARG FANFICFARE_VERSION
 RUN --mount=type=cache,target=/root/.cache/pip \
     echo "*** Install FanFicFare from PyPI + TestPyPI ***" && \
@@ -113,7 +117,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     else \
     PACKAGE_SPEC="FanFicFare"; \
     fi && \
-    pip install --no-deps --prefix=/install --no-warn-script-location \
+    SITE_PKGS="$(python -c 'import sysconfig; print(sysconfig.get_path("purelib", vars={"base": "/install", "platbase": "/install"}))')" && \
+    PYTHONPATH="${SITE_PKGS}" pip install --prefix=/install-fff --no-warn-script-location \
     --extra-index-url https://test.pypi.org/simple/ "${PACKAGE_SPEC}"
 
 # Frontend Builder Stage: Build React SPA
@@ -178,7 +183,11 @@ COPY --from=python-deps /install /usr/local
 
 # Copy FanFicFare - changes DAILY (automated updates)
 # Placed last so the most common update only invalidates this single layer.
-COPY --from=fanficfare-installer /install /usr/local
+COPY --from=fanficfare-installer /install-fff /usr/local
+
+# Verify Python runtime dependencies and entrypoint imports inside the final image
+RUN python /app/fanficdownload.py --help > /dev/null && \
+    PYTHONPATH=/app python -c "import fanficfare.adapters, fanficfare.cli, fanficfare.configurable, fanficfare.geturls, web.server"
 
 # Version ARGs declared here (after all stable layers) so version bumps
 # do NOT invalidate the cached apt, user, pip, or calibre layers above.
