@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch, call, ANY
 import signal
 import multiprocessing as mp
 
+from queue import Empty
 from workers import pool_runner, pipeline
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
@@ -236,8 +237,162 @@ class TestPoolRunner(unittest.TestCase):
         self.assertIs(result, mock_thread)
         mock_thread_cls.assert_called_once_with(
             target=pipeline.url_worker,
-            args=(q, ctx, "worker_1", True),
+            args=(q, ctx, "worker_1", True, None),
             name="worker_1",
             daemon=True,
         )
         mock_thread.start.assert_called_once()
+
+    @patch("workers.pool_runner.threading.Thread")
+    def test_spawn_worker_thread_passes_idle_timeout(self, mock_thread_cls):
+        """Verify _spawn_worker_thread passes idle_timeout to pipeline.url_worker."""
+        mock_thread = MagicMock()
+        mock_thread_cls.return_value = mock_thread
+        ctx = WorkerContext(
+            calibre_client=self.mock_client,
+            notification_info=self.mock_notification,
+            ingress_queue=self.mock_ingress_queue,
+            waiting_queue=self.mock_waiting_queue,
+            retry_config=self.mock_retry_config,
+            history_recorder=self.mock_history_recorder,
+            active_urls=self.active_urls,
+        )
+        q = self.worker_queues["worker_1"]
+
+        result = pool_runner._spawn_worker_thread(
+            "worker_1", q, ctx, False, idle_timeout=60.0
+        )
+
+        self.assertIs(result, mock_thread)
+        mock_thread_cls.assert_called_once_with(
+            target=pipeline.url_worker,
+            args=(q, ctx, "worker_1", False, 60.0),
+            name="worker_1",
+            daemon=True,
+        )
+        mock_thread.start.assert_called_once()
+
+    @patch("workers.pool_runner._spawn_worker_thread")
+    @patch("workers.pool_runner.threading.Event")
+    def test_pool_runner_spawns_worker_0_initially_and_scales_worker_1_on_signal(
+        self, mock_event_cls, mock_spawn
+    ):
+        """Verify worker_0 is spawned initially with idle_timeout=None, and worker_1 on scale_queue signal with 60.0s."""
+        mock_shutdown_event = MagicMock()
+        mock_shutdown_event.is_set.side_effect = [False, False, True]
+        mock_event_cls.return_value = mock_shutdown_event
+
+        t0 = MagicMock()
+        t0.is_alive.return_value = True
+        t1 = MagicMock()
+        t1.is_alive.return_value = True
+        mock_spawn.side_effect = [t0, t1]
+
+        q0 = MagicMock(spec=mp.Queue)
+        q1 = MagicMock(spec=mp.Queue)
+        scale_q = MagicMock()
+        scale_q.get.side_effect = ["worker_1", Empty]
+        scale_q.get_nowait.side_effect = Empty
+
+        self.ipc.worker_queues = {"worker_0": q0, "worker_1": q1}
+        self.ipc.scale_queue = scale_q
+
+        pool_runner.run_worker_pool(
+            self.ipc,
+            self.mock_client,
+            self.mock_notification,
+            self.mock_retry_config,
+        )
+
+        self.assertEqual(mock_spawn.call_count, 2)
+        # First call: initial spawn of worker_0
+        self.assertEqual(mock_spawn.call_args_list[0][0][0], "worker_0")
+        self.assertEqual(mock_spawn.call_args_list[0][0][1], q0)
+        self.assertIsNone(mock_spawn.call_args_list[0][1].get("idle_timeout"))
+        # Second call: scaled worker_1
+        self.assertEqual(mock_spawn.call_args_list[1][0][0], "worker_1")
+        self.assertEqual(mock_spawn.call_args_list[1][0][1], q1)
+        self.assertEqual(mock_spawn.call_args_list[1][1].get("idle_timeout"), 60.0)
+
+    @patch("workers.pool_runner.ff_logging")
+    @patch("workers.pool_runner._spawn_worker_thread")
+    @patch("workers.pool_runner.threading.Event")
+    def test_pool_runner_does_not_restart_stopped_burst_worker(
+        self, mock_event_cls, mock_spawn, mock_logging
+    ):
+        """Verify that when a burst worker (worker_1) stops, it is removed and not restarted."""
+        mock_shutdown_event = MagicMock()
+        mock_shutdown_event.is_set.side_effect = [False, False, True]
+        mock_event_cls.return_value = mock_shutdown_event
+
+        t0 = MagicMock()
+        t0.is_alive.return_value = True
+        t1 = MagicMock()
+        # worker_1 stops / is not alive
+        t1.is_alive.return_value = False
+        mock_spawn.side_effect = [t0, t1]
+
+        q0 = MagicMock(spec=mp.Queue)
+        q1 = MagicMock(spec=mp.Queue)
+        scale_q = MagicMock()
+        scale_q.get.side_effect = ["worker_1", Empty]
+        scale_q.get_nowait.side_effect = Empty
+
+        self.ipc.worker_queues = {"worker_0": q0, "worker_1": q1}
+        self.ipc.scale_queue = scale_q
+
+        pool_runner.run_worker_pool(
+            self.ipc,
+            self.mock_client,
+            self.mock_notification,
+            self.mock_retry_config,
+        )
+
+        # Only 2 spawns: worker_0 initially, worker_1 on scale_queue. No restart for worker_1.
+        self.assertEqual(mock_spawn.call_count, 2)
+        mock_logging.log_debug.assert_any_call(
+            "Thread worker_1 stopped (idle timeout or finished)"
+        )
+
+    @patch("workers.pool_runner.ff_logging")
+    @patch("workers.pool_runner._spawn_worker_thread")
+    @patch("workers.pool_runner.threading.Event")
+    def test_pool_runner_restarts_worker_0_when_dead(
+        self, mock_event_cls, mock_spawn, mock_logging
+    ):
+        """Verify that when worker_0 is not alive, pool runner restarts worker_0 with idle_timeout=None."""
+        mock_shutdown_event = MagicMock()
+        mock_shutdown_event.is_set.side_effect = [False, False, True]
+        mock_event_cls.return_value = mock_shutdown_event
+
+        t0 = MagicMock()
+        # worker_0 dies
+        t0.is_alive.return_value = False
+        t0_replacement = MagicMock()
+        t0_replacement.is_alive.return_value = True
+        mock_spawn.side_effect = [t0, t0_replacement]
+
+        q0 = MagicMock(spec=mp.Queue)
+        q1 = MagicMock(spec=mp.Queue)
+        scale_q = MagicMock()
+        scale_q.get.side_effect = Empty
+
+        self.ipc.worker_queues = {"worker_0": q0, "worker_1": q1}
+        self.ipc.scale_queue = scale_q
+
+        pool_runner.run_worker_pool(
+            self.ipc,
+            self.mock_client,
+            self.mock_notification,
+            self.mock_retry_config,
+        )
+
+        # worker_0 spawned initially, then restarted
+        self.assertEqual(mock_spawn.call_count, 2)
+        self.assertEqual(mock_spawn.call_args_list[0][0][0], "worker_0")
+        self.assertIsNone(mock_spawn.call_args_list[0][1].get("idle_timeout"))
+        self.assertEqual(mock_spawn.call_args_list[1][0][0], "worker_0")
+        self.assertIsNone(mock_spawn.call_args_list[1][1].get("idle_timeout"))
+        mock_logging.log_failure.assert_called_with(
+            "Thread worker_0 died unexpectedly - Restarting..."
+        )

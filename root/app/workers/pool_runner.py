@@ -9,6 +9,7 @@ downloads, significantly reducing memory overhead compared to multi-process appr
 import threading
 import time
 import signal
+from queue import Empty
 
 from utils import ff_logging
 from workers import pipeline
@@ -24,6 +25,7 @@ def _spawn_worker_thread(
     queue: WorkerQueue,
     ctx: WorkerContext,
     verbose: bool,
+    idle_timeout: float | None = None,
 ) -> threading.Thread:
     """Create and start a daemon worker thread running `pipeline.url_worker`.
 
@@ -33,13 +35,15 @@ def _spawn_worker_thread(
         ctx (WorkerContext): Shared worker dependencies (Calibre client, notifications,
             queues, retry config, history recorder, and active_urls).
         verbose (bool): Whether verbose debug logging is enabled.
+        idle_timeout (float | None, optional): Maximum idle duration in seconds
+            before terminating the worker thread. Defaults to None (runs indefinitely).
 
     Returns:
         threading.Thread: The started daemon thread instance.
     """
     thread = threading.Thread(
         target=pipeline.url_worker,
-        args=(queue, ctx, worker_id, verbose),
+        args=(queue, ctx, worker_id, verbose, idle_timeout),
         name=worker_id,
         daemon=True,
     )
@@ -98,7 +102,7 @@ def run_worker_pool(
 
     ff_logging.log_debug(f"Worker Pool Process using {len(worker_queues)} threads")
 
-    threads: list[threading.Thread] = []
+    active_threads: dict[str, threading.Thread] = {}
     shutdown_event = threading.Event()
 
     # Define signal handler for graceful shutdown of the pool process
@@ -110,48 +114,80 @@ def run_worker_pool(
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        # Spawn threads for each worker queue
-        for worker_id, queue in worker_queues.items():
-            threads.append(_spawn_worker_thread(worker_id, queue, worker_ctx, verbose))
+        # Initial spawn logic
+        if "worker_0" in worker_queues:
+            active_threads["worker_0"] = _spawn_worker_thread(
+                "worker_0",
+                worker_queues["worker_0"],
+                worker_ctx,
+                verbose,
+                idle_timeout=None,
+            )
+        else:
+            for worker_id, queue in worker_queues.items():
+                active_threads[worker_id] = _spawn_worker_thread(
+                    worker_id,
+                    queue,
+                    worker_ctx,
+                    verbose,
+                    idle_timeout=None,
+                )
 
-        # Main loop: Wait for shutdown and periodically check thread health / scale-up
+        # Main loop: Wait for shutdown and periodically check scale_queue and thread health
         while not shutdown_event.is_set():
-            time.sleep(2.0)
+            if ipc.scale_queue is not None:
+                try:
+                    target_worker = ipc.scale_queue.get(timeout=0.2)
+                    while target_worker:
+                        if target_worker in worker_queues:
+                            if (
+                                target_worker not in active_threads
+                                or not active_threads[target_worker].is_alive()
+                            ):
+                                ff_logging.log(
+                                    f"Worker Pool: spawning thread for {target_worker}"
+                                )
+                                active_threads[target_worker] = _spawn_worker_thread(
+                                    target_worker,
+                                    worker_queues[target_worker],
+                                    worker_ctx,
+                                    verbose,
+                                    idle_timeout=60.0,
+                                )
+                        try:
+                            target_worker = ipc.scale_queue.get_nowait()
+                        except Empty:
+                            break
+                except Empty:
+                    pass
+                except OSError:
+                    ff_logging.log_debug("Worker Pool: scale_queue closed")
+                    break
+            else:
+                time.sleep(2.0)
 
-            # Check if any threads have died and restart them
-            for i, t in enumerate(threads):
+            # Thread health check
+            for worker_id in list(active_threads.keys()):
+                t = active_threads[worker_id]
                 if not t.is_alive():
-                    worker_id = t.name
-                    if worker_id in worker_queues:
+                    if worker_id == "worker_0" or (
+                        "worker_0" not in worker_queues and worker_id in worker_queues
+                    ):
                         ff_logging.log_failure(
                             f"Thread {worker_id} died unexpectedly - Restarting..."
                         )
-                        threads[i] = _spawn_worker_thread(
+                        active_threads[worker_id] = _spawn_worker_thread(
                             worker_id,
                             worker_queues[worker_id],
                             worker_ctx,
                             verbose,
+                            idle_timeout=None,
                         )
                     else:
                         ff_logging.log_debug(
-                            f"Thread {worker_id} stopped (queue removed - intentional scale-down)"
+                            f"Thread {worker_id} stopped (idle timeout or finished)"
                         )
-
-            # Scale-up: spawn threads for any worker_queues entries not yet tracked
-            tracked_ids = {t.name for t in threads}
-            for worker_id in list(worker_queues.keys()):
-                if worker_id not in tracked_ids:
-                    ff_logging.log(f"Worker Pool: spawning new thread for {worker_id}")
-                    threads.append(
-                        _spawn_worker_thread(
-                            worker_id,
-                            worker_queues[worker_id],
-                            worker_ctx,
-                            verbose,
-                        )
-                    )
-                    # Notify coordinator that this worker is now available
-                    ingress_queue.put(("WORKER_IDLE", worker_id, None))
+                        del active_threads[worker_id]
 
     except KeyboardInterrupt:
         ff_logging.log("Worker Pool interrupted", "WARNING")
