@@ -264,7 +264,12 @@ def url_worker(
                     ff_logging.log_debug(
                         f"Worker {worker_id} reached idle timeout ({idle_timeout}s) - stopping thread"
                     )
-                    ingress_queue.put(("WORKER_STOPPED", worker_id, None))
+                    try:
+                        ingress_queue.put(("WORKER_STOPPED", worker_id, None))
+                    except Exception as e:
+                        ff_logging.log_debug(
+                            f"Worker {worker_id} failed to signal stop to ingress queue: {e}"
+                        )
                     system_utils.reclaim_memory()
                     break
 
