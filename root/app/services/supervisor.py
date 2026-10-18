@@ -45,6 +45,7 @@ def run_supervisor(
     history_recorder = ipc.history_recorder
     config_store = ipc.config_store
     log_queue = ipc.log_queue
+    scale_queue = ipc.scale_queue
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
@@ -126,6 +127,7 @@ def run_supervisor(
                 history_recorder,
                 url_parsers,
                 config_store,
+                scale_queue,
             ),
             name="Coordinator",
         )

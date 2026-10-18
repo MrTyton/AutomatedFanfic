@@ -30,7 +30,7 @@ from history.recorder import HistoryRecorder
 from utils import ff_logging
 from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
-from models.queue_types import IngressQueue, WorkerQueue, WorkerQueues
+from models.queue_types import IngressQueue, ScaleQueue, WorkerQueue, WorkerQueues
 import threading
 
 lazy from utils import series_utils
@@ -41,6 +41,7 @@ class SignalType(Enum):
     """Types of signals that can be sent to the coordinator."""
 
     WORKER_IDLE = "WORKER_IDLE"
+    WORKER_STOPPED = "WORKER_STOPPED"
     SHUTDOWN = "SHUTDOWN"
 
 
@@ -65,6 +66,12 @@ class WorkerSignal:
                 worker_id=signal_tuple[1],
                 site=signal_tuple[2],
             )
+        if signal_str == "WORKER_STOPPED" and len(signal_tuple) >= 2:
+            return cls(
+                signal_type=SignalType.WORKER_STOPPED,
+                worker_id=signal_tuple[1],
+                site=signal_tuple[2] if len(signal_tuple) > 2 else None,
+            )
         return None
 
 
@@ -81,6 +88,7 @@ class CoordinatorState:
     )
     assignments: dict[str, str] = field(default_factory=dict)
     idle_workers: set[str] = field(default_factory=set)
+    dormant_workers: set[str] = field(default_factory=set)
     qsize_supported: bool = True  # Cache whether queue.qsize() is supported
 
 
@@ -102,6 +110,7 @@ class Coordinator:
         history_recorder: HistoryRecorder,
         url_parsers: dict,
         config_store: ConfigStore,
+        scale_queue: ScaleQueue | None = None,
     ) -> None:
         """Initialize the Coordinator.
 
@@ -118,6 +127,8 @@ class Coordinator:
                 story URLs extracted from series pages.
             config_store (ConfigStore): Shared ConfigStore providing FanFicFare
                 configuration for series expansion.
+            scale_queue (ScaleQueue | None): Optional queue for signaling worker pool
+                scaling requests.
         """
         self.ingress_queue = ingress_queue
         self.worker_queues = worker_queues
@@ -126,9 +137,20 @@ class Coordinator:
         self.history_recorder = history_recorder
         self.url_parsers = url_parsers
         self.config_store = config_store
+        self.scale_queue = scale_queue
 
         # Encapsulated coordinator state
-        self.state = CoordinatorState(idle_workers=set(worker_queues.keys()))
+        if "worker_0" in worker_queues:
+            idle_workers = {"worker_0"}
+            dormant_workers = {w for w in worker_queues if w != "worker_0"}
+        else:
+            idle_workers = set(worker_queues.keys())
+            dormant_workers = set()
+
+        self.state = CoordinatorState(
+            idle_workers=idle_workers,
+            dormant_workers=dormant_workers,
+        )
 
         # Check if qsize() is supported once at startup
         self._check_qsize_support()
@@ -145,6 +167,7 @@ class Coordinator:
             "backlog": backlog_snapshot,
             "assignments": dict(self.state.assignments),
             "idle_workers": sorted(self.state.idle_workers),
+            "dormant_workers": sorted(self.state.dormant_workers),
         }
 
     def _check_qsize_support(self) -> None:
@@ -198,6 +221,9 @@ class Coordinator:
                 signal = WorkerSignal.from_tuple(item)
                 if signal and signal.signal_type == SignalType.WORKER_IDLE:
                     self._handle_worker_idle(signal.worker_id, signal.site)
+                    return
+                if signal and signal.signal_type == SignalType.WORKER_STOPPED:
+                    self._handle_worker_stopped(signal.worker_id)
                     return
 
             # Handle task
@@ -344,6 +370,14 @@ class Coordinator:
         # Try to give this worker (and others) new work
         self._assign_work_if_possible()
 
+    def _handle_worker_stopped(self, worker_id: str) -> None:
+        """Handle worker reporting it has stopped and exited."""
+        self.state.idle_workers.discard(worker_id)
+        self.state.dormant_workers.add(worker_id)
+        ff_logging.log_debug(
+            f"Coordinator: Worker {worker_id} stopped and marked dormant"
+        )
+
     def _find_unassigned_site(self) -> str | None:
         """Find a site in backlog that is not currently assigned to any worker."""
         for site in self.state.backlog:
@@ -394,9 +428,6 @@ class Coordinator:
 
     def _assign_work_if_possible(self):
         """Assign pending backlog items to idle workers."""
-        if not self.state.idle_workers:
-            return
-
         # Simple greedy assignment: Give queued sites to free workers
         # We make a copy since we might modify the set during iteration
         available_workers = list(self.state.idle_workers)
@@ -430,6 +461,32 @@ class Coordinator:
                 # No eligible work found within backlog
                 break
 
+        # If there are still unassigned sites in backlog and dormant workers available,
+        # activate dormant workers
+        if self.state.backlog and self.state.dormant_workers:
+            dormant_list = sorted(list(self.state.dormant_workers))
+            for worker_id in dormant_list:
+                if worker_id not in self.worker_queues:
+                    self.state.dormant_workers.discard(worker_id)
+                    continue
+
+                candidate_site = self._find_unassigned_site()
+                if candidate_site:
+                    self.state.dormant_workers.remove(worker_id)
+                    self.state.assignments[candidate_site] = worker_id
+                    ff_logging.log_debug(
+                        f"Coordinator: Assigned site {candidate_site} to dormant {worker_id}",
+                    )
+                    queue = self.worker_queues[worker_id]
+                    tasks_pushed = self._drain_site_backlog(candidate_site, queue)
+                    self._log_assignment_details(
+                        candidate_site, worker_id, queue, tasks_pushed
+                    )
+                    if self.scale_queue is not None:
+                        self.scale_queue.put(worker_id)
+                else:
+                    break
+
 
 def start_coordinator(
     ingress_queue: IngressQueue,
@@ -440,6 +497,7 @@ def start_coordinator(
     history_recorder: HistoryRecorder,
     url_parsers: dict,
     config_store: ConfigStore,
+    scale_queue: ScaleQueue | None = None,
 ) -> None:
     """Entry point for the coordinator thread/process.
 
@@ -453,6 +511,8 @@ def start_coordinator(
         history_recorder (HistoryRecorder): Recorder for history events.
         url_parsers (dict): Compiled URL parsers for series expansion.
         config_store (ConfigStore): Shared ConfigStore instance.
+        scale_queue (ScaleQueue | None): Optional queue for signaling worker pool
+            scaling requests.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
@@ -466,6 +526,7 @@ def start_coordinator(
         history_recorder,
         url_parsers,
         config_store,
+        scale_queue=scale_queue,
     )
     try:
         coordinator.run()

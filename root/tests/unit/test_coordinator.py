@@ -106,11 +106,13 @@ class TestCoordinatorIntegration(unittest.TestCase):
 
         # Assign site1 to worker0
         self.coordinator.state.assignments["site1"] = workers[0]
-        self.coordinator.state.idle_workers.remove(workers[0])
+        self.coordinator.state.idle_workers.discard(workers[0])
+        self.coordinator.state.dormant_workers.discard(workers[0])
 
         # Assign site2 to worker1
         self.coordinator.state.assignments["site2"] = workers[1]
-        self.coordinator.state.idle_workers.remove(workers[1])
+        self.coordinator.state.idle_workers.discard(workers[1])
+        self.coordinator.state.dormant_workers.discard(workers[1])
 
         # 2. Add task for site3 (goes to backlog)
         fic3 = FanficInfo(url="http://site3.com/1", site="site3")
@@ -269,6 +271,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
     def test_assign_work_no_idle_workers(self):
         """Test _assign_work_if_possible returns early if no idle workers."""
         self.coordinator.state.idle_workers = set()
+        self.coordinator.state.dormant_workers = set()
 
         # Add to backlog
         self.coordinator.state.backlog["site1"].append(MagicMock())
@@ -393,11 +396,13 @@ class TestCoordinator(unittest.TestCase):
 
         # Assign site1 to worker0
         self.coordinator.state.assignments["site1"] = workers[0]
-        self.coordinator.state.idle_workers.remove(workers[0])
+        self.coordinator.state.idle_workers.discard(workers[0])
+        self.coordinator.state.dormant_workers.discard(workers[0])
 
         # Assign site2 to worker1
         self.coordinator.state.assignments["site2"] = workers[1]
-        self.coordinator.state.idle_workers.remove(workers[1])
+        self.coordinator.state.idle_workers.discard(workers[1])
+        self.coordinator.state.dormant_workers.discard(workers[1])
 
         # 2. Add task for site3 (goes to backlog)
         fic3 = FanficInfo(url="http://site3.com/1", site="site3")
@@ -806,6 +811,78 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
             "Failed to expand series",
             self.coordinator.active_urls[series_url]["error"],
         )
+
+
+class TestCoordinatorWorkerLifecycle(unittest.TestCase):
+    """Tests for dynamic worker scaling lifecycle (dormant workers, scale_queue, WORKER_STOPPED)."""
+
+    def test_coordinator_initializes_worker_0_idle_and_others_dormant(self):
+        ingress_q = stdlib_queue.Queue()
+        worker_queues = {
+            "worker_0": stdlib_queue.Queue(),
+            "worker_1": stdlib_queue.Queue(),
+            "worker_2": stdlib_queue.Queue(),
+        }
+        coordinator = _make_coordinator(ingress_q, worker_queues)
+        self.assertEqual(coordinator.state.idle_workers, {"worker_0"})
+        self.assertEqual(coordinator.state.dormant_workers, {"worker_1", "worker_2"})
+
+    def test_coordinator_spawns_dormant_worker_via_scale_queue(self):
+        ingress_q = stdlib_queue.Queue()
+        scale_q = stdlib_queue.Queue()
+        worker_queues = {
+            "worker_0": stdlib_queue.Queue(),
+            "worker_1": stdlib_queue.Queue(),
+        }
+        coordinator = _make_coordinator(ingress_q, worker_queues, scale_queue=scale_q)
+
+        # Worker 0 is busy with site1
+        fic1 = FanficInfo(url="http://site1.com/1", site="site1")
+        ingress_q.put(fic1)
+        coordinator._process_single_ingress_item(timeout=0.1)
+
+        # idle_workers is now empty, worker_1 is dormant
+        self.assertEqual(coordinator.state.idle_workers, set())
+        self.assertIn("worker_1", coordinator.state.dormant_workers)
+
+        # Task for unassigned site2 arrives
+        fic2 = FanficInfo(url="http://site2.com/1", site="site2")
+        ingress_q.put(fic2)
+        coordinator._process_single_ingress_item(timeout=0.1)
+
+        # Signals scale_queue.put(worker_id)
+        self.assertFalse(scale_q.empty())
+        scaled_worker = scale_q.get_nowait()
+        self.assertEqual(scaled_worker, "worker_1")
+
+        # Moves worker_id from dormant_workers to assignments[site]
+        self.assertNotIn("worker_1", coordinator.state.dormant_workers)
+        self.assertEqual(coordinator.state.assignments.get("site2"), "worker_1")
+
+        # Pushes tasks to worker_queues[worker_id]
+        self.assertFalse(worker_queues["worker_1"].empty())
+        self.assertEqual(worker_queues["worker_1"].get_nowait(), fic2)
+
+    def test_coordinator_handles_worker_stopped_signal(self):
+        ingress_q = stdlib_queue.Queue()
+        scale_q = stdlib_queue.Queue()
+        worker_queues = {
+            "worker_0": stdlib_queue.Queue(),
+            "worker_1": stdlib_queue.Queue(),
+        }
+        coordinator = _make_coordinator(ingress_q, worker_queues, scale_queue=scale_q)
+
+        # Emulating worker_1 being idle after completing work
+        coordinator.state.idle_workers.add("worker_1")
+        coordinator.state.dormant_workers.discard("worker_1")
+
+        # Emitting ("WORKER_STOPPED", "worker_1", None) to ingress queue
+        ingress_q.put(("WORKER_STOPPED", "worker_1", None))
+        coordinator._process_single_ingress_item(timeout=0.1)
+
+        # Discards worker_1 from idle_workers and adds worker_1 back to dormant_workers
+        self.assertNotIn("worker_1", coordinator.state.idle_workers)
+        self.assertIn("worker_1", coordinator.state.dormant_workers)
 
 
 if __name__ == "__main__":
