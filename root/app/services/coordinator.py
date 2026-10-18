@@ -475,7 +475,7 @@ class Coordinator:
             dormant_list = sorted(
                 self.state.dormant_workers,
                 key=lambda w: (
-                    int(w.split("_")[-1]) if w.split("_")[-1].isdigit() else w
+                    (0, int(w.split("_")[-1])) if w.split("_")[-1].isdigit() else (1, w)
                 ),
             )
             for worker_id in dormant_list:
