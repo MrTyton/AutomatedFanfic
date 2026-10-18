@@ -29,10 +29,71 @@ from models import config_models
 from models.fanfic_info import FanficInfo
 from notifications.notification_wrapper import NotificationWrapper
 from parsers.auto_url_parsers import generate_url_parsers_from_fanficfare
+from services import supervisor
 from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor
 from services.url_ingester import EmailInfo
+from models.context import SharedIPCContext
 from workers import command, pipeline
+
+
+def _child_verify_supervisor_process_boot(
+    ipc: SharedIPCContext,
+    email_info: EmailInfo,
+    notification_info: NotificationWrapper,
+    url_parsers: dict,
+    result_queue: mp.Queue,
+) -> None:
+    """Execute supervisor in a spawned child process with real SyncManager proxies.
+
+    Verifies that all three helper threads (EmailWatcher, Waiter, Coordinator)
+    boot successfully and remain healthy without crashing.
+    """
+    stop_requested = threading.Event()
+
+    def _watchdog() -> None:
+        # Wait long enough for supervisor to boot and complete its first health-check iteration
+        time.sleep(1.5)
+        if ipc.shutdown_event.is_set():
+            result_queue.put(
+                {
+                    "ok": False,
+                    "error": "Supervisor shut down prematurely due to thread failure",
+                }
+            )
+            return
+        stop_requested.set()
+        ipc.shutdown_event.set()
+        try:
+            ipc.ingress_queue.put(None)
+        except Exception:
+            pass
+        try:
+            ipc.waiting_queue.put(None)
+        except Exception:
+            pass
+
+    watchdog = threading.Thread(target=_watchdog, daemon=True)
+    watchdog.start()
+
+    try:
+        supervisor.run_supervisor(
+            ipc,
+            email_info,
+            notification_info,
+            url_parsers,
+        )
+        if not stop_requested.is_set():
+            result_queue.put(
+                {
+                    "ok": False,
+                    "error": "Supervisor exited before shutdown was requested",
+                }
+            )
+        else:
+            result_queue.put({"ok": True})
+    except Exception as exc:
+        result_queue.put({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
 
 def _child_verify_spawn_objects(
@@ -497,6 +558,70 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 self.assertEqual(
                     msg["payload"]["url"], "archiveofourown.org/works/99999"
                 )
+
+    def test_supervisor_process_spawn_with_real_manager_proxies(self):
+        """Regression test: Supervisor process must start in a spawned child process with real SyncManager proxies without thread death."""
+        cfg = config_models.AppConfig(
+            email=config_models.EmailConfig(
+                email="test@example.com",
+                password="pass",
+                server="imap.example.com",
+                mailbox="INBOX",
+                sleep_time=60,
+                imap_idle=False,
+            ),
+            calibre=config_models.CalibreConfig(),
+        )
+        store = ConfigStore()
+        store.initialize_from_config(cfg)
+
+        with mp.Manager() as manager:
+            worker_queues = manager.dict(
+                {
+                    "worker_0": manager.Queue(),
+                    "worker_1": manager.Queue(),
+                }
+            )
+            ingress_q = manager.Queue()
+            waiting_q = manager.Queue()
+            scale_q = manager.Queue()
+            history_q = manager.Queue()
+            active_urls = manager.dict()
+
+            recorder = HistoryRecorder(history_q)
+            email_info = EmailInfo(cfg.email, store, lazy=True)
+            notification_info = NotificationWrapper(cfg, store, recorder)
+            url_parsers = generate_url_parsers_from_fanficfare()
+
+            shutdown_event = manager.Event()
+            ipc = SharedIPCContext(
+                ingress_queue=ingress_q,
+                waiting_queue=waiting_q,
+                worker_queues=worker_queues,
+                active_urls=active_urls,
+                history_recorder=recorder,
+                config_store=store,
+                scale_queue=scale_q,
+                shutdown_event=shutdown_event,
+                verbose=False,
+            )
+
+            result_q = manager.Queue()
+            ctx = mp.get_context("spawn")
+            proc = ctx.Process(
+                target=_child_verify_supervisor_process_boot,
+                args=(ipc, email_info, notification_info, url_parsers, result_q),
+            )
+            proc.start()
+            proc.join(timeout=10)
+
+            self.assertEqual(
+                proc.exitcode,
+                0,
+                f"Supervisor process exited with non-zero code {proc.exitcode}",
+            )
+            res = result_q.get(timeout=2)
+            self.assertTrue(res["ok"], f"Supervisor boot failed: {res.get('error')}")
 
 
 if __name__ == "__main__":

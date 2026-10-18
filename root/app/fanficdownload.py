@@ -292,6 +292,7 @@ def register_processes(
 
     # Shared event: web server sets it when web.host/port/enabled change;
     # ProcessManager detects it and restarts only the web_server process.
+    shutdown_event = manager.Event()
     web_restart_event = mp.Event()
 
     # Inject hot-reload helpers into ProcessManager (created before the Manager context)
@@ -312,9 +313,10 @@ def register_processes(
         active_urls=active_urls,
         history_recorder=history_recorder,
         config_store=config_store,
+        scale_queue=scale_queue,
+        shutdown_event=shutdown_event,
         log_queue=log_queue,
         verbose=args.verbose,
-        scale_queue=scale_queue,
     )
 
     # Register Supervisor Process (Hosts Email, Waiter, Coordinator)

@@ -67,7 +67,6 @@ import os
 import socket
 import time
 import logging
-import threading
 from collections.abc import MutableMapping
 from typing import Any
 from contextlib import contextmanager
@@ -81,7 +80,7 @@ from parsers import regex_parsing
 from notifications import notification_wrapper
 from models import active_urls as active_urls_utils
 from models.config_models import EmailConfig
-from models.queue_types import IngressQueue
+from models.queue_types import IngressQueue, ShutdownEvent
 
 
 def _make_fff_get_configuration(config_store: ConfigStore):
@@ -395,7 +394,7 @@ class EmailInfo:
 
         return urls
 
-    def _idle_wait_for_notification(self, shutdown_event: threading.Event) -> bool:
+    def _idle_wait_for_notification(self, shutdown_event: ShutdownEvent) -> bool:
         """
         Block using IMAP IDLE until the server signals new mail or shutdown.
 
@@ -407,7 +406,7 @@ class EmailInfo:
         after DONE to flush any messages that arrived in the DONE/re-IDLE gap.
 
         Args:
-            shutdown_event (threading.Event): Event signalling graceful shutdown.
+            shutdown_event (ShutdownEvent): Event signalling graceful shutdown.
 
         Returns:
             True  – new mail notification received (or re-IDLE timeout fired),
@@ -482,7 +481,7 @@ def email_watcher(
     url_parsers: dict,
     active_urls: MutableMapping[str, Any],
     verbose: bool,
-    shutdown_event: threading.Event,
+    shutdown_event: ShutdownEvent,
     history_recorder: HistoryRecorder,
     config_store: ConfigStore,
 ) -> None:
@@ -505,7 +504,7 @@ def email_watcher(
         active_urls (MutableMapping[str, Any]): Shared dictionary tracking URLs
             currently in queues or being processed to prevent duplicates.
         verbose (bool): Enable verbose debug logging.
-        shutdown_event (threading.Event): Event to signal graceful shutdown.
+        shutdown_event (ShutdownEvent): Event to signal graceful shutdown.
         history_recorder (HistoryRecorder): Recorder for persisting email check
             and download creation events to the history database.
         config_store (ConfigStore): Shared ConfigStore instance for hot-reloading

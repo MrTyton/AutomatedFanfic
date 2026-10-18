@@ -31,7 +31,7 @@ def run_supervisor(
 
     Args:
         ipc (SharedIPCContext): Shared multiprocessing queues, active_urls map,
-            history_recorder, config_store, log_queue, and verbosity flag.
+            history_recorder, config_store, shutdown_event, log_queue, and verbosity flag.
         email_info (EmailInfo): Configured email ingestion settings and credentials.
         notification_info (NotificationWrapper): Notification dispatcher for disabled
             site alerts.
@@ -46,6 +46,7 @@ def run_supervisor(
     config_store = ipc.config_store
     log_queue = ipc.log_queue
     scale_queue = ipc.scale_queue
+    shutdown_event = ipc.shutdown_event
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
@@ -56,7 +57,6 @@ def run_supervisor(
         is_web_server=False,
     )
 
-    shutdown_event = threading.Event()
     threads = []
 
     # helper for signal handling

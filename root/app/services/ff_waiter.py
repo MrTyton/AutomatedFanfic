@@ -33,7 +33,6 @@ Example:
 """
 
 import heapq
-import threading
 import time
 from collections.abc import MutableMapping
 from typing import Any
@@ -41,7 +40,7 @@ from typing import Any
 from history.recorder import HistoryRecorder
 from models import active_urls as active_urls_utils
 from models import fanfic_info
-from models.queue_types import IngressQueue, WaitingQueue
+from models.queue_types import IngressQueue, ShutdownEvent, WaitingQueue
 from utils import ff_logging
 from models import retry_types
 
@@ -117,7 +116,7 @@ def wait_processor(
     ingress_queue: IngressQueue,
     waiting_queue: WaitingQueue,
     verbose: bool,
-    shutdown_event: threading.Event,
+    shutdown_event: ShutdownEvent,
     history_recorder: HistoryRecorder,
     active_urls: MutableMapping[str, Any],
 ) -> None:
@@ -136,7 +135,7 @@ def wait_processor(
         waiting_queue (WaitingQueue): Shared queue containing failed FanficInfo
             entries awaiting delayed retry. Supports poison pill (None) shutdown.
         verbose (bool): Enable verbose debug logging.
-        shutdown_event (threading.Event): Event to signal graceful shutdown.
+        shutdown_event (ShutdownEvent): Event to signal graceful shutdown.
         history_recorder (HistoryRecorder): Recorder for logging `retry_fired`
             events when delayed retries are re-enqueued.
         active_urls (MutableMapping[str, Any]): Shared dictionary tracking active

@@ -26,6 +26,8 @@ wheels/
 .vscode/
 .github/skills/
 .github/instructions/
+.github/copilot-instructions.md
+copilot-instructions.md
 .agents/
 .agent/
 AGENTS.md

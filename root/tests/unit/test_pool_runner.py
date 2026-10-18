@@ -30,6 +30,7 @@ class TestPoolRunner(unittest.TestCase):
         self.mock_config_store = MagicMock()
         self.mock_scale_queue = MagicMock()
         self.mock_scale_queue.get.side_effect = Empty
+        self.mock_shutdown_event = MagicMock()
         self.ipc = SharedIPCContext(
             ingress_queue=self.mock_ingress_queue,
             waiting_queue=self.mock_waiting_queue,
@@ -38,20 +39,20 @@ class TestPoolRunner(unittest.TestCase):
             history_recorder=self.mock_history_recorder,
             config_store=self.mock_config_store,
             scale_queue=self.mock_scale_queue,
+            shutdown_event=self.mock_shutdown_event,
             verbose=False,
         )
 
     @patch("workers.pool_runner.threading.Thread")
     @patch("workers.pool_runner.signal.signal")
     @patch("workers.pool_runner.ff_logging")
-    @patch("workers.pool_runner.threading.Event")
     def test_run_worker_pool_initialization(
-        self, mock_event_cls, mock_logging, mock_signal, mock_thread_cls
+        self, mock_logging, mock_signal, mock_thread_cls
     ):
         """Test that worker pool initializes correctly spawning threads."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         def make_named_thread(**kwargs):
             t = MagicMock()
@@ -99,12 +100,11 @@ class TestPoolRunner(unittest.TestCase):
         self.assertCountEqual(worker_ids_found, ["worker_1", "worker_2"])
 
     @patch("workers.pool_runner.threading.Thread")
-    @patch("workers.pool_runner.threading.Event")
-    def test_run_worker_pool_thread_restart(self, mock_event_cls, mock_thread_cls):
+    def test_run_worker_pool_thread_restart(self, mock_thread_cls):
         """Test that dead threads are restarted."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, False, True, True, True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         thread1 = MagicMock()
         thread1.name = "worker_1"
@@ -139,12 +139,11 @@ class TestPoolRunner(unittest.TestCase):
         thread2_replacement.start.assert_called_once()
 
     @patch("workers.pool_runner.signal.signal")
-    @patch("workers.pool_runner.threading.Event")
-    def test_run_worker_pool_shutdown_signal(self, mock_event_cls, mock_signal):
+    def test_run_worker_pool_shutdown_signal(self, mock_signal):
         """Test proper signal handling."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
         self.ipc.worker_queues = {}
 
         pool_runner.run_worker_pool(
@@ -159,15 +158,12 @@ class TestPoolRunner(unittest.TestCase):
         mock_shutdown_event.set.assert_called_once()
 
     @patch("workers.pool_runner.threading.Thread")
-    @patch("workers.pool_runner.threading.Event")
     @patch("workers.pool_runner.ff_logging")
-    def test_run_worker_pool_keyboard_interrupt(
-        self, mock_logging, mock_event_cls, mock_thread_cls
-    ):
+    def test_run_worker_pool_keyboard_interrupt(self, mock_logging, mock_thread_cls):
         """Test handling of KeyboardInterrupt."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.return_value = False
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         self.mock_scale_queue.get.side_effect = KeyboardInterrupt
 
@@ -185,14 +181,13 @@ class TestPoolRunner(unittest.TestCase):
 
     @patch("workers.pool_runner.threading.Thread")
     @patch("workers.pool_runner.ff_logging")
-    @patch("workers.pool_runner.threading.Event")
     def test_run_worker_pool_web_enabled_and_scale_queue_polling(
-        self, mock_event_cls, mock_logging, mock_thread_cls
+        self, mock_logging, mock_thread_cls
     ):
         """Worker pool configures logging via init_process_logging and polls scale_queue with 0.2s timeout."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
         mock_log_queue = MagicMock()
         self.ipc.worker_queues = {}
         self.ipc.log_queue = mock_log_queue
@@ -271,14 +266,13 @@ class TestPoolRunner(unittest.TestCase):
         mock_thread.start.assert_called_once()
 
     @patch("workers.pool_runner._spawn_worker_thread")
-    @patch("workers.pool_runner.threading.Event")
     def test_pool_runner_spawns_worker_0_initially_and_scales_worker_1_on_signal(
-        self, mock_event_cls, mock_spawn
+        self, mock_spawn
     ):
         """Verify worker_0 is spawned initially with idle_timeout=None, and worker_1 on scale_queue signal with 60.0s."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, False, True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         t0 = MagicMock()
         t0.is_alive.return_value = True
@@ -314,14 +308,13 @@ class TestPoolRunner(unittest.TestCase):
 
     @patch("workers.pool_runner.ff_logging")
     @patch("workers.pool_runner._spawn_worker_thread")
-    @patch("workers.pool_runner.threading.Event")
     def test_pool_runner_does_not_restart_stopped_burst_worker(
-        self, mock_event_cls, mock_spawn, mock_logging
+        self, mock_spawn, mock_logging
     ):
         """Verify that when a burst worker (worker_1) stops, it is removed and not restarted."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, False, True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         t0 = MagicMock()
         t0.is_alive.return_value = True
@@ -354,14 +347,11 @@ class TestPoolRunner(unittest.TestCase):
 
     @patch("workers.pool_runner.ff_logging")
     @patch("workers.pool_runner._spawn_worker_thread")
-    @patch("workers.pool_runner.threading.Event")
-    def test_pool_runner_restarts_worker_0_when_dead(
-        self, mock_event_cls, mock_spawn, mock_logging
-    ):
+    def test_pool_runner_restarts_worker_0_when_dead(self, mock_spawn, mock_logging):
         """Verify that when worker_0 is not alive, pool runner restarts worker_0 with idle_timeout=None."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, False, True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         t0 = MagicMock()
         # worker_0 dies
@@ -397,14 +387,13 @@ class TestPoolRunner(unittest.TestCase):
 
     @patch("workers.pool_runner.ff_logging")
     @patch("workers.pool_runner._spawn_worker_thread")
-    @patch("workers.pool_runner.threading.Event")
     def test_pool_runner_joins_dying_thread_before_respawn(
-        self, mock_event_cls, mock_spawn, mock_logging
+        self, mock_spawn, mock_logging
     ):
         """Verify dying thread is joined before respawning when re-scale signal is received."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.side_effect = [False, False, True]
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         t0 = MagicMock()
         t0.is_alive.return_value = True
@@ -451,14 +440,13 @@ class TestPoolRunner(unittest.TestCase):
 
     @patch("workers.pool_runner.ff_logging")
     @patch("workers.pool_runner._spawn_worker_thread")
-    @patch("workers.pool_runner.threading.Event")
     def test_pool_runner_scale_queue_value_error_terminates_cleanly(
-        self, mock_event_cls, mock_spawn, mock_logging
+        self, mock_spawn, mock_logging
     ):
         """Verify ValueError on scale_queue.get() terminates the main loop cleanly."""
         mock_shutdown_event = MagicMock()
         mock_shutdown_event.is_set.return_value = False
-        mock_event_cls.return_value = mock_shutdown_event
+        self.ipc.shutdown_event = mock_shutdown_event
 
         t0 = MagicMock()
         t0.is_alive.return_value = True

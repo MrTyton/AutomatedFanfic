@@ -105,7 +105,7 @@ def run_worker_pool(
     ff_logging.log_debug(f"Worker Pool Process using {len(worker_queues)} threads")
 
     active_threads: dict[str, threading.Thread] = {}
-    shutdown_event = threading.Event()
+    shutdown_event = ipc.shutdown_event
 
     # Define signal handler for graceful shutdown of the pool process
     def signal_handler(signum, frame):

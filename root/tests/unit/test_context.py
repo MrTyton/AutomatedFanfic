@@ -1,3 +1,4 @@
+import threading
 import unittest
 from unittest.mock import MagicMock
 
@@ -56,16 +57,19 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             history_recorder=None,  # type: ignore
             config_store=None,  # type: ignore
             scale_queue=None,  # type: ignore
+            shutdown_event=None,  # type: ignore
         )
         self.assertEqual(ipc.active_urls, {"url": {"status": "queued"}})
         self.assertIsNone(ipc.log_queue)
         self.assertFalse(ipc.verbose)
         self.assertIsNone(ipc.scale_queue)
+        self.assertIsNone(ipc.shutdown_event)
 
         restored = pickle.loads(pickle.dumps(ipc))
         self.assertEqual(restored.active_urls, {"url": {"status": "queued"}})
         self.assertFalse(restored.verbose)
         self.assertIsNone(restored.scale_queue)
+        self.assertIsNone(restored.shutdown_event)
 
     def test_shared_ipc_context_includes_scale_queue(self):
         from models.context import SharedIPCContext
@@ -79,11 +83,31 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             active_urls={},
             history_recorder=MagicMock(),
             config_store=MagicMock(),
+            scale_queue=q,
+            shutdown_event=threading.Event(),
             log_queue=None,
             verbose=False,
-            scale_queue=q,
         )
         self.assertIs(ctx.scale_queue, q)
+
+    def test_shared_ipc_context_includes_shutdown_event(self):
+        from models.context import SharedIPCContext
+
+        mock_event = MagicMock()
+        mock_queue = MagicMock()
+        ctx = SharedIPCContext(
+            ingress_queue=mock_queue,
+            waiting_queue=mock_queue,
+            worker_queues={},
+            active_urls={},
+            history_recorder=MagicMock(),
+            config_store=MagicMock(),
+            scale_queue=mock_queue,
+            shutdown_event=mock_event,
+            log_queue=None,
+            verbose=False,
+        )
+        self.assertIs(ctx.shutdown_event, mock_event)
 
     def test_init_process_logging_worker_and_supervisor_modes(self):
         """init_process_logging configures verbose, web_enabled, forward queue, and thread color for non-web processes."""
@@ -167,6 +191,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             history_recorder=MagicMock(),
             config_store=MagicMock(),
             scale_queue=MagicMock(),
+            shutdown_event=MagicMock(),
             log_queue=MagicMock(),
             verbose=True,
         )

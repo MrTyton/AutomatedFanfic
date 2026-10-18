@@ -51,3 +51,15 @@ LogQueue = QueueProtocol[dict[str, Any]]
 
 # Scale queue notifies worker pool of scaling requests
 ScaleQueue = QueueProtocol[str | None]
+
+
+class EventProtocol(Protocol):
+    """Structural protocol for Event objects across thread and process boundaries."""
+
+    def is_set(self) -> bool: ...
+    def set(self) -> None: ...
+    def clear(self) -> None: ...
+    def wait(self, timeout: float | None = None) -> bool: ...
+
+
+ShutdownEvent = EventProtocol

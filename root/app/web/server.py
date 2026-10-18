@@ -6,7 +6,6 @@ Provides:
 """
 
 import signal
-import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from multiprocessing.synchronize import Event
@@ -150,7 +149,7 @@ def run_web_server(
         is_web_server=True,
     )
 
-    shutdown_event = threading.Event()
+    shutdown_event = ipc.shutdown_event
 
     def signal_handler(signum, frame):
         ff_logging.log_debug(f"WebServer received signal {signum}, shutting down...")

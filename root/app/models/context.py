@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         IngressQueue,
         LogQueue,
         ScaleQueue,
+        ShutdownEvent,
         WaitingQueue,
         WorkerQueues,
     )
@@ -70,6 +71,7 @@ class SharedIPCContext:
         history_recorder (HistoryRecorder): Shared history event recorder.
         config_store (ConfigStore): Shared ConfigStore for runtime hot-reloading.
         scale_queue (ScaleQueue): Queue for notifying worker pool of scaling requests.
+        shutdown_event (ShutdownEvent): Shared event for coordinating graceful cross-process shutdown.
         log_queue (LogQueue | None): Optional queue for forwarding logs to the web server.
         verbose (bool): Whether verbose debug logging is enabled across processes.
     """
@@ -81,5 +83,6 @@ class SharedIPCContext:
     history_recorder: HistoryRecorder
     config_store: ConfigStore
     scale_queue: ScaleQueue
+    shutdown_event: ShutdownEvent
     log_queue: LogQueue | None = None
     verbose: bool = False

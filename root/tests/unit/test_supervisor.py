@@ -16,6 +16,7 @@ class TestSupervisor(unittest.TestCase):
         self.mock_history_recorder = MagicMock()
         self.mock_config_store = MagicMock()
         self.scale_queue = MagicMock()
+        self.shutdown_event = MagicMock()
         self.ipc = SharedIPCContext(
             ingress_queue=self.ingress_queue,
             waiting_queue=self.waiting_queue,
@@ -24,6 +25,7 @@ class TestSupervisor(unittest.TestCase):
             history_recorder=self.mock_history_recorder,
             config_store=self.mock_config_store,
             scale_queue=self.scale_queue,
+            shutdown_event=self.shutdown_event,
             verbose=False,
         )
 
@@ -35,17 +37,15 @@ class TestSupervisor(unittest.TestCase):
         self, mock_signal, mock_sleep, mock_thread, mock_logging
     ):
         """Test that run_supervisor starts the expected threads."""
-        mock_event = MagicMock()
-        mock_event.is_set.side_effect = [False, True, True, True, True]
+        self.shutdown_event.is_set.side_effect = [False, True, True, True, True]
         self.ipc.verbose = True
 
-        with patch("threading.Event", return_value=mock_event):
-            supervisor.run_supervisor(
-                self.ipc,
-                self.email_info,
-                self.notification_info,
-                self.url_parsers,
-            )
+        supervisor.run_supervisor(
+            self.ipc,
+            self.email_info,
+            self.notification_info,
+            self.url_parsers,
+        )
 
         self.assertEqual(mock_thread.call_count, 3)
 
@@ -73,18 +73,16 @@ class TestSupervisor(unittest.TestCase):
         self, mock_signal, mock_sleep, mock_thread, mock_logging
     ):
         """Supervisor passes log_queue and config_store into init_process_logging."""
-        mock_event = MagicMock()
-        mock_event.is_set.side_effect = [True]
+        self.shutdown_event.is_set.side_effect = [True]
         mock_log_queue = MagicMock()
         self.ipc.log_queue = mock_log_queue
 
-        with patch("threading.Event", return_value=mock_event):
-            supervisor.run_supervisor(
-                self.ipc,
-                self.email_info,
-                self.notification_info,
-                self.url_parsers,
-            )
+        supervisor.run_supervisor(
+            self.ipc,
+            self.email_info,
+            self.notification_info,
+            self.url_parsers,
+        )
 
         mock_logging.init_process_logging.assert_called_once_with(
             False,
@@ -95,17 +93,16 @@ class TestSupervisor(unittest.TestCase):
         )
 
         mock_logging.reset_mock()
-        mock_event.is_set.side_effect = [True]
+        self.shutdown_event.is_set.side_effect = [True]
         mock_store = MagicMock()
         self.ipc.log_queue = None
         self.ipc.config_store = mock_store
-        with patch("threading.Event", return_value=mock_event):
-            supervisor.run_supervisor(
-                self.ipc,
-                self.email_info,
-                self.notification_info,
-                self.url_parsers,
-            )
+        supervisor.run_supervisor(
+            self.ipc,
+            self.email_info,
+            self.notification_info,
+            self.url_parsers,
+        )
         mock_logging.init_process_logging.assert_called_once_with(
             False,
             color="\033[92m",
@@ -131,24 +128,22 @@ class TestSupervisor(unittest.TestCase):
         t2.is_alive.return_value = True
         t3.is_alive.return_value = True
 
-        mock_event = MagicMock()
-        mock_event.is_set.return_value = False
+        self.shutdown_event.is_set.return_value = False
 
         def set_effect():
-            mock_event.is_set.return_value = True
+            self.shutdown_event.is_set.return_value = True
 
-        mock_event.set.side_effect = set_effect
+        self.shutdown_event.set.side_effect = set_effect
 
-        with patch("threading.Event", return_value=mock_event):
-            supervisor.run_supervisor(
-                self.ipc,
-                self.email_info,
-                self.notification_info,
-                self.url_parsers,
-            )
+        supervisor.run_supervisor(
+            self.ipc,
+            self.email_info,
+            self.notification_info,
+            self.url_parsers,
+        )
 
         mock_logging.log_failure.assert_called()
-        mock_event.set.assert_called()
+        self.shutdown_event.set.assert_called()
 
 
 if __name__ == "__main__":

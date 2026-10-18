@@ -24,6 +24,37 @@ def _make_coordinator(ingress_queue, worker_queues, **overrides):
     return Coordinator(ingress_queue, worker_queues, **defaults)
 
 
+def _subprocess_init_coordinator(worker_queues_proxy, result_q):
+    """Module-level helper to verify Coordinator initialization in a spawned child process."""
+    try:
+        from services.coordinator import Coordinator
+        from config.config_store import ConfigStore
+
+        ingress_q = mp.Queue()
+        scale_q = mp.Queue()
+        coordinator = Coordinator(
+            ingress_queue=ingress_q,
+            worker_queues=worker_queues_proxy,
+            shutdown_event=threading.Event(),
+            active_urls={},
+            history_recorder=MagicMock(),
+            url_parsers={},
+            config_store=ConfigStore(),
+            scale_queue=scale_q,
+        )
+        result_q.put(
+            {
+                "success": True,
+                "idle_workers": coordinator.state.idle_workers,
+                "dormant_workers": coordinator.state.dormant_workers,
+            }
+        )
+    except Exception as e:
+        result_q.put(
+            {"success": False, "error": str(e), "error_type": type(e).__name__}
+        )
+
+
 class TestCoordinatorIntegration(unittest.TestCase):
     """Integration-style tests using real multiprocessing queues."""
 
@@ -31,6 +62,35 @@ class TestCoordinatorIntegration(unittest.TestCase):
         self.ingress_queue = mp.Queue()
         self.worker_queues = {"worker_0": mp.Queue(), "worker_1": mp.Queue()}
         self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
+
+    def test_coordinator_init_with_managed_dict_proxy_in_child_process(self):
+        """Regression test: Coordinator must handle SyncManager DictProxy in child processes.
+
+        Direct iteration over DictProxy (__iter__) in child processes fails with
+        AttributeError: 'NoneType' object has no attribute '_registry'.
+        Coordinator must use .keys() instead of direct iteration.
+        """
+        ctx = mp.get_context("spawn")
+        with mp.Manager() as m:
+            worker_queues = m.dict(
+                {
+                    "worker_0": m.Queue(),
+                    "worker_1": m.Queue(),
+                    "worker_2": m.Queue(),
+                }
+            )
+            result_q = ctx.Queue()
+            p = ctx.Process(
+                target=_subprocess_init_coordinator,
+                args=(worker_queues, result_q),
+            )
+            p.start()
+            p.join(timeout=10)
+            self.assertEqual(p.exitcode, 0, "Spawned child process exited non-zero")
+            res = result_q.get(timeout=2)
+            self.assertTrue(res.get("success"), f"Child process failed: {res}")
+            self.assertEqual(res["idle_workers"], {"worker_0"})
+            self.assertEqual(res["dormant_workers"], {"worker_1", "worker_2"})
 
     def test_direct_assignment_same_site(self):
         """Test that multiple tasks for the same site are pushed directly to the assigned worker."""

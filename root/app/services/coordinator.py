@@ -30,8 +30,13 @@ from history.recorder import HistoryRecorder
 from utils import ff_logging
 from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
-from models.queue_types import IngressQueue, ScaleQueue, WorkerQueue, WorkerQueues
-import threading
+from models.queue_types import (
+    IngressQueue,
+    ScaleQueue,
+    ShutdownEvent,
+    WorkerQueue,
+    WorkerQueues,
+)
 
 lazy from utils import series_utils
 lazy from parsers import regex_parsing
@@ -105,7 +110,7 @@ class Coordinator:
         self,
         ingress_queue: IngressQueue,
         worker_queues: WorkerQueues,
-        shutdown_event: threading.Event,
+        shutdown_event: ShutdownEvent,
         active_urls: MutableMapping[str, Any],
         history_recorder: HistoryRecorder,
         url_parsers: dict,
@@ -118,7 +123,7 @@ class Coordinator:
             ingress_queue (IngressQueue): Unified queue receiving FanficInfo tasks
                 and worker idle signals.
             worker_queues (WorkerQueues): Mapping of worker_id to worker-specific queues.
-            shutdown_event (threading.Event): Event signalling graceful shutdown.
+            shutdown_event (ShutdownEvent): Event signalling graceful shutdown.
             active_urls (MutableMapping[str, Any]): Shared map of active URLs and
                 their current status.
             history_recorder (HistoryRecorder): Recorder for persisting download
@@ -140,11 +145,12 @@ class Coordinator:
         self.scale_queue = scale_queue
 
         # Encapsulated coordinator state
-        if "worker_0" in worker_queues:
+        worker_ids = set(worker_queues.keys())
+        if "worker_0" in worker_ids:
             idle_workers = {"worker_0"}
-            dormant_workers = {w for w in worker_queues if w != "worker_0"}
+            dormant_workers = {w for w in worker_ids if w != "worker_0"}
         else:
-            idle_workers = set(worker_queues.keys())
+            idle_workers = worker_ids
             dormant_workers = set()
 
         self.state = CoordinatorState(
@@ -174,8 +180,9 @@ class Coordinator:
         """Check if queue.qsize() is supported on this platform."""
         try:
             # Test with any worker queue
-            if self.worker_queues:
-                next(iter(self.worker_queues.values())).qsize()
+            queue_values = list(self.worker_queues.values())
+            if queue_values:
+                queue_values[0].qsize()
                 self.state.qsize_supported = True
         except NotImplementedError:
             self.state.qsize_supported = False
@@ -509,7 +516,7 @@ def start_coordinator(
     ingress_queue: IngressQueue,
     worker_queues: WorkerQueues,
     verbose: bool,
-    shutdown_event: threading.Event,
+    shutdown_event: ShutdownEvent,
     active_urls: MutableMapping[str, Any],
     history_recorder: HistoryRecorder,
     url_parsers: dict,
@@ -523,7 +530,7 @@ def start_coordinator(
             and worker idle signals.
         worker_queues (WorkerQueues): Mapping of worker_id to worker-specific queues.
         verbose (bool): Enable verbose debug logging.
-        shutdown_event (threading.Event): Event signalling graceful shutdown.
+        shutdown_event (ShutdownEvent): Event signalling graceful shutdown.
         active_urls (MutableMapping[str, Any]): Shared map of active URLs.
         history_recorder (HistoryRecorder): Recorder for history events.
         url_parsers (dict): Compiled URL parsers for series expansion.
