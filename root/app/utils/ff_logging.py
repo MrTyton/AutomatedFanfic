@@ -32,10 +32,8 @@ Example:
 
 from __future__ import annotations
 
-import ctypes
 import collections
 import datetime
-from multiprocessing import Value
 from queue import Empty
 import threading
 from typing import TYPE_CHECKING
@@ -134,9 +132,23 @@ color_map = {
     "UNDERLINE": bcolors.UNDERLINE,
 }
 
-# Multiprocessing-safe shared variables for global verbose and web logging control
-verbose = Value(ctypes.c_bool, False)
-web_enabled = Value(ctypes.c_bool, True)
+
+# Process-local variables for global verbose and web logging control
+class _LoggingFlag:
+    """Lightweight process-local boolean flag providing a .value attribute."""
+
+    def __init__(self, value: bool = False) -> None:
+        self.value = bool(value)
+
+    def __bool__(self) -> bool:
+        return bool(self.value)
+
+    def __repr__(self) -> str:
+        return f"_LoggingFlag({self.value})"
+
+
+verbose = _LoggingFlag(False)
+web_enabled = _LoggingFlag(True)
 
 
 def set_verbose(value: bool) -> None:

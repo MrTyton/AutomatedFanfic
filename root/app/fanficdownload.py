@@ -36,13 +36,13 @@ from multiprocessing.managers import SyncManager
 import sys
 from utils import ff_logging, system_utils  # Custom logging and system utility modules
 
-from parsers import auto_url_parsers
+lazy from parsers import auto_url_parsers
 from calibre_integration import calibre_info
 from calibre_integration import calibredb_utils
-from notifications import notification_wrapper
-from services import url_ingester
-from services import supervisor
-from workers import pipeline as url_worker, pool_runner
+lazy from notifications import notification_wrapper
+lazy from services import url_ingester
+lazy from services import supervisor
+lazy from workers import pipeline as url_worker, pool_runner
 from models import config_models
 from models.config_models import ConfigError, ConfigValidationError
 from models.context import SharedIPCContext
@@ -281,6 +281,7 @@ def register_processes(
     email_info = url_ingester.EmailInfo(
         config.email,
         config_store,
+        lazy=True,
     )
     notification_info = notification_wrapper.NotificationWrapper(
         config,

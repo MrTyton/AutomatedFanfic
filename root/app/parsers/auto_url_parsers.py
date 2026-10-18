@@ -34,7 +34,7 @@ Example:
 
 import functools
 import re
-import fanficfare.adapters as adapters
+lazy import fanficfare.adapters as adapters
 from urllib.parse import urlparse
 
 

@@ -55,33 +55,77 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     echo "Using cached binary..."; \
     fi && \
     tar xf "${CALIBRE_CACHE_FILE}" -C /opt/calibre && \
-    # Cleanup Calibre (Aggressive)
-    rm -f /opt/calibre/calibre /opt/calibre/ebook-viewer /opt/calibre/ebook-edit \
-    /opt/calibre/ebook-convert /opt/calibre/ebook-meta /opt/calibre/ebook-polish \
-    /opt/calibre/calibre-server /opt/calibre/calibre-smtp /opt/calibre/web2disk \
-    /opt/calibre/lrf2lrs /opt/calibre/lrfviewer /opt/calibre/markdown-calibre \
-    /opt/calibre/calibre-debug /opt/calibre/fetch-ebook-metadata 2>/dev/null || true && \
-    rm -rf /opt/calibre/lib/python*/site-packages/calibre/gui2 \
-    /opt/calibre/lib/python*/site-packages/calibre/srv \
-    /opt/calibre/lib/python*/site-packages/calibre/ebooks/oeb/display \
-    /opt/calibre/resources/viewer /opt/calibre/resources/editor \
-    /opt/calibre/resources/content-server /opt/calibre/resources/images \
+    # Cleanup Calibre: keep only calibredb and calibre-parallel CLI runners
+    find /opt/calibre/bin -type f ! -name "calibredb" ! -name "calibre-parallel" -delete 2>/dev/null || true && \
+    find /opt/calibre -maxdepth 1 -type f ! -name "calibredb" ! -name "calibre-parallel" -delete 2>/dev/null || true && \
+    # Remove unused top-level Calibre directories (translations, speech data, GUI/multimedia plugins)
+    rm -rf /opt/calibre/translations \
+    /opt/calibre/share \
+    /opt/calibre/plugins 2>/dev/null || true && \
+    # Remove unused resources (viewer, editor, fonts, news recipes, WebEngine assets; keeps locales.zip)
+    rm -rf /opt/calibre/resources/viewer \
+    /opt/calibre/resources/editor \
+    /opt/calibre/resources/content-server \
+    /opt/calibre/resources/images \
     /opt/calibre/resources/fonts/liberation \
-    /opt/calibre/lib/libcrypto.so* /opt/calibre/lib/libssl.so* \
-    /opt/calibre/lib/qt-plugins 2>/dev/null || true && \
-    # Pruning Qt/PyQt completely requires more tailored `find` which we can do here
-    find /opt/calibre -name "*Gui*" -type f -delete 2>/dev/null || true && \
-    find /opt/calibre -name "*Widget*" -type f -delete 2>/dev/null || true && \
-    find /opt/calibre -path "*/PyQt*/Qt*" -delete 2>/dev/null || true && \
-    find /opt/calibre -name "*Qt6WebEngine*" -delete 2>/dev/null || true && \
-    find /opt/calibre -name "*Qt6Qml*" -delete 2>/dev/null || true && \
-    find /opt/calibre -name "*Qt6Quick*" -delete 2>/dev/null || true && \
-    find /opt/calibre -name "*Qt6Pdf*" -delete 2>/dev/null || true && \
-    rm -rf /opt/calibre/resources/localization/locales \
     /opt/calibre/resources/dictionaries \
     /opt/calibre/resources/hyphenation \
     /opt/calibre/resources/mathjax \
-    /opt/calibre/resources/rapydscript 2>/dev/null || true
+    /opt/calibre/resources/rapydscript 2>/dev/null || true && \
+    rm -f /opt/calibre/resources/qtwebengine* \
+    /opt/calibre/resources/icudtl.dat \
+    /opt/calibre/resources/v8_context_snapshot.bin \
+    /opt/calibre/resources/builtin_recipes.* \
+    /opt/calibre/resources/viewer.* \
+    /opt/calibre/resources/editor.* \
+    /opt/calibre/resources/stylelint-bundle.* \
+    /opt/calibre/resources/ebook-convert-complete.* \
+    /opt/calibre/resources/icons.rcc 2>/dev/null || true && \
+    # Remove unused shared libraries in /opt/calibre/lib (TTS, media, unused formats, non-Core Qt6; keeps libstemmer)
+    rm -f /opt/calibre/lib/libcrypto.so* /opt/calibre/lib/libssl.so* /opt/calibre/lib/qt-plugins 2>/dev/null || true && \
+    rm -f /opt/calibre/lib/libonnxruntime* /opt/calibre/lib/libespeak-ng* /opt/calibre/lib/libpiper* 2>/dev/null || true && \
+    rm -f /opt/calibre/lib/libavcodec* /opt/calibre/lib/libavfilter* /opt/calibre/lib/libavformat* \
+    /opt/calibre/lib/libdav1d* /opt/calibre/lib/libavutil* /opt/calibre/lib/libswscale* \
+    /opt/calibre/lib/libswresample* /opt/calibre/lib/libpostproc* /opt/calibre/lib/libyuv* \
+    /opt/calibre/lib/libaom* /opt/calibre/lib/libvpx* /opt/calibre/lib/libopus* \
+    /opt/calibre/lib/libvorbis* /opt/calibre/lib/libogg* /opt/calibre/lib/libmp3lame* \
+    /opt/calibre/lib/libmpg123* /opt/calibre/lib/libsndfile* /opt/calibre/lib/libFLAC* 2>/dev/null || true && \
+    rm -f /opt/calibre/lib/libpodofo* /opt/calibre/lib/libpoppler* /opt/calibre/lib/libhunspell* \
+    /opt/calibre/lib/libhyphen* /opt/calibre/lib/libuchardet* /opt/calibre/lib/libwebp* \
+    /opt/calibre/lib/libopenjp2* /opt/calibre/lib/libjpeg* /opt/calibre/lib/libpng* \
+    /opt/calibre/lib/libtiff* /opt/calibre/lib/libfreetype* /opt/calibre/lib/libharfbuzz* \
+    /opt/calibre/lib/libfontconfig* /opt/calibre/lib/liblcms2* /opt/calibre/lib/libjbig* \
+    /opt/calibre/lib/libdeflate* /opt/calibre/lib/libLerc* 2>/dev/null || true && \
+    rm -f /opt/calibre/lib/libQt6Multimedia* /opt/calibre/lib/libQt6SpatialAudio* /opt/calibre/lib/libQt6Wayland* \
+    /opt/calibre/lib/libQt6Network* /opt/calibre/lib/libQt6DBus* /opt/calibre/lib/libQt6OpenGL* \
+    /opt/calibre/lib/libQt6Svg* /opt/calibre/lib/libQt6PrintSupport* /opt/calibre/lib/libQt6Sql* \
+    /opt/calibre/lib/libQt6Test* /opt/calibre/lib/libQt6Sensors* /opt/calibre/lib/libQt6Positioning* \
+    /opt/calibre/lib/libQt6WebChannel* /opt/calibre/lib/libQt6StateMachine* /opt/calibre/lib/libQt6ShaderTools* 2>/dev/null || true && \
+    # Remove unused C-extensions in /opt/calibre/lib/calibre-extensions
+    rm -f /opt/calibre/lib/calibre-extensions/PyQt6.QtQuick* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtQml* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtOpenGL* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtNetwork* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtMultimedia* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtWebEngine* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtSql* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtSvg* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtDBus* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtPrintSupport* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtSensors* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtPositioning* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtWebChannel* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtStateMachine* \
+    /opt/calibre/lib/calibre-extensions/PyQt6.QtTest* \
+    /opt/calibre/lib/calibre-extensions/podofo* \
+    /opt/calibre/lib/calibre-extensions/hunspell* \
+    /opt/calibre/lib/calibre-extensions/piper* \
+    /opt/calibre/lib/calibre-extensions/pictureflow* \
+    /opt/calibre/lib/calibre-extensions/imageops* \
+    /opt/calibre/lib/calibre-extensions/libmtp* \
+    /opt/calibre/lib/calibre-extensions/libusb* \
+    /opt/calibre/lib/calibre-extensions/wpd* \
+    /opt/calibre/lib/calibre-extensions/_test* 2>/dev/null || true
 
 # Python Dependencies Stage
 FROM builder-tools AS python-deps
@@ -101,7 +145,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libopenjp2-7-dev
 COPY requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --prefix=/install --no-warn-script-location -r /tmp/requirements.txt
+    pip install --prefix=/install --no-warn-script-location -r /tmp/requirements.txt && \
+    find /install -type d -name "tests" -path "*/apsw/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /install -type d -name "sqlite_extra_binaries" -path "*/apsw/*" -exec rm -rf {} + 2>/dev/null || true && \
+    find /install -type f -name "*.so*" -exec strip --strip-unneeded {} + 2>/dev/null || true
 
 # FanFicFare Installer Stage
 # Inherits from python-deps with PYTHONPATH pointing at /install's site-packages
@@ -119,7 +166,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     fi && \
     SITE_PKGS="$(python -c 'import sysconfig; print(sysconfig.get_path("purelib", vars={"base": "/install", "platbase": "/install"}))')" && \
     PYTHONPATH="${SITE_PKGS}" pip install --prefix=/install-fff --no-warn-script-location \
-    --extra-index-url https://test.pypi.org/simple/ "${PACKAGE_SPEC}"
+    --extra-index-url https://test.pypi.org/simple/ "${PACKAGE_SPEC}" && \
+    find /install-fff -type f -name "*.so*" -exec strip --strip-unneeded {} + 2>/dev/null || true
 
 # Frontend Builder Stage: Build React SPA
 FROM node:22-slim AS frontend-builder
@@ -158,10 +206,9 @@ RUN groupadd --gid "$PGID" abc && \
 # Copy Application Code - changes RARELY (manual commits, infrequent)
 # Placed first so the more frequent calibre/deps/FFF layers below are not
 # invalidated when code changes.
-COPY --chown=abc:abc root/app/ /app/
+COPY --chown=abc:abc --chmod=755 root/app/ /app/
 COPY root/config.default/ /config.default/
 COPY --from=frontend-builder /build/dist /web-ui/dist
-RUN chmod -R +x /app/
 
 # Copy Calibre - changes MONTHLY (new Calibre releases)
 COPY --from=calibre-downloader /opt/calibre /opt/calibre
@@ -176,7 +223,24 @@ RUN echo "*** Setting up Env ***" && \
     # Symlink calibredb
     ln -sf /opt/calibre/calibredb /usr/local/bin/calibredb && \
     # Verify calibredb works
-    calibredb --version
+    calibredb --version && \
+    # Functional smoke test: verify calibredb add/list/search/set_metadata/export/remove
+    python3 -c '\
+import zipfile\n\
+with zipfile.ZipFile("/tmp/test.epub", "w") as z:\n\
+    z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)\n\
+    z.writestr("META-INF/container.xml", """<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n  <rootfiles>\n    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>\n  </rootfiles>\n</container>""")\n\
+    z.writestr("content.opf", """<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">\n  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n    <dc:title>Test Story</dc:title>\n    <dc:creator>Author Name</dc:creator>\n    <dc:identifier id="BookId">urn:uuid:12345</dc:identifier>\n    <dc:language>en</dc:language>\n  </metadata>\n  <manifest>\n    <item id="ch" href="ch.html" media-type="application/xhtml+xml"/>\n  </manifest>\n  <spine>\n    <itemref idref="ch"/>\n  </spine>\n</package>""")\n\
+    z.writestr("ch.html", "<html><body><p>Test</p></body></html>")\n\
+' && \
+    mkdir -p /tmp/smoke-lib /tmp/smoke-export && \
+    calibredb add /tmp/test.epub --library-path /tmp/smoke-lib > /dev/null && \
+    calibredb list --library-path /tmp/smoke-lib > /dev/null && \
+    calibredb search "title:Test" --library-path /tmp/smoke-lib > /dev/null && \
+    calibredb set_metadata 1 --field title:"Smoke Title" --library-path /tmp/smoke-lib > /dev/null && \
+    calibredb export 1 --to-dir /tmp/smoke-export --library-path /tmp/smoke-lib > /dev/null && \
+    calibredb remove 1 --library-path /tmp/smoke-lib > /dev/null && \
+    rm -rf /tmp/test.epub /tmp/smoke-lib /tmp/smoke-export
 
 # Copy Python dependencies - changes WEEKLY (dependabot)
 COPY --from=python-deps /install /usr/local
@@ -198,6 +262,7 @@ ARG CALIBRE_RELEASE
 LABEL build_version="FFDL-Auto version:- ${VERSION} Calibre: ${CALIBRE_RELEASE}"
 ENV VERBOSE=false
 ENV LD_LIBRARY_PATH="/opt/calibre/lib"
+ENV MALLOC_ARENA_MAX=2
 EXPOSE 8080
 VOLUME /config
 VOLUME /data

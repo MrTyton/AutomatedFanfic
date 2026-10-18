@@ -76,6 +76,7 @@ from config.config_store import ConfigStore
 from history.recorder import HistoryRecorder
 lazy import imapclient
 from utils import ff_logging
+lazy from utils import system_utils
 from parsers import regex_parsing
 from notifications import notification_wrapper
 from models import active_urls as active_urls_utils
@@ -211,6 +212,8 @@ class EmailInfo:
         self,
         email_config: EmailConfig,
         config_store: ConfigStore,
+        *,
+        lazy: bool = False,
     ) -> None:
         """
         Initialize EmailInfo with email configuration object and ConfigStore.
@@ -219,6 +222,7 @@ class EmailInfo:
             email_config (EmailConfig): Pre-loaded email configuration.
             config_store (ConfigStore): Shared ConfigStore instance for live updates
                 and automatic INI path resolution.
+            lazy (bool): If True, defer constructing GetURLs until get_urls() or unpickling.
         """
         self.email = email_config.email
         self.password = email_config.password
@@ -229,7 +233,10 @@ class EmailInfo:
         self.imap_idle = email_config.imap_idle
 
         self.config_store = config_store
-        self._build_geturls()
+        self._geturls = None
+        self._geturls_ini_mtime = 0.0
+        if not lazy:
+            self._build_geturls()
 
     @property
     def default_ini(self) -> str:
@@ -360,9 +367,12 @@ class EmailInfo:
             recognizable fanfiction URLs. It does not mark messages as read
             or modify the mailbox state in any way.
         """
-        # Rebuild if ini files have been modified since last build – ensures
-        # credential changes take effect without requiring a process restart.
-        if self._ini_mtime() > self._geturls_ini_mtime:
+        # Ensure _geturls is built; rebuild if ini files have been modified
+        # since last build – ensures credential changes take effect without
+        # requiring a process restart.
+        if self._geturls is None:
+            self._build_geturls()
+        elif self._ini_mtime() > self._geturls_ini_mtime:
             ff_logging.log("EmailWatcher: ini files changed, rebuilding URL extractor")
             self._build_geturls()
 
@@ -378,6 +388,9 @@ class EmailInfo:
                 )
             except Exception as e:
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
+
+        if urls:
+            system_utils.reclaim_memory()
 
         return urls
 

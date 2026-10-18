@@ -79,8 +79,8 @@ class AppriseNotification(notification_base.NotificationBase):
         super().__init__(config, config_store)
         # Use set initially to prevent URL duplicates during configuration
         self.apprise_urls: set[str] | list[str] = set()
-        # Create Apprise object for notification management
-        self.apobj = apprise.Apprise()
+        # Lazily created Apprise object for notification management
+        self._apobj: apprise.Apprise | None = None
         # Start disabled until configuration validation completes
         self.enabled = False
 
@@ -154,15 +154,16 @@ class AppriseNotification(notification_base.NotificationBase):
             self.enabled = False
             return
 
+        self._apobj = apprise.Apprise()
         # Add all unique URLs to the Apprise object for validation
         for url in self.apprise_urls:
-            if not self.apobj.add(url):
+            if not self._apobj.add(url):
                 ff_logging.log_failure(
                     f"Failed to add Apprise URL: {url}. It might be invalid or unsupported."
                 )
 
         # Validate that at least one URL was successfully added to Apprise
-        urls_list = list(self.apobj.urls())
+        urls_list = list(self._apobj.urls())
         if urls_list:
             self.enabled = True
             ff_logging.log(
@@ -265,15 +266,27 @@ class AppriseNotification(notification_base.NotificationBase):
         """
         return "Apprise"
 
+    @property
+    def apobj(self) -> apprise.Apprise:
+        """Lazily initialize and return the Apprise instance."""
+        if self._apobj is None:
+            self._apobj = apprise.Apprise()
+            for url in getattr(self, "apprise_urls", []):
+                self._apobj.add(url)
+        return self._apobj
+
+    @apobj.setter
+    def apobj(self, value: apprise.Apprise | None) -> None:
+        self._apobj = value
+
     def __getstate__(self) -> dict:
         """Exclude the un-picklable Apprise object from serialization."""
         state = self.__dict__.copy()
+        state.pop("_apobj", None)
         state.pop("apobj", None)
         return state
 
     def __setstate__(self, state: dict) -> None:
-        """Restore state and rebuild the Apprise object from saved URLs."""
+        """Restore state with lazy Apprise object recreation."""
         self.__dict__.update(state)
-        self.apobj = apprise.Apprise()
-        for url in getattr(self, "apprise_urls", []):
-            self.apobj.add(url)
+        self._apobj = None

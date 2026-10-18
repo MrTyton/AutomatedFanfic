@@ -249,6 +249,7 @@ def url_worker(
                         f"Worker {worker_id} signaling idle after draining {finished_site} queue"
                     )
                     current_site = None
+                    system_utils.reclaim_memory()
                 # Continue waiting for more work
                 continue
             except Exception as e:
