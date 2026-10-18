@@ -225,14 +225,7 @@ RUN echo "*** Setting up Env ***" && \
     # Verify calibredb works
     calibredb --version && \
     # Functional smoke test: verify calibredb add/list/search/set_metadata/export/remove
-    python3 -c '\
-import zipfile\n\
-with zipfile.ZipFile("/tmp/test.epub", "w") as z:\n\
-    z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)\n\
-    z.writestr("META-INF/container.xml", """<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n  <rootfiles>\n    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>\n  </rootfiles>\n</container>""")\n\
-    z.writestr("content.opf", """<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">\n  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n    <dc:title>Test Story</dc:title>\n    <dc:creator>Author Name</dc:creator>\n    <dc:identifier id="BookId">urn:uuid:12345</dc:identifier>\n    <dc:language>en</dc:language>\n  </metadata>\n  <manifest>\n    <item id="ch" href="ch.html" media-type="application/xhtml+xml"/>\n  </manifest>\n  <spine>\n    <itemref idref="ch"/>\n  </spine>\n</package>""")\n\
-    z.writestr("ch.html", "<html><body><p>Test</p></body></html>")\n\
-' && \
+    python3 -c 'import zipfile; z = zipfile.ZipFile("/tmp/test.epub", "w"); z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED); z.writestr("META-INF/container.xml", "<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>"); z.writestr("content.opf", "<package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"B\" version=\"2.0\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:title>Test Story</dc:title><dc:creator>Author</dc:creator><dc:identifier id=\"B\">1</dc:identifier><dc:language>en</dc:language></metadata><manifest><item id=\"c\" href=\"c.html\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"c\"/></spine></package>"); z.writestr("ch.html", "<html><body><p>Test</p></body></html>"); z.close()' && \
     mkdir -p /tmp/smoke-lib /tmp/smoke-export && \
     calibredb add /tmp/test.epub --library-path /tmp/smoke-lib > /dev/null && \
     calibredb list --library-path /tmp/smoke-lib > /dev/null && \
