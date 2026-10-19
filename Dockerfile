@@ -203,14 +203,12 @@ RUN groupadd --gid "$PGID" abc && \
     useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
     mkdir -p /data && chown abc:abc /data
 
-# Copy Application Code - changes RARELY (manual commits, infrequent)
-# Placed first so the more frequent calibre/deps/FFF layers below are not
-# invalidated when code changes.
-COPY --chown=abc:abc --chmod=755 root/app/ /app/
-COPY root/config.default/ /config.default/
+# Copy Frontend build - changes INFREQUENTLY (~0.2 MB)
 COPY --from=frontend-builder /build/dist /web-ui/dist
 
 # Copy Calibre - changes MONTHLY (new Calibre releases)
+# Largest layer (187 MB). Placed before dependencies and app code so that
+# daily FanFicFare updates and app code commits never invalidate Calibre.
 COPY --from=calibre-downloader /opt/calibre /opt/calibre
 
 # Final Setup (depends on Calibre being present)
@@ -235,12 +233,17 @@ RUN echo "*** Setting up Env ***" && \
     calibredb remove 1 --library-path /tmp/smoke-lib > /dev/null && \
     rm -rf /tmp/test.epub /tmp/smoke-lib /tmp/smoke-export
 
-# Copy Python dependencies - changes WEEKLY (dependabot)
+# Copy Python dependencies - changes WEEKLY (dependabot) (~25 MB)
 COPY --from=python-deps /install /usr/local
 
-# Copy FanFicFare - changes DAILY (automated updates)
-# Placed last so the most common update only invalidates this single layer.
+# Copy default configuration - changes RARELY (~0.04 MB)
+COPY root/config.default/ /config.default/
+
+# Copy FanFicFare - changes DAILY (automated updates) (~1.1 MB)
 COPY --from=fanficfare-installer /install-fff /usr/local
+
+# Copy Application Code - changes on commits and daily version bumps (~0.11 MB)
+COPY --chown=abc:abc --chmod=755 root/app/ /app/
 
 # Verify Python runtime dependencies and entrypoint imports inside the final image
 RUN python /app/fanficdownload.py --help > /dev/null && \
