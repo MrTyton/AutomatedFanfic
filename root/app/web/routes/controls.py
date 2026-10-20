@@ -5,7 +5,10 @@ from queue import Empty
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-lazy from calibre_integration import calibre_info, calibredb_utils
+lazy from calibre_integration import (
+    calibre_info,
+    factory as calibre_factory,
+)
 from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
 lazy from parsers import auto_url_parsers, regex_parsing
@@ -242,7 +245,7 @@ def _remove_from_calibre_if_possible(state, fanfic: FanficInfo) -> tuple[bool, s
 
     try:
         cdb_info = calibre_info.CalibreInfo(state.config.calibre, _LockFactory())
-        client = calibredb_utils.CalibreDBClient(cdb_info, state.config_store)
+        client = calibre_factory.create_calibre_client(cdb_info, state.config_store)
         client.remove_story(fanfic)
         return True, "Removed from Calibre and queued fresh download."
     except Exception as exc:

@@ -15,7 +15,7 @@ from workers import pipeline
 from models import config_models
 from models.context import SharedIPCContext, WorkerContext
 from models.queue_types import WorkerQueue
-from calibre_integration import calibredb_utils
+from calibre_integration.client_interface import CalibreClient
 from notifications import notification_wrapper
 
 DEFAULT_BURST_IDLE_TIMEOUT: float = 60.0
@@ -54,7 +54,7 @@ def _spawn_worker_thread(
 
 def run_worker_pool(
     ipc: SharedIPCContext,
-    calibre_client: calibredb_utils.CalibreDBClient,
+    calibre_client: CalibreClient,
     notification_info: notification_wrapper.NotificationWrapper,
     retry_config: config_models.RetryConfig,
 ) -> None:

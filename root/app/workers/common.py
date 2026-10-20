@@ -6,14 +6,15 @@ import zipfile
 from xml.etree import ElementTree as ET
 from utils import ff_logging
 from models import fanfic_info
-from calibre_integration import calibredb_utils
+from calibre_integration.client_interface import CalibreClient
+from calibre_integration.models import BookExport
 
 from utils import system_utils
 
 
 def get_path_or_url(
     ff_info: fanfic_info.FanficInfo,
-    calibre_client: calibredb_utils.CalibreDBClient,
+    calibre_client: CalibreClient,
     location: str = "",
 ) -> str:
     """
@@ -22,7 +23,7 @@ def get_path_or_url(
 
     Args:
         ff_info (fanfic_info.FanficInfo): The fanfic information object.
-        calibre_client (calibredb_utils.CalibreDBClient): The Calibre DB client.
+        calibre_client (CalibreClient): The Calibre client.
         location (str, optional): The directory path to export to.
 
     Returns:
@@ -34,15 +35,14 @@ def get_path_or_url(
 
     # If story exists in Calibre, export it
     if story_id:
-        # Export the story to the specified location
-        calibre_client.export_story(fanfic=ff_info, location=location)
-        # Assuming export_story function successfully exports the story, retrieve and return the path to the exported file
+        export_record = calibre_client.export_story(fanfic=ff_info, location=location)
+        if isinstance(export_record, BookExport):
+            return str(export_record.file_path)
+
         exported_files = system_utils.get_files(
             location, file_extension=".epub", return_full_path=True
         )
-        # Check if the list is not empty
         if exported_files:
-            # Return the first file path found
             return exported_files[0]
 
     # If the story does not exist in the Calibre library or no files were exported, return the URL of the story

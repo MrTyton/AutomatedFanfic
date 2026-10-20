@@ -388,3 +388,38 @@ class TestUpdateStrategies(unittest.TestCase):
         self.assertEqual(events[1]["event_type"], "download_updated")
         self.assertEqual(events[1]["payload"]["status"], "waiting")
         self.assertIn("Failed to replace format", events[1]["payload"]["error_message"])
+
+    def test_strategies_use_added_book_return_value_and_book_export(self):
+        """When add_story returns AddedBook and export_story returns BookExport, no fallback query or dir scan is needed."""
+        from pathlib import Path
+        from calibre_integration.models import AddedBook, BookExport
+        from workers import common
+
+        strategy = update_strategies.PreserveMetadataStrategy()
+        self.mock_client.get_metadata.return_value = {"#custom": "val"}
+
+        def clear_id(fanfic):
+            fanfic.calibre_id = None
+
+        self.mock_client.remove_story.side_effect = clear_id
+        self.mock_client.add_story.return_value = AddedBook(
+            calibre_id="999", title="Story", formats=("EPUB",)
+        )
+
+        success, error_msg = strategy.execute(
+            self.fanfic, self.mock_client, self.temp_dir, self.path_or_url
+        )
+        self.assertTrue(success)
+        self.assertIsNone(error_msg)
+        self.assertEqual(self.fanfic.calibre_id, "999")
+        self.mock_client.get_story_id.assert_not_called()
+
+        # Verify get_path_or_url uses BookExport directly without system_utils.get_files
+        self.mock_client.get_story_id.return_value = "999"
+        self.mock_client.export_story.return_value = BookExport(
+            file_path=Path("/exported/999.epub"), format="EPUB", size_bytes=512
+        )
+        with patch("workers.common.system_utils.get_files") as mock_get_files:
+            path = common.get_path_or_url(self.fanfic, self.mock_client, "/exported")
+            self.assertEqual(path, str(Path("/exported/999.epub")))
+            mock_get_files.assert_not_called()

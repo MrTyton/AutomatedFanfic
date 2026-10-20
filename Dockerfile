@@ -178,8 +178,61 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY root/web-ui/ ./
 RUN npm run build
 
-# Runtime Stage: The final image
-FROM base AS runtime
+# Runtime Slim Stage: Lightweight image for remote Calibre Content Server (HTTP)
+# Does NOT include /opt/calibre or ARG CALIBRE_RELEASE so Calibre-only updates
+# never invalidate any cached layer in runtime-slim except the final /app copy.
+FROM base AS runtime-slim
+
+ARG PUID="911"
+ARG PGID="911"
+ARG TARGETPLATFORM
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN groupadd --gid "$PGID" abc && \
+    useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
+    mkdir -p /data && chown abc:abc /data
+
+# Copy Frontend build - changes INFREQUENTLY (~0.2 MB)
+COPY --from=frontend-builder /build/dist /web-ui/dist
+
+# Copy Python dependencies - changes WEEKLY (dependabot) (~25 MB)
+COPY --from=python-deps /install /usr/local
+
+# Copy default configuration - changes RARELY (~0.04 MB)
+COPY root/config.default/ /config.default/
+
+# Copy FanFicFare - changes DAILY (automated updates) (~1.1 MB)
+COPY --from=fanficfare-installer /install-fff /usr/local
+
+# Copy Application Code - placed as the final copy layer (~0.11 MB)
+COPY --chown=abc:abc --chmod=755 root/app/ /app/
+
+# Verify Python runtime dependencies and entrypoint imports inside the slim image
+RUN python /app/fanficdownload.py --help > /dev/null && \
+    PYTHONPATH=/app python -c "import fanficfare.adapters, fanficfare.cli, fanficfare.configurable, fanficfare.geturls, web.server"
+
+ARG VERSION
+
+LABEL build_version="FFDL-Auto version:- ${VERSION} (slim)"
+ENV VERBOSE=false
+ENV MALLOC_ARENA_MAX=2
+EXPOSE 8080
+VOLUME /config
+VOLUME /data
+WORKDIR /app
+
+CMD ["/app/entrypoint.sh"]
+
+# Runtime Standalone Stage: Full image with local Calibre CLI binaries
+FROM base AS runtime-standalone
 
 ARG PUID="911"
 ARG PGID="911"
@@ -265,3 +318,6 @@ VOLUME /data
 WORKDIR /app
 
 CMD ["/app/entrypoint.sh"]
+
+# Default final target aliases runtime-standalone for backwards compatibility
+FROM runtime-standalone AS runtime

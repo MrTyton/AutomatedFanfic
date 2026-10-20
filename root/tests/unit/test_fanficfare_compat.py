@@ -396,3 +396,26 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
             active_dockerfile,
             "Dockerfile runtime stage must verify that /app/fanficdownload.py --help executes cleanly at build time",
         )
+
+    def test_dockerfile_defines_slim_and_standalone_targets(self):
+        """Dockerfile must define runtime-slim (without /opt/calibre or CALIBRE_RELEASE) and runtime-standalone."""
+        from pathlib import Path
+
+        dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
+        content = dockerfile.read_text(encoding="utf-8")
+        non_comment_lines = [
+            line for line in content.splitlines() if not line.strip().startswith("#")
+        ]
+        active_dockerfile = "\n".join(non_comment_lines)
+
+        self.assertIn("AS runtime-slim", active_dockerfile)
+        self.assertIn("AS runtime-standalone", active_dockerfile)
+
+        # Extract runtime-slim stage and ensure it does not copy /opt/calibre or depend on CALIBRE_RELEASE
+        slim_start = active_dockerfile.index("AS runtime-slim")
+        next_from = active_dockerfile.index("FROM ", slim_start)
+        slim_stage = active_dockerfile[slim_start:next_from]
+
+        self.assertNotIn("/opt/calibre", slim_stage)
+        self.assertNotIn("CALIBRE_RELEASE", slim_stage)
+        self.assertIn("COPY --chown=abc:abc --chmod=755 root/app/ /app/", slim_stage)

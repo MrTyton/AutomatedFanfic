@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from calibre_integration import calibre_info, calibredb_utils
+    from calibre_integration import calibre_info
+    from calibre_integration.client_interface import CalibreClient
     from config.config_store import ConfigStore
     from history.recorder import HistoryRecorder
     from models import config_models
@@ -29,7 +30,7 @@ class WorkerContext:
     """Bundles shared dependencies for worker threads and task handlers.
 
     Attributes:
-        calibre_client (CalibreDBClient): Client for executing calibredb operations.
+        calibre_client (CalibreClient): Client for executing Calibre operations.
         notification_info (NotificationWrapper): Coordinator for dispatching notifications.
         ingress_queue (IngressQueue): Unified task ingress queue for idle signals and force retries.
         waiting_queue (WaitingQueue): Queue for failed tasks awaiting delayed retry.
@@ -38,7 +39,7 @@ class WorkerContext:
         active_urls (MutableMapping[str, Any]): Shared map of active URLs.
     """
 
-    calibre_client: calibredb_utils.CalibreDBClient
+    calibre_client: CalibreClient
     notification_info: notification_wrapper.NotificationWrapper
     ingress_queue: IngressQueue
     waiting_queue: WaitingQueue

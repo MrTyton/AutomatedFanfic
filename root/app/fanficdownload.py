@@ -39,6 +39,7 @@ from utils import ff_logging, system_utils  # Custom logging and system utility 
 lazy from parsers import auto_url_parsers
 from calibre_integration import calibre_info
 from calibre_integration import calibredb_utils
+from calibre_integration import factory as calibre_factory
 lazy from notifications import notification_wrapper
 lazy from services import url_ingester
 lazy from services import supervisor
@@ -137,7 +138,18 @@ def log_configuration_details(
     ff_logging.log(f"Using configuration file: {args.config}")
 
     # Log external tool versions
-    calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
+    if calibre_factory.is_http_location(getattr(config.calibre, "path", "")):
+        from calibre_integration.http_client import CalibreHttpClient
+
+        class _NoopLockFactory:
+            @staticmethod
+            def Lock():
+                return None
+
+        temp_info = calibre_info.CalibreInfo(config.calibre, _NoopLockFactory())
+        calibre_version = CalibreHttpClient(temp_info, ConfigStore()).get_version()
+    else:
+        calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
     fanficfare_version = url_worker.command.get_fanficfare_version()
     ff_logging.log(f"Calibre version: {calibre_version}")
     ff_logging.log(f"FanFicFare version: {fanficfare_version}")
@@ -257,8 +269,7 @@ def register_processes(
 
     # Initialize Calibre components
     cdb_info = calibre_info.CalibreInfo(config.calibre, manager)
-    cdb_info.check_installed()
-    calibre_client = calibredb_utils.CalibreDBClient(cdb_info, config_store)
+    calibre_client = calibre_factory.create_calibre_client(cdb_info, config_store)
 
     # Initialize history recording infrastructure
     history_queue = mp.Queue(maxsize=10000)

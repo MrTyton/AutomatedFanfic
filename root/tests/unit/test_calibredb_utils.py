@@ -7,6 +7,8 @@ from typing import NamedTuple, Optional
 from models import fanfic_info
 from calibre_integration import calibre_info
 from calibre_integration.calibredb_utils import CalibreCommandError, CalibreDBClient
+from calibre_integration.client_interface import CalibreClient, build_url_search_query
+from calibre_integration.models import MetadataUpdateReport
 
 
 class TestCalibreDBClient(unittest.TestCase):
@@ -619,12 +621,11 @@ class TestCalibreDBClient(unittest.TestCase):
         self.assertEqual(result, "123")
         self.assertEqual(mock_fanfic.calibre_id, "123")
 
-        # Verify the command structure matches user request
+        # Verify the command structure matches exact URL search query
         mock_check_output.assert_called_once()
         args = mock_check_output.call_args[0][0]  # First arg of call
-        # Expected: calibredb search "Identifiers:http://example.com/story" ...
         self.assertIn("search", args)
-        self.assertIn("Identifiers:http://example.com/story", args)
+        self.assertIn(build_url_search_query("http://example.com/story"), args)
 
     @patch("calibre_integration.calibredb_utils.check_output")
     def test_get_story_id_not_found(self, mock_check_output):
@@ -861,9 +862,56 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
         with patch.object(self.client, "_execute_command") as mock_exec:
             mock_exec.side_effect = OSError("set_custom failed")
 
-            self.client.set_metadata_fields(mock_fanfic, metadata, ["#custom_field"])
+            report = self.client.set_metadata_fields(mock_fanfic, metadata)
 
+            self.assertIsInstance(report, MetadataUpdateReport)
+            self.assertFalse(report.is_success)
+            self.assertEqual(report.failed_fields, ("#custom_field",))
             # Should log failure for the field
             mock_log_failure.assert_called()
             failure_msg = mock_log_failure.call_args[0][0]
             self.assertIn("Failed to restore field", failure_msg)
+
+    def test_calibredb_client_implements_interface(self):
+        """CalibreDBClient must subclass CalibreClient and implement get_version."""
+        self.assertTrue(issubclass(CalibreDBClient, CalibreClient))
+        with patch.object(
+            CalibreDBClient, "get_calibre_version", return_value="9.16.0"
+        ) as mock_ver:
+            self.assertEqual(self.client.get_version(), "9.16.0")
+            mock_ver.assert_called_once()
+
+    @patch("calibre_integration.calibredb_utils.check_output")
+    def test_get_metadata_normalizes_star_custom_columns(self, mock_check_output):
+        """calibredb list --for-machine outputs custom columns with '*' prefix; normalize to '#'."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = "123"
+        mock_fanfic.site = "ao3"
+        mock_check_output.return_value = (
+            '[{"id": 123, "title": "Story", "*mytag": "val1", "#other": "val2"}]'
+        )
+
+        result = self.client.get_metadata(mock_fanfic)
+        self.assertEqual(result["#mytag"], "val1")
+        self.assertEqual(result["#other"], "val2")
+        self.assertNotIn("*mytag", result)
+
+    def test_set_metadata_fields_set_custom_fallback_arg_order(self):
+        """Fallback set_custom must strip '#' and pass (col_name, id, value)."""
+        mock_fanfic = MagicMock()
+        mock_fanfic.calibre_id = 123
+        mock_fanfic.site = "ao3"
+        metadata = {"#mytag": "custom value"}
+
+        with patch.object(
+            self.client,
+            "_execute_command",
+            side_effect=[OSError("batch failed"), None],
+        ) as mock_exec:
+            report = self.client.set_metadata_fields(mock_fanfic, metadata)
+            self.assertTrue(report.is_success)
+            self.assertEqual(report.updated_fields, ("#mytag",))
+            fallback_cmd = mock_exec.call_args_list[1][0][0]
+            self.assertEqual(
+                fallback_cmd, ["set_custom", "mytag", "123", "custom value"]
+            )

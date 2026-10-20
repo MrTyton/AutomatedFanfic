@@ -14,6 +14,8 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 # Calculate the path to the app directory (root/app)
 APP_DIR = os.path.abspath(os.path.join(TEST_DIR, "../app"))
 
-# Add root/app to sys.path if not already present
+# Add root/app and root/tests to sys.path if not already present
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
+if TEST_DIR not in sys.path:
+    sys.path.insert(0, TEST_DIR)

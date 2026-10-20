@@ -9,6 +9,7 @@ and multiprocessing-safe locking mechanisms.
 import json
 import re
 import shlex
+from pathlib import Path
 from subprocess import (
     check_output,
     PIPE,
@@ -20,18 +21,19 @@ from subprocess import (
 from typing import Any
 
 from . import calibre_info
+from .client_interface import CalibreClient, build_url_search_query
+from .models import AddedBook, BookExport, CalibreOperationError, MetadataUpdateReport
 from config.config_store import ConfigStore
 from models import fanfic_info
 from utils import ff_logging
 from parsers import regex_parsing
-from utils import system_utils
 
 
-class CalibreCommandError(OSError):
+class CalibreCommandError(CalibreOperationError):
     """Raised when a calibredb subprocess fails with captured output."""
 
 
-class CalibreDBClient:
+class CalibreDBClient(CalibreClient):
     """Client for interacting with the Calibre database.
 
     Encapsulates all interactions with the calibredb CLI, including authentication,
@@ -51,21 +53,11 @@ class CalibreDBClient:
             config_store (ConfigStore): Shared ConfigStore instance for hot-reloading
                 Calibre settings before each CLI execution.
         """
-        self.cdb_info = cdb_info
-        self._config_store = config_store
+        super().__init__(cdb_info, config_store)
 
-    def set_config_store(self, config_store: ConfigStore) -> None:
-        """Attach a ConfigStore so calibre settings are refreshed before each call.
-
-        Args:
-            config_store (ConfigStore): Shared ConfigStore instance.
-        """
-        self._config_store = config_store
-
-    def refresh_if_changed(self) -> None:
-        """Sync cdb_info from ConfigStore if any Calibre field changed."""
-        if self._config_store is not None:
-            self.cdb_info.update_from_config_store(self._config_store)
+    def get_version(self) -> str:
+        """Return the Calibre version string via calibredb --version."""
+        return self.get_calibre_version()
 
     @staticmethod
     def get_calibre_version() -> str:
@@ -224,11 +216,8 @@ class CalibreDBClient:
         Returns:
             Optional[str]: The Calibre ID if found, None otherwise.
         """
-        # Search by URL source identifier source:site:id
-        # FanFicFare stores the source URL identifier in the 'source' identifier field
-
         try:
-            search_query = f"Identifiers:{fanfic.url}"
+            search_query = build_url_search_query(fanfic.url)
 
             output = self._execute_command_with_output(["search", search_query])
 
@@ -247,12 +236,17 @@ class CalibreDBClient:
             ff_logging.log_debug(f"\tError checking story ID: {e}")
             return None
 
-    def add_story(self, location: str, fanfic: fanfic_info.FanficInfo) -> None:
+    def add_story(
+        self, location: str, fanfic: fanfic_info.FanficInfo
+    ) -> AddedBook | None:
         """Add a story to Calibre from a directory.
 
         Args:
             location: Directory containing the EPUB file.
             fanfic: Fanfic metadata (title will be updated from filename).
+
+        Returns:
+            AddedBook | None: Added book record if added, None otherwise.
         """
         file_to_add = self._find_epub_in_directory(location)
         if not file_to_add:
@@ -260,12 +254,11 @@ class CalibreDBClient:
                 f"\t({fanfic.site}) No EPUB file found in '{location}' for {fanfic.url}. "
                 "FanFicFare may have failed silently — check the FanFicFare output above."
             )
-            return
+            return None
 
         fanfic.title = regex_parsing.extract_filename(file_to_add)
         ff_logging.log(f"\t({fanfic.site}) Adding {file_to_add} to Calibre")
 
-        # -d checks for duplicates (though we rely on our own checks too)
         # -d checks for duplicates (though we rely on our own checks too)
         try:
             output = self._execute_command_with_output(
@@ -283,38 +276,52 @@ class CalibreDBClient:
                     ff_logging.log_debug(
                         f"\t({fanfic.site}) Added story with ID: {fanfic.calibre_id}"
                     )
-            else:
-                ff_logging.log_debug(
-                    f"\t({fanfic.site}) Could not parse ID from add output: {output.strip()}"
-                )
+                    return AddedBook(
+                        calibre_id=str(fanfic.calibre_id),
+                        title=str(fanfic.title or ""),
+                        formats=("EPUB",),
+                    )
+            ff_logging.log_debug(
+                f"\t({fanfic.site}) Could not parse ID from add output: {output.strip()}"
+            )
+            return None
 
         except (CalledProcessError, OSError) as e:
             ff_logging.log_failure(f"\t({fanfic.site}) Failed to add story: {e}")
             raise
 
-    def remove_story(self, fanfic: fanfic_info.FanficInfo) -> None:
+    def remove_story(self, fanfic: fanfic_info.FanficInfo) -> bool:
         """Remove a story from Calibre.
 
         Args:
             fanfic: Fanfic info with calibre_id to remove.
+
+        Returns:
+            bool: True if removed, False if calibre_id was missing.
         """
         if not fanfic.calibre_id:
             ff_logging.log_failure("\tCannot remove story: no calibre_id")
-            return
+            return False
 
         self._execute_command(["remove", str(fanfic.calibre_id)], fanfic)
         fanfic.calibre_id = None
+        return True
 
-    def export_story(self, fanfic: fanfic_info.FanficInfo, location: str) -> None:
+    def export_story(
+        self, fanfic: fanfic_info.FanficInfo, location: str
+    ) -> BookExport | None:
         """Export a story to a directory.
 
         Args:
             fanfic: Fanfic to export.
             location: Target directory.
+
+        Returns:
+            BookExport | None: Exported file record if exported, None otherwise.
         """
         if not fanfic.calibre_id:
             ff_logging.log_failure("\tCannot export story: no calibre_id")
-            return
+            return None
 
         command = [
             "export",
@@ -326,6 +333,13 @@ class CalibreDBClient:
             location,
         ]
         self._execute_command(command, fanfic)
+
+        exported_file = self._find_epub_in_directory(location)
+        if not exported_file:
+            return None
+        file_path = Path(exported_file)
+        size_bytes = file_path.stat().st_size if file_path.exists() else 0
+        return BookExport(file_path=file_path, format="EPUB", size_bytes=size_bytes)
 
     def add_format_to_existing_story(
         self, location: str, fanfic: fanfic_info.FanficInfo
@@ -356,9 +370,6 @@ class CalibreDBClient:
         )
 
         try:
-            # add_format takes the ID as a positional argument BEFORE the file path in some versions,
-            # or the command is `add_format ID file`.
-            # Let's check the CLI usage. `calibredb add_format [options] id file`
             full_command_args = [
                 "add_format",
                 str(fanfic.calibre_id),
@@ -382,7 +393,7 @@ class CalibreDBClient:
             fanfic: Fanfic info with calibre_id.
 
         Returns:
-            Dict: Metadata dictionary.
+            Dict: Metadata dictionary with custom columns normalized to `#` prefix.
         """
         if not fanfic.calibre_id:
             ff_logging.log_failure("\tCannot get metadata: story has no calibre_id")
@@ -402,7 +413,11 @@ class CalibreDBClient:
 
             metadata_list = json.loads(output)
             if metadata_list and len(metadata_list) > 0:
-                metadata = metadata_list[0]
+                raw_metadata = metadata_list[0]
+                metadata = {
+                    ("#" + k[1:] if k.startswith("*") else k): v
+                    for k, v in raw_metadata.items()
+                }
                 ff_logging.log_debug(
                     f"\t({fanfic.site}) Retrieved metadata for ID {fanfic.calibre_id}: "
                     f"{len(metadata)} fields"
@@ -424,27 +439,27 @@ class CalibreDBClient:
         self,
         fanfic: fanfic_info.FanficInfo,
         metadata: dict[str, Any],
-        fields_to_restore: list[str] | None = None,
-    ) -> None:
+    ) -> MetadataUpdateReport:
         """Restore custom metadata fields.
 
         Args:
             fanfic: Fanfic info.
-            metadata: Full metadata dictionary.
-            fields_to_restore: Optional list of fields (defaults to all starting with #).
+            metadata: Full metadata dictionary (restores all fields starting with #).
+
+        Returns:
+            MetadataUpdateReport: Report of updated and failed custom fields.
         """
         if not fanfic.calibre_id:
             ff_logging.log_failure("\tCannot set metadata: story has no calibre_id")
-            return
+            return MetadataUpdateReport(updated_fields=(), failed_fields=())
 
         if not metadata:
-            return
+            return MetadataUpdateReport(updated_fields=(), failed_fields=())
 
-        if fields_to_restore is None:
-            fields_to_restore = [k for k in metadata.keys() if k.startswith("#")]
+        fields_to_restore = [k for k in metadata.keys() if k.startswith("#")]
 
         if not fields_to_restore:
-            return
+            return MetadataUpdateReport(updated_fields=(), failed_fields=())
 
         ff_logging.log_debug(
             f"\t({fanfic.site}) Attempting to restore {len(fields_to_restore)} metadata fields"
@@ -452,11 +467,8 @@ class CalibreDBClient:
 
         field_pairs: list[tuple[str, str]] = []
         for field_name in fields_to_restore:
-            if field_name not in metadata:
-                continue
-
             field_value = metadata[field_name]
-            if field_value is None or field_value == "":
+            if field_value is None or field_value == "" or field_value == []:
                 continue
 
             if isinstance(field_value, list):
@@ -466,16 +478,17 @@ class CalibreDBClient:
             field_pairs.append((field_name, value_str))
 
         if not field_pairs:
-            return
+            return MetadataUpdateReport(updated_fields=(), failed_fields=())
 
-        restored_count = 0
+        updated_fields: list[str] = []
+        failed_fields: list[str] = []
         batch_command = ["set_metadata", str(fanfic.calibre_id)]
         for field_name, value_str in field_pairs:
             batch_command.extend(["--field", f"{field_name}:{value_str}"])
 
         try:
             self._execute_command(batch_command, fanfic)
-            restored_count = len(field_pairs)
+            updated_fields = [field_name for field_name, _ in field_pairs]
         except (OSError, TimeoutExpired) as batch_err:
             ff_logging.log_debug(
                 f"\t({fanfic.site}) Batch set_metadata failed ({batch_err}), falling back to per-field set_custom"
@@ -484,68 +497,22 @@ class CalibreDBClient:
                 try:
                     command = [
                         "set_custom",
-                        field_name,
-                        value_str,
+                        field_name.lstrip("#"),
                         str(fanfic.calibre_id),
+                        value_str,
                     ]
                     self._execute_command(command, fanfic)
-                    restored_count += 1
+                    updated_fields.append(field_name)
                 except (OSError, TimeoutExpired) as e:
+                    failed_fields.append(field_name)
                     ff_logging.log_failure(
                         f"\t  Failed to restore field {field_name}: {e}"
                     )
 
         ff_logging.log_debug(
-            f"\t({fanfic.site}) Successfully restored {restored_count}/{len(fields_to_restore)} metadata fields"
+            f"\t({fanfic.site}) Successfully restored {len(updated_fields)}/{len(fields_to_restore)} metadata fields"
         )
-
-    def log_metadata_comparison(
-        self,
-        fanfic: fanfic_info.FanficInfo,
-        old_metadata: dict[str, Any] | None,
-        new_metadata: dict[str, Any] | None,
-    ) -> None:
-        """Log comparison of metadata (helper method)."""
-        # This logic is pure calculation/logging, so it fits here as a utility method on the client
-        # or could remain valid as a static helper.
-        old_meta = old_metadata or {}
-        new_meta = new_metadata or {}
-        if not old_meta and not new_meta:
-            return
-
-        ff_logging.log_debug(f"\t({fanfic.site}) Metadata Comparison Report")
-
-        changed = []
-        lost = []
-
-        for field, old_val in old_meta.items():
-            if field in new_meta:
-                new_val = new_meta[field]
-                if old_val != new_val:
-                    changed.append((field, str(old_val)[:50], str(new_val)[:50]))
-            else:
-                lost.append(field)
-
-        new_fields = [k for k in new_meta.keys() if k not in old_meta]
-
-        if changed:
-            ff_logging.log_debug(f"\t  Fields Changed: {len(changed)}")
-            for field, old_val, new_val in changed:
-                ff_logging.log_debug(f"\t    ~ {field}: '{old_val}' → '{new_val}'")
-
-        if lost:
-            ff_logging.log_debug(f"\t  Fields Lost: {len(lost)}")
-            for field in lost:
-                ff_logging.log_debug(f"\t    ✗ {field}")
-
-        if new_fields:
-            ff_logging.log_debug(f"\t  New Fields Added: {len(new_fields)}")
-            for field in new_fields:
-                ff_logging.log_debug(f"\t    + {field}")
-
-    def _find_epub_in_directory(self, location: str) -> str | None:
-        """Helper to find first EPUB in directory."""
-        epub_files = system_utils.get_files(
-            location, file_extension="epub", return_full_path=True
+        return MetadataUpdateReport(
+            updated_fields=tuple(updated_fields),
+            failed_fields=tuple(failed_fields),
         )
-        return epub_files[0] if epub_files else None

@@ -225,10 +225,13 @@ jobs:
           echo "calibre_version=$CALIBRE_VERSION" >> $GITHUB_OUTPUT
           echo "fanficfare_version=$FANFICFARE_VERSION" >> $GITHUB_OUTPUT
 
-          # Create platform-specific tags
+          # Create platform-specific tags for standalone and slim variants
           PLATFORM_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}-${{ steps.platform.outputs.arch }}"
+          SLIM_PLATFORM_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION}-slim-${{ steps.platform.outputs.arch }}"
           echo "PLATFORM_TAG=$PLATFORM_TAG" >> $GITHUB_ENV
-          echo "Platform-specific tag: $PLATFORM_TAG"
+          echo "SLIM_PLATFORM_TAG=$SLIM_PLATFORM_TAG" >> $GITHUB_ENV
+          echo "Platform-specific standalone tag: $PLATFORM_TAG"
+          echo "Platform-specific slim tag: $SLIM_PLATFORM_TAG"
 
       - name: Print image tags and versions
         if: steps.should_build.outputs.build == 'true'
@@ -239,7 +242,8 @@ jobs:
           echo "Specific Version: ${{ env.SPECIFIC_VERSION }}"
           echo "Calibre Version: ${{ env.CALIBRE_VERSION }}"
           echo "FanFicFare Version: ${{ env.FANFICFARE_VERSION }}"
-          echo "Platform Tag: ${{ env.PLATFORM_TAG }}"
+          echo "Standalone Platform Tag: ${{ env.PLATFORM_TAG }}"
+          echo "Slim Platform Tag: ${{ env.SLIM_PLATFORM_TAG }}"
 
       - name: Login to DockerHub
         if: steps.should_build.outputs.build == 'true'
@@ -248,12 +252,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Build and push platform-specific image
+      - name: Build and push standalone platform-specific image
         if: steps.should_build.outputs.build == 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
+          target: runtime-standalone
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ env.PLATFORM_TAG }}
@@ -278,6 +283,29 @@ jobs:
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
+            FANFICFARE_VERSION=${{ env.FANFICFARE_VERSION }}
+
+      - name: Build and push slim platform-specific image
+        if: steps.should_build.outputs.build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime-slim
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ env.SLIM_PLATFORM_TAG }}
+          # Slim image omits Calibre and ARG CALIBRE_RELEASE; on Calibre-only updates
+          # all upstream layers hit cache and only the final /app layer is rebuilt.
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
+          cache-to: |
+            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
+            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
+          build-args: |
+            VERSION=${{ env.SPECIFIC_VERSION }}
             FANFICFARE_VERSION=${{ env.FANFICFARE_VERSION }}
 
       # Store platform digest for manifest creation
@@ -346,24 +374,46 @@ jobs:
 
       - name: Create and push multi-platform manifest
         run: |
-          # Create manifest list combining both platform images
+          # Create manifest list combining both platform images for standalone and slim variants
           AMD64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-amd64"
           ARM64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-arm64"
+          SLIM_AMD64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-slim-amd64"
+          SLIM_ARM64_TAG="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-slim-arm64"
 
-          # Verify that both platform images exist before creating manifest
-          echo "Verifying AMD64 image exists..."
+          # Verify that both standalone platform images exist before creating manifest
+          echo "Verifying standalone AMD64 image exists..."
           docker buildx imagetools inspect $AMD64_TAG || { echo "AMD64 image not found: $AMD64_TAG"; exit 1; }
 
-          echo "Verifying ARM64 image exists..."
+          echo "Verifying standalone ARM64 image exists..."
           docker buildx imagetools inspect $ARM64_TAG || { echo "ARM64 image not found: $ARM64_TAG"; exit 1; }
 
-          echo "Both platform images verified. Creating manifest for version ${{ env.SPECIFIC_VERSION }}"
+          # Verify that both slim platform images exist before creating manifest
+          echo "Verifying slim AMD64 image exists..."
+          docker buildx imagetools inspect $SLIM_AMD64_TAG || { echo "Slim AMD64 image not found: $SLIM_AMD64_TAG"; exit 1; }
+
+          echo "Verifying slim ARM64 image exists..."
+          docker buildx imagetools inspect $SLIM_ARM64_TAG || { echo "Slim ARM64 image not found: $SLIM_ARM64_TAG"; exit 1; }
+
+          echo "All platform images verified. Creating standalone manifests for version ${{ env.SPECIFIC_VERSION }}"
           docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }} \
             $AMD64_TAG $ARM64_TAG
 
-          echo "Creating manifest for latest tag"
+          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-standalone \
+            $AMD64_TAG $ARM64_TAG
+
+          echo "Creating manifest for latest and standalone tags"
           docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest \
             $AMD64_TAG $ARM64_TAG
+
+          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:standalone \
+            $AMD64_TAG $ARM64_TAG
+
+          echo "Creating slim manifests for version ${{ env.SPECIFIC_VERSION }}-slim and slim tag"
+          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-slim \
+            $SLIM_AMD64_TAG $SLIM_ARM64_TAG
+
+          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:slim \
+            $SLIM_AMD64_TAG $SLIM_ARM64_TAG
 
       # Updated step to generate filtered changelog including requirements.txt and excluding bot commits
       # Check if dependency versions changed

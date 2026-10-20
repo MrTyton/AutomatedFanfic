@@ -8,7 +8,8 @@ way to switch between preservation modes (Metadata, Format Only, or Remove-Add).
 
 from abc import ABC, abstractmethod
 
-from . import calibredb_utils
+from .client_interface import CalibreClient
+from .models import AddedBook
 from models import fanfic_info
 from utils import ff_logging
 
@@ -20,7 +21,7 @@ class UpdateStrategy(ABC):
     def execute(
         self,
         fanfic: fanfic_info.FanficInfo,
-        calibre_client: calibredb_utils.CalibreDBClient,
+        calibre_client: CalibreClient,
         temp_dir: str,
         path_or_url: str,
     ) -> tuple[bool, str | None]:
@@ -29,7 +30,7 @@ class UpdateStrategy(ABC):
 
         Args:
             fanfic: Fanfiction information object
-            calibre_client: CalibreDB client
+            calibre_client: Calibre client
             temp_dir: Temporary directory with downloaded story
             path_or_url: Path or URL being processed
 
@@ -45,7 +46,7 @@ class AddFormatStrategy(UpdateStrategy):
     def execute(
         self,
         fanfic: fanfic_info.FanficInfo,
-        calibre_client: calibredb_utils.CalibreDBClient,
+        calibre_client: CalibreClient,
         temp_dir: str,
         path_or_url: str,
     ) -> tuple[bool, str | None]:
@@ -80,7 +81,7 @@ class PreserveMetadataStrategy(UpdateStrategy):
     def execute(
         self,
         fanfic: fanfic_info.FanficInfo,
-        calibre_client: calibredb_utils.CalibreDBClient,
+        calibre_client: CalibreClient,
         temp_dir: str,
         path_or_url: str,
     ) -> tuple[bool, str | None]:
@@ -102,7 +103,9 @@ class PreserveMetadataStrategy(UpdateStrategy):
         calibre_client.remove_story(fanfic)
 
         # Add the updated story
-        calibre_client.add_story(location=temp_dir, fanfic=fanfic)
+        added = calibre_client.add_story(location=temp_dir, fanfic=fanfic)
+        if isinstance(added, AddedBook) and added.calibre_id:
+            fanfic.calibre_id = added.calibre_id
 
         # Verify addition and get new ID
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
@@ -133,7 +136,7 @@ class RemoveAddStrategy(UpdateStrategy):
     def execute(
         self,
         fanfic: fanfic_info.FanficInfo,
-        calibre_client: calibredb_utils.CalibreDBClient,
+        calibre_client: CalibreClient,
         temp_dir: str,
         path_or_url: str,
     ) -> tuple[bool, str | None]:
@@ -152,7 +155,9 @@ class RemoveAddStrategy(UpdateStrategy):
         calibre_client.remove_story(fanfic)
 
         # Add the updated story
-        calibre_client.add_story(location=temp_dir, fanfic=fanfic)
+        added = calibre_client.add_story(location=temp_dir, fanfic=fanfic)
+        if isinstance(added, AddedBook) and added.calibre_id:
+            fanfic.calibre_id = added.calibre_id
 
         # Verify addition
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
@@ -180,7 +185,7 @@ class AddNewStoryStrategy(UpdateStrategy):
     def execute(
         self,
         fanfic: fanfic_info.FanficInfo,
-        calibre_client: calibredb_utils.CalibreDBClient,
+        calibre_client: CalibreClient,
         temp_dir: str,
         path_or_url: str,
     ) -> tuple[bool, str | None]:
@@ -188,7 +193,9 @@ class AddNewStoryStrategy(UpdateStrategy):
         ff_logging.log_debug(f"\t({site}) Using add_new_story mode")
 
         # Add the new story
-        calibre_client.add_story(location=temp_dir, fanfic=fanfic)
+        added = calibre_client.add_story(location=temp_dir, fanfic=fanfic)
+        if isinstance(added, AddedBook) and added.calibre_id:
+            fanfic.calibre_id = added.calibre_id
 
         # Verify addition and get new ID
         if not fanfic.calibre_id and not calibre_client.get_story_id(fanfic):
