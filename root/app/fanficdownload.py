@@ -52,7 +52,7 @@ from config.config_store import ConfigStore
 lazy from web import server as web_server
 
 # Define the application version
-__version__ = "5.6.4"
+__version__ = "5.7.0"
 
 
 def parse_arguments() -> argparse.Namespace:
