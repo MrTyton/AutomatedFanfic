@@ -424,7 +424,7 @@ class EmailInfo:
                 client.select_folder(self.mailbox)
 
                 # Check for unread emails before entering IDLE to eliminate any transition gap
-                unseen = client.search(["UNSEEN"])
+                unseen = client.search("UNSEEN")
                 if unseen:
                     ff_logging.log_debug(
                         f"EmailWatcher: found {len(unseen)} unread email(s) before entering IDLE"

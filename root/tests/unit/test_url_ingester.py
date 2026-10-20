@@ -860,7 +860,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         result = self._make_email_info()._idle_wait_for_notification(threading.Event())
 
         self.assertTrue(result)
-        mock_conn.search.assert_called_once_with(["UNSEEN"])
+        mock_conn.search.assert_called_once_with("UNSEEN")
         mock_conn.idle.assert_not_called()
 
     @patch("imapclient.IMAPClient")
