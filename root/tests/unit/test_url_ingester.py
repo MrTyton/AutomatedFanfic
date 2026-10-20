@@ -846,10 +846,27 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         with patch("services.url_ingester.geturls.GetURLs"):
             return EmailInfo(email_config, ConfigStore())
 
+    def _setup_mock_conn(self, mock_cls):
+        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn.search.return_value = []
+        return mock_conn
+
+    @patch("imapclient.IMAPClient")
+    def test_returns_true_when_unseen_messages_exist_before_idle(self, mock_cls):
+        """If unread messages exist in mailbox upon connection, returns True immediately without entering IDLE."""
+        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn.search.return_value = [101]
+
+        result = self._make_email_info()._idle_wait_for_notification(threading.Event())
+
+        self.assertTrue(result)
+        mock_conn.search.assert_called_once_with(["UNSEEN"])
+        mock_conn.idle.assert_not_called()
+
     @patch("imapclient.IMAPClient")
     def test_returns_true_on_exists_notification(self, mock_cls):
         """EXISTS response triggers return True so get_urls() is called."""
-        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.return_value = [(12, b"EXISTS")]
 
         result = self._make_email_info()._idle_wait_for_notification(threading.Event())
@@ -861,7 +878,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
     @patch("imapclient.IMAPClient")
     def test_returns_true_on_recent_notification(self, mock_cls):
         """RECENT response also triggers return True."""
-        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.return_value = [(5, b"RECENT")]
 
         result = self._make_email_info()._idle_wait_for_notification(threading.Event())
@@ -873,7 +890,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         """Shutdown event set before idle_check causes immediate False return."""
         shutdown_event = threading.Event()
         shutdown_event.set()
-        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn = self._setup_mock_conn(mock_cls)
 
         result = self._make_email_info()._idle_wait_for_notification(shutdown_event)
 
@@ -890,7 +907,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
             shutdown_event.set()  # signal shutdown while waiting
             return []  # no new mail
 
-        mock_conn = mock_cls.return_value.__enter__.return_value
+        mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.side_effect = idle_check_side_effect
 
         result = self._make_email_info()._idle_wait_for_notification(shutdown_event)
@@ -914,55 +931,33 @@ class TestEmailInfoIdleWait(unittest.TestCase):
     @patch("services.url_ingester.time.monotonic")
     @patch("imapclient.IMAPClient")
     def test_reissues_idle_after_9_minutes(self, mock_cls, mock_monotonic):
-        """IDLE is re-issued every 9 minutes; loop exits on subsequent EXISTS."""
-        # Provide enough monotonic values:
-        # 1) idle_start = time.monotonic() -> 0.0
-        # 2) time.monotonic() in re-IDLE check -> 541.0  (541 - 0 >= 540 → re-IDLE)
-        # 3) idle_start = time.monotonic() -> 541.0
-        mock_monotonic.side_effect = [0.0, 541.0, 541.0, 541.0, 541.0]
+        """When 9 minutes elapse without notification, returns True so get_urls() runs as a safety fallback."""
+        mock_monotonic.side_effect = [0.0, 541.0]
 
-        call_count = 0
-
-        def idle_check_side_effect(timeout):
-            nonlocal call_count
-            call_count += 1
-            # First check: no mail yet → triggers re-IDLE via monotonic check
-            # Second check: EXISTS arrives after re-IDLE
-            return [(12, b"EXISTS")] if call_count >= 2 else []
-
-        mock_conn = mock_cls.return_value.__enter__.return_value
-        mock_conn.idle_check.side_effect = idle_check_side_effect
-        mock_conn.noop.return_value = []  # no messages arrived in the DONE gap
+        mock_conn = self._setup_mock_conn(mock_cls)
+        mock_conn.idle_check.return_value = []  # no mail signalled during IDLE
 
         result = self._make_email_info()._idle_wait_for_notification(threading.Event())
 
         self.assertTrue(result)
-        # idle() called twice: initial enter + re-issue after 9 min
-        self.assertEqual(mock_conn.idle.call_count, 2)
-        # idle_done() called twice: on re-issue + on EXISTS response
-        self.assertEqual(mock_conn.idle_done.call_count, 2)
-        # noop() called once between idle_done and the re-idle
-        mock_conn.noop.assert_called_once()
+        mock_conn.idle.assert_called_once()
+        mock_conn.idle_done.assert_called_once()
 
     @patch("services.url_ingester.time.monotonic")
     @patch("imapclient.IMAPClient")
-    def test_noop_after_idle_done_catches_missed_message(
+    def test_idle_refresh_calls_idle_done_and_returns_true(
         self, mock_cls, mock_monotonic
     ):
-        """If a message arrives in the DONE/re-IDLE gap, noop() catches it and returns True."""
-        mock_monotonic.side_effect = [0.0, 541.0, 541.0]
+        """When 9-minute refresh timeout is reached, idle_done is called and True is returned."""
+        mock_monotonic.side_effect = [0.0, 545.0]
 
-        mock_conn = mock_cls.return_value.__enter__.return_value
-        mock_conn.idle_check.return_value = []  # no mail signalled during IDLE
-        mock_conn.noop.return_value = [(12, b"EXISTS")]  # message arrived in the gap
+        mock_conn = self._setup_mock_conn(mock_cls)
+        mock_conn.idle_check.return_value = []
 
         result = self._make_email_info()._idle_wait_for_notification(threading.Event())
 
         self.assertTrue(result)
-        mock_conn.noop.assert_called_once()
-        # idle_done once (for re-issue DONE); idle once (initial entry only)
-        self.assertEqual(mock_conn.idle_done.call_count, 1)
-        self.assertEqual(mock_conn.idle.call_count, 1)
+        mock_conn.idle_done.assert_called_once()
 
     def test_update_from_config_store_syncs_ini_paths(self):
         """EmailInfo.update_from_config_store hot-reloads calibre.default_ini and calibre.personal_ini."""

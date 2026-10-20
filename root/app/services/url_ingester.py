@@ -423,6 +423,14 @@ class EmailInfo:
                 client.login(self.email, self.password)
                 client.select_folder(self.mailbox)
 
+                # Check for unread emails before entering IDLE to eliminate any transition gap
+                unseen = client.search(["UNSEEN"])
+                if unseen:
+                    ff_logging.log_debug(
+                        f"EmailWatcher: found {len(unseen)} unread email(s) before entering IDLE"
+                    )
+                    return True
+
                 idle_start = time.monotonic()
                 client.idle()
                 ff_logging.log_debug("EmailWatcher: entered IMAP IDLE mode")
@@ -445,27 +453,14 @@ class EmailInfo:
                         client.idle_done()
                         return True
 
-                    # Re-issue IDLE every 9 minutes to keep the connection alive.
-                    # After DONE, send NOOP to flush any messages that arrived
-                    # in the DONE/re-IDLE gap before going back into IDLE.
+                    # Refresh IDLE every 9 minutes to keep the connection alive
+                    # and perform a routine mailbox check in case any notifications were missed.
                     if time.monotonic() - idle_start >= IDLE_REISSUE_SECONDS:
+                        ff_logging.log_debug(
+                            "EmailWatcher: IDLE refresh timeout reached, checking mail"
+                        )
                         client.idle_done()
-                        noop_responses = client.noop()
-                        if any(
-                            isinstance(r, (list, tuple))
-                            and len(r) >= 2
-                            and r[1] in (b"EXISTS", b"RECENT")
-                            for r in noop_responses
-                        ):
-                            ff_logging.log_debug(
-                                "EmailWatcher: IMAP IDLE notification received via NOOP"
-                            )
-                            return True
-                        if shutdown_event.is_set():
-                            return False
-                        client.idle()
-                        idle_start = time.monotonic()
-                        ff_logging.log_debug("EmailWatcher: re-issued IMAP IDLE")
+                        return True
 
         except Exception as e:
             ff_logging.log_failure(
