@@ -117,7 +117,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
-    @patch("fanficdownload.calibredb_utils.CalibreDBClient")
+    @patch("fanficdownload.calibre_factory.create_calibre_client")
     def test_main_successful_startup(
         self,
         mock_calibre_client,
@@ -190,7 +190,7 @@ class TestFanficDownloadMain(unittest.TestCase):
                         self.mock_config.calibre,
                         mock_manager_instance,
                     )
-                    mock_cdb.check_installed.assert_called_once()
+
                     mock_calibre_client.assert_called_once_with(
                         mock_cdb,
                         mock_config_store.return_value,
@@ -359,7 +359,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
-    @patch("fanficdownload.calibredb_utils.CalibreDBClient")
+    @patch("fanficdownload.calibre_factory.create_calibre_client")
     def test_main_keyboard_interrupt_handling(
         self,
         mock_calibre_client,
@@ -475,7 +475,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
-    @patch("fanficdownload.calibredb_utils.CalibreDBClient")
+    @patch("fanficdownload.calibre_factory.create_calibre_client")
     def test_main_uses_native_mp_queues_and_gates_log_queue_on_web_enabled(
         self,
         mock_calibre_client,

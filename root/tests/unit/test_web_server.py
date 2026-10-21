@@ -321,10 +321,10 @@ class TestControlRoutes(unittest.TestCase):
         self.assertEqual(queued.url, "https://ao3.org/works/1")
         self.assertEqual(queued.behavior, "force")
 
-    @patch("calibre_integration.calibredb_utils.CalibreDBClient")
+    @patch("web.routes.controls.calibre_factory.create_calibre_client")
     @patch("calibre_integration.calibre_info.CalibreInfo")
     def test_remove_from_calibre_if_possible_uses_config_and_config_store(
-        self, mock_calibre_info_cls, mock_calibre_client_cls
+        self, mock_calibre_info_cls, mock_create_client
     ):
         """_remove_from_calibre_if_possible constructs CalibreInfo from state.config.calibre and passes state.config_store."""
         from web.routes.controls import _remove_from_calibre_if_possible
@@ -348,12 +348,10 @@ class TestControlRoutes(unittest.TestCase):
         self.assertTrue(ok)
         mock_calibre_info_cls.assert_called_once()
         self.assertEqual(mock_calibre_info_cls.call_args.args[0], mock_cfg.calibre)
-        mock_calibre_client_cls.assert_called_once_with(
+        mock_create_client.assert_called_once_with(
             mock_calibre_info_cls.return_value, mock_store
         )
-        mock_calibre_client_cls.return_value.remove_story.assert_called_once_with(
-            fanfic
-        )
+        mock_create_client.return_value.remove_story.assert_called_once_with(fanfic)
 
 
 class TestConfigRoutes(unittest.TestCase):

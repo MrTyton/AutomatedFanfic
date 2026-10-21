@@ -646,6 +646,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                         patch(
                             "process_management.ProcessManager.start_all"
                         ) as mock_start,
+                        patch("fanficdownload.calibre_factory.create_calibre_client"),
                     ):
                         mock_wait.return_value = True
 

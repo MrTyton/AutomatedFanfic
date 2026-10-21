@@ -204,7 +204,7 @@ class TestCalibreDBClient(unittest.TestCase):
             ),
         ]
     )
-    @patch("calibre_integration.calibredb_utils.system_utils.get_files")
+    @patch("calibre_integration.client_interface.system_utils.get_files")
     @patch(
         "calibre_integration.calibredb_utils.regex_parsing.extract_filename",
         return_value="Story Title",

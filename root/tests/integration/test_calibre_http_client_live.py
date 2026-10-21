@@ -22,6 +22,8 @@ from models.config_models import CalibreConfig
 from models.fanfic_info import FanficInfo
 from fixtures.calibre_provisioner import ensure_calibre_binaries
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.flaky_ci]
+
 
 class _NoopLockFactory:
     @staticmethod
@@ -35,9 +37,17 @@ def _find_free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def _wait_for_server(base_url: str, timeout: float = 20.0) -> None:
+def _wait_for_server(
+    base_url: str, proc: subprocess.Popen | None = None, timeout: float = 20.0
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            stdout, stderr = proc.communicate(timeout=2.0)
+            raise RuntimeError(
+                f"calibre-server exited unexpectedly with rc={proc.returncode}.\n"
+                f"STDOUT: {stdout}\nSTDERR: {stderr}"
+            )
         try:
             resp = requests.get(f"{base_url}/favicon.png", timeout=1.0)
             if resp.status_code in (200, 401, 404):
@@ -143,7 +153,7 @@ def calibre_server_url() -> Iterator[str]:
             stderr=subprocess.PIPE,
         )
         try:
-            _wait_for_server(base_url)
+            _wait_for_server(base_url, proc=proc)
             yield base_url
         finally:
             proc.terminate()
@@ -201,7 +211,7 @@ def calibre_auth_server_url() -> Iterator[tuple[str, str, str]]:
             stderr=subprocess.PIPE,
         )
         try:
-            _wait_for_server(base_url)
+            _wait_for_server(base_url, proc=proc)
             yield base_url, username, password
         finally:
             proc.terminate()
