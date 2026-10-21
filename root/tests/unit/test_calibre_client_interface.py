@@ -8,6 +8,7 @@ from calibre_integration.calibre_info import CalibreInfo
 from calibre_integration.client_interface import (
     CalibreClient,
     build_url_search_query,
+    extract_story_base_url,
 )
 from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
 from config.config_store import ConfigStore
@@ -78,22 +79,77 @@ def test_calibre_client_abstract_methods() -> None:
     assert expected_methods.issubset(methods)
 
 
+def test_extract_story_base_url_variations() -> None:
+    # FFN chapter normalization (FanFicFare normalizes FFN stories to chapter 1: /s/<id>/1)
+    assert (
+        extract_story_base_url("https://www.fanfiction.net/s/12345/1/")
+        == "fanfiction.net/s/12345/1"
+    )
+    assert (
+        extract_story_base_url("https://m.fanfiction.net/s/12345/35/Some-Slug")
+        == "fanfiction.net/s/12345/1"
+    )
+    assert (
+        extract_story_base_url("fanfiction.net/s/12345") == "fanfiction.net/s/12345/1"
+    )
+    # AO3 chapter trimming
+    assert (
+        extract_story_base_url("https://archiveofourown.org/works/12345/chapters/67890")
+        == "archiveofourown.org/works/12345"
+    )
+    # Royal Road chapter and slug trimming
+    assert (
+        extract_story_base_url("https://www.royalroad.com/fiction/12345/my-story")
+        == "royalroad.com/fiction/12345"
+    )
+    # XenForo threads trimming
+    assert (
+        extract_story_base_url(
+            "https://forums.spacebattles.com/threads/title.12345/page-2"
+        )
+        == "forums.spacebattles.com/threads/12345"
+    )
+    # eFiction query parameters
+    assert (
+        extract_story_base_url("https://site.com/viewstory.php?sid=1234&chapter=2")
+        == "site.com/viewstory.php?sid=1234"
+    )
+
+
 def test_build_url_search_query_with_scheme() -> None:
     url = "https://archiveofourown.org/works/12345"
     query = build_url_search_query(url)
-    assert query == r'identifiers:"~(www\.)?archiveofourown\.org/works/12345(/)?$"'
+    assert (
+        query
+        == r'identifiers:"~(//|^)(www\d*\.|m\.)?archiveofourown\.org/works/12345([/&?#].*)?$"'
+    )
 
 
 def test_build_url_search_query_without_scheme() -> None:
     url = "royalroad.com/fiction/164248"
     query = build_url_search_query(url)
-    assert query == r'identifiers:"~(www\.)?royalroad\.com/fiction/164248(/)?$"'
+    assert (
+        query
+        == r'identifiers:"~(//|^)(www\d*\.|m\.)?royalroad\.com/fiction/164248([/&?#].*)?$"'
+    )
 
 
 def test_build_url_search_query_with_www_and_slash() -> None:
     url = "https://www.fanfiction.net/s/1234567/1/"
     query = build_url_search_query(url)
-    assert query == r'identifiers:"~(www\.)?fanfiction\.net/s/1234567/1(/)?$"'
+    assert (
+        query
+        == r'identifiers:"~(//|^)(www\d*\.|m\.)?fanfiction\.net/s/1234567/1([/&?#].*)?$"'
+    )
+
+
+def test_build_url_search_query_forum_thread() -> None:
+    url = "https://forums.spacebattles.com/threads/title.12345/page-2"
+    query = build_url_search_query(url)
+    assert (
+        query
+        == r'identifiers:"~(//|^)(www\d*\.|m\.)?forums\.spacebattles\.com/threads/(.*\.)?12345([/&?#].*)?$"'
+    )
 
 
 def test_refresh_if_changed_invokes_hook_when_updated() -> None:

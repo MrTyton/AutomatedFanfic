@@ -1,8 +1,12 @@
 """Abstract base class interface and shared helpers for Calibre clients."""
 
 from abc import ABC, abstractmethod
+import functools
 import re
 from typing import Any
+from urllib.parse import urlsplit
+
+lazy import fanficfare.adapters as fff_adapters
 
 from calibre_integration import calibre_info
 from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
@@ -11,13 +15,64 @@ from models.fanfic_info import FanficInfo
 from utils import ff_logging, system_utils
 
 
+@functools.lru_cache(maxsize=1024)
+def extract_story_base_url(url: str) -> str:
+    """Normalize a fanfiction URL to its canonical domain and story base path.
+
+    Resolves chapter/page links via FanFicFare adapters, strips scheme and
+    subdomain prefixes (www, m), and removes optional title slugs.
+    """
+    clean = url.strip().split("#")[0]
+    if not clean:
+        return ""
+
+    probe_url = clean if "://" in clean else f"https://{clean}"
+    try:
+        norm = fff_adapters.getNormalStoryURL(probe_url)
+        if norm:
+            clean = norm
+    except Exception:
+        clean = probe_url
+
+    parsed = urlsplit(clean)
+    netloc = re.sub(r"^(www\d*|m|mobi)\.", "", parsed.netloc, flags=re.IGNORECASE)
+
+    # Path segments without empty strings
+    segments = [s for s in parsed.path.strip("/").split("/") if s]
+
+    # Strip trailing title slug (alphabetic text following a numeric ID or chapter)
+    if (
+        len(segments) >= 2
+        and re.search(r"[a-zA-Z]", segments[-1])
+        and segments[-2].isdigit()
+    ):
+        segments.pop()
+
+    # Strip embedded title slug in XenForo-style segments (<slug>.<numeric_id>)
+    if segments and "/threads" in parsed.path:
+        segments[-1] = re.sub(r"^.+\.(\d+)$", r"\1", segments[-1])
+
+    base_path = f"/{'/'.join(segments)}" if segments else ""
+    if parsed.query and not segments:
+        base_path = f"?{parsed.query}"
+    elif parsed.query:
+        m_id = re.search(
+            r"(?:sid|storyid|bid|id)=\d+", parsed.query, flags=re.IGNORECASE
+        )
+        if m_id and not any(s.isdigit() for s in segments):
+            base_path += f"?{m_id.group(0)}"
+
+    return f"{netloc}{base_path}"
+
+
 def build_url_search_query(url: str) -> str:
     """Build an anchored regex Calibre search query for a story URL.
 
     Uses Calibre's native regular expression search operator ('~') on the
-    'identifiers' field. This matches the URL regardless of scheme ('http://',
-    'https://'), 'www.' subdomain, or trailing slash, while anchoring the end
-    with '(/)?$' to prevent prefix collisions (e.g. '/works/123' matching '/works/1234').
+    'identifiers' field. Matches across schemes ('http://', 'https://'),
+    common subdomains ('www.', 'm.'), title slugs, and chapter subpaths, while
+    anchoring on URL delimiters ('/', '&', '?', '#') or end-of-string to strictly
+    prevent numeric prefix collisions (e.g. '/works/123' matching '/works/1234').
 
     Args:
         url: The story URL to search for.
@@ -25,11 +80,19 @@ def build_url_search_query(url: str) -> str:
     Returns:
         str: Calibre search expression matching identifier regex pattern.
     """
-    clean = url.strip()
-    clean = re.sub(r"^https?://", "", clean, flags=re.IGNORECASE)
-    clean = re.sub(r"^www\.", "", clean, flags=re.IGNORECASE).rstrip("/")
-    pattern = re.escape(clean).replace('"', r"\"")
-    return f'identifiers:"~(www\\.)?{pattern}(/)?$"'
+    base = extract_story_base_url(url)
+
+    # For forum thread URLs (/threads/<id>), allow optional title slugs before the id
+    if "/threads/" in base:
+        parts = base.split("/threads/")
+        escaped_domain = re.escape(parts[0])
+        escaped_id = re.escape(parts[1])
+        pattern = f"{escaped_domain}/threads/(.*\\.)?{escaped_id}"
+    else:
+        pattern = re.escape(base)
+
+    pattern = pattern.replace('"', r"\"")
+    return f'identifiers:"~(//|^)(www\\d*\\.|m\\.)?{pattern}([/&?#].*)?$"'
 
 
 class CalibreClient(ABC):
