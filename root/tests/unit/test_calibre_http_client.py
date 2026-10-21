@@ -114,10 +114,12 @@ def test_http_client_refresh_if_changed_reparses_url_and_auth() -> None:
 
 
 def test_http_client_digest_auth_and_basic_fallback() -> None:
+    from requests.auth import HTTPBasicAuth, HTTPDigestAuth
+
     info = _make_mock_info("http://calibre.local:8080/#Fanfic", "alice", "secret")
     client = CalibreHttpClient(info, MagicMock(spec=ConfigStore))
     session = client._get_session()
-    assert isinstance(session.auth, requests.auth.HTTPDigestAuth)
+    assert isinstance(session.auth, HTTPDigestAuth)
 
     # Simulate 401 with WWW-Authenticate: Basic triggering fallback retry
     r401 = _make_response(
@@ -132,7 +134,7 @@ def test_http_client_digest_auth_and_basic_fallback() -> None:
 
     version = client.get_version()
     assert version == "9.16.0"
-    assert isinstance(session.auth, requests.auth.HTTPBasicAuth)
+    assert isinstance(session.auth, HTTPBasicAuth)
     assert session.request.call_count == 2
 
 

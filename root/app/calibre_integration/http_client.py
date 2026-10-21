@@ -76,7 +76,8 @@ class CalibreHttpClient(CalibreClient):
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore state and re-initialize thread-local storage in child process."""
-        self.__dict__.update(state)
+        for key, value in state.items():
+            setattr(self, key, value)
         self._thread_local = threading.local()
 
     def _get_session(self) -> requests.Session:
