@@ -1,6 +1,7 @@
 """Abstract base class interface and shared helpers for Calibre clients."""
 
 from abc import ABC, abstractmethod
+import re
 from typing import Any
 
 from calibre_integration import calibre_info
@@ -11,62 +12,24 @@ from utils import ff_logging, system_utils
 
 
 def build_url_search_query(url: str) -> str:
-    """Build an exact-match Calibre search query for a story URL.
+    """Build an anchored regex Calibre search query for a story URL.
 
-    FanFicFare writes `<dc:identifier opf:scheme="URL">https://...</dc:identifier>`
-    (EPUB 2, stored under `identifiers:url` or `identifiers:uri`) or
-    `<dc:identifier>URL:https://...</dc:identifier>` (EPUB 3).
-    Calibre identifiers store exact URLs, which may or may not have a scheme
-    ('https://', 'http://') or 'www.' prefix depending on site and FanFicFare adapter.
-
-    To prevent prefix collisions (e.g. /works/123 vs /works/1234) while matching
-    across all scheme, www, and trailing slash variants, this constructs
-    exact-value matches (`:=`) for all canonical permutations of the URL.
+    Uses Calibre's native regular expression search operator ('~') on the
+    'identifiers' field. This matches the URL regardless of scheme ('http://',
+    'https://'), 'www.' subdomain, or trailing slash, while anchoring the end
+    with '(/)?$' to prevent prefix collisions (e.g. '/works/123' matching '/works/1234').
 
     Args:
         url: The story URL to search for.
 
     Returns:
-        str: Calibre search expression matching exact identifier values.
+        str: Calibre search expression matching identifier regex pattern.
     """
     clean = url.strip()
-    if clean.startswith("http://"):
-        clean = clean[7:]
-    elif clean.startswith("https://"):
-        clean = clean[8:]
-
-    parts = clean.split("/", 1)
-    host = parts[0]
-    path = "/" + parts[1] if len(parts) > 1 else ""
-
-    hosts = [host]
-    if host.startswith("www."):
-        hosts.append(host[4:])
-    elif host:
-        hosts.append("www." + host)
-
-    variants: set[str] = set()
-    for h in hosts:
-        combo = h + path
-        combo_slash = combo if combo.endswith("/") else combo + "/"
-        combo_noslash = combo.rstrip("/")
-        for c in (combo, combo_slash, combo_noslash):
-            variants.add(f"https://{c}")
-            variants.add(f"http://{c}")
-            variants.add(c)
-
-    variants.add(url.strip())
-
-    clauses: list[str] = []
-    for v in sorted(variants):
-        escaped = v.replace("\\", "\\\\").replace('"', r"\"")
-        clauses.append(f'identifiers:":={escaped}"')
-        if ":" in v:
-            scheme, rest = v.split(":", 1)
-            esc_rest = rest.replace("\\", "\\\\").replace('"', r"\"")
-            clauses.append(f'identifiers:{scheme}:="{esc_rest}"')
-
-    return " or ".join(clauses)
+    clean = re.sub(r"^https?://", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"^www\.", "", clean, flags=re.IGNORECASE).rstrip("/")
+    pattern = re.escape(clean).replace('"', r"\"")
+    return f'identifiers:"~(www\\.)?{pattern}(/)?$"'
 
 
 class CalibreClient(ABC):

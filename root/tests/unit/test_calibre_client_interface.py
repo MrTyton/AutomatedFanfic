@@ -81,18 +81,19 @@ def test_calibre_client_abstract_methods() -> None:
 def test_build_url_search_query_with_scheme() -> None:
     url = "https://archiveofourown.org/works/12345"
     query = build_url_search_query(url)
-    assert 'identifiers:":=https://archiveofourown.org/works/12345"' in query
-    assert 'identifiers:":=https://www.archiveofourown.org/works/12345"' in query
-    assert 'identifiers:":=archiveofourown.org/works/12345"' in query
-    assert 'identifiers:https:="//archiveofourown.org/works/12345"' in query
+    assert query == r'identifiers:"~(www\.)?archiveofourown\.org/works/12345(/)?$"'
 
 
 def test_build_url_search_query_without_scheme() -> None:
     url = "royalroad.com/fiction/164248"
     query = build_url_search_query(url)
-    assert 'identifiers:":=https://www.royalroad.com/fiction/164248"' in query
-    assert 'identifiers:":=https://royalroad.com/fiction/164248"' in query
-    assert 'identifiers:":=royalroad.com/fiction/164248"' in query
+    assert query == r'identifiers:"~(www\.)?royalroad\.com/fiction/164248(/)?$"'
+
+
+def test_build_url_search_query_with_www_and_slash() -> None:
+    url = "https://www.fanfiction.net/s/1234567/1/"
+    query = build_url_search_query(url)
+    assert query == r'identifiers:"~(www\.)?fanfiction\.net/s/1234567/1(/)?$"'
 
 
 def test_refresh_if_changed_invokes_hook_when_updated() -> None:
