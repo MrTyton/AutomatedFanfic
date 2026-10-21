@@ -9,6 +9,7 @@ This is a docker image to run the Automated FFF CLI, with Apprise integration.
 
 - [AutomatedFanfic](#automatedfanfic)
   - [Platform Support](#platform-support)
+  - [Docker Image Variants](#docker-image-variants)
   - [Site Support](#site-support)
   - [Repeats](#repeats)
   - [Calibre Setup](#calibre-setup)
@@ -34,6 +35,27 @@ This Docker image supports multi-platform deployment:
 
 The image automatically detects the target architecture during build and configures Calibre appropriately. Both platforms provide full functionality, though x86_64 may have slightly newer Calibre versions due to using official releases.
 
+## Docker Image Variants
+
+AutomatedFanfic publishes two image flavors on Docker Hub (`mrtyton/automated-ffdl`):
+
+| Variant | Tag Examples | Typical Size | Included Components | Best For |
+|---|---|---|---|---|
+| **Standalone** *(default)* | `:latest`<br>`:standalone`<br>`:<version>`<br>`:<version>-standalone` | ~300 MB | FanFicFare, Web UI, Full local `calibredb` CLI binaries & Qt runtime | Local library files (`/data/calibre`), direct filesystem mounts, or all-in-one containers |
+| **Slim** | `:slim`<br>`:<version>-slim` | ~85 MB | FanFicFare, Web UI, native HTTP client | Remote Calibre Content Server (`http://` or `https://` in `calibre.path`), Kubernetes, or low-memory VPS instances |
+
+### Which variant should you choose?
+
+- **Use Standalone (`mrtyton/automated-ffdl:latest`)** if your Calibre library lives on the same host or filesystem share and you set `calibre.path = "/books/Calibre"` (a local folder containing `metadata.db`). The standalone image includes the complete `calibredb` CLI suite and can manipulate local Calibre databases directly.
+- **Use Slim (`mrtyton/automated-ffdl:slim`)** if your Calibre instance runs on a separate machine, NAS, or container (e.g. `linuxserver/calibre` or `calibre-web`) and you connect over HTTP:
+  ```toml
+  [calibre]
+  path = "http://192.168.1.50:8080/#MyLibrary"
+  username = "calibre_user"
+  password = "secret_password"
+  ```
+  The **Slim** image strips the entire ~190 MB Calibre desktop binary package and uses the native `CalibreHttpClient` to interact with Calibre's REST/Content Server API directly over HTTP/HTTPS (supporting HTTP Digest Auth, Basic Auth, and reverse proxies). Because it has no dependency on Calibre's release binaries, pulling and updating the slim image is significantly faster and uses less disk and RAM.
+
 ## Site Support
 
 This program will support any website that FanFicFare will support. However, it does make use of multi-processing, spawning a different "watcher" for each website. This list is automatically generated, based on the adaptors that FanFicFare has.
@@ -56,9 +78,10 @@ If the `update_method` is set to `"update_no_force"` and a force update is reque
 
 ### How to Install - Docker
 
-1. Install the docker image with `docker pull mrtyton/automated-ffdl`
-   - The image supports both x86_64 and ARM64 architectures
-   - Docker will automatically pull the correct version for your platform
+1. Install the docker image:
+   - For standalone (local library / calibredb): `docker pull mrtyton/automated-ffdl:latest`
+   - For slim (remote Calibre server over HTTP): `docker pull mrtyton/automated-ffdl:slim`
+   - Both variants support x86_64 and ARM64 architectures; Docker will automatically pull the correct architecture for your platform.
 2. Map the `/config` volume to someplace on your drive.
 3. Map the `/data` volume for persistent history database storage (required if using the web dashboard).
 4. If you want to use the web dashboard, map port `8080` (or your configured port) and set `enabled = true` in the `[web]` section of `config.toml`.
