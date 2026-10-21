@@ -264,6 +264,13 @@ def test_live_calibre_http_client_full_lifecycle(
     assert added.calibre_id == fanfic.calibre_id
     assert added.title == "Live Test Story"
 
+    # Verify adding a duplicate story succeeds and assigns a new distinct calibre_id
+    duplicate_fanfic = FanficInfo(site="ao3", url=story_url)
+    added_duplicate = client.add_story(str(add_dir), duplicate_fanfic)
+    assert isinstance(added_duplicate, AddedBook)
+    assert added_duplicate.calibre_id != added.calibre_id
+    client.remove_story(duplicate_fanfic)
+
     # 4. Verify exact URL search matches story_url and does NOT match prefix_url
     found_id = client.get_story_id(fanfic)
     assert found_id == added.calibre_id

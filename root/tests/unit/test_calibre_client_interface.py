@@ -80,17 +80,19 @@ def test_calibre_client_abstract_methods() -> None:
 
 def test_build_url_search_query_with_scheme() -> None:
     url = "https://archiveofourown.org/works/12345"
-    assert (
-        build_url_search_query(url)
-        == 'identifiers:":=https://archiveofourown.org/works/12345" or identifiers:https:="//archiveofourown.org/works/12345"'
-    )
+    query = build_url_search_query(url)
+    assert 'identifiers:":=https://archiveofourown.org/works/12345"' in query
+    assert 'identifiers:":=https://www.archiveofourown.org/works/12345"' in query
+    assert 'identifiers:":=archiveofourown.org/works/12345"' in query
+    assert 'identifiers:https:="//archiveofourown.org/works/12345"' in query
 
 
 def test_build_url_search_query_without_scheme() -> None:
-    url = "archiveofourown.org/works/12345"
-    assert (
-        build_url_search_query(url) == 'identifiers:":=archiveofourown.org/works/12345"'
-    )
+    url = "royalroad.com/fiction/164248"
+    query = build_url_search_query(url)
+    assert 'identifiers:":=https://www.royalroad.com/fiction/164248"' in query
+    assert 'identifiers:":=https://royalroad.com/fiction/164248"' in query
+    assert 'identifiers:":=royalroad.com/fiction/164248"' in query
 
 
 def test_refresh_if_changed_invokes_hook_when_updated() -> None:

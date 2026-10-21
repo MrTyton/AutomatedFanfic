@@ -14,12 +14,14 @@ def build_url_search_query(url: str) -> str:
     """Build an exact-match Calibre search query for a story URL.
 
     FanFicFare writes `<dc:identifier opf:scheme="URL">https://...</dc:identifier>`
-    (EPUB 2, stored under `identifiers:url` or `identifiers:uri` when used as the
-    package `unique-identifier`) or `<dc:identifier>URL:https://...</dc:identifier>`
-    (EPUB 3, stored under `identifiers:url`). Searching `identifiers:":=value"`
-    performs an exact value match across any identifier key (preventing prefix URL
-    collisions like `/works/123` vs `/works/1234`), while `identifiers:{scheme}:="rest"`
-    covers older books where an unprefixed URL was split on the scheme colon.
+    (EPUB 2, stored under `identifiers:url` or `identifiers:uri`) or
+    `<dc:identifier>URL:https://...</dc:identifier>` (EPUB 3).
+    Calibre identifiers store exact URLs, which may or may not have a scheme
+    ('https://', 'http://') or 'www.' prefix depending on site and FanFicFare adapter.
+
+    To prevent prefix collisions (e.g. /works/123 vs /works/1234) while matching
+    across all scheme, www, and trailing slash variants, this constructs
+    exact-value matches (`:=`) for all canonical permutations of the URL.
 
     Args:
         url: The story URL to search for.
@@ -27,14 +29,44 @@ def build_url_search_query(url: str) -> str:
     Returns:
         str: Calibre search expression matching exact identifier values.
     """
-    escaped_url = url.replace("\\", "\\\\").replace('"', r"\"")
-    if ":" in url:
-        scheme, rest = url.split(":", 1)
-        escaped_rest = rest.replace("\\", "\\\\").replace('"', r"\"")
-        return (
-            f'identifiers:":={escaped_url}" or identifiers:{scheme}:="{escaped_rest}"'
-        )
-    return f'identifiers:":={escaped_url}"'
+    clean = url.strip()
+    if clean.startswith("http://"):
+        clean = clean[7:]
+    elif clean.startswith("https://"):
+        clean = clean[8:]
+
+    parts = clean.split("/", 1)
+    host = parts[0]
+    path = "/" + parts[1] if len(parts) > 1 else ""
+
+    hosts = [host]
+    if host.startswith("www."):
+        hosts.append(host[4:])
+    elif host:
+        hosts.append("www." + host)
+
+    variants: set[str] = set()
+    for h in hosts:
+        combo = h + path
+        combo_slash = combo if combo.endswith("/") else combo + "/"
+        combo_noslash = combo.rstrip("/")
+        for c in (combo, combo_slash, combo_noslash):
+            variants.add(f"https://{c}")
+            variants.add(f"http://{c}")
+            variants.add(c)
+
+    variants.add(url.strip())
+
+    clauses: list[str] = []
+    for v in sorted(variants):
+        escaped = v.replace("\\", "\\\\").replace('"', r"\"")
+        clauses.append(f'identifiers:":={escaped}"')
+        if ":" in v:
+            scheme, rest = v.split(":", 1)
+            esc_rest = rest.replace("\\", "\\\\").replace('"', r"\"")
+            clauses.append(f'identifiers:{scheme}:="{esc_rest}"')
+
+    return " or ".join(clauses)
 
 
 class CalibreClient(ABC):

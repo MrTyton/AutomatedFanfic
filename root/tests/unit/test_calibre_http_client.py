@@ -161,7 +161,9 @@ def test_get_story_id_unwraps_calibre_canary_set() -> None:
     session = client._get_session()
 
     canary_payload = {"result": {"jPoAv3zOyHvQ5JFNYg4hJ9": 1, "v": [42, 43]}}
-    session.request = MagicMock(return_value=_make_response(200, json_data=canary_payload))  # type: ignore[method-assign]
+    session.request = MagicMock(
+        return_value=_make_response(200, json_data=canary_payload)
+    )  # type: ignore[method-assign]
 
     fanfic = FanficInfo(site="ao3", url="https://archiveofourown.org/works/12345")
     book_id = client.get_story_id(fanfic)
@@ -278,7 +280,9 @@ def test_get_metadata_and_set_metadata_fields() -> None:
             },
         }
     }
-    session.request = MagicMock(return_value=_make_response(200, json_data=list_payload))  # type: ignore[method-assign]
+    session.request = MagicMock(
+        return_value=_make_response(200, json_data=list_payload)
+    )  # type: ignore[method-assign]
 
     fanfic = FanficInfo(
         site="ao3", url="https://archiveofourown.org/works/77", calibre_id="77"
@@ -331,9 +335,7 @@ def test_http_client_missing_calibre_id_and_empty_branches(tmp_path: Path) -> No
     )  # type: ignore[method-assign]
     assert client.get_story_id(fanfic) is None
 
-    session.request = MagicMock(
-        side_effect=requests.ConnectionError("down")
-    )  # type: ignore[method-assign]
+    session.request = MagicMock(side_effect=requests.ConnectionError("down"))  # type: ignore[method-assign]
     assert client.get_story_id(fanfic) is None
     assert client.get_version().startswith("Error:")
     assert client.get_metadata(fanfic) == {}

@@ -280,9 +280,9 @@ class CalibreHttpClient(CalibreClient):
             epub_bytes = epub_path.read_bytes()
             job_id = int(time.time() * 1000) % 1_000_000_000
             encoded_name = quote(epub_path.name, safe="")
-            # 'n' means add_duplicates=True (do not skip duplicates when force/preserve_metadata re-adds)
+            # 'y' means add_duplicates=True (Calibre checks add_duplicates in ('y', '1'))
             path = (
-                f"/cdb/add-book/{job_id}/n/{encoded_name}{self._library_path_suffix()}"
+                f"/cdb/add-book/{job_id}/y/{encoded_name}{self._library_path_suffix()}"
             )
 
             with self._lock_context():
@@ -294,6 +294,10 @@ class CalibreHttpClient(CalibreClient):
                 )
             payload = self._decode_json(response)
             if not isinstance(payload, dict) or "book_id" not in payload:
+                if isinstance(payload, dict) and "duplicates" in payload:
+                    raise CalibreOperationError(
+                        f"Calibre server rejected book as duplicate: {payload['duplicates']}"
+                    )
                 raise CalibreOperationError(
                     f"Unexpected add-book response from Calibre server: {payload}"
                 )
