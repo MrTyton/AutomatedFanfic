@@ -18,10 +18,9 @@ from subprocess import (
     TimeoutExpired,
     run,
 )
-from typing import Any
 
 from . import calibre_info
-from .client_interface import CalibreClient, build_url_search_query
+from .client_interface import CalibreClient, CalibreMetadata, build_url_search_query
 from .models import AddedBook, BookExport, CalibreOperationError, MetadataUpdateReport
 from config.config_store import ConfigStore
 from models import fanfic_info
@@ -386,7 +385,7 @@ class CalibreDBClient(CalibreClient):
             )
             raise
 
-    def get_metadata(self, fanfic: fanfic_info.FanficInfo) -> dict[str, Any]:
+    def get_metadata(self, fanfic: fanfic_info.FanficInfo) -> CalibreMetadata:
         """Get all metadata for a story.
 
         Args:
@@ -438,7 +437,7 @@ class CalibreDBClient(CalibreClient):
     def set_metadata_fields(
         self,
         fanfic: fanfic_info.FanficInfo,
-        metadata: dict[str, Any],
+        metadata: CalibreMetadata,
     ) -> MetadataUpdateReport:
         """Restore custom metadata fields.
 

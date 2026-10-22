@@ -54,6 +54,7 @@ from process_management import ProcessManager
 from history.recorder import HistoryRecorder, HistoryWriter
 from config.config_store import ConfigStore
 lazy from web import server as web_server
+lazy from calibre_integration.http_client import CalibreHttpClient
 
 # Define the application version
 __version__ = "6.3.1"
@@ -142,7 +143,6 @@ def log_configuration_details(
 
     # Log external tool versions
     if calibre_factory.is_http_location(getattr(config.calibre, "path", "")):
-        from calibre_integration.http_client import CalibreHttpClient
 
         class _NoopLockFactory:
             @staticmethod
@@ -150,7 +150,7 @@ def log_configuration_details(
                 return None
 
         temp_info = calibre_info.CalibreInfo(config.calibre, _NoopLockFactory())
-        calibre_version = CalibreHttpClient(temp_info, ConfigStore()).get_version()
+        calibre_version = CalibreHttpClient(temp_info, ConfigStore({})).get_version()
     else:
         calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
     fanficfare_version = url_worker.command.get_fanficfare_version()

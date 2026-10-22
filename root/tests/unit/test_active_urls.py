@@ -12,8 +12,9 @@ from models.fanfic_info import FanficInfo
 class TestActiveUrlsHelpers:
     """Tests for models.active_urls helper functions."""
 
-    def test_is_url_active_handles_none_missing_active_and_cancelled(self):
-        assert active_urls.is_url_active(None, "https://example.com/1") is False
+    def test_is_url_active_handles_empty_missing_and_cancelled(self):
+        # Empty store — no URLs are active
+        assert active_urls.is_url_active({}, "https://example.com/1") is False
 
         store = {
             "https://example.com/1": {"site": "example", "status": "queued"},

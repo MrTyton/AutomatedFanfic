@@ -67,8 +67,6 @@ import os
 import socket
 import time
 import logging
-from collections.abc import MutableMapping
-from typing import Any
 from contextlib import contextmanager
 lazy from fanficfare import geturls
 from config.config_store import ConfigStore
@@ -79,6 +77,7 @@ lazy from utils import system_utils
 from parsers import regex_parsing
 from notifications import notification_wrapper
 from models import active_urls as active_urls_utils
+from models.active_urls import ActiveUrlsDict
 from models.config_models import EmailConfig
 from models.queue_types import IngressQueue, ShutdownEvent
 
@@ -474,7 +473,7 @@ def email_watcher(
     notification_info: notification_wrapper.NotificationWrapper,
     ingress_queue: IngressQueue,
     url_parsers: dict,
-    active_urls: MutableMapping[str, Any],
+    active_urls: ActiveUrlsDict,
     verbose: bool,
     shutdown_event: ShutdownEvent,
     history_recorder: HistoryRecorder,

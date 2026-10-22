@@ -31,7 +31,6 @@ class TestNotificationWrapper(unittest.TestCase):
     )
     @patch("notifications.notification_wrapper.ThreadPoolExecutor")
     @patch("notifications.notification_wrapper.AppriseNotification")
-    @patch("notifications.notification_wrapper.ff_logging")
     def test_send_notification(
         self,
         workers,
@@ -39,7 +38,6 @@ class TestNotificationWrapper(unittest.TestCase):
         body,
         site,
         expected_calls,
-        mock_ff_logging,
         mock_apprise_notification,
         mock_executor,
     ):

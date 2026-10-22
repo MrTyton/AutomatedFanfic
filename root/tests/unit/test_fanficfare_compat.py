@@ -191,7 +191,7 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
         defaults_ini = (
             Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini"
         )
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", str(defaults_ini))
         get_config_fn = _make_fff_get_configuration(store)
         initial_config = get_config_fn("test1.com")

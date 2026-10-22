@@ -393,7 +393,7 @@ class TestEdgeCases:
             "[archiveofourown.org]\nusername=testuser\n", encoding="utf-8"
         )
 
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.personal_ini", str(ini_file))
         config = series_utils.get_series_configuration(
             "https://archiveofourown.org/series/12345",

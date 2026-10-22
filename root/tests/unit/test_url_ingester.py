@@ -63,7 +63,7 @@ class TestUrlIngester(unittest.TestCase):
             sleep_time=sleep_time,
         )
 
-        email_info = EmailInfo(email_config, ConfigStore())
+        email_info = EmailInfo(email_config, ConfigStore({}))
 
         self.assertEqual(email_info.email, email)
         self.assertEqual(email_info.password, password)
@@ -87,7 +87,7 @@ class TestUrlIngester(unittest.TestCase):
             disabled_sites=disabled_sites,
         )
 
-        email_info = EmailInfo(email_config, ConfigStore())
+        email_info = EmailInfo(email_config, ConfigStore({}))
 
         self.assertEqual(email_info.disabled_sites, disabled_sites)
 
@@ -112,7 +112,7 @@ class TestUrlIngester(unittest.TestCase):
         # Setup mock URL return via the class instance
         mock_get_urls_class.return_value.get_urls_from_imap.return_value = expected_urls
 
-        email_info = EmailInfo(email_config, ConfigStore())
+        email_info = EmailInfo(email_config, ConfigStore({}))
         result = email_info.get_urls()
 
         self.assertEqual(result, set(expected_urls))
@@ -135,7 +135,7 @@ class TestUrlIngester(unittest.TestCase):
             "Connection failed"
         )
 
-        email_info = EmailInfo(email_config, ConfigStore())
+        email_info = EmailInfo(email_config, ConfigStore({}))
 
         with patch("services.url_ingester.ff_logging.log_failure") as mock_log_failure:
             result = email_info.get_urls()
@@ -159,7 +159,7 @@ class TestUrlIngester(unittest.TestCase):
     )
     def test_email_info_init_stores_ini_paths(self, name, default_ini, personal_ini):
         """EmailInfo resolves the ini paths from ConfigStore."""
-        store = ConfigStore()
+        store = ConfigStore({})
         if default_ini:
             store.update("calibre.default_ini", default_ini)
         if personal_ini:
@@ -178,7 +178,7 @@ class TestUrlIngester(unittest.TestCase):
         email_config = EmailConfig(
             email="testuser", password="pass", server="srv", mailbox="INBOX"
         )
-        email_info = EmailInfo(email_config, ConfigStore())
+        email_info = EmailInfo(email_config, ConfigStore({}))
         self.assertEqual(email_info.personal_ini, "")
 
     @patch("services.url_ingester.geturls.GetURLs")
@@ -190,7 +190,7 @@ class TestUrlIngester(unittest.TestCase):
             email="testuser", password="pass", server="srv", mailbox="INBOX"
         )
         mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
-        store = ConfigStore()
+        store = ConfigStore({})
         email_info = EmailInfo(email_config, config_store=store)
         email_info.get_urls()
         mock_get_urls_class.assert_called_once_with(config=None, get_config=None)
@@ -205,7 +205,7 @@ class TestUrlIngester(unittest.TestCase):
         )
         mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
 
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", "/a/defaults.ini")
         store.update("calibre.personal_ini", "/a/personal.ini")
 
@@ -226,7 +226,7 @@ class TestUrlIngester(unittest.TestCase):
         )
         mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
 
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", "/a/defaults.ini")
         store.update("calibre.personal_ini", "/a/personal.ini")
 
@@ -251,14 +251,14 @@ class TestUrlIngester(unittest.TestCase):
     def test_email_info_init_imap_idle_defaults_false(self, _):
         """imap_idle defaults to False on EmailInfo when not set in config."""
         email_config = EmailConfig(email="u", password="p", server="s")
-        email_info = EmailInfo(email_config, ConfigStore())
+        email_info = EmailInfo(email_config, ConfigStore({}))
         self.assertFalse(email_info.imap_idle)
 
     @patch("services.url_ingester.geturls.GetURLs")
     def test_email_info_init_imap_idle_true(self, _):
         """imap_idle is True on EmailInfo when enabled in config."""
         email_config = EmailConfig(email="u", password="p", server="s", imap_idle=True)
-        email_info = EmailInfo(email_config, ConfigStore())
+        email_info = EmailInfo(email_config, ConfigStore({}))
         self.assertTrue(email_info.imap_idle)
 
     def test_email_config_imap_idle_field_default_false(self):
@@ -280,7 +280,7 @@ class TestUrlIngester(unittest.TestCase):
     def test_email_info_getstate_excludes_geturls(self):
         """__getstate__ must omit _geturls and _geturls_ini_mtime."""
         email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
-        ei = EmailInfo(email_config, ConfigStore())
+        ei = EmailInfo(email_config, ConfigStore({}))
         state = ei.__getstate__()
         self.assertNotIn("_geturls", state)
         self.assertNotIn("_geturls_ini_mtime", state)
@@ -296,7 +296,7 @@ class TestUrlIngester(unittest.TestCase):
             imap_idle=True,
             disabled_sites=["fanfiction"],
         )
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", "/d.ini")
         store.update("calibre.personal_ini", "/p.ini")
         ei = EmailInfo(email_config, config_store=store)
@@ -318,7 +318,7 @@ class TestUrlIngester(unittest.TestCase):
     def test_email_info_setstate_rebuilds_geturls(self):
         """__setstate__ reconstructs _geturls without calling __init__."""
         email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
-        ei = EmailInfo(email_config, ConfigStore())
+        ei = EmailInfo(email_config, ConfigStore({}))
         state = ei.__getstate__()
 
         ei2 = object.__new__(EmailInfo)  # bypass __init__
@@ -333,7 +333,7 @@ class TestUrlIngester(unittest.TestCase):
         email_config = EmailConfig(
             email="u", password="p", server="s", mailbox="INBOX", sleep_time=15
         )
-        ei = EmailInfo(email_config, ConfigStore())
+        ei = EmailInfo(email_config, ConfigStore({}))
         ei2 = pickle.loads(pickle.dumps(ei))
         self.assertEqual(ei2.email, "u")
         self.assertEqual(ei2.server, "s")
@@ -351,7 +351,7 @@ class TestUrlIngester(unittest.TestCase):
         mock_geturls.return_value = MagicMock()
 
         email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", "/d/defaults.ini")
         store.update("calibre.personal_ini", "/p/personal.ini")
         ei = EmailInfo(email_config, config_store=store)
@@ -371,7 +371,7 @@ class TestUrlIngester(unittest.TestCase):
         """
         ctx = mp.get_context("spawn")
         email_config = EmailConfig(email="u", password="p", server="s", mailbox="INBOX")
-        ei = EmailInfo(email_config, ConfigStore())
+        ei = EmailInfo(email_config, ConfigStore({}))
         result_q = ctx.Queue()
         p = ctx.Process(target=_subprocess_echo_email, args=(ei, result_q))
         p.start()
@@ -393,7 +393,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
     ):
         """Helper: patch FFF internals, invoke the factory, call the inner fn."""
         sections = sections or ["www.royalroad.com", "test1.com"]
-        store = store if store is not None else ConfigStore()
+        store = store if store is not None else ConfigStore({})
 
         with (
             patch(
@@ -409,7 +409,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_returns_callable(self):
         """Factory always returns a callable regardless of store value."""
-        fn = _make_fff_get_configuration(ConfigStore())
+        fn = _make_fff_get_configuration(ConfigStore({}))
         self.assertTrue(callable(fn))
 
     def test_callable_uses_sections_from_url(self):
@@ -433,7 +433,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
             patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
         ):
             mock_cfg_cls.return_value = MagicMock()
-            fn = _make_fff_get_configuration(ConfigStore())
+            fn = _make_fff_get_configuration(ConfigStore({}))
             fn(url)
         mock_cfg_cls.assert_called_once_with(["test1.com"], "EPUB")
 
@@ -441,7 +441,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         """Both ini paths configured in ConfigStore are read when both files exist."""
         from config.config_store import ConfigStore
 
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", "/d/defaults.ini")
         store.update("calibre.personal_ini", "/d/personal.ini")
 
@@ -464,7 +464,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         """config.read is never called when neither ini file exists on disk."""
         from config.config_store import ConfigStore
 
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", "/missing/defaults.ini")
         store.update("calibre.personal_ini", "/missing/personal.ini")
 
@@ -485,7 +485,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         """Only the personal.ini is loaded when the defaults file does not exist."""
         from config.config_store import ConfigStore
 
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("calibre.default_ini", "/missing/defaults.ini")
         store.update("calibre.personal_ini", "/exists/personal.ini")
 
@@ -506,7 +506,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         """An empty ConfigStore skips config.read when no ini files exist."""
         from config.config_store import ConfigStore
 
-        store = ConfigStore()
+        store = ConfigStore({})
         with (
             patch(
                 "fanficfare.adapters.getConfigSectionsFor", return_value=["test1.com"]
@@ -606,7 +606,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
                 False,
                 threading.Event(),
                 MagicMock(),
-                ConfigStore(),
+                ConfigStore({}),
             )
 
         # Verify URL was processed
@@ -653,7 +653,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
                 False,
                 threading.Event(),
                 MagicMock(),
-                ConfigStore(),
+                ConfigStore({}),
             )
 
         # Verify notification was sent
@@ -706,7 +706,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
                 False,
                 threading.Event(),
                 MagicMock(),
-                ConfigStore(),
+                ConfigStore({}),
             )
 
         # Verify each fanfic was added to the ingress queue (order may vary)
@@ -739,7 +739,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
                 False,
                 threading.Event(),
                 MagicMock(),
-                ConfigStore(),
+                ConfigStore({}),
             )
 
         # Verify ingress queue remain empty
@@ -771,7 +771,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
                 False,
                 mock_shutdown_event,
                 MagicMock(),
-                ConfigStore(),
+                ConfigStore({}),
             )
 
         # Verify shutdown_event.wait was called with correct timeout duration
@@ -801,7 +801,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
                 False,
                 threading.Event(),
                 MagicMock(),
-                ConfigStore(),
+                ConfigStore({}),
             )
 
         self.mock_email_info._idle_wait_for_notification.assert_called_once()
@@ -824,7 +824,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
             False,
             shutdown_event,
             MagicMock(),
-            ConfigStore(),
+            ConfigStore({}),
         )
 
         self.mock_email_info._idle_wait_for_notification.assert_called_once_with(
@@ -844,7 +844,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
             imap_idle=True,
         )
         with patch("services.url_ingester.geturls.GetURLs"):
-            return EmailInfo(email_config, ConfigStore())
+            return EmailInfo(email_config, ConfigStore({}))
 
     def _setup_mock_conn(self, mock_cls):
         mock_conn = mock_cls.return_value.__enter__.return_value
@@ -964,14 +964,14 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         import os
         import tempfile
 
-        init_store = ConfigStore()
+        init_store = ConfigStore({})
         email_config = EmailConfig(email="u", password="p", server="s")
         ei = EmailInfo(email_config, init_store)
         self.assertEqual(ei.default_ini, init_store.get_resolved_default_ini())
         self.assertEqual(ei.personal_ini, "")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            store = ConfigStore()
+            store = ConfigStore({})
             store.update("calibre.default_ini", tmp_dir)
             store.update("calibre.personal_ini", os.path.join(tmp_dir, "personal.ini"))
 
@@ -989,7 +989,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         from queue import Queue
 
         email_config = EmailConfig(email="u", password="p", server="s", sleep_time=1)
-        store = ConfigStore()
+        store = ConfigStore({})
         ei = EmailInfo(email_config, store)
         mock_notif = MagicMock()
         ingress_q = Queue()

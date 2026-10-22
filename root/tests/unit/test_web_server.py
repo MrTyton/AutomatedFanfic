@@ -1021,7 +1021,7 @@ port = 8080
                 fh.write(toml_content)
 
             cfg = ConfigManager.load_config(cfg_path, force_reload=True)
-            store = ConfigStore()
+            store = ConfigStore({})
             store.initialize_from_config(cfg)
 
             state = WebState(

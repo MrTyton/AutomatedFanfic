@@ -1,7 +1,5 @@
 """Health and status API routes."""
 
-from typing import Any
-
 from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/api", tags=["health"])
@@ -18,7 +16,7 @@ async def system_status(request: Request):
     """Overall system status including process states and queue sizes."""
     state = request.app.state.web_state
 
-    result: dict[str, Any] = {"status": "running", "processes": {}, "queues": {}}
+    result: dict[str, object] = {"status": "running", "processes": {}, "queues": {}}
 
     # Process status
     if state.process_status_callable:

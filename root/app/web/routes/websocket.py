@@ -7,12 +7,12 @@ recent history events) and pushes JSON to all connected clients every 1-2 s.
 import asyncio
 import json
 import time
-from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from models import active_urls as active_urls_utils
+from web.dependencies import WebState
 
 router = APIRouter()
 
@@ -24,21 +24,21 @@ _BROADCAST_MIN_INTERVAL: float = 0.1
 _last_broadcast_time: float = 0.0
 
 # Shared background snapshot task state
-_latest_snapshot: dict | None = None
-_bg_task: asyncio.Task | None = None  # type: ignore[type-arg]
+_latest_snapshot: dict[str, object] | None = None
+_bg_task: asyncio.Task[None] | None = None
 
 # TTL cache for expensive historical DB queries (recent_downloads, recent_activity)
 _HISTORY_CACHE_TTL: float = 10.0
-_history_cache: dict[str, Any] = {
+_history_cache: dict[str, object] = {
     "recent_downloads": [],
     "recent_activity": [],
     "expires_at": 0.0,
 }
 
 
-async def _build_snapshot(state: Any) -> dict:
+async def _build_snapshot(state: WebState) -> dict[str, object]:
     """Build a JSON-serialisable dashboard snapshot from WebState."""
-    snapshot: dict[str, Any] = {"timestamp": time.time()}
+    snapshot: dict[str, object] = {"timestamp": time.time()}
 
     # ── Active downloads ────────────────────────────────────────
     url_metadata: dict[str, dict] = {}  # url -> {site, title, ...}
@@ -150,7 +150,7 @@ async def _build_snapshot(state: Any) -> dict:
     return snapshot
 
 
-async def _build_and_push_snapshot(state: Any) -> dict:
+async def _build_and_push_snapshot(state: WebState) -> dict[str, object]:
     """Build one snapshot and push it to every connected client.
 
     Dead connections (those that raise on send) are removed from ``_connections``.
@@ -169,7 +169,7 @@ async def _build_and_push_snapshot(state: Any) -> dict:
     return snapshot
 
 
-async def _snapshot_loop(state: Any) -> None:
+async def _snapshot_loop(state: WebState) -> None:
     """Background task: build and push one snapshot per second while clients are connected."""
     while True:
         if _connections:
@@ -180,7 +180,7 @@ async def _snapshot_loop(state: Any) -> None:
         await asyncio.sleep(1)
 
 
-def _ensure_snapshot_task(state: Any) -> None:
+def _ensure_snapshot_task(state: WebState) -> None:
     """Start the shared background snapshot task if it is not already running."""
     global _bg_task
     if _bg_task is None or _bg_task.done():

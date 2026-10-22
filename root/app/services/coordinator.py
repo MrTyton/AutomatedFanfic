@@ -19,9 +19,7 @@ Architecture Note:
 """
 
 import collections
-from collections.abc import MutableMapping
 from dataclasses import dataclass, field
-from typing import Any
 
 from queue import Empty
 from enum import Enum
@@ -29,6 +27,7 @@ from config.config_store import ConfigStore
 from history.recorder import HistoryRecorder
 from utils import ff_logging
 from models import active_urls as active_urls_utils
+from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from models.queue_types import (
     IngressQueue,
@@ -111,7 +110,7 @@ class Coordinator:
         ingress_queue: IngressQueue,
         worker_queues: WorkerQueues,
         shutdown_event: ShutdownEvent,
-        active_urls: MutableMapping[str, Any],
+        active_urls: ActiveUrlsDict,
         history_recorder: HistoryRecorder,
         url_parsers: dict,
         config_store: ConfigStore,
@@ -517,7 +516,7 @@ def start_coordinator(
     worker_queues: WorkerQueues,
     verbose: bool,
     shutdown_event: ShutdownEvent,
-    active_urls: MutableMapping[str, Any],
+    active_urls: ActiveUrlsDict,
     history_recorder: HistoryRecorder,
     url_parsers: dict,
     config_store: ConfigStore,

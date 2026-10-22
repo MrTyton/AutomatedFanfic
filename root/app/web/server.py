@@ -10,7 +10,6 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from multiprocessing.synchronize import Event
 from pathlib import Path
-from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -123,7 +122,7 @@ def run_web_server(
     app_config: AppConfig,
     config_path: str,
     web_restart_event: Event,
-    process_status_callable: Callable[[], dict[str, Any]] | None = None,
+    process_status_callable: Callable[[], dict[str, object]] | None = None,
 ) -> None:
     """Process entry point for the web server.
 

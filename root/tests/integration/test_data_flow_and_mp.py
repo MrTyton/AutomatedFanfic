@@ -157,7 +157,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 worker_q = Queue()
                 worker_queues = {"worker_0": worker_q}
                 active_urls = {}
-                store = ConfigStore()
+                store = ConfigStore({})
 
                 url_parsers = generate_url_parsers_from_fanficfare()
                 coordinator = Coordinator(
@@ -377,7 +377,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             active_urls=active_urls,
             history_recorder=recorder,
             url_parsers=url_parsers,
-            config_store=ConfigStore(),
+            config_store=ConfigStore({}),
             scale_queue=Queue(),
         )
 
@@ -420,7 +420,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 )
 
             cfg = config_models.ConfigManager.load_config(cfg_path, force_reload=True)
-            store = ConfigStore()
+            store = ConfigStore({})
             store.initialize_from_config(cfg)
 
             # 1. CalibreInfo does not spam log_failure on repeated update_from_config_store when INI files are absent
@@ -572,7 +572,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             ),
             calibre=config_models.CalibreConfig(),
         )
-        store = ConfigStore()
+        store = ConfigStore({})
         store.initialize_from_config(cfg)
 
         with mp.Manager() as manager:

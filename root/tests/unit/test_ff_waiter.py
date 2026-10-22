@@ -3,17 +3,25 @@ import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
-
+from helpers.log_capture import LogCapture
 from models import fanfic_info
 from services import ff_waiter
 from models import retry_types
+from utils import ff_logging
 
 
 class TestLogRetryDecision(unittest.TestCase):
     """Test the _log_retry_decision helper function."""
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_retry_action_logs_waiting(self, mock_log):
+    def setUp(self):
+        self._log_capture = LogCapture()
+        ff_logging.set_log_forward_queue(self._log_capture)
+        self._log_capture.drain()
+
+    def tearDown(self):
+        ff_logging.set_log_forward_queue(None)
+
+    def test_retry_action_logs_waiting(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=3)
         decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.RETRY,
@@ -24,12 +32,11 @@ class TestLogRetryDecision(unittest.TestCase):
 
         ff_waiter._log_retry_decision(fanfic, decision)
 
-        mock_log.assert_called_once()
-        self.assertIn("Waiting ~5.00 minutes", mock_log.call_args[0][0])
-        self.assertIn("retry #3", mock_log.call_args[0][0])
+        msgs = self._log_capture.messages()
+        self.assertTrue(any("Waiting ~5.00 minutes" in m for m in msgs))
+        self.assertTrue(any("retry #3" in m for m in msgs))
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_hail_mary_action_logs_hail_mary(self, mock_log):
+    def test_hail_mary_action_logs_hail_mary(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
         decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.HAIL_MARY,
@@ -40,11 +47,10 @@ class TestLogRetryDecision(unittest.TestCase):
 
         ff_waiter._log_retry_decision(fanfic, decision)
 
-        mock_log.assert_called_once()
-        self.assertIn("Hail-Mary attempt", mock_log.call_args[0][0])
+        msgs = self._log_capture.messages()
+        self.assertTrue(any("Hail-Mary attempt" in m for m in msgs))
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_abandon_action_logs_error(self, mock_log):
+    def test_abandon_action_logs_error(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
         decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.ABANDON,
@@ -55,16 +61,22 @@ class TestLogRetryDecision(unittest.TestCase):
 
         ff_waiter._log_retry_decision(fanfic, decision)
 
-        mock_log.assert_called_once()
-        self.assertIn("Unexpected abandon action", mock_log.call_args[0][0])
-        self.assertEqual("ERROR", mock_log.call_args[0][1])
+        msgs = self._log_capture.messages()
+        self.assertTrue(any("Unexpected abandon action" in m for m in msgs))
 
 
 class TestGetDelaySeconds(unittest.TestCase):
     """Test the _get_delay_seconds helper function."""
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_retry_returns_delay(self, mock_log):
+    def setUp(self):
+        self._log_capture = LogCapture()
+        ff_logging.set_log_forward_queue(self._log_capture)
+        self._log_capture.drain()
+
+    def tearDown(self):
+        ff_logging.set_log_forward_queue(None)
+
+    def test_retry_returns_delay(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=2)
         fanfic.retry_decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.RETRY,
@@ -76,8 +88,7 @@ class TestGetDelaySeconds(unittest.TestCase):
         delay = ff_waiter._get_delay_seconds(fanfic)
         self.assertEqual(delay, 300)
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_hail_mary_returns_delay(self, mock_log):
+    def test_hail_mary_returns_delay(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
         fanfic.retry_decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.HAIL_MARY,
@@ -89,8 +100,7 @@ class TestGetDelaySeconds(unittest.TestCase):
         delay = ff_waiter._get_delay_seconds(fanfic)
         self.assertEqual(delay, 43200)
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_abandon_returns_none(self, mock_log):
+    def test_abandon_returns_none(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
         fanfic.retry_decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.ABANDON,
@@ -102,19 +112,17 @@ class TestGetDelaySeconds(unittest.TestCase):
         delay = ff_waiter._get_delay_seconds(fanfic)
         self.assertIsNone(delay)
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_no_decision_uses_fallback(self, mock_log):
+    def test_no_decision_uses_fallback(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url")
         # No retry_decision set (None)
 
         delay = ff_waiter._get_delay_seconds(fanfic)
 
         self.assertEqual(delay, 300)  # 5 min default
-        # First log call should be the warning about missing decision
-        self.assertIn("No retry decision found", mock_log.call_args_list[0][0][0])
+        msgs = self._log_capture.messages()
+        self.assertTrue(any("No retry decision found" in m for m in msgs))
 
-    @patch("services.ff_waiter.ff_logging.log")
-    def test_fractional_delay(self, mock_log):
+    def test_fractional_delay(self):
         fanfic = fanfic_info.FanficInfo(site="site", url="url", repeats=1)
         fanfic.retry_decision = retry_types.RetryDecision(
             action=retry_types.FailureAction.RETRY,

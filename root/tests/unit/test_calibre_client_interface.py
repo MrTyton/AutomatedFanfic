@@ -1,7 +1,7 @@
 import inspect
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import pytest
 
 from calibre_integration.calibre_info import CalibreInfo
@@ -12,7 +12,9 @@ from calibre_integration.client_interface import (
 )
 from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
 from config.config_store import ConfigStore
+from helpers.log_capture import LogCapture
 from models.fanfic_info import FanficInfo
+from utils import ff_logging
 
 
 class _DummyCalibreClient(CalibreClient):
@@ -164,8 +166,10 @@ def test_refresh_if_changed_invokes_hook_when_updated() -> None:
     assert client.refreshed_count == 1
 
 
-@patch("calibre_integration.client_interface.ff_logging.log_debug")
-def test_log_metadata_comparison(mock_log_debug: MagicMock) -> None:
+def test_log_metadata_comparison() -> None:
+    cap = LogCapture()
+    ff_logging.set_log_forward_queue(cap)
+    cap.drain()
     mock_info = MagicMock(spec=CalibreInfo)
     mock_store = MagicMock(spec=ConfigStore)
     client = _DummyCalibreClient(mock_info, mock_store)
@@ -178,4 +182,5 @@ def test_log_metadata_comparison(mock_log_debug: MagicMock) -> None:
         {"#tag": "old", "#lost": "val", "same": "1"},
         {"#tag": "new", "#added": "val", "same": "1"},
     )
-    assert mock_log_debug.called
+    ff_logging.set_log_forward_queue(None)
+    assert len(cap.messages()) > 0

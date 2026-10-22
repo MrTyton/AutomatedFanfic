@@ -7,12 +7,30 @@ encapsulates that pattern and provides a single source of truth for URL status
 transitions and queue-depth snapshots.
 """
 
-from typing import Any
+from collections.abc import MutableMapping
+from typing import NotRequired, Required, TypedDict
+
+from models.queue_types import IngressQueue, WaitingQueue, WorkerQueues
 
 
-def is_url_active(active_urls: Any, url: str) -> bool:
+class ActiveUrlEntry(TypedDict, total=False):
+    """Type for a single URL's tracking entry in the shared active_urls dict."""
+
+    status: Required[str]
+    site: NotRequired[str]
+    title: NotRequired[str]
+    calibre_id: NotRequired[str]
+    behavior: NotRequired[str]
+    error: NotRequired[str]
+    heap_gen: NotRequired[int]
+
+
+ActiveUrlsDict = MutableMapping[str, ActiveUrlEntry]
+
+
+def is_url_active(active_urls: ActiveUrlsDict, url: str) -> bool:
     """Return True if `url` is present in `active_urls` and not marked `'cancelled'`."""
-    if active_urls is None or url not in active_urls:
+    if url not in active_urls:
         return False
     try:
         meta = active_urls.get(url, {})
@@ -23,10 +41,8 @@ def is_url_active(active_urls: Any, url: str) -> bool:
     return True
 
 
-def remove_active_url(active_urls: Any, url: str) -> None:
+def remove_active_url(active_urls: ActiveUrlsDict, url: str) -> None:
     """Safely remove `url` from `active_urls` if present."""
-    if active_urls is None:
-        return
     try:
         if url in active_urls:
             del active_urls[url]
@@ -35,7 +51,7 @@ def remove_active_url(active_urls: Any, url: str) -> None:
 
 
 def mark_url_queued(
-    active_urls: Any,
+    active_urls: ActiveUrlsDict,
     url: str,
     site: str | None = None,
     *,
@@ -51,10 +67,8 @@ def mark_url_queued(
     `heap_gen` token so stale waiter entries are dropped). When `merge=True`,
     merges into the existing entry while removing any keys in `pop_keys`.
     """
-    if active_urls is None:
-        return
     try:
-        entry: dict[str, Any] = dict(active_urls.get(url, {})) if merge else {}
+        entry = dict(active_urls.get(url, {})) if merge else {}
         for k in pop_keys:
             entry.pop(k, None)
         if site is not None:
@@ -72,13 +86,11 @@ def mark_url_queued(
 
 
 def mark_url_processing(
-    active_urls: Any,
+    active_urls: ActiveUrlsDict,
     url: str,
     site: str | None = None,
 ) -> None:
     """Mark `url` as `'processing'` in `active_urls`, preserving existing metadata."""
-    if active_urls is None:
-        return
     try:
         existing = dict(active_urls.get(url, {}))
         if site is not None:
@@ -90,15 +102,13 @@ def mark_url_processing(
 
 
 def update_url_title(
-    active_urls: Any,
+    active_urls: ActiveUrlsDict,
     url: str,
     title: str,
     site: str | None = None,
     status: str = "processing",
 ) -> None:
     """Merge extracted `title` (and `site`/`status`) into an active URL entry."""
-    if active_urls is None:
-        return
     try:
         existing = dict(active_urls.get(url, {}))
         if site is not None:
@@ -111,7 +121,7 @@ def update_url_title(
 
 
 def mark_url_waiting(
-    active_urls: Any,
+    active_urls: ActiveUrlsDict,
     url: str,
     site: str | None = None,
     *,
@@ -126,8 +136,6 @@ def mark_url_waiting(
         bool: True if the entry was updated to `'waiting'`, False if it was
         already `'cancelled'` (or if an error occurred).
     """
-    if active_urls is None:
-        return True
     try:
         existing = dict(active_urls.get(url, {}))
         if existing.get("status") == "cancelled":
@@ -150,12 +158,12 @@ def mark_url_waiting(
 
 
 def mark_url_failed(
-    active_urls: Any,
+    active_urls: ActiveUrlsDict,
     url: str,
     error_message: str,
 ) -> None:
     """Mark `url` as `'failed'` with `error` in `active_urls` if present."""
-    if active_urls is None or url not in active_urls:
+    if url not in active_urls:
         return
     try:
         entry = dict(active_urls[url])
@@ -166,15 +174,13 @@ def mark_url_failed(
         pass
 
 
-def mark_url_cancelled(active_urls: Any, url: str) -> bool:
+def mark_url_cancelled(active_urls: ActiveUrlsDict, url: str) -> bool:
     """Mark `url` as `'cancelled'` in `active_urls`.
 
     Returns:
         bool: True if the entry existed and its status was changed to `'cancelled'`,
         False otherwise.
     """
-    if active_urls is None:
-        return False
     try:
         raw_existing = active_urls.get(url, {})
         existing = dict(raw_existing) if isinstance(raw_existing, dict) else {}
@@ -187,12 +193,12 @@ def mark_url_cancelled(active_urls: Any, url: str) -> bool:
 
 
 def get_queue_depths(
-    ingress_queue: Any,
-    waiting_queue: Any,
-    worker_queues: dict[str, Any] | None,
-) -> dict[str, Any]:
+    ingress_queue: IngressQueue | None,
+    waiting_queue: WaitingQueue | None,
+    worker_queues: WorkerQueues | None,
+) -> dict[str, object]:
     """Return current queue sizes across ingress, waiting, and worker queues."""
-    result: dict[str, Any] = {}
+    result: dict[str, object] = {}
     for name, queue in [
         ("ingress", ingress_queue),
         ("waiting", waiting_queue),

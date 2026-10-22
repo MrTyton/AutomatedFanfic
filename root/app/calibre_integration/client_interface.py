@@ -3,7 +3,6 @@
 from abc import ABC, abstractmethod
 import functools
 import re
-from typing import Any
 from urllib.parse import urlsplit
 
 lazy import fanficfare.adapters as fff_adapters
@@ -13,6 +12,10 @@ from calibre_integration.models import AddedBook, BookExport, MetadataUpdateRepo
 from config.config_store import ConfigStore
 from models.fanfic_info import FanficInfo
 from utils import ff_logging, system_utils
+
+# Calibre metadata is a dict with dynamic string keys from the Calibre JSON API.
+# Values may be scalars, lists, or nested dicts, so we use `object` as the value type.
+CalibreMetadata = dict[str, object]
 
 
 @functools.lru_cache(maxsize=1024)
@@ -146,14 +149,14 @@ class CalibreClient(ABC):
         """Replace EPUB format for an existing story without modifying metadata."""
 
     @abstractmethod
-    def get_metadata(self, fanfic: FanficInfo) -> dict[str, Any]:
+    def get_metadata(self, fanfic: FanficInfo) -> CalibreMetadata:
         """Fetch all metadata fields for a story."""
 
     @abstractmethod
     def set_metadata_fields(
         self,
         fanfic: FanficInfo,
-        metadata: dict[str, Any],
+        metadata: CalibreMetadata,
     ) -> MetadataUpdateReport:
         """Restore custom metadata fields for a story."""
 
@@ -164,8 +167,8 @@ class CalibreClient(ABC):
     def log_metadata_comparison(
         self,
         fanfic: FanficInfo,
-        old_metadata: dict[str, Any] | None,
-        new_metadata: dict[str, Any] | None,
+        old_metadata: CalibreMetadata | None,
+        new_metadata: CalibreMetadata | None,
     ) -> None:
         """Log comparison of metadata (helper method)."""
         old_meta = old_metadata or {}

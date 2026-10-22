@@ -16,7 +16,7 @@ from models.config_models import (
 
 
 def _make_store(config: AppConfig) -> ConfigStore:
-    store = ConfigStore()
+    store = ConfigStore({})
     store.initialize_from_config(config)
     return store
 
@@ -571,12 +571,12 @@ class TestAppriseNotificationPickle(unittest.TestCase):
     the forkserver / spawn start methods used to launch worker processes.
     """
 
-    def _make_notifier(self, urls=None, enabled=True):
+    def _make_notifier(self, urls: list[str], enabled=True):
         """Build an AppriseNotification instance bypassing config loading."""
         import apprise
 
         obj = object.__new__(AppriseNotification)
-        obj.apprise_urls = list(urls or [])
+        obj.apprise_urls = list(urls)
         obj.apobj = apprise.Apprise()
         for url in obj.apprise_urls:
             obj.apobj.add(url)

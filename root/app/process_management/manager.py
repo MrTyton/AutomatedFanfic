@@ -12,7 +12,7 @@ import signal
 import threading
 import time
 from collections.abc import MutableMapping
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 from config.config_store import ConfigStore
 
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from utils import ff_logging
 from models.config_models import AppConfig, ProcessConfig
+from models.queue_types import WorkerQueue
 from .state import ProcessInfo, ProcessState
 
 
@@ -69,8 +70,8 @@ class ProcessManager:
         # Hot-reload helpers
         self._config_store: ConfigStore | None = config_store
         self._web_restart_event: Event | None = web_restart_event
-        self._worker_queues: MutableMapping[str, Any] | None = None
-        self._create_queue_fn: Callable[[], Any] | None = None
+        self._worker_queues: MutableMapping[str, WorkerQueue] | None = None
+        self._create_queue_fn: Callable[[], WorkerQueue] | None = None
         self._history_writer: HistoryWriter | None = None
 
         # Configuration validation and setup
@@ -93,8 +94,8 @@ class ProcessManager:
 
     def set_worker_queues(
         self,
-        worker_queues: MutableMapping[str, Any],
-        create_queue_fn: Callable[[], Any],
+        worker_queues: MutableMapping[str, WorkerQueue],
+        create_queue_fn: Callable[[], WorkerQueue],
     ) -> None:
         """Inject managed worker_queues dict and Queue factory for dynamic scaling."""
         self._worker_queues = worker_queues
@@ -105,7 +106,7 @@ class ProcessManager:
         name: str,
         target: Callable,
         args: tuple = (),
-        kwargs: dict[str, Any] | None = None,
+        kwargs: dict[str, object] | None = None,
     ) -> None:
         """
         Register a process for management without starting it.
@@ -444,7 +445,7 @@ class ProcessManager:
             # Use shutdown event wait for immediate wakeup on shutdown
             self._shutdown_event.wait(0.5)
 
-    def get_status(self) -> dict[str, dict[str, Any]]:
+    def get_status(self) -> dict[str, dict[str, object]]:
         """
         Get status of all managed processes.
         """

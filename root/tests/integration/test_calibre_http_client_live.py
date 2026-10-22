@@ -235,7 +235,7 @@ def test_live_calibre_http_client_full_lifecycle(
 
     cfg = CalibreConfig(path=calibre_server_url)
     info = CalibreInfo(cfg, _NoopLockFactory())
-    client = CalibreHttpClient(info, ConfigStore())
+    client = CalibreHttpClient(info, ConfigStore({}))
 
     # 1. Verify server version
     version = client.get_version()
@@ -334,7 +334,7 @@ def test_live_calibre_http_client_digest_auth(
     # Verify wrong password raises CalibreAuthError
     bad_cfg = CalibreConfig(path=base_url, username=username, password="wrong_password")
     bad_client = CalibreHttpClient(
-        CalibreInfo(bad_cfg, _NoopLockFactory()), ConfigStore()
+        CalibreInfo(bad_cfg, _NoopLockFactory()), ConfigStore({})
     )
     with pytest.raises(CalibreAuthError):
         bad_client._request("GET", "/ajax/library-info")
@@ -342,7 +342,7 @@ def test_live_calibre_http_client_digest_auth(
     # Verify valid credentials authenticate via HTTP Digest Auth and can write/delete a story
     good_cfg = CalibreConfig(path=base_url, username=username, password=password)
     good_client = CalibreHttpClient(
-        CalibreInfo(good_cfg, _NoopLockFactory()), ConfigStore()
+        CalibreInfo(good_cfg, _NoopLockFactory()), ConfigStore({})
     )
 
     add_dir = tmp_path / "auth_add"

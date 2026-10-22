@@ -269,8 +269,7 @@ class TestHistoryWriter(unittest.TestCase):
         db.close()
         self.assertEqual(count, 5)
 
-    @patch("history.recorder.ff_logging")
-    def test_malformed_message_logged_not_crashed(self, mock_logging):
+    def test_malformed_message_logged_not_crashed(self):
         """Bad messages are logged and skipped, writer keeps running."""
         self._start_writer()
 

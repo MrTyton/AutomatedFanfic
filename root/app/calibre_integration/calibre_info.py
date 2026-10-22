@@ -24,7 +24,7 @@ and configuration consistency across all worker processes.
 import os
 from pathlib import Path
 from subprocess import call
-from typing import Any
+from multiprocessing.managers import SyncManager
 from config.config_store import ConfigStore
 from utils import ff_logging  # Custom logging module for failure logging
 from utils.system_utils import resolve_ini_path
@@ -53,15 +53,15 @@ class CalibreInfo:
     def __init__(
         self,
         calibre_config: CalibreConfig,
-        manager: Any,
+        manager: SyncManager,
     ) -> None:
         """Initializes the CalibreInfo object from a validated CalibreConfig.
 
         Args:
             calibre_config (CalibreConfig): Validated Calibre configuration section
                 containing library path, credentials, update method, and INI paths.
-            manager (Any): A multiprocessing.Manager (or lock factory) object used
-                to create a shared Lock for concurrent access protection.
+            manager (SyncManager): A multiprocessing.SyncManager used to create a
+                shared Lock for concurrent access protection.
 
         Raises:
             ValueError: If the Calibre library location (`calibre_config.path`) is empty.

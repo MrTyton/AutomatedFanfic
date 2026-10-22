@@ -6,8 +6,8 @@ of their local config copies.
 """
 
 import os
+from collections.abc import MutableMapping
 from enum import Enum
-from typing import Any
 
 lazy from fanficfare import adapters, configurable
 lazy from utils.system_utils import resolve_ini_path
@@ -94,9 +94,9 @@ class ConfigStore:
     they pick up changes made via the web dashboard without restarting.
     """
 
-    def __init__(self, shared_dict=None):
+    def __init__(self, shared_dict: MutableMapping[str, object]):
         """Accepts an ``mp.Manager().dict()`` for production or a plain dict for tests."""
-        self._store = shared_dict if shared_dict is not None else {}
+        self._store = shared_dict
 
     # ── Bootstrap ───────────────────────────────────────────────
 
@@ -225,14 +225,14 @@ class ConfigStore:
 
     # ── Write ───────────────────────────────────────────────────
 
-    def update(self, key: str, value: Any) -> None:
+    def update(self, key: str, value: object) -> None:
         self._store[key] = value
         try:
             self._store["__version__"] = int(self._store.get("__version__", 0) or 0) + 1
         except Exception:
             pass
 
-    def update_many(self, updates: dict[str, Any]) -> None:
+    def update_many(self, updates: dict[str, object]) -> None:
         for key, value in updates.items():
             self._store[key] = value
         try:
@@ -253,10 +253,10 @@ class ConfigStore:
 
     @staticmethod
     def classify_changes(
-        section: str, changes: dict
-    ) -> dict[ReloadBehavior, dict[str, Any]]:
+        section: str, changes: dict[str, object]
+    ) -> dict[ReloadBehavior, dict[str, object]]:
         """Split *changes* into buckets by reload behaviour."""
-        classified: dict[ReloadBehavior, dict[str, Any]] = {
+        classified: dict[ReloadBehavior, dict[str, object]] = {
             ReloadBehavior.HOT: {},
             ReloadBehavior.SERVICE_RESTART: {},
             ReloadBehavior.APP_RESTART: {},

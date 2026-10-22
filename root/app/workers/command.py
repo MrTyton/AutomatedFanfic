@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 import importlib.metadata
 from pathlib import Path
-from typing import Any
+from typing import IO
 
 lazy from fanficfare import cli as fff_cli
 from config.config_store import read_ini_file_cached
@@ -37,7 +37,7 @@ from parsers import regex_parsing
 class _ThreadLocalStdout:
     """Thread-safe sys.stdout proxy with per-thread capture capability."""
 
-    def __init__(self, wrapped: Any) -> None:
+    def __init__(self, wrapped: IO[str]) -> None:
         self._wrapped = wrapped
         self._local = threading.local()
 

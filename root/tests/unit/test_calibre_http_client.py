@@ -88,7 +88,7 @@ def test_http_client_is_picklable_for_multiprocessing() -> None:
         password="pass",
     )
     info = CalibreInfo(cfg, _DummyManager())
-    store = ConfigStore()
+    store = ConfigStore({})
     client = CalibreHttpClient(info, store)
     _ = client._get_session()
     restored: CalibreHttpClient = pickle.loads(pickle.dumps(client))

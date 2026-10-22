@@ -1,20 +1,23 @@
 """Pure-Python HTTP client for Calibre Content Server."""
 
 import base64
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 import json
 from pathlib import Path
 import re
 import threading
 import time
-from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
 import requests
 import requests.auth
 
 from calibre_integration import calibre_info
-from calibre_integration.client_interface import CalibreClient, build_url_search_query
+from calibre_integration.client_interface import (
+    CalibreClient,
+    CalibreMetadata,
+    build_url_search_query,
+)
 from calibre_integration.models import (
     AddedBook,
     BookExport,
@@ -32,7 +35,7 @@ CALIBRE_CANARY_KEY = "jPoAv3zOyHvQ5JFNYg4hJ9"
 DEFAULT_HTTP_TIMEOUT = 60
 
 
-def _calibre_json_object_hook(obj: dict[str, Any]) -> Any:
+def _calibre_json_object_hook(obj: dict[str, object]) -> object:
     """Unwrap Calibre's custom JSON serialization canary for sets and datetimes."""
     if CALIBRE_CANARY_KEY in obj and "v" in obj:
         return obj["v"]
@@ -68,13 +71,13 @@ class CalibreHttpClient(CalibreClient):
         self._parse_server_url()
         self._auth_generation += 1
 
-    def __getstate__(self) -> dict[str, Any]:
+    def __getstate__(self) -> dict[str, object]:
         """Strip unpicklable thread-local session storage before multiprocessing pickle."""
         state = self.__dict__.copy()
         state.pop("_thread_local", None)
         return state
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
+    def __setstate__(self, state: dict[str, object]) -> None:
         """Restore state and re-initialize thread-local storage in child process."""
         for key, value in state.items():
             setattr(self, key, value)
@@ -94,7 +97,7 @@ class CalibreHttpClient(CalibreClient):
             self._thread_local.auth_generation = self._auth_generation
         return session
 
-    def _lock_context(self) -> Any:
+    def _lock_context(self) -> AbstractContextManager[object]:
         """Return cdb_info.lock if available, or a no-op context manager."""
         lock = getattr(self.cdb_info, "lock", None)
         return lock if lock is not None else nullcontext()
@@ -117,7 +120,7 @@ class CalibreHttpClient(CalibreClient):
         path: str,
         *,
         params: dict[str, str] | None = None,
-        json_body: Any = None,
+        json_body: object = None,
         raw_body: bytes | None = None,
         content_type: str | None = None,
         timeout: int = DEFAULT_HTTP_TIMEOUT,
@@ -191,7 +194,7 @@ class CalibreHttpClient(CalibreClient):
         return response
 
     @staticmethod
-    def _decode_json(response: requests.Response) -> Any:
+    def _decode_json(response: requests.Response) -> object:
         """Decode JSON response, unwrapping Calibre canary objects and checking 'err'."""
         try:
             payload = json.loads(response.text, object_hook=_calibre_json_object_hook)
@@ -409,7 +412,7 @@ class CalibreHttpClient(CalibreClient):
             )
             raise
 
-    def get_metadata(self, fanfic: fanfic_info.FanficInfo) -> dict[str, Any]:
+    def get_metadata(self, fanfic: fanfic_info.FanficInfo) -> CalibreMetadata:
         """Get all metadata fields for a story via `/cdb/cmd/list/0`."""
         if not fanfic.calibre_id:
             ff_logging.log_failure("\tCannot get metadata: story has no calibre_id")
@@ -440,7 +443,7 @@ class CalibreHttpClient(CalibreClient):
                 )
                 return {}
 
-            metadata: dict[str, Any] = {"id": book_id}
+            metadata: CalibreMetadata = {"id": book_id}
             for raw_field, field_map in data_by_field.items():
                 field_name = (
                     "#" + raw_field[1:] if raw_field.startswith("*") else raw_field
@@ -465,7 +468,7 @@ class CalibreHttpClient(CalibreClient):
     def set_metadata_fields(
         self,
         fanfic: fanfic_info.FanficInfo,
-        metadata: dict[str, Any],
+        metadata: CalibreMetadata,
     ) -> MetadataUpdateReport:
         """Restore custom `#` metadata fields for a story via `/cdb/set-fields`."""
         if not fanfic.calibre_id:
@@ -475,7 +478,7 @@ class CalibreHttpClient(CalibreClient):
         if not metadata:
             return MetadataUpdateReport(updated_fields=(), failed_fields=())
 
-        custom_changes: dict[str, Any] = {
+        custom_changes: CalibreMetadata = {
             k: v
             for k, v in metadata.items()
             if k.startswith("#") and v is not None and v != "" and v != []

@@ -19,7 +19,7 @@ Adapter API Usage:
 """
 
 import re
-from typing import Any
+from typing import Protocol
 
 lazy from fanficfare import adapters, configurable, exceptions, geturls
 lazy from config.config_store import ConfigStore
@@ -27,12 +27,25 @@ from parsers.regex_parsing import normalize_url as _normalize_url
 from utils import ff_logging
 
 
+class FanFicFareAdapter(Protocol):
+    """Structural protocol for FanFicFare adapter objects used in series detection."""
+
+    def getSiteURLPattern(self) -> str: ...
+    def get_urls_from_page(
+        self, url: str, /, **kwargs: object
+    ) -> dict[str, object]: ...
+    def get_series_from_page(
+        self, url: str, data: object, /, **kwargs: object
+    ) -> dict[str, object]: ...
+    def get_request(self, url: str) -> object: ...
+
+
 def _call_get_urls_from_page(
-    adapter,
+    adapter: FanFicFareAdapter,
     url: str,
     config: configurable.Configuration,
-    _page_cache: dict[str, Any] | None = None,
-) -> dict | None:
+    _page_cache: dict[str, object] | None = None,
+) -> dict[str, object] | None:
     """Invoke adapter.get_urls_from_page, supplying a GetURLs helper when accepted."""
     if _page_cache is not None and url in _page_cache:
         return _page_cache[url]
@@ -46,7 +59,7 @@ def _call_get_urls_from_page(
     return res
 
 
-def _is_known_series_url_pattern(adapter: Any, url: str) -> bool:
+def _is_known_series_url_pattern(adapter: FanFicFareAdapter, url: str) -> bool:
     """Return True if *url* matches a known FanFicFare series URL pattern without HTTP requests.
 
     Covers:
@@ -87,11 +100,11 @@ def _is_single_story_url(config: configurable.Configuration, url: str) -> bool:
 
 def get_series_configuration(
     url: str,
-    config_store: Any | None = None,
+    config_store: ConfigStore | None = None,
 ) -> configurable.Configuration:
     """Build a FanFicFare Configuration for *url* using ConfigStore."""
     if config_store is None:
-        config_store = ConfigStore()
+        config_store = ConfigStore({})
     return config_store.get_fff_configuration(url)
 
 
@@ -99,8 +112,8 @@ def is_series_url(
     url: str,
     config: configurable.Configuration | None = None,
     *,
-    config_store: Any | None = None,
-    _page_cache: dict[str, Any] | None = None,
+    config_store: ConfigStore | None = None,
+    _page_cache: dict[str, object] | None = None,
 ) -> bool:
     """
     Determine if a URL points to a series, collection, or single story.
@@ -173,8 +186,8 @@ def expand_series_url(
     url: str,
     config: configurable.Configuration | None = None,
     *,
-    config_store: Any | None = None,
-    _page_cache: dict[str, Any] | None = None,
+    config_store: ConfigStore | None = None,
+    _page_cache: dict[str, object] | None = None,
 ) -> list[str]:
     """
     Extract individual story URLs from a series or collection URL.
@@ -255,8 +268,8 @@ def process_url(
     url: str | None,
     config: configurable.Configuration | None = None,
     *,
-    config_store: Any | None = None,
-) -> dict[str, Any]:
+    config_store: ConfigStore | None = None,
+) -> dict[str, object]:
     """
     Unified handler: detect if URL is series and expand or return as single.
 
@@ -277,7 +290,7 @@ def process_url(
             - 'count': number of URLs returned
             - 'source_url': original URL
     """
-    result: dict[str, Any] = {
+    result: dict[str, object] = {
         "is_series": False,
         "urls": [],
         "count": 0,
@@ -294,7 +307,7 @@ def process_url(
     try:
         # Cache any _call_get_urls_from_page result during this process_url call
         # so collection URLs are only scraped once across is_series_url + expand_series_url.
-        page_cache: dict[str, Any] = {}
+        page_cache: dict[str, object] = {}
         if is_series_url(
             url, config, config_store=config_store, _page_cache=page_cache
         ):

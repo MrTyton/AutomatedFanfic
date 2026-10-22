@@ -34,11 +34,10 @@ Example:
 
 import heapq
 import time
-from collections.abc import MutableMapping
-from typing import Any
 
 from history.recorder import HistoryRecorder
 from models import active_urls as active_urls_utils
+from models.active_urls import ActiveUrlsDict
 from models import fanfic_info
 from models.queue_types import IngressQueue, ShutdownEvent, WaitingQueue
 from utils import ff_logging
@@ -118,7 +117,7 @@ def wait_processor(
     verbose: bool,
     shutdown_event: ShutdownEvent,
     history_recorder: HistoryRecorder,
-    active_urls: MutableMapping[str, Any],
+    active_urls: ActiveUrlsDict,
 ) -> None:
     """Main waiting queue processor for handling delayed fanfiction retries.
 

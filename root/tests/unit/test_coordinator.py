@@ -17,7 +17,7 @@ def _make_coordinator(ingress_queue, worker_queues, **overrides):
         "active_urls": {},
         "history_recorder": MagicMock(),
         "url_parsers": {},
-        "config_store": ConfigStore(),
+        "config_store": ConfigStore({}),
         "scale_queue": mp.Queue(),
     }
     defaults.update(overrides)
@@ -39,7 +39,7 @@ def _subprocess_init_coordinator(worker_queues_proxy, result_q):
             active_urls={},
             history_recorder=MagicMock(),
             url_parsers={},
-            config_store=ConfigStore(),
+            config_store=ConfigStore({}),
             scale_queue=scale_q,
         )
         result_q.put(

@@ -11,7 +11,7 @@ seamless interoperability across real processes, threads, and unit tests
 without losing static type checking or resorting to `Any`.
 """
 
-from typing import Any, Mapping, Protocol, TypeVar
+from typing import Mapping, Protocol, TypeVar
 
 from models.fanfic_info import FanficInfo
 
@@ -37,17 +37,17 @@ WorkerQueue = QueueProtocol[WorkerTask]
 WorkerQueues = Mapping[str, WorkerQueue]
 
 # Ingress queue handles fanfic downloads, worker completion signals, and poison pills
-IngressItem = FanficInfo | tuple[Any, ...] | None
+IngressItem = FanficInfo | tuple[object, ...] | None
 IngressQueue = QueueProtocol[IngressItem]
 
 # Waiting queue handles fanfics undergoing exponential backoff retries and poison pills
 WaitingQueue = QueueProtocol[WorkerTask]
 
 # History queue passes event payload dictionaries to the HistoryWriter
-HistoryQueue = QueueProtocol[dict[str, Any]]
+HistoryQueue = QueueProtocol[dict[str, object]]
 
 # Log queue passes structured log entries cross-process to the web server
-LogQueue = QueueProtocol[dict[str, Any]]
+LogQueue = QueueProtocol[dict[str, object]]
 
 # Scale queue notifies worker pool of scaling requests
 ScaleQueue = QueueProtocol[str | None]

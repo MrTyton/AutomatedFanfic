@@ -9,7 +9,7 @@ import multiprocessing as mp
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Callable
 
 
 class ProcessState(Enum):
@@ -63,7 +63,7 @@ class ProcessInfo:
     process: mp.Process | None = None
     target: Callable | None = None
     args: tuple = field(default_factory=tuple)
-    kwargs: dict[str, Any] = field(default_factory=dict)
+    kwargs: dict[str, object] = field(default_factory=dict)
     state: ProcessState = ProcessState.STOPPED
     start_time: float | None = None
     last_health_check: float | None = None

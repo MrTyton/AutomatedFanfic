@@ -22,17 +22,17 @@ from web.server import create_app
 
 class TestConfigStoreBasics(unittest.TestCase):
     def test_get_set(self):
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("email.sleep_time", 120)
         self.assertEqual(store.get("email.sleep_time"), 120)
 
     def test_get_default(self):
-        store = ConfigStore()
+        store = ConfigStore({})
         self.assertIsNone(store.get("nonexistent"))
         self.assertEqual(store.get("nonexistent", 42), 42)
 
     def test_update_many(self):
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update_many({"a": 1, "b": 2})
         self.assertEqual(store.get("a"), 1)
         self.assertEqual(store.get("b"), 2)
@@ -46,7 +46,7 @@ class TestConfigStoreBasics(unittest.TestCase):
         self.assertIsNone(store.get("z"))
 
     def test_get_resolved_default_ini(self):
-        store = ConfigStore()
+        store = ConfigStore({})
         # Default without config falls back to packaged defaults.ini
         resolved = store.get_resolved_default_ini()
         self.assertTrue(resolved.endswith("defaults.ini"))
@@ -56,7 +56,7 @@ class TestConfigStoreBasics(unittest.TestCase):
         self.assertTrue(store.get_resolved_default_ini().endswith("defaults.ini"))
 
     def test_get_resolved_personal_ini(self):
-        store = ConfigStore()
+        store = ConfigStore({})
         # Default without config returns empty string
         self.assertEqual(store.get_resolved_personal_ini(), "")
 
@@ -70,7 +70,7 @@ class TestConfigStoreBasics(unittest.TestCase):
             with open(p_ini, "w", encoding="utf-8") as f:
                 f.write("[archiveofourown.org]\nusername=storeuser\n")
 
-            store = ConfigStore()
+            store = ConfigStore({})
             store.update("calibre.personal_ini", p_ini)
 
             config = store.get_fff_configuration(
@@ -87,7 +87,7 @@ class TestConfigStoreBasics(unittest.TestCase):
             )
 
     def test_version_counter_increments_and_excluded_from_get_all(self):
-        store = ConfigStore()
+        store = ConfigStore({})
         self.assertIsNone(store.get_version())
         store.update("email.sleep_time", 60)
         v1 = store.get_version()
@@ -132,7 +132,7 @@ class TestConfigStoreInitFromConfig(unittest.TestCase):
         return cfg
 
     def test_initialize_populates_all_keys(self):
-        store = ConfigStore()
+        store = ConfigStore({})
         store.initialize_from_config(self._make_config())
         self.assertEqual(store.get("email.sleep_time"), 90)
         self.assertEqual(store.get("email.disabled_sites"), ["ffnet"])
@@ -282,7 +282,7 @@ class TestCoordinatorSnapshot(unittest.TestCase):
             {},
             MagicMock(),
             {},
-            ConfigStore(),
+            ConfigStore({}),
             scale_queue=mp.Queue(),
         )
         snap = coord.get_state_snapshot()
@@ -308,7 +308,7 @@ class TestCoordinatorSnapshot(unittest.TestCase):
             {},
             MagicMock(),
             {},
-            ConfigStore(),
+            ConfigStore({}),
             scale_queue=mp.Queue(),
         )
 
@@ -387,7 +387,7 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         cfg.model_dump.return_value = {"email": {"sleep_time": 60, "password": "x"}}
         self.state.config = cfg
 
-        store = ConfigStore()
+        store = ConfigStore({})
         store.update("email.sleep_time", 60)
         self.state.config_store = store
         self.state.config_path = "/tmp/config.toml"
@@ -409,7 +409,7 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         cfg = MagicMock()
         cfg.model_dump.return_value = {"web": {"host": "0.0.0.0", "port": 8080}}
         self.state.config = cfg
-        self.state.config_store = ConfigStore()
+        self.state.config_store = ConfigStore({})
         self.state.config_path = "/tmp/config.toml"
 
         resp = self.client.put("/api/config/web", json={"values": {"port": 9090}})

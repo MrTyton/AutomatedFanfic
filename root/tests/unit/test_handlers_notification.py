@@ -34,8 +34,7 @@ class TestHandlersNotification(unittest.TestCase):
         )
 
     @patch("workers.handlers.update_strategies")
-    @patch("workers.handlers.ff_logging")
-    def test_notification_sent_on_success_added(self, mock_logging, mock_strategies):
+    def test_notification_sent_on_success_added(self, mock_strategies):
         """Test notification sent when story is successfully added (new)."""
         self.mock_client.get_story_id.return_value = None  # New story
 
@@ -55,8 +54,7 @@ class TestHandlersNotification(unittest.TestCase):
         self.assertEqual(args[0], "New Fanfiction Download")
 
     @patch("workers.handlers.update_strategies")
-    @patch("workers.handlers.ff_logging")
-    def test_notification_sent_on_success_updated(self, mock_logging, mock_strategies):
+    def test_notification_sent_on_success_updated(self, mock_strategies):
         """Test notification sent when story is successfully updated (existing)."""
         self.mock_fanfic.calibre_id = "123"
         mock_strategy_instance = MagicMock()
@@ -79,9 +77,8 @@ class TestHandlersNotification(unittest.TestCase):
 
     @patch("workers.handlers.handle_failure")
     @patch("workers.handlers.update_strategies")
-    @patch("workers.handlers.ff_logging")
     def test_no_notification_on_failure_and_calls_handle_failure(
-        self, mock_logging, mock_strategies, mock_handle_failure
+        self, mock_strategies, mock_handle_failure
     ):
         """Test NO success notification sent when strategy fails, and handle_failure is invoked."""
         self.mock_client.get_story_id.return_value = None
