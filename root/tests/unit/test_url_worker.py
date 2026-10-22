@@ -89,7 +89,8 @@ class TestUrlWorker(unittest.TestCase):
 
         # Mock increment_repeat to simulate the actual increment behavior
         def simulate_increment():
-            mock_fanfic.repeats += 1
+            if mock_fanfic.repeats is not None:
+                mock_fanfic.repeats += 1
 
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
 
@@ -207,7 +208,8 @@ class TestUrlWorker(unittest.TestCase):
 
         # Mock increment_repeat to simulate the actual increment behavior
         def simulate_increment():
-            mock_fanfic.repeats += 1
+            if mock_fanfic.repeats is not None:
+                mock_fanfic.repeats += 1
 
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
 
@@ -261,7 +263,8 @@ class TestUrlWorker(unittest.TestCase):
 
         # Mock increment_repeat to simulate the actual increment behavior
         def simulate_increment():
-            mock_fanfic.repeats += 1
+            if mock_fanfic.repeats is not None:
+                mock_fanfic.repeats += 1
 
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
         mock_notification_info = MagicMock(spec=NotificationWrapper)
@@ -342,7 +345,8 @@ class TestUrlWorker(unittest.TestCase):
 
         # Mock increment_repeat to simulate the actual increment behavior
         def simulate_increment():
-            mock_fanfic.repeats += 1
+            if mock_fanfic.repeats is not None:
+                mock_fanfic.repeats += 1
 
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
 
