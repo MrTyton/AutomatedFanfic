@@ -1,6 +1,7 @@
 """Abstract base class interface and shared helpers for Calibre clients."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 import functools
 import re
 from urllib.parse import urlsplit
@@ -15,7 +16,7 @@ from utils import ff_logging, system_utils
 
 # Calibre metadata is a dict with dynamic string keys from the Calibre JSON API.
 # Values may be scalars, lists, or nested dicts, so we use `object` as the value type.
-CalibreMetadata = dict[str, object]
+CalibreMetadata = Mapping[str, object]
 
 
 @functools.lru_cache(maxsize=1024)

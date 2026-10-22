@@ -85,7 +85,11 @@ def _store_log_entry(
     timestamp: str, level: str, message: str, *, forward: bool
 ) -> None:
     """Store a log entry in memory and optionally forward it cross-process."""
-    entry = {"timestamp": timestamp, "level": level, "message": message}
+    entry: dict[str, object] = {
+        "timestamp": timestamp,
+        "level": level,
+        "message": message,
+    }
     if hasattr(_thread_local, "color"):
         entry["thread_color"] = _thread_local.color
     if hasattr(_thread_local, "site") and _thread_local.site is not None:

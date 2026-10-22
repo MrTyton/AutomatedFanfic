@@ -16,7 +16,8 @@ async def system_status(request: Request):
     """Overall system status including process states and queue sizes."""
     state = request.app.state.web_state
 
-    result: dict[str, object] = {"status": "running", "processes": {}, "queues": {}}
+    queues: dict[str, object] = {}
+    result: dict[str, object] = {"status": "running", "processes": {}, "queues": queues}
 
     # Process status
     if state.process_status_callable:
@@ -32,17 +33,18 @@ async def system_status(request: Request):
     ]:
         if queue is not None:
             try:
-                result["queues"][name] = queue.qsize()
+                queues[name] = queue.qsize()
             except NotImplementedError:
-                result["queues"][name] = -1
+                queues[name] = -1
 
     if state.worker_queues:
-        result["queues"]["workers"] = {}
+        workers_dict: dict[str, int] = {}
+        queues["workers"] = workers_dict
         for worker_id, queue in state.worker_queues.items():
             try:
-                result["queues"]["workers"][worker_id] = queue.qsize()
+                workers_dict[worker_id] = queue.qsize()
             except NotImplementedError:
-                result["queues"]["workers"][worker_id] = -1
+                workers_dict[worker_id] = -1
 
     # Active downloads count
     if state.active_urls is not None:

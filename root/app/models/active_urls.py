@@ -8,7 +8,7 @@ transitions and queue-depth snapshots.
 """
 
 from collections.abc import MutableMapping
-from typing import NotRequired, Required, TypedDict
+from typing import Any, NotRequired, Required, TypedDict
 
 from models.queue_types import IngressQueue, WaitingQueue, WorkerQueues
 
@@ -25,7 +25,7 @@ class ActiveUrlEntry(TypedDict, total=False):
     heap_gen: NotRequired[int]
 
 
-ActiveUrlsDict = MutableMapping[str, ActiveUrlEntry]
+ActiveUrlsDict = MutableMapping[str, Any]
 
 
 def is_url_active(active_urls: ActiveUrlsDict, url: str) -> bool:

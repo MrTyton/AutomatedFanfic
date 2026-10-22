@@ -140,7 +140,8 @@ class ConfigStore:
             config.process.max_restart_attempts
         )
         self._store["process.max_workers"] = config.process.max_workers
-        self._store["__version__"] = int(self._store.get("__version__", 0) or 0) + 1
+        curr_ver = self._store.get("__version__", 0)
+        self._store["__version__"] = (curr_ver if isinstance(curr_ver, int) else 0) + 1
 
     # ── Read ────────────────────────────────────────────────────
 
@@ -174,7 +175,7 @@ class ConfigStore:
             or self.get("fanficfare.default_ini")
             or self.get("default_ini")
         )
-        return resolve_ini_path(raw, "defaults.ini")
+        return resolve_ini_path(raw if isinstance(raw, str) else None, "defaults.ini")
 
     def get_resolved_personal_ini(self) -> str:
         """Return the resolved path to personal.ini (or empty string if not configured)."""
@@ -183,7 +184,11 @@ class ConfigStore:
             or self.get("fanficfare.personal_ini")
             or self.get("personal_ini")
         )
-        return resolve_ini_path(raw, "personal.ini") if raw else ""
+        return (
+            resolve_ini_path(raw, "personal.ini")
+            if isinstance(raw, str) and raw
+            else ""
+        )
 
     def get_fff_configuration(self, url: str):
         """Return a FanFicFare Configuration loaded with site sections and INI files."""
@@ -228,7 +233,10 @@ class ConfigStore:
     def update(self, key: str, value: object) -> None:
         self._store[key] = value
         try:
-            self._store["__version__"] = int(self._store.get("__version__", 0) or 0) + 1
+            curr_ver = self._store.get("__version__", 0)
+            self._store["__version__"] = (
+                curr_ver if isinstance(curr_ver, int) else 0
+            ) + 1
         except Exception:
             pass
 
@@ -236,7 +244,10 @@ class ConfigStore:
         for key, value in updates.items():
             self._store[key] = value
         try:
-            self._store["__version__"] = int(self._store.get("__version__", 0) or 0) + 1
+            curr_ver = self._store.get("__version__", 0)
+            self._store["__version__"] = (
+                curr_ver if isinstance(curr_ver, int) else 0
+            ) + 1
         except Exception:
             pass
 

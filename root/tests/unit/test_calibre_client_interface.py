@@ -1,12 +1,12 @@
 import inspect
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 import pytest
 
 from calibre_integration.calibre_info import CalibreInfo
 from calibre_integration.client_interface import (
     CalibreClient,
+    CalibreMetadata,
     build_url_search_query,
     extract_story_base_url,
 )
@@ -42,11 +42,11 @@ class _DummyCalibreClient(CalibreClient):
     def add_format_to_existing_story(self, location: str, fanfic: FanficInfo) -> bool:
         return True
 
-    def get_metadata(self, fanfic: FanficInfo) -> dict[str, Any]:
+    def get_metadata(self, fanfic: FanficInfo) -> CalibreMetadata:
         return {"id": 1, "title": "Test"}
 
     def set_metadata_fields(
-        self, fanfic: FanficInfo, metadata: dict[str, Any]
+        self, fanfic: FanficInfo, metadata: CalibreMetadata
     ) -> MetadataUpdateReport:
         return MetadataUpdateReport(updated_fields=(), failed_fields=())
 

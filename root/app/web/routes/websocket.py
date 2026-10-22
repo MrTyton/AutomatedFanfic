@@ -38,15 +38,16 @@ _history_cache: dict[str, object] = {
 
 async def _build_snapshot(state: WebState) -> dict[str, object]:
     """Build a JSON-serialisable dashboard snapshot from WebState."""
-    snapshot: dict[str, object] = {"timestamp": time.time()}
+    now_ts = time.time()
+    snapshot: dict[str, object] = {"timestamp": now_ts}
 
     # ── Active downloads ────────────────────────────────────────
-    url_metadata: dict[str, dict] = {}  # url -> {site, title, ...}
+    url_metadata: dict[str, dict[str, object]] = {}  # url -> {site, title, ...}
     if state.active_urls is not None:
         try:
             for url, meta in state.active_urls.items():
                 if isinstance(meta, dict):
-                    url_metadata[url] = meta
+                    url_metadata[url] = dict(meta)
                 else:
                     url_metadata[url] = {}
         except Exception:
@@ -126,8 +127,8 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
     # _HISTORY_CACHE_TTL seconds to avoid hammering SQLite every snapshot cycle.
     # get_waiting_urls() is NOT cached – it reflects live retry-backoff state.
     if state.history_db is not None:
-        now_ts = snapshot["timestamp"]
-        if now_ts >= _history_cache["expires_at"]:
+        expires_at = _history_cache.get("expires_at", 0.0)
+        if isinstance(expires_at, (int, float)) and now_ts >= expires_at:
             try:
                 _history_cache["recent_downloads"] = (
                     await state.history_db.get_recent_downloads(limit=20)

@@ -96,16 +96,16 @@ class NotificationBase:
         loaded_config = config.model_copy(deep=True)
         pb_enabled = config_store.get("pushbullet.enabled")
         if pb_enabled is not None:
-            loaded_config.pushbullet.enabled = pb_enabled
+            loaded_config.pushbullet.enabled = bool(pb_enabled)
         pb_key = config_store.get("pushbullet.api_key")
         if pb_key is not None:
-            loaded_config.pushbullet.api_key = pb_key
+            loaded_config.pushbullet.api_key = str(pb_key) if pb_key else None
         pb_device = config_store.get("pushbullet.device")
         if pb_device is not None:
-            loaded_config.pushbullet.device = pb_device
+            loaded_config.pushbullet.device = str(pb_device) if pb_device else None
         apprise_urls = config_store.get("apprise.urls")
-        if apprise_urls is not None:
-            loaded_config.apprise.urls = list(apprise_urls)
+        if isinstance(apprise_urls, (list, tuple)):
+            loaded_config.apprise.urls = [str(u) for u in apprise_urls]
         self.config: AppConfig = loaded_config
 
     def send_notification(self, title: str, body: str, site: str) -> bool:

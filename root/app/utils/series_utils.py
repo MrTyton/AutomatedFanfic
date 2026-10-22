@@ -19,12 +19,19 @@ Adapter API Usage:
 """
 
 import re
-from typing import Protocol
+from typing import Protocol, TypedDict
 
 lazy from fanficfare import adapters, configurable, exceptions, geturls
 lazy from config.config_store import ConfigStore
 from parsers.regex_parsing import normalize_url as _normalize_url
 from utils import ff_logging
+
+
+class SeriesExpansionResult(TypedDict):
+    is_series: bool
+    urls: list[str]
+    count: int
+    source_url: str | None
 
 
 class FanFicFareAdapter(Protocol):
@@ -44,7 +51,7 @@ def _call_get_urls_from_page(
     adapter: FanFicFareAdapter,
     url: str,
     config: configurable.Configuration,
-    _page_cache: dict[str, object] | None = None,
+    _page_cache: dict[str, dict[str, object] | None] | None = None,
 ) -> dict[str, object] | None:
     """Invoke adapter.get_urls_from_page, supplying a GetURLs helper when accepted."""
     if _page_cache is not None and url in _page_cache:
@@ -113,7 +120,7 @@ def is_series_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: ConfigStore | None = None,
-    _page_cache: dict[str, object] | None = None,
+    _page_cache: dict[str, dict[str, object] | None] | None = None,
 ) -> bool:
     """
     Determine if a URL points to a series, collection, or single story.
@@ -162,14 +169,15 @@ def is_series_url(
                     # Multiple URLs = series/collection
                     # Single URL = single story
                     # Empty = unknown/error
-                    if len(urllist) > 1:
-                        ff_logging.log_debug(
-                            f"Series/collection URL detected ({len(urllist)} stories): {url}"
-                        )
-                        return True
-                    elif len(urllist) == 1:
-                        ff_logging.log_debug(f"Single story URL detected: {url}")
-                        return False
+                    if isinstance(urllist, list):
+                        if len(urllist) > 1:
+                            ff_logging.log_debug(
+                                f"Series/collection URL detected ({len(urllist)} stories): {url}"
+                            )
+                            return True
+                        elif len(urllist) == 1:
+                            ff_logging.log_debug(f"Single story URL detected: {url}")
+                            return False
             except Exception as e:
                 ff_logging.log_debug(f"Error checking series status: {e}")
 
@@ -187,7 +195,7 @@ def expand_series_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: ConfigStore | None = None,
-    _page_cache: dict[str, object] | None = None,
+    _page_cache: dict[str, dict[str, object] | None] | None = None,
 ) -> list[str]:
     """
     Extract individual story URLs from a series or collection URL.
@@ -249,11 +257,11 @@ def expand_series_url(
                 )
                 if isinstance(result, dict) and "urllist" in result:
                     urllist = result.get("urllist", [])
-                    if len(urllist) > 1:
+                    if isinstance(urllist, list) and len(urllist) > 1:
                         ff_logging.log(
                             f"Expanded collection URL ({len(urllist)} stories): {url}"
                         )
-                        return urllist
+                        return [str(u) for u in urllist]
             except Exception as e:
                 ff_logging.log_debug(f"Error in get_urls_from_page: {e}")
 
@@ -269,7 +277,7 @@ def process_url(
     config: configurable.Configuration | None = None,
     *,
     config_store: ConfigStore | None = None,
-) -> dict[str, object]:
+) -> SeriesExpansionResult:
     """
     Unified handler: detect if URL is series and expand or return as single.
 
@@ -290,15 +298,15 @@ def process_url(
             - 'count': number of URLs returned
             - 'source_url': original URL
     """
-    result: dict[str, object] = {
+    result: SeriesExpansionResult = {
         "is_series": False,
         "urls": [],
         "count": 0,
         "source_url": url,
     }
     if not url:
-        result["urls"] = [url]
-        result["count"] = 1
+        result["urls"] = [url] if url is not None else []
+        result["count"] = len(result["urls"])
         return result
 
     if not config:
@@ -307,7 +315,7 @@ def process_url(
     try:
         # Cache any _call_get_urls_from_page result during this process_url call
         # so collection URLs are only scraped once across is_series_url + expand_series_url.
-        page_cache: dict[str, object] = {}
+        page_cache: dict[str, dict[str, object] | None] = {}
         if is_series_url(
             url, config, config_store=config_store, _page_cache=page_cache
         ):

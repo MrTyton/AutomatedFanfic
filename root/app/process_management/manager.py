@@ -520,13 +520,13 @@ class ProcessManager:
         if self._config_store is None:
             return
         hi = self._config_store.get("process.health_check_interval")
-        if hi is not None:
+        if isinstance(hi, (int, float, str)):
             self.process_config.health_check_interval = float(hi)
         st = self._config_store.get("process.shutdown_timeout")
-        if st is not None:
+        if isinstance(st, (int, float, str)):
             self.process_config.shutdown_timeout = float(st)
         mr = self._config_store.get("process.max_restart_attempts")
-        if mr is not None:
+        if isinstance(mr, (int, float, str)):
             self.process_config.max_restart_attempts = int(mr)
 
     def _check_web_restart_event(self) -> None:
@@ -553,7 +553,7 @@ class ProcessManager:
             return
 
         new_max = self._config_store.get("process.max_workers")
-        if new_max is None:
+        if not isinstance(new_max, (int, float, str)):
             return
 
         _OVERHEAD_COUNT = 4

@@ -38,13 +38,20 @@ class LogCapture:
     def put_nowait(self, item: dict[str, object]) -> None:
         self._queue.put_nowait(item)
 
-    def put(self, item: dict[str, object]) -> None:
-        self._queue.put(item)
+    def put(
+        self,
+        item: dict[str, object],
+        block: bool = True,
+        timeout: float | None = None,
+    ) -> None:
+        self._queue.put(item, block=block, timeout=timeout)
 
-    def get(self, timeout: float | None = None) -> dict[str, object]:
-        if timeout is None:
-            return self._queue.get()
-        return self._queue.get(timeout=timeout)
+    def get(
+        self,
+        block: bool = True,
+        timeout: float | None = None,
+    ) -> dict[str, object]:
+        return self._queue.get(block=block, timeout=timeout)
 
     def get_nowait(self) -> dict[str, object]:
         return self._queue.get_nowait()

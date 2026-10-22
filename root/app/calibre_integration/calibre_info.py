@@ -24,11 +24,16 @@ and configuration consistency across all worker processes.
 import os
 from pathlib import Path
 from subprocess import call
-from multiprocessing.managers import SyncManager
+from typing import Any, Protocol
+
 from config.config_store import ConfigStore
+from models.config_models import CalibreConfig
 from utils import ff_logging  # Custom logging module for failure logging
 from utils.system_utils import resolve_ini_path
-from models.config_models import CalibreConfig
+
+
+class LockFactory(Protocol):
+    def Lock(self) -> Any: ...
 
 
 class CalibreInfo:
@@ -53,7 +58,7 @@ class CalibreInfo:
     def __init__(
         self,
         calibre_config: CalibreConfig,
-        manager: SyncManager,
+        manager: LockFactory,
     ) -> None:
         """Initializes the CalibreInfo object from a validated CalibreConfig.
 
@@ -174,7 +179,7 @@ class CalibreInfo:
                 if version_unchanged
                 else config_store.get(key)
             )
-            if raw is not None:
+            if isinstance(raw, str):
                 candidate_path = resolve_ini_path(raw, filename)
                 candidate_exists = bool(
                     candidate_path and Path(candidate_path).is_file()
