@@ -34,6 +34,9 @@ import argparse
 import multiprocessing as mp
 from multiprocessing.managers import SyncManager
 import sys
+
+if sys.version_info < (3, 15):
+    raise RuntimeError("AutomatedFanfic requires Python 3.15 or newer.")
 from utils import ff_logging, system_utils  # Custom logging and system utility modules
 
 lazy from parsers import auto_url_parsers

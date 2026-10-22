@@ -532,6 +532,19 @@ class TestFanficDownloadMain(unittest.TestCase):
                 mock_native_event.assert_called_once()
                 mock_set_web_enabled.assert_called_with(True)
 
+    def test_python_version_guard_raises_on_unsupported_python(self):
+        """Test that attempting to load with Python < 3.15 raises RuntimeError."""
+        import importlib
+        import sys
+
+        with patch.object(sys, "version_info", (3, 14, 0)):
+            with self.assertRaises(RuntimeError) as ctx:
+                importlib.reload(fanficdownload)
+            self.assertIn("requires Python 3.15 or newer", str(ctx.exception))
+
+        # Reload with current Python version to restore module state
+        importlib.reload(fanficdownload)
+
 
 if __name__ == "__main__":
     unittest.main()
