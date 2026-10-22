@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from models import active_urls
+from models.active_urls import ActiveUrlEntry
 from models.fanfic_info import FanficInfo
 
 
@@ -16,7 +17,7 @@ class TestActiveUrlsHelpers:
         # Empty store — no URLs are active
         assert active_urls.is_url_active({}, "https://example.com/1") is False
 
-        store = {
+        store: dict[str, ActiveUrlEntry] = {
             "https://example.com/1": {"site": "example", "status": "queued"},
             "https://example.com/2": {"site": "example", "status": "cancelled"},
         }
@@ -25,7 +26,7 @@ class TestActiveUrlsHelpers:
         assert active_urls.is_url_active(store, "https://example.com/3") is False
 
     def test_mark_url_queued_fresh_and_merge_modes(self):
-        store = {
+        store: dict[str, ActiveUrlEntry] = {
             "https://example.com/1": {
                 "site": "example",
                 "status": "waiting",
@@ -69,7 +70,9 @@ class TestActiveUrlsHelpers:
         }
 
     def test_mark_url_processing_and_update_url_title(self):
-        store = {"https://example.com/1": {"status": "queued", "heap_gen": 3}}
+        store: dict[str, ActiveUrlEntry] = {
+            "https://example.com/1": {"status": "queued", "heap_gen": 3}
+        }
         active_urls.mark_url_processing(store, "https://example.com/1", site="ao3")
         assert store["https://example.com/1"] == {
             "site": "ao3",
@@ -91,7 +94,7 @@ class TestActiveUrlsHelpers:
         }
 
     def test_mark_url_waiting_respects_cancelled_and_delete_if_cancelled(self):
-        store = {
+        store: dict[str, ActiveUrlEntry] = {
             "https://example.com/active": {"site": "ao3", "status": "processing"},
             "https://example.com/cancelled": {"site": "ao3", "status": "cancelled"},
         }
@@ -133,7 +136,9 @@ class TestActiveUrlsHelpers:
         assert "https://example.com/cancelled" not in store
 
     def test_mark_url_failed_and_mark_url_cancelled_and_remove_active_url(self):
-        store = {"https://example.com/series": {"site": "ao3", "status": "queued"}}
+        store: dict[str, ActiveUrlEntry] = {
+            "https://example.com/series": {"site": "ao3", "status": "queued"}
+        }
         active_urls.mark_url_failed(
             store, "https://example.com/series", "403 Forbidden"
         )

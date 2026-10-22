@@ -8,7 +8,7 @@ transitions and queue-depth snapshots.
 """
 
 from collections.abc import MutableMapping
-from typing import Any, NotRequired, Required, TypedDict
+from typing import NotRequired, Required, TypedDict, cast
 
 from models.queue_types import IngressQueue, WaitingQueue, WorkerQueues
 
@@ -25,7 +25,7 @@ class ActiveUrlEntry(TypedDict, total=False):
     heap_gen: NotRequired[int]
 
 
-ActiveUrlsDict = MutableMapping[str, Any]
+ActiveUrlsDict = MutableMapping[str, ActiveUrlEntry]
 
 
 def is_url_active(active_urls: ActiveUrlsDict, url: str) -> bool:
@@ -80,7 +80,7 @@ def mark_url_queued(
         if behavior is not None:
             entry["behavior"] = behavior
         entry["status"] = "queued"
-        active_urls[url] = entry
+        active_urls[url] = cast(ActiveUrlEntry, entry)
     except Exception:
         pass
 
@@ -96,7 +96,7 @@ def mark_url_processing(
         if site is not None:
             existing.setdefault("site", site)
         existing["status"] = "processing"
-        active_urls[url] = existing
+        active_urls[url] = cast(ActiveUrlEntry, existing)
     except Exception:
         pass
 
@@ -115,7 +115,7 @@ def update_url_title(
             existing["site"] = site
         existing["title"] = title
         existing["status"] = status
-        active_urls[url] = existing
+        active_urls[url] = cast(ActiveUrlEntry, existing)
     except Exception:
         pass
 
@@ -151,7 +151,7 @@ def mark_url_waiting(
         existing["status"] = "waiting"
         if heap_gen is not None:
             existing["heap_gen"] = heap_gen
-        active_urls[url] = existing
+        active_urls[url] = cast(ActiveUrlEntry, existing)
         return True
     except Exception:
         return False
@@ -169,7 +169,7 @@ def mark_url_failed(
         entry = dict(active_urls[url])
         entry["status"] = "failed"
         entry["error"] = error_message
-        active_urls[url] = entry
+        active_urls[url] = cast(ActiveUrlEntry, entry)
     except Exception:
         pass
 
@@ -186,7 +186,7 @@ def mark_url_cancelled(active_urls: ActiveUrlsDict, url: str) -> bool:
         existing = dict(raw_existing) if isinstance(raw_existing, dict) else {}
         was_changed = url in active_urls and existing.get("status") != "cancelled"
         existing["status"] = "cancelled"
-        active_urls[url] = existing
+        active_urls[url] = cast(ActiveUrlEntry, existing)
         return was_changed
     except Exception:
         return False

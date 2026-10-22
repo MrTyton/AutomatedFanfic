@@ -4,9 +4,8 @@ Context dataclasses for bundling worker and cross-process dependencies.
 
 from __future__ import annotations
 
-from collections.abc import MutableMapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from calibre_integration import calibre_info
@@ -14,6 +13,7 @@ if TYPE_CHECKING:
     from config.config_store import ConfigStore
     from history.recorder import HistoryRecorder
     from models import config_models
+    from models.active_urls import ActiveUrlsDict
     from models.queue_types import (
         IngressQueue,
         LogQueue,
@@ -36,7 +36,7 @@ class WorkerContext:
         waiting_queue (WaitingQueue): Queue for failed tasks awaiting delayed retry.
         retry_config (RetryConfig): Configuration governing retry counts and Hail-Mary backoff.
         history_recorder (HistoryRecorder): Recorder for persisting history events.
-        active_urls (MutableMapping[str, Any]): Shared map of active URLs.
+        active_urls (ActiveUrlsDict): Shared map of active URLs.
     """
 
     calibre_client: CalibreClient
@@ -45,7 +45,7 @@ class WorkerContext:
     waiting_queue: WaitingQueue
     retry_config: config_models.RetryConfig
     history_recorder: HistoryRecorder
-    active_urls: MutableMapping[str, Any]
+    active_urls: ActiveUrlsDict
 
     @property
     def cdb_info(self) -> calibre_info.CalibreInfo:
@@ -68,7 +68,7 @@ class SharedIPCContext:
         ingress_queue (IngressQueue): Unified task and worker signal ingress queue.
         waiting_queue (WaitingQueue): Delayed retry queue consumed by `ff_waiter`.
         worker_queues (WorkerQueues): Shared dict mapping `worker_id` to worker queues.
-        active_urls (MutableMapping[str, Any]): Shared dict tracking in-flight URLs.
+        active_urls (ActiveUrlsDict): Shared dict tracking in-flight URLs.
         history_recorder (HistoryRecorder): Shared history event recorder.
         config_store (ConfigStore): Shared ConfigStore for runtime hot-reloading.
         scale_queue (ScaleQueue): Queue for notifying worker pool of scaling requests.
@@ -80,7 +80,7 @@ class SharedIPCContext:
     ingress_queue: IngressQueue
     waiting_queue: WaitingQueue
     worker_queues: WorkerQueues
-    active_urls: MutableMapping[str, Any]
+    active_urls: ActiveUrlsDict
     history_recorder: HistoryRecorder
     config_store: ConfigStore
     scale_queue: ScaleQueue

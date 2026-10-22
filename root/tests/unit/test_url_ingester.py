@@ -9,6 +9,7 @@ from queue import Empty
 
 from config.config_store import ConfigStore
 from services.url_ingester import EmailInfo, email_watcher, _make_fff_get_configuration
+from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from models.config_models import (
     EmailConfig,
@@ -1000,7 +1001,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
             )
         }
         # Simulate a URL that was previously cancelled via cancel-retry
-        active_urls = {
+        active_urls: ActiveUrlsDict = {
             "archiveofourown.org/works/12345": {
                 "site": "archiveofourown",
                 "status": "cancelled",

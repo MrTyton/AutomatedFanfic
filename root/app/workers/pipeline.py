@@ -14,6 +14,8 @@ Worker-Coordinator Communication:
 """
 
 import time
+from typing import cast
+from models.active_urls import ActiveUrlEntry
 from queue import Empty
 
 from utils import ff_logging
@@ -326,7 +328,7 @@ def url_worker(
                                 if getattr(fanfic, "calibre_id", None):
                                     existing["calibre_id"] = fanfic.calibre_id
                                 existing["status"] = "waiting"
-                                active_urls[fanfic.url] = existing
+                                active_urls[fanfic.url] = cast(ActiveUrlEntry, existing)
                     except Exception as e:
                         ff_logging.log_failure(
                             f"Worker {worker_id} failed to update active_urls: {e}"

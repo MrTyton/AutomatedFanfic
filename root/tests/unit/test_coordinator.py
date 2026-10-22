@@ -8,6 +8,7 @@ from queue import Empty
 
 from config.config_store import ConfigStore
 from services.coordinator import Coordinator, start_coordinator
+from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 
 
@@ -858,9 +859,10 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
             "source_url": series_url,
         }
 
-        self.coordinator.active_urls = {
+        active_urls: ActiveUrlsDict = {
             series_url: {"status": "queued", "site": "archiveofourown"}
         }
+        self.coordinator.active_urls = active_urls
 
         task = FanficInfo(url=series_url, site="archiveofourown")
         self.coordinator._handle_new_task(task)
@@ -873,7 +875,7 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         self.assertEqual(self.coordinator.active_urls[series_url]["status"], "failed")
         self.assertIn(
             "Failed to expand series",
-            self.coordinator.active_urls[series_url]["error"],
+            self.coordinator.active_urls[series_url].get("error", ""),
         )
 
 

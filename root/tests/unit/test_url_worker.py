@@ -7,6 +7,7 @@ import multiprocessing as mp
 
 from workers import pipeline, handlers, command, common  # noqa: E402
 from models import config_models  # noqa: E402
+from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext  # noqa: E402
 from models.fanfic_info import FanficInfo  # noqa: E402
 from calibre_integration.calibre_info import CalibreInfo  # noqa: E402
@@ -1632,7 +1633,9 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             title="Story 555",
             calibre_id="555",
         )
-        active_urls = {fanfic.url: {"site": "archiveofourown", "status": "queued"}}
+        active_urls: ActiveUrlsDict = {
+            fanfic.url: {"site": "archiveofourown", "status": "queued"}
+        }
         self.ctx.active_urls = active_urls
         self.mock_queue.get.side_effect = [fanfic, None]
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"

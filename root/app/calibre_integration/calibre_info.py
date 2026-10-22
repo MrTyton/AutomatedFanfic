@@ -24,7 +24,8 @@ and configuration consistency across all worker processes.
 import os
 from pathlib import Path
 from subprocess import call
-from typing import Any, Protocol
+from multiprocessing.managers import SyncManager
+from typing import ContextManager, Protocol
 
 from config.config_store import ConfigStore
 from models.config_models import CalibreConfig
@@ -33,7 +34,7 @@ from utils.system_utils import resolve_ini_path
 
 
 class LockFactory(Protocol):
-    def Lock(self) -> Any: ...
+    def Lock(self) -> ContextManager[object] | None: ...
 
 
 class CalibreInfo:
@@ -58,7 +59,7 @@ class CalibreInfo:
     def __init__(
         self,
         calibre_config: CalibreConfig,
-        manager: LockFactory,
+        manager: SyncManager | LockFactory,
     ) -> None:
         """Initializes the CalibreInfo object from a validated CalibreConfig.
 
@@ -90,7 +91,7 @@ class CalibreInfo:
             calibre_config.personal_ini, "personal.ini"
         )
         self._last_config_version: int | None = None
-        self.lock = manager.Lock()
+        self.lock: ContextManager[object] | None = manager.Lock()
 
     def _get_ini_file_from_config(
         self, config_path: str | None, default_filename: str

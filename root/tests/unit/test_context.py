@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from models import config_models
+from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
@@ -20,7 +21,9 @@ class TestWorkerContext(unittest.TestCase):
         self.mock_waiting_queue = MagicMock()
         self.retry_config = config_models.RetryConfig()
         self.mock_recorder = MagicMock()
-        self.active_urls = {"https://archiveofourown.org/works/1": {"status": "queued"}}
+        self.active_urls: ActiveUrlsDict = {
+            "https://archiveofourown.org/works/1": {"status": "queued"}
+        }
 
     def test_worker_context_bundles_dependencies(self):
         """WorkerContext stores all worker dependencies and exposes cdb_info."""

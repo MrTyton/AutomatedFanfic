@@ -26,6 +26,7 @@ from config.config_store import ConfigStore
 from history.database import AsyncHistoryDB, SyncHistoryDB
 from history.recorder import HistoryRecorder, HistoryWriter
 from models import config_models
+from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from notifications.notification_wrapper import NotificationWrapper
 from parsers.auto_url_parsers import generate_url_parsers_from_fanficfare
@@ -368,7 +369,9 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
         url_parsers = generate_url_parsers_from_fanficfare()
 
         series_url = "archiveofourown.org/series/3039543"
-        active_urls = {series_url: {"site": "archiveofourown", "status": "queued"}}
+        active_urls: ActiveUrlsDict = {
+            series_url: {"site": "archiveofourown", "status": "queued"}
+        }
 
         coordinator = Coordinator(
             ingress_q,

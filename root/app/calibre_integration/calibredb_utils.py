@@ -157,7 +157,16 @@ class CalibreDBClient(CalibreClient):
         )
 
         try:
-            with self.cdb_info.lock:
+            if self.cdb_info.lock is not None:
+                with self.cdb_info.lock:
+                    run(
+                        full_command,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        check=True,
+                    )
+            else:
                 run(
                     full_command,
                     capture_output=True,
@@ -196,7 +205,12 @@ class CalibreDBClient(CalibreClient):
         ff_logging.log_debug(f'\tCalling calibredb with command: \t"{command_args}"')
 
         try:
-            with self.cdb_info.lock:
+            if self.cdb_info.lock is not None:
+                with self.cdb_info.lock:
+                    output = check_output(
+                        full_command, stderr=PIPE, timeout=timeout, text=True
+                    )
+            else:
                 output = check_output(
                     full_command, stderr=PIPE, timeout=timeout, text=True
                 )

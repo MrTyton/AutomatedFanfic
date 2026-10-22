@@ -1,6 +1,8 @@
 """Tests for the web server routes and app factory."""
 
 import unittest
+from typing import cast
+from models.active_urls import ActiveUrlsDict
 from queue import Empty, Queue
 from unittest.mock import MagicMock, patch
 
@@ -48,7 +50,9 @@ class TestHealthRoutes(unittest.TestCase):
 
     def test_status_with_active_urls(self):
         """Status includes active download count."""
-        self.state.active_urls = {"url1": {"site": "test"}, "url2": {"site": "test"}}
+        self.state.active_urls = cast(
+            ActiveUrlsDict, {"url1": {"site": "test"}, "url2": {"site": "test"}}
+        )
 
         resp = self.client.get("/api/status")
         data = resp.json()
@@ -149,7 +153,9 @@ class TestMonitoringRoutes(unittest.TestCase):
         self.assertEqual(resp.json(), {"items": [], "count": 0})
 
     def test_active_with_urls(self):
-        self.state.active_urls = {"url1": {"site": "test"}, "url2": {"site": "test"}}
+        self.state.active_urls = cast(
+            ActiveUrlsDict, {"url1": {"site": "test"}, "url2": {"site": "test"}}
+        )
         resp = self.client.get("/api/monitoring/active")
         data = resp.json()
         self.assertEqual(data["count"], 2)
@@ -217,7 +223,9 @@ class TestControlRoutes(unittest.TestCase):
         )
 
         self.state.ingress_queue = MagicMock()
-        self.state.active_urls = {"https://ao3.org/works/1": {"site": "ao3"}}
+        self.state.active_urls = cast(
+            ActiveUrlsDict, {"https://ao3.org/works/1": {"site": "ao3"}}
+        )
 
         resp = self.client.post(
             "/api/controls/add-url", json={"url": "https://ao3.org/works/1"}
@@ -583,10 +591,13 @@ class TestWidgetRoute(unittest.TestCase):
 
     def test_widget_active_downloads(self):
         """Widget reflects current active downloads count and list."""
-        self.state.active_urls = {
-            "https://ao3.org/works/1": {"site": "ao3", "title": "Story One"},
-            "https://ffnet.net/s/2": {"site": "ffnet", "title": "Story Two"},
-        }
+        self.state.active_urls = cast(
+            ActiveUrlsDict,
+            {
+                "https://ao3.org/works/1": {"site": "ao3", "title": "Story One"},
+                "https://ffnet.net/s/2": {"site": "ffnet", "title": "Story Two"},
+            },
+        )
         resp = self.client.get("/api/widget")
         data = resp.json()
         self.assertEqual(data["active_downloads"], 2)
@@ -600,9 +611,12 @@ class TestWidgetRoute(unittest.TestCase):
 
     def test_widget_active_items_have_url(self):
         """Active items include the URL field."""
-        self.state.active_urls = {
-            "https://ao3.org/works/99": {"site": "ao3", "title": "Test"},
-        }
+        self.state.active_urls = cast(
+            ActiveUrlsDict,
+            {
+                "https://ao3.org/works/99": {"site": "ao3", "title": "Test"},
+            },
+        )
         resp = self.client.get("/api/widget")
         data = resp.json()
         self.assertEqual(data["active"][0]["url"], "https://ao3.org/works/99")
@@ -664,9 +678,12 @@ class TestWidgetRoute(unittest.TestCase):
 
     def test_widget_active_items_handle_missing_metadata(self):
         """Active items gracefully handle entries with no metadata dict."""
-        self.state.active_urls = {
-            "https://ao3.org/works/5": "not_a_dict",
-        }
+        self.state.active_urls = cast(
+            ActiveUrlsDict,
+            {
+                "https://ao3.org/works/5": "not_a_dict",
+            },
+        )
         resp = self.client.get("/api/widget")
         data = resp.json()
         self.assertEqual(data["active_downloads"], 1)
@@ -676,9 +693,12 @@ class TestWidgetRoute(unittest.TestCase):
 
     def test_widget_active_items_show_downloading_state(self):
         """Active items in active_urls but NOT in waiting DB show 'downloading'."""
-        self.state.active_urls = {
-            "https://ao3.org/works/1": {"site": "ao3", "title": "Active Story"},
-        }
+        self.state.active_urls = cast(
+            ActiveUrlsDict,
+            {
+                "https://ao3.org/works/1": {"site": "ao3", "title": "Active Story"},
+            },
+        )
         resp = self.client.get("/api/widget")
         data = resp.json()
         self.assertEqual(data["active"][0]["state"], "downloading")
@@ -697,10 +717,13 @@ class TestWidgetRoute(unittest.TestCase):
         mock_db.get_download_count = mock_count
         self.state.history_db = mock_db
 
-        self.state.active_urls = {
-            "https://ao3.org/works/1": {"site": "ao3", "title": "Active Story"},
-            "https://ao3.org/works/2": {"site": "ao3", "title": "Waiting Story"},
-        }
+        self.state.active_urls = cast(
+            ActiveUrlsDict,
+            {
+                "https://ao3.org/works/1": {"site": "ao3", "title": "Active Story"},
+                "https://ao3.org/works/2": {"site": "ao3", "title": "Waiting Story"},
+            },
+        )
         resp = self.client.get("/api/widget")
         data = resp.json()
         items_by_url = {item["url"]: item for item in data["active"]}
@@ -711,18 +734,24 @@ class TestWidgetRoute(unittest.TestCase):
 
     def test_widget_no_db_all_items_show_downloading(self):
         """Without history DB, all active items default to 'downloading'."""
-        self.state.active_urls = {
-            "https://ao3.org/works/1": {"site": "ao3", "title": "Story"},
-        }
+        self.state.active_urls = cast(
+            ActiveUrlsDict,
+            {
+                "https://ao3.org/works/1": {"site": "ao3", "title": "Story"},
+            },
+        )
         resp = self.client.get("/api/widget")
         data = resp.json()
         self.assertEqual(data["active"][0]["state"], "downloading")
 
     def test_widget_missing_metadata_shows_downloading_state(self):
         """Items with non-dict metadata still get a state field."""
-        self.state.active_urls = {
-            "https://ao3.org/works/5": "not_a_dict",
-        }
+        self.state.active_urls = cast(
+            ActiveUrlsDict,
+            {
+                "https://ao3.org/works/5": "not_a_dict",
+            },
+        )
         resp = self.client.get("/api/widget")
         data = resp.json()
         self.assertEqual(data["active"][0]["state"], "downloading")
