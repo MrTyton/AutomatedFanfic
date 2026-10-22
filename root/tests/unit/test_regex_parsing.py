@@ -143,6 +143,12 @@ class TestRegexParsing(unittest.TestCase):
                 expected_url="forum.questionablequesting.com/threads/story-title.12345",
                 expected_site="questionablequesting",
             ),
+            # ScribbleHub test
+            CheckGenerateFanficInfoTestCase(
+                input_url="https://www.scribblehub.com/series/12345/story-title/",
+                expected_url="scribblehub.com/series/12345",
+                expected_site="scribblehub",
+            ),
             # Other/Unknown URL test
             CheckGenerateFanficInfoTestCase(
                 input_url="https://www.some-other-site.com/story/123",

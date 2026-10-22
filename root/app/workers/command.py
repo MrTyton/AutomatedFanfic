@@ -3,6 +3,7 @@ Command execution logic for FanFicFare integration.
 """
 
 import configparser
+import os
 import functools
 import io
 import sys
@@ -293,6 +294,9 @@ def execute_fanficfare_direct(
     parser = fff_cli.mkParser(calibre=False)
     options, _ = parser.parse_args(argv)
     fff_cli.expandOptions(options)
+
+    if not os.path.isfile(path_or_url):
+        path_or_url = regex_parsing.normalize_url(path_or_url)
 
     ff_logging.log(f"Executing FanFicFare directly: {path_or_url}")
 

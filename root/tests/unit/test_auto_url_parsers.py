@@ -142,6 +142,19 @@ class TestAutoUrlParsers(unittest.TestCase):
                 expected_captured_url="forum.questionablequesting.com/threads/story-title.12345",
                 description="QQ with page number",
             ),
+            # ScribbleHub tests
+            URLPatternTestCase(
+                input_url="https://www.scribblehub.com/series/12345/story-title/",
+                expected_site="scribblehub",
+                expected_captured_url="scribblehub.com/series/12345",
+                description="ScribbleHub series URL with title slug",
+            ),
+            URLPatternTestCase(
+                input_url="http://scribblehub.com/series/12345/story-title/",
+                expected_site="scribblehub",
+                expected_captured_url="scribblehub.com/series/12345",
+                description="ScribbleHub http and non-www URL",
+            ),
             # Other/Unknown URL tests
             URLPatternTestCase(
                 input_url="https://www.some-other-site.com/story/123",

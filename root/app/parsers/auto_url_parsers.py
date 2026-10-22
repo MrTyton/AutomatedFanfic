@@ -155,7 +155,7 @@ def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> tuple[st
         else:
             # Generic forum pattern with escaped special characters
             path_pattern = re.escape(path)
-            path_pattern = re.sub(r"\\d+", r"\\d+", path_pattern)
+            path_pattern = re.sub(r"\d+", r"\\d+", path_pattern)
     else:
         # For story sites: match the core story pattern based on URL structure
         if "/s/" in path:  # FanFiction.Net/FictionPress style URLs
@@ -164,17 +164,19 @@ def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> tuple[st
             path_pattern = r"/(?:works|series)/\d+"
         elif "/fiction/" in path:  # RoyalRoad style URLs
             path_pattern = r"/fiction/\d+"
+        elif "/series/" in path:  # Series style URLs
+            path_pattern = r"/series/\d+"
         else:
             # Generic pattern: escape special characters and replace number sequences
             path_pattern = re.escape(path)
-            path_pattern = re.sub(r"\\d+", r"\\d+", path_pattern)
+            path_pattern = re.sub(r"\d+", r"\\d+", path_pattern)
 
     # Build query pattern component if query parameters are present
     query_part = ""
     if query:
         query_escaped = re.escape(query)
-        # Replace escaped digit sequences with regex digit patterns
-        query_pattern = re.sub(r"\\d+", r"\\d+", query_escaped)
+        # Replace digit sequences with regex digit patterns
+        query_pattern = re.sub(r"\d+", r"\\d+", query_escaped)
         query_part = f"\\?{query_pattern}"
 
     # Apply site-specific rules for capture groups and URL prefixes
