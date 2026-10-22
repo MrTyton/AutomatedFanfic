@@ -78,8 +78,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_log_failure,
     ):
         # Setup
-        mock_fanfic = MagicMock(spec=FanficInfo)
-        mock_fanfic.url = "http://example.com/story"
+        mock_fanfic = FanficInfo(url="http://example.com/story", site="example")
         mock_fanfic.site = "site"
         mock_fanfic.title = "Test Story"
         mock_fanfic.repeats = retry_count  # Set the repeats to control decision
@@ -200,8 +199,7 @@ class TestUrlWorker(unittest.TestCase):
     ):
         """Test handle_failure with update_no_force scenarios."""
         # Setup common mocks
-        mock_fanfic = MagicMock(spec=FanficInfo)
-        mock_fanfic.url = "http://example.com/story"
+        mock_fanfic = FanficInfo(url="http://example.com/story", site="example")
         mock_fanfic.site = "test_site"
         mock_fanfic.title = "Test Story"
         mock_fanfic.repeats = 11  # Will become 12 after increment, triggers abandonment
@@ -255,8 +253,7 @@ class TestUrlWorker(unittest.TestCase):
     def test_handle_failure_with_none_cdb(self, mock_log_failure):
         """Test handle_failure with cdb=None (should never send special notification)."""
         # Setup common mocks
-        mock_fanfic = MagicMock(spec=FanficInfo)
-        mock_fanfic.url = "http://example.com/story"
+        mock_fanfic = FanficInfo(url="http://example.com/story", site="example")
         mock_fanfic.site = "test_site"
         mock_fanfic.title = "Test Story"
         mock_fanfic.repeats = 3  # Will become 4 after increment, triggers normal retry
@@ -337,8 +334,7 @@ class TestUrlWorker(unittest.TestCase):
     ):
         """Test handle_failure edge cases with different behavior values."""
         # Setup common mocks
-        mock_fanfic = MagicMock(spec=FanficInfo)
-        mock_fanfic.url = "http://example.com/story"
+        mock_fanfic = FanficInfo(url="http://example.com/story", site="example")
         mock_fanfic.site = "test_site"
         mock_fanfic.title = "Test Story"
         mock_fanfic.repeats = 11  # Will become 12 after increment, triggers abandonment
@@ -408,8 +404,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_get_files,
     ):
         # Setup
-        mock_fanfic = MagicMock(spec=FanficInfo)
-        mock_fanfic.url = "http://example.com/story"
+        mock_fanfic = FanficInfo(url="http://example.com/story", site="example")
 
         mock_client = MagicMock()
         mock_client.get_story_id.return_value = fanfic_in_calibre
@@ -491,11 +486,10 @@ class TestUrlWorker(unittest.TestCase):
         mock_handle_failure,  # Add mock for handle_failure
     ):
         # Setup
-        mock_fanfic = MagicMock(spec=FanficInfo)
+        mock_fanfic = FanficInfo(url="http://example.com/story", site="example")
         mock_fanfic.calibre_id = calibre_id
         # get_id_from_calibredb is now on the client, not fanfic
 
-        mock_fanfic.url = "http://example.com/story"
         mock_fanfic.site = "site"
         mock_fanfic.title = "title"
 

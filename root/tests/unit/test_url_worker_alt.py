@@ -382,35 +382,6 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
             result = self._run_direct(do_download_side_effect=fake_do_download)
         self.assertTrue(result.has_failure)
 
-    def test_schemeless_url_prepends_https(self):
-        """When path_or_url is a schemeless URL, do_download receives an https:// URL."""
-        captured_url = None
-
-        def fake_do_download(path_or_url, options, **kwargs):
-            nonlocal captured_url
-            captured_url = path_or_url
-
-        mock_options = MagicMock()
-        mock_parser = MagicMock()
-        mock_parser.parse_args.return_value = (mock_options, [])
-
-        with (
-            patch("workers.command.ff_logging.is_verbose", return_value=False),
-            patch("fanficfare.cli.mkParser", return_value=mock_parser),
-            patch("fanficfare.cli.expandOptions"),
-            patch("fanficfare.cli.do_download", side_effect=fake_do_download),
-        ):
-            execute_fanficfare_direct(
-                self.mock_cdb,
-                self.mock_fanfic,
-                "www.scribblehub.com/series/12345/story-title/",
-                "/tmp/test",
-            )
-        self.assertEqual(
-            captured_url,
-            "https://www.scribblehub.com/series/12345/story-title/",
-        )
-
 
 class TestExtractOutputFilenameTemplate(unittest.TestCase):
     """Tests for _extract_output_filename_template()."""

@@ -188,6 +188,32 @@ class TestFanficInfo(unittest.TestCase):
                 f"Test case '{name}' failed: Hashes should not be equal.",
             )
 
+    def test_download_url_normalizes_scheme(self):
+        """Test download_url returns an https:// or http:// prefixed URL via regex_parsing."""
+        fic_schemeless = FanficInfo(
+            url="scribblehub.com/series/12345", site="scribblehub"
+        )
+        self.assertEqual(
+            fic_schemeless.download_url, "https://scribblehub.com/series/12345"
+        )
+
+        fic_https = FanficInfo(
+            url="https://scribblehub.com/series/12345", site="scribblehub"
+        )
+        self.assertEqual(fic_https.download_url, "https://scribblehub.com/series/12345")
+
+        fic_http = FanficInfo(
+            url="http://scribblehub.com/series/12345", site="scribblehub"
+        )
+        self.assertEqual(fic_http.download_url, "http://scribblehub.com/series/12345")
+
+        fic_whitespace = FanficInfo(
+            url="   archiveofourown.org/works/123   ", site="ao3"
+        )
+        self.assertEqual(
+            fic_whitespace.download_url, "https://archiveofourown.org/works/123"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

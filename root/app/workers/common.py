@@ -6,7 +6,6 @@ import zipfile
 from xml.etree import ElementTree as ET
 from utils import ff_logging
 from models import fanfic_info
-from parsers import regex_parsing
 from calibre_integration.client_interface import CalibreClient
 from calibre_integration.models import BookExport
 
@@ -47,7 +46,7 @@ def get_path_or_url(
             return exported_files[0]
 
     # If the story does not exist in the Calibre library or no files were exported, return the URL of the story
-    return regex_parsing.normalize_url(ff_info.url)
+    return ff_info.download_url
 
 
 def extract_title_from_epub_path(epub_path: str) -> str:

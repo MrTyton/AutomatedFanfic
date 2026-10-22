@@ -61,6 +61,7 @@ Note:
 from pathlib import Path
 import re
 from models import fanfic_info
+from utils.url_utils import normalize_url
 
 # Note: url_parsers is now passed as a parameter to avoid loading
 # FanFicFare adapters in every worker process
@@ -167,21 +168,6 @@ def check_forceable_from_message(msg: str) -> bool:
     """
     forceable_patterns = [chapter_difference, more_chapters]
     return any(p.search(msg) for p in forceable_patterns)
-
-
-def normalize_url(url: str) -> str:
-    """Normalize a raw URL string by stripping whitespace and ensuring a scheme prefix.
-
-    Args:
-        url: Raw URL string that may or may not include an http(s):// scheme.
-
-    Returns:
-        str: Trimmed URL guaranteed to start with http:// or https:// (or empty string if blank).
-    """
-    cleaned = url.strip()
-    if cleaned and not cleaned.startswith(("http://", "https://")):
-        return f"https://{cleaned}"
-    return cleaned
 
 
 def generate_FanficInfo_from_url(url: str, url_parsers: dict) -> fanfic_info.FanficInfo:

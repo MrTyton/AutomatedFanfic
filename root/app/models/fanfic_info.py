@@ -21,6 +21,7 @@ for fanfiction download, update, retry, and Calibre integration workflows.
 """
 
 from models import retry_types
+from utils import url_utils
 
 
 class FanficInfo:
@@ -97,6 +98,11 @@ class FanficInfo:
         self.behavior = behavior
         self.title = title
         self.retry_decision = retry_decision
+
+    @property
+    def download_url(self) -> str:
+        """Returns the canonical URL guaranteed to have an http(s):// scheme prefix for downloaders."""
+        return url_utils.normalize_url(self.url)
 
     def increment_repeat(self) -> None:
         """Increments the retry counter for failed processing attempts.
