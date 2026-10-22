@@ -117,7 +117,11 @@ def _process_task(
                 common.log_epub_metadata(path_or_url, site)
 
         # 2. Handle special case: force requested but update_no_force configured
-        action = "Downloading" if path_or_url == fanfic.url else "Updating"
+        action = (
+            "Downloading"
+            if path_or_url in (fanfic.url, fanfic.download_url)
+            else "Updating"
+        )
         ff_logging.log(f"\t({site}) {action} {path_or_url}")
         if (
             fanfic.behavior == "force"
