@@ -538,6 +538,7 @@ def email_watcher(
         for url in urls:
             # Parse URL to identify site and normalize format
             fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
+            fanfic.from_email = True
 
             # Silent partial dedup: if we already processed this normalized URL in this batch, skip it
             if fanfic.url in processed_in_batch:

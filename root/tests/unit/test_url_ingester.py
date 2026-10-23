@@ -626,6 +626,39 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     @patch("services.url_ingester.time.sleep")
     @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.url_ingester.ff_logging.log")
+    def test_email_watcher_marks_fanfics_from_email(
+        self, mock_log, mock_generate_fanfic, mock_sleep
+    ):
+        """URLs ingested from email are tagged so update_only mode can filter them."""
+        self.mock_email_info.get_urls.side_effect = [
+            ["https://www.fanfiction.net/s/12345/1/Test-Story"],
+            KeyboardInterrupt(),
+        ]
+        fanfic = FanficInfo(
+            site="fanfiction", url="https://www.fanfiction.net/s/12345/1/Test-Story"
+        )
+        self.assertFalse(fanfic.from_email)
+        mock_generate_fanfic.return_value = fanfic
+
+        with self.assertRaises(KeyboardInterrupt):
+            email_watcher(
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.ingress_queue,
+                self.mock_url_parsers,
+                {},
+                False,
+                threading.Event(),
+                MagicMock(),
+                ConfigStore({}),
+            )
+
+        queued = self.assert_ingress_has_item(fanfic)
+        self.assertTrue(queued.from_email)
+
+    @patch("services.url_ingester.time.sleep")
+    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
     def test_email_watcher_disabled_sites_notification_only(
         self, mock_generate_fanfic, mock_sleep
     ):

@@ -582,6 +582,11 @@ path = ""
         except Exception:
             pass  # Expected validation error
 
+    def test_calibre_config_update_only(self):
+        """update_only defaults to False for backwards compatibility and accepts True."""
+        self.assertFalse(CalibreConfig(path="/test/path").update_only)
+        self.assertTrue(CalibreConfig(path="/test/path", update_only=True).update_only)
+
     def test_email_config_disabled_sites_default(self):
         """Test EmailConfig disabled_sites default value."""
         email_config = EmailConfig(

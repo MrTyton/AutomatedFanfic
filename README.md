@@ -265,6 +265,7 @@ password=""
 personal_ini=""
 update_method="update"
 metadata_preservation_mode="remove_add"
+update_only=false
 ```
 
 - `path`: This is the path to your Calibre database. It's the location where your Calibre library is stored on your system. This can be either a directory that contains the `calibre.db` file, or the URL/Port/Library marked down above, such as `https://192.168.1.1:9001/#Fanfiction` This is the only argument that is **required** in this section.
@@ -274,6 +275,7 @@ metadata_preservation_mode="remove_add"
 - `default_ini`: Optional path to a custom `defaults.ini`. By default, AutomatedFanfic automatically uses the packaged `defaults.ini` kept up-to-date with each FanFicFare release, so you do not need to configure or mount this file.
 - `update_method`: Controls how FanFicFare handles story updates. Valid options are described below.
 - `metadata_preservation_mode`: Controls how Calibre metadata is preserved during story updates. Valid options are described below.
+- `update_only`: When set to `true`, URLs received via email are **only processed if the story already exists in your Calibre library**. New stories that aren't in the library yet are logged and recorded in the history dashboard as abandoned (no notification is sent), but are not downloaded. URLs submitted manually (e.g., via the web dashboard) are **not affected** and are always downloaded. Defaults to `false`.
 
 **Update Method Use Cases:**
 - Use `"update"` for normal operation with good performance and minimal server load

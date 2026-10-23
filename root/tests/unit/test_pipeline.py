@@ -7,6 +7,7 @@ from models import config_models
 from models.context import WorkerContext
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
+from workers.command import FanFicFareResult
 
 
 class TestPipeline(unittest.TestCase):
@@ -342,6 +343,93 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
         timeouts = [call.kwargs.get("timeout") for call in queue.get.call_args_list]
         self.assertEqual(timeouts, [2.0, 2.0, 0.05, 2.0])
+
+
+@patch("workers.pipeline.ff_logging")
+@patch("workers.pipeline.system_utils")
+@patch("workers.pipeline.common")
+@patch("workers.pipeline.handlers")
+@patch("workers.pipeline.command")
+class TestUpdateOnlyMode(unittest.TestCase):
+    """`calibre.update_only` drops email-sourced URLs that are not in Calibre."""
+
+    def setUp(self):
+        self.fanfic = FanficInfo(
+            url="http://example.com/story", site="site", title="Test Story"
+        )
+        self.mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
+        self.mock_client.cdb_info = MagicMock()
+        self.mock_client.cdb_info.update_method = "update"
+        self.history_recorder = MagicMock()
+        self.ctx = WorkerContext(
+            calibre_client=self.mock_client,
+            notification_info=MagicMock(spec=notification_wrapper.NotificationWrapper),
+            ingress_queue=MagicMock(),
+            waiting_queue=MagicMock(),
+            retry_config=config_models.RetryConfig(),
+            history_recorder=self.history_recorder,
+            active_urls={},
+        )
+
+    def _arrange(self, mock_command, mock_common, mock_sys, path_or_url):
+        mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
+        mock_common.get_path_or_url.return_value = path_or_url
+        mock_common.extract_title_from_epub_path.return_value = "Test Story"
+        mock_command.execute_fanficfare_direct.return_value = FanFicFareResult()
+
+    def test_email_url_not_in_library_is_dropped(
+        self, mock_command, mock_handlers, mock_common, mock_sys, mock_logging
+    ):
+        self.mock_client.cdb_info.update_only = True
+        self.fanfic.from_email = True
+        self._arrange(mock_command, mock_common, mock_sys, self.fanfic.url)
+
+        result = pipeline._process_task(self.fanfic, self.ctx)
+
+        self.assertTrue(result)
+        mock_command.execute_fanficfare_direct.assert_not_called()
+        mock_handlers.process_fanfic_addition.assert_not_called()
+        mock_handlers.handle_failure.assert_not_called()
+        self.history_recorder.record_download_abandoned.assert_called_once()
+        _, kwargs = self.history_recorder.record_download_abandoned.call_args
+        self.assertEqual(kwargs["site"], "site")
+        self.assertIn("update_only", kwargs["error_message"])
+
+    def test_email_url_in_library_is_updated(
+        self, mock_command, mock_handlers, mock_common, mock_sys, mock_logging
+    ):
+        self.mock_client.cdb_info.update_only = True
+        self.fanfic.from_email = True
+        self._arrange(mock_command, mock_common, mock_sys, "/tmp/Test Story.epub")
+
+        pipeline._process_task(self.fanfic, self.ctx)
+
+        mock_command.execute_fanficfare_direct.assert_called_once()
+        self.history_recorder.record_download_abandoned.assert_not_called()
+
+    def test_manual_url_not_in_library_is_downloaded(
+        self, mock_command, mock_handlers, mock_common, mock_sys, mock_logging
+    ):
+        self.mock_client.cdb_info.update_only = True
+        self.fanfic.from_email = False
+        self._arrange(mock_command, mock_common, mock_sys, self.fanfic.url)
+
+        pipeline._process_task(self.fanfic, self.ctx)
+
+        mock_command.execute_fanficfare_direct.assert_called_once()
+        self.history_recorder.record_download_abandoned.assert_not_called()
+
+    def test_email_url_downloaded_when_update_only_disabled(
+        self, mock_command, mock_handlers, mock_common, mock_sys, mock_logging
+    ):
+        self.mock_client.cdb_info.update_only = False
+        self.fanfic.from_email = True
+        self._arrange(mock_command, mock_common, mock_sys, self.fanfic.url)
+
+        pipeline._process_task(self.fanfic, self.ctx)
+
+        mock_command.execute_fanficfare_direct.assert_called_once()
+        self.history_recorder.record_download_abandoned.assert_not_called()
 
 
 if __name__ == "__main__":

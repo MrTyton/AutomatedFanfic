@@ -36,6 +36,7 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
     # Calibre — workers refresh before each calibredb call
     "calibre.update_method": ReloadBehavior.HOT,
     "calibre.metadata_preservation_mode": ReloadBehavior.HOT,
+    "calibre.update_only": ReloadBehavior.HOT,
     "calibre.path": ReloadBehavior.HOT,
     "calibre.username": ReloadBehavior.HOT,
     "calibre.password": ReloadBehavior.HOT,
@@ -117,6 +118,7 @@ class ConfigStore:
             if hasattr(config.calibre.metadata_preservation_mode, "value")
             else config.calibre.metadata_preservation_mode
         )
+        self._store["calibre.update_only"] = config.calibre.update_only
         self._store["calibre.path"] = config.calibre.path
         self._store["calibre.username"] = config.calibre.username
         self._store["calibre.password"] = config.calibre.password

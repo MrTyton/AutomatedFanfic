@@ -60,6 +60,7 @@ class FanficInfo:
         behavior: str | None = None,
         title: str | None = None,
         retry_decision: retry_types.RetryDecision | None = None,
+        from_email: bool = False,
     ):
         """Initializes a FanficInfo object with story metadata and current state.
 
@@ -84,6 +85,10 @@ class FanficInfo:
             retry_decision (Optional[retry_types.RetryDecision], optional): The
                 last retry decision made for this story, including delay timing
                 and notification requirements. Defaults to None.
+            from_email (bool, optional): True if the story URL was ingested from the
+                monitored email inbox (including stories expanded from an emailed
+                series). Used by `calibre.update_only` to drop new stories while still
+                allowing manually submitted URLs. Defaults to False.
 
         Note:
             This simplified design removes retry configuration from the story
@@ -98,6 +103,7 @@ class FanficInfo:
         self.behavior = behavior
         self.title = title
         self.retry_decision = retry_decision
+        self.from_email = from_email
 
     @property
     def download_url(self) -> str:

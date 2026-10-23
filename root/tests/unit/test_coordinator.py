@@ -815,6 +815,34 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         for task in received_tasks:
             self.assertEqual(task.repeats, 0)
 
+    @patch("utils.series_utils.expand_series_url")
+    def test_series_expansion_propagates_from_email(self, mock_expand_series):
+        """Expanded stories inherit the series' email origin (for update_only mode)."""
+        mock_expand_series.return_value = [
+            "https://archiveofourown.org/works/story1",
+            "https://archiveofourown.org/works/story2",
+        ]
+        series_fic = FanficInfo(
+            url="https://archiveofourown.org/series/3039543",
+            site="example",
+            from_email=True,
+        )
+
+        self.ingress_queue.put(series_fic)
+        self.coordinator._process_single_ingress_item(timeout=0.1)
+
+        received_tasks = []
+        for queue in self.worker_queues.values():
+            while True:
+                try:
+                    received_tasks.append(queue.get_nowait())
+                except Empty:
+                    break
+
+        self.assertEqual(len(received_tasks), 2)
+        for task in received_tasks:
+            self.assertTrue(task.from_email)
+
     @patch("utils.series_utils.is_series_url", return_value=False)
     def test_series_with_single_story_not_expanded(self, _mock_is_series_url):
         """Test that a single-story URL is treated as a normal story.

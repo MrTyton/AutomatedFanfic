@@ -250,6 +250,9 @@ class CalibreConfig(BaseModel):
             'force', or 'update_no_force'.
         metadata_preservation_mode (Literal): Strategy for preserving Calibre metadata
             during story updates - 'remove_add' (default), 'preserve_metadata', or 'add_format'.
+        update_only (bool): When True, URLs received via email are only processed if
+            the story already exists in the Calibre library; new stories are dropped.
+            Manually submitted URLs are unaffected. Defaults to False.
 
     Note:
         The path field accepts either local filesystem paths or HTTP(S) URLs for
@@ -276,6 +279,10 @@ class CalibreConfig(BaseModel):
         default=MetadataPreservationMode.REMOVE_ADD,
         description="Metadata preservation strategy: 'remove_add' (current behavior), "
         "'preserve_metadata' (export/restore custom fields), or 'add_format' (replace file only)",
+    )
+    update_only: bool = Field(
+        default=False,
+        description="Only update stories already in Calibre; drop emailed URLs for new stories",
     )
 
     @field_validator("path")

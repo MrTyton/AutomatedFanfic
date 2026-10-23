@@ -116,12 +116,22 @@ def _process_task(
             if ff_logging.is_verbose():
                 common.log_epub_metadata(path_or_url, site)
 
-        # 2. Handle special case: force requested but update_no_force configured
-        action = (
-            "Downloading"
-            if path_or_url in (fanfic.url, fanfic.download_url)
-            else "Updating"
-        )
+        is_new_story = path_or_url in (fanfic.url, fanfic.download_url)
+
+        # 2. update_only mode: drop emailed URLs for stories not already in Calibre
+        if is_new_story and fanfic.from_email and calibre_client.cdb_info.update_only:
+            skip_message = (
+                "Story not found in Calibre library and update_only is enabled"
+            )
+            ff_logging.log(f"\t({site}) Skipping {fanfic.url}: {skip_message}")
+            if history_recorder:
+                history_recorder.record_download_abandoned(
+                    url=fanfic.url, error_message=skip_message, site=site
+                )
+            return True
+
+        # 3. Handle special case: force requested but update_no_force configured
+        action = "Downloading" if is_new_story else "Updating"
         ff_logging.log(f"\t({site}) {action} {path_or_url}")
         if (
             fanfic.behavior == "force"
@@ -137,12 +147,12 @@ def _process_task(
             )
             return handlers.check_active_removal(fanfic)
 
-        # 3. Execute FanFicFare via direct Python API
+        # 4. Execute FanFicFare via direct Python API
         fff_result = command.execute_fanficfare_direct(
             calibre_client.cdb_info, fanfic, path_or_url, temp_dir
         )
 
-        # 4. Evaluate result
+        # 5. Evaluate result
         if fff_result.has_failure:
             error_msg = (
                 str(fff_result.exception)
@@ -172,7 +182,7 @@ def _process_task(
             ingress_queue.put(fanfic)
             return False  # Keep in active_urls; re-queued for force retry
 
-        # 5. Integrate with Calibre (Process Addition)
+        # 6. Integrate with Calibre (Process Addition)
         result = handlers.process_fanfic_addition(
             fanfic,
             ctx,

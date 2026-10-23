@@ -182,6 +182,7 @@ def log_configuration_details(
             f"  Calibre Personal INI: {config.calibre.personal_ini or 'Not Specified'}"
         )
         ff_logging.log(f"  Update Method: {config.calibre.update_method}")
+        ff_logging.log(f"  Update Only (email): {config.calibre.update_only}")
 
         mode_value = (
             config.calibre.metadata_preservation_mode.value

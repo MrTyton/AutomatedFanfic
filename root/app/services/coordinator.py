@@ -308,6 +308,7 @@ class Coordinator:
                     title=None,
                     repeats=0,  # Individual stories start fresh, never inherit series repeats
                     retry_decision=task.retry_decision,
+                    from_email=task.from_email,
                 )
                 active_urls_utils.mark_url_queued(
                     self.active_urls, story_task.url, site=story_task.site

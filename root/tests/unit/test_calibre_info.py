@@ -209,8 +209,18 @@ class TestCalibreInfoUpdateFromConfigStore(unittest.TestCase):
         cdb.default_ini = str(Path(default_ini)) if default_ini else ""
         cdb.update_method = "update"
         cdb.metadata_preservation_mode = MetadataPreservationMode.REMOVE_ADD
+        cdb.update_only = False
         cdb.lock = MagicMock()
         return cdb
+
+    def test_update_only_hot_reloaded(self):
+        """calibre.update_only changes from the config store are applied."""
+        cdb = self._make_cdb()
+        changed = cdb.update_from_config_store(
+            self._store(**{"calibre.update_only": True})
+        )
+        self.assertTrue(changed)
+        self.assertTrue(cdb.update_only)
 
     def _p(self, *parts) -> str:
         """Platform-safe path: str(Path(parts[0]) / parts[1] / ...)."""

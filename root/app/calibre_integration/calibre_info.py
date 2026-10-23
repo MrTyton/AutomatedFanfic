@@ -82,6 +82,7 @@ class CalibreInfo:
         self.password = calibre_config.password
         self.update_method = calibre_config.update_method
         self.metadata_preservation_mode = calibre_config.metadata_preservation_mode
+        self.update_only = calibre_config.update_only
         self._raw_default_ini = calibre_config.default_ini
         self._raw_personal_ini = calibre_config.personal_ini
         self.default_ini = self._get_ini_file_from_config(
@@ -151,6 +152,7 @@ class CalibreInfo:
                 "password": "calibre.password",
                 "update_method": "calibre.update_method",
                 "metadata_preservation_mode": "calibre.metadata_preservation_mode",
+                "update_only": "calibre.update_only",
             }
             for attr, key in mapping.items():
                 val = config_store.get(key)

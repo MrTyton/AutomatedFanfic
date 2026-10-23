@@ -126,6 +126,7 @@ class TestConfigStoreInitFromConfig(unittest.TestCase):
         cfg.email.disabled_sites = ["ffnet"]
         cfg.calibre.update_method = "update_always"
         cfg.calibre.metadata_preservation_mode.value = "preserve_metadata"
+        cfg.calibre.update_only = True
         cfg.retry.max_normal_retries = 5
         cfg.retry.hail_mary_enabled = False
         cfg.retry.hail_mary_wait_hours = 6.0
@@ -140,6 +141,7 @@ class TestConfigStoreInitFromConfig(unittest.TestCase):
         self.assertEqual(
             store.get("calibre.metadata_preservation_mode"), "preserve_metadata"
         )
+        self.assertTrue(store.get("calibre.update_only"))
         self.assertEqual(store.get("retry.max_normal_retries"), 5)
         self.assertFalse(store.get("retry.hail_mary_enabled"))
         self.assertEqual(store.get("retry.hail_mary_wait_hours"), 6.0)
@@ -147,6 +149,10 @@ class TestConfigStoreInitFromConfig(unittest.TestCase):
 
 class TestReloadBehaviorClassification(unittest.TestCase):
     def test_hot_fields(self):
+        self.assertEqual(
+            ConfigStore.get_reload_behavior("calibre", "update_only"),
+            ReloadBehavior.HOT,
+        )
         self.assertEqual(
             ConfigStore.get_reload_behavior("email", "sleep_time"),
             ReloadBehavior.HOT,

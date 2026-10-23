@@ -58,6 +58,12 @@ personal_ini = ""
 #   "update_no_force" - Update but ignore force requests
 update_method = "update"
 
+# Only update stories that already exist in your Calibre library
+# When true, story URLs received via email are dropped if no matching story is
+# found in Calibre (no new downloads). URLs submitted manually through the web
+# dashboard are always processed.
+update_only = false
+
 # Strategy for preserving Calibre metadata during story updates
 # Options:
 #   "remove_add" - Remove old book, add new (default; loses custom columns)
