@@ -57,7 +57,7 @@ lazy from web import server as web_server
 lazy from calibre_integration.http_client import CalibreHttpClient
 
 # Define the application version
-__version__ = "6.5.1"
+__version__ = "6.5.2"
 
 
 def parse_arguments() -> argparse.Namespace:
