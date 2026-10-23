@@ -32,7 +32,7 @@ imapclient==4.1.0
 pillow==13.0.0
 
 # Compression
-Brotli==1.2.0
+Brotli==1.2.1
 
 # Date/time handling and utilities
 python-dateutil==2.9.0.post0
