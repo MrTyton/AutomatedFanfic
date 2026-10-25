@@ -268,6 +268,10 @@ class HistoryWriter:
 
     def stop(self) -> None:
         self._shutdown.set()
+        try:
+            self._queue.put_nowait(None)  # type: ignore[arg-type]
+        except Exception:
+            pass
         if self._thread:
             self._thread.join(timeout=10)
 
@@ -283,12 +287,16 @@ class HistoryWriter:
                     continue
                 except OSError, EOFError:
                     break
+                if raw is None:
+                    break
                 self._process_message(raw, commit=False)
                 # Drain any immediately queued messages to commit in a single transaction
                 for _ in range(49):
                     try:
                         next_raw = self._queue.get_nowait()
                     except Empty, OSError, EOFError:
+                        break
+                    if next_raw is None:
                         break
                     self._process_message(next_raw, commit=False)
                 self._commit_safely()
@@ -306,6 +314,8 @@ class HistoryWriter:
                 raw = self._queue.get_nowait()
             except Empty, OSError, EOFError:
                 break
+            if raw is None:
+                continue
             self._process_message(raw, commit=False)
             processed = True
         if processed:

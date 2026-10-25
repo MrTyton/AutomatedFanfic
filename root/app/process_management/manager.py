@@ -434,6 +434,7 @@ class ProcessManager:
                 return True
 
             # Check timeout if specified
+            wait_interval = 0.5
             if timeout is not None:
                 elapsed = time.time() - start_time
                 if elapsed >= timeout:
@@ -441,9 +442,10 @@ class ProcessManager:
                         f"Timeout waiting for processes after {timeout}s"
                     )
                     return False
+                wait_interval = min(0.5, max(0.0, timeout - elapsed))
 
             # Use shutdown event wait for immediate wakeup on shutdown
-            self._shutdown_event.wait(0.5)
+            self._shutdown_event.wait(wait_interval)
 
     def get_status(self) -> dict[str, dict[str, object]]:
         """
@@ -511,7 +513,9 @@ class ProcessManager:
             except Exception as e:
                 ff_logging.log_failure(f"Error in process monitoring: {e}")
                 # Brief sleep before retrying to avoid rapid error loops
-                self._shutdown_event.wait(5.0)
+                self._shutdown_event.wait(
+                    min(5.0, self.process_config.health_check_interval)
+                )
 
         ff_logging.log_debug("Process monitoring stopped")
 

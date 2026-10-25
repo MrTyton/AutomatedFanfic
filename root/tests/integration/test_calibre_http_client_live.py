@@ -54,7 +54,7 @@ def _wait_for_server(
                 return
         except requests.RequestException:
             pass
-        time.sleep(0.2)
+        time.sleep(0.05)
     raise RuntimeError(f"calibre-server at {base_url} did not start within {timeout}s")
 
 

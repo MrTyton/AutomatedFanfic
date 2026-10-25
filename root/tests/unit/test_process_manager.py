@@ -433,6 +433,9 @@ class TestProcessManager(unittest.TestCase):
         result = self.manager.wait_for_all(timeout=0.1)
         self.assertFalse(result)
 
+        # Avoid invalid mocked process handles in tearDown stop_all().
+        self.manager.processes = {}
+
 
 class TestProcessManagerMonitoring(unittest.TestCase):
     """Test ProcessManager monitoring functionality."""
@@ -830,8 +833,9 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
             ),
             calibre=CalibreConfig(path="/test/path"),
             process=ProcessConfig(
-                shutdown_timeout=2.0,
-                health_check_interval=1.0,
+                shutdown_timeout=1.0,
+                health_check_interval=0.1,
+                restart_delay=0.02,
                 max_restart_attempts=3,
             ),
         )
@@ -893,10 +897,15 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
         self.manager.register_process("failing_process", failing_worker_function)
         self.manager.start_all()
 
-        # Wait for health monitoring to detect failures
-        time.sleep(1.5)
-
         proc_info = self.manager.processes["failing_process"]
+
+        # Wait for health monitoring to detect failures and exhaust max_restart_attempts
+        deadline = time.time() + 2.0
+        while (
+            time.time() < deadline
+            and proc_info.restart_count < self.config.process.max_restart_attempts
+        ):
+            time.sleep(0.02)
 
         # Force restart count to max
         proc_info.restart_count = self.config.process.max_restart_attempts
@@ -945,8 +954,11 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
         with patch.object(
             self.manager, "_health_check_process", side_effect=failing_health_check
         ):
-            # Wait for health check cycle
-            time.sleep(1.5)
+            # Wait for health check cycle to trigger exception and recover
+            deadline = time.time() + 2.0
+            while time.time() < deadline and exception_count[0] == 0:
+                time.sleep(0.02)
+            time.sleep(0.06)
 
             # Manager should still be operational despite exception
             assert self.manager._monitor_thread is not None

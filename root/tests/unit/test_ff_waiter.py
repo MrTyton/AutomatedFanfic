@@ -274,6 +274,7 @@ class TestWaitProcessor(unittest.TestCase):
 
         # Shut down
         shutdown_event.set()
+        waiting_queue.put(None)
         t.join(timeout=5)
 
 

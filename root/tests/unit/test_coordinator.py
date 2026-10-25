@@ -780,8 +780,8 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         """
         series_url = "https://archiveofourown.org/series/3039543"
         story_urls = [
-            "https://archiveofourown.org/works/story1",
-            "https://archiveofourown.org/works/story2",
+            "https://archiveofourown.org/works/101",
+            "https://archiveofourown.org/works/102",
         ]
 
         # Mock only expand_series_url to return test story URLs
@@ -819,8 +819,8 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
     def test_series_expansion_propagates_from_email(self, mock_expand_series):
         """Expanded stories inherit the series' email origin (for update_only mode)."""
         mock_expand_series.return_value = [
-            "https://archiveofourown.org/works/story1",
-            "https://archiveofourown.org/works/story2",
+            "https://archiveofourown.org/works/101",
+            "https://archiveofourown.org/works/102",
         ]
         series_fic = FanficInfo(
             url="https://archiveofourown.org/series/3039543",

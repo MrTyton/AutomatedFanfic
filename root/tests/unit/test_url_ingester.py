@@ -521,12 +521,14 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
             fn("https://www.royalroad.com/fiction/1/t")
             mock_cfg.read.assert_not_called()
 
+
+class TestEmailWatcher(unittest.TestCase):
     """Test the email_watcher main loop function."""
 
     def setUp(self):
         """Set up common test fixtures."""
         self.mock_email_info = MagicMock()
-        self.mock_email_info.sleep_time = 1  # Short sleep for testing
+        self.mock_email_info.sleep_time = 0  # Zero sleep for fast testing
         self.mock_email_info.disabled_sites = []
         self.mock_email_info.imap_idle = False  # default to polling in existing tests
 
@@ -1025,6 +1027,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         email_config = EmailConfig(email="u", password="p", server="s", sleep_time=1)
         store = ConfigStore({})
         ei = EmailInfo(email_config, store)
+        ei.sleep_time = 0
         mock_notif = MagicMock()
         ingress_q = Queue()
         url_parsers = {
