@@ -3,22 +3,76 @@ Command execution logic for FanFicFare integration.
 """
 
 import configparser
-import functools
-import io
-import sys
-import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import functools
 import importlib.metadata
+import io
 from pathlib import Path
+import sys
+import threading
 from typing import IO
 
 lazy from fanficfare import cli as fff_cli
-from config.config_store import read_ini_file_cached
-from utils import ff_logging
 from calibre_integration import calibre_info
+from config.config_store import read_ini_file_cached
 from models import fanfic_info
 from parsers import regex_parsing
+from utils import ff_logging
+
+# ---------------------------------------------------------------------------
+# Per-site CookieJar cache
+# ---------------------------------------------------------------------------
+#
+# FanFicFare's cli.get_configuration(options, ...) reuses `options.cookiejar`
+# if the attribute is already present on `options`, calling
+# `configuration.set_cookiejar(options.cookiejar)`. Otherwise it creates a
+# brand-new empty BasicCookieJar on every call.
+#
+# By persisting the cookiejar per site across execute_fanficfare_direct() calls,
+# session cookies (such as AO3 login sessions) are preserved across tasks in
+# the worker pool rather than re-authenticating on every single download.
+# Whenever personal.ini content changes (e.g. updated credentials), all cached
+# cookiejars are automatically cleared.
+
+_site_cookiejars: dict[str, object] = {}
+_last_personal_ini_content: str | None = None
+_site_cookiejars_lock = threading.Lock()
+
+
+def _get_site_cookiejar(site: str, personal_ini_content: str) -> object | None:
+    """Return the persisted FanFicFare cookiejar for a site, invalidating all jars if personal.ini changed."""
+    global _last_personal_ini_content
+    with _site_cookiejars_lock:
+        if (
+            _last_personal_ini_content is not None
+            and _last_personal_ini_content != personal_ini_content
+        ):
+            _site_cookiejars.clear()
+            ff_logging.log_debug(
+                "\tpersonal.ini changed — cleared cached site cookiejars"
+            )
+        _last_personal_ini_content = personal_ini_content
+        if not site:
+            return None
+        return _site_cookiejars.get(site)
+
+
+def _set_site_cookiejar(site: str, cookiejar: object) -> None:
+    """Store the FanFicFare cookiejar for a site so sessions persist across tasks."""
+    if not site:
+        return
+    with _site_cookiejars_lock:
+        _site_cookiejars[site] = cookiejar
+
+
+def clear_site_cookiejars() -> None:
+    """Clear all cached per-site cookiejars and reset personal.ini tracking."""
+    global _last_personal_ini_content
+    with _site_cookiejars_lock:
+        _site_cookiejars.clear()
+        _last_personal_ini_content = None
+
 
 # ---------------------------------------------------------------------------
 # Thread-local stdout proxy
@@ -294,6 +348,11 @@ def execute_fanficfare_direct(
     options, _ = parser.parse_args(argv)
     fff_cli.expandOptions(options)
 
+    site_key = getattr(fanfic, "site", "") or ""
+    cached_cookiejar = _get_site_cookiejar(site_key, personal_ini_base)
+    if cached_cookiejar is not None:
+        options.cookiejar = cached_cookiejar
+
     ff_logging.log(f"Executing FanFicFare directly: {path_or_url}")
 
     tl_stdout = _ensure_tl_stdout()
@@ -313,6 +372,10 @@ def execute_fanficfare_direct(
         result.exception = e
         ff_logging.log_failure(f"\tFanFicFare raised exception: {e}")
         return result
+    finally:
+        updated_cookiejar = vars(options).get("cookiejar")
+        if updated_cookiejar is not None and site_key:
+            _set_site_cookiejar(site_key, updated_cookiejar)
 
     if captured_output:
         ff_logging.log_debug(f"\tFanFicFare stdout: {captured_output}")

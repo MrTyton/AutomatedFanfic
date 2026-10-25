@@ -13,22 +13,26 @@ Worker-Coordinator Communication:
     where ff_waiter applies exponential backoff before re-submitting.
 """
 
+from queue import Empty
+import threading
 import time
 from typing import cast
-from models.active_urls import ActiveUrlEntry
-from queue import Empty
 
-from utils import ff_logging
 from models import active_urls as active_urls_utils
+from models import fanfic_info
+from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
 from models.queue_types import IngressQueue, WorkerQueue
-from utils import system_utils
-from models import fanfic_info
+from utils import ff_logging, system_utils
 
 # Import from sibling modules
-from . import common
-from . import command
-from . import handlers
+from . import command, common, handlers
+
+# Cooldown applied between a failed task and the next queued task on the same site,
+# compensating for FanFicFare's SleepDecorator being bypassed when a request raises.
+FAILURE_COOLDOWN_SECONDS: float = 5.0
+
+_worker_local = threading.local()
 
 
 def _signal_worker_idle(
@@ -76,6 +80,7 @@ def _process_task(
             (succeeded or permanently abandoned), False if it remains active (waiting
             for retry or re-queued for force update).
     """
+    _worker_local.last_task_failed = False
     site = fanfic.site
     calibre_client = ctx.calibre_client
     ingress_queue = ctx.ingress_queue
@@ -145,6 +150,7 @@ def _process_task(
                 ctx,
                 error_message="Force update requested but update method is 'update_no_force'",
             )
+            _worker_local.last_task_failed = True
             return handlers.check_active_removal(fanfic)
 
         # 4. Execute FanFicFare via direct Python API
@@ -168,6 +174,7 @@ def _process_task(
                 ctx,
                 error_message=error_msg,
             )
+            _worker_local.last_task_failed = True
             return handlers.check_active_removal(fanfic)
 
         if fff_result.is_forceable:
@@ -189,6 +196,8 @@ def _process_task(
             temp_dir,
             path_or_url,
         )
+        if getattr(fanfic, "retry_decision", None) is not None:
+            _worker_local.last_task_failed = True
 
         # If process_fanfic_addition was mocked in a test and returned None,
         # fall back to check_active_removal(fanfic).
@@ -237,8 +246,9 @@ def url_worker(
     ingress_queue = ctx.ingress_queue
     active_urls = ctx.active_urls
 
-    # Track current site being processed
+    # Track current site being processed and whether its previous task failed
     current_site: str | None = None
+    last_task_failed = False
     last_active_time = time.monotonic()
 
     while True:
@@ -253,6 +263,7 @@ def url_worker(
                 if fanfic is None:
                     _signal_worker_idle(ingress_queue, worker_id, current_site)
                     current_site = None
+                    last_task_failed = False
                     ff_logging.log(f"Worker {worker_id} stopping", "HEADER")
                     break
 
@@ -270,6 +281,7 @@ def url_worker(
                         f"Worker {worker_id} signaling idle after draining {finished_site} queue"
                     )
                     current_site = None
+                    last_task_failed = False
                     system_utils.reclaim_memory()
                     last_active_time = time.monotonic()
                     continue
@@ -296,11 +308,20 @@ def url_worker(
                 if isinstance(e, ValueError):  # Queue closed
                     _signal_worker_idle(ingress_queue, worker_id, current_site)
                     current_site = None
+                    last_task_failed = False
                     ff_logging.log(f"Worker {worker_id} queue closed", "WARNING")
                     break
                 ff_logging.log_failure(f"Worker {worker_id} error waiting: {e}")
                 time.sleep(1)
                 continue
+
+            # If the previous task on this site failed, FanFicFare's post-request
+            # SleepDecorator was bypassed; cool down before hitting the site again.
+            if last_task_failed and current_site == fanfic.site:
+                ff_logging.log_debug(
+                    f"({fanfic.site}) Cooling down {FAILURE_COOLDOWN_SECONDS}s after previous failure before next task"
+                )
+                time.sleep(FAILURE_COOLDOWN_SECONDS)
 
             # Track which site we're processing
             current_site = fanfic.site
@@ -313,9 +334,14 @@ def url_worker(
 
             # Process Task
             should_remove = True
+            _worker_local.last_task_failed = False
             try:
                 should_remove = _process_task(fanfic, ctx)
+                last_task_failed = bool(
+                    getattr(_worker_local, "last_task_failed", False)
+                )
             except Exception as e:
+                last_task_failed = True
                 ff_logging.log_failure(
                     f"Worker {worker_id} crashed on task {fanfic.url}: {e}"
                 )

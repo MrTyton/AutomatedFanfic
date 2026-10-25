@@ -1,17 +1,25 @@
+import inspect
+import io
+import os
+import tempfile
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
-import io
-import threading
 
-from workers.command import (
-    _build_argv,
-    _ThreadLocalStdout,
-    _extract_output_filename_template,
-    FanFicFareResult,
-    execute_fanficfare_direct,
-)
+from fanficfare.cli import do_download, expandOptions, mkParser
+import fanficfare.configurable as configurable
+
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo
+from utils.system_utils import get_packaged_defaults_ini_path
+from workers import command
+from workers.command import (
+    _build_argv,
+    _extract_output_filename_template,
+    _ThreadLocalStdout,
+    execute_fanficfare_direct,
+    FanFicFareResult,
+)
 
 
 class TestBuildArgv(unittest.TestCase):
@@ -99,8 +107,6 @@ class TestBuildArgvWithRealFanFicFareParser(unittest.TestCase):
     """
 
     def setUp(self):
-        from fanficfare.cli import expandOptions, mkParser
-
         self.mkParser = mkParser
         self.expandOptions = expandOptions
         self.mock_cdb = MagicMock(spec=CalibreInfo)
@@ -180,9 +186,6 @@ class TestBuildArgvWithRealFanFicFareParser(unittest.TestCase):
         sees (*args, **kwargs) on the wrapper.  We walk the closure chain to
         reach the underlying function before inspecting its parameters.
         """
-        import inspect
-        from fanficfare.cli import do_download
-
         # Unwrap any profiling/decorator closures that hide the real signature.
         fn = do_download
         seen: set[int] = set()
@@ -305,6 +308,8 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         self.mock_fanfic = MagicMock(spec=FanficInfo)
         self.mock_fanfic.behavior = None
         self.mock_fanfic.site = "archiveofourown"
+        if hasattr(command, "clear_site_cookiejars"):
+            command.clear_site_cookiejars()
 
     def _run_direct(self, do_download_side_effect=None, temp_dir="/tmp/test"):
         """Helper: patch fanficfare internals and run execute_fanficfare_direct."""
@@ -381,6 +386,160 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         ):
             result = self._run_direct(do_download_side_effect=fake_do_download)
         self.assertTrue(result.has_failure)
+
+    def test_cookiejar_persisted_and_reused_across_downloads_for_same_site(self):
+        """options.cookiejar populated by do_download on first call is reused on subsequent calls for the same site."""
+        fake_jar = object()
+        observed_jars_before_download: list[object | None] = []
+
+        def fake_do_download(path_or_url, options, **kwargs):
+            observed_jars_before_download.append(vars(options).get("cookiejar"))
+            if not hasattr(options, "cookiejar") or options.cookiejar is None:
+                options.cookiejar = fake_jar
+
+        with patch("fanficfare.cli.do_download", side_effect=fake_do_download):
+            execute_fanficfare_direct(
+                self.mock_cdb,
+                self.mock_fanfic,
+                "https://archiveofourown.org/works/1",
+                "/tmp/test",
+            )
+            execute_fanficfare_direct(
+                self.mock_cdb,
+                self.mock_fanfic,
+                "https://archiveofourown.org/works/2",
+                "/tmp/test",
+            )
+
+        self.assertEqual(observed_jars_before_download, [None, fake_jar])
+
+    def test_cookiejar_persisted_even_when_do_download_raises(self):
+        """Cookies acquired during login before a mid-download failure (e.g. HTTP 525) are still preserved."""
+        fake_jar = object()
+        observed_jars_before_download: list[object | None] = []
+        call_num = 0
+
+        def fake_do_download(path_or_url, options, **kwargs):
+            nonlocal call_num
+            call_num += 1
+            observed_jars_before_download.append(vars(options).get("cookiejar"))
+            if call_num == 1:
+                options.cookiejar = fake_jar
+                raise RuntimeError("HTTP Error 525")
+
+        with patch("fanficfare.cli.do_download", side_effect=fake_do_download):
+            res1 = execute_fanficfare_direct(
+                self.mock_cdb,
+                self.mock_fanfic,
+                "https://archiveofourown.org/works/1",
+                "/tmp/test",
+            )
+            res2 = execute_fanficfare_direct(
+                self.mock_cdb,
+                self.mock_fanfic,
+                "https://archiveofourown.org/works/2",
+                "/tmp/test",
+            )
+
+        self.assertTrue(res1.has_failure)
+        self.assertFalse(res2.has_failure)
+        self.assertEqual(observed_jars_before_download, [None, fake_jar])
+
+    def test_cookiejar_isolated_between_different_sites(self):
+        """Cookiejars are stored per-site so AO3 cookies are not shared with unrelated sites."""
+        ao3_jar = object()
+        ffnet_fanfic = MagicMock(spec=FanficInfo)
+        ffnet_fanfic.behavior = None
+        ffnet_fanfic.site = "fanfiction"
+        observed_jars: list[tuple[str, object | None]] = []
+
+        def fake_do_download(path_or_url, options, **kwargs):
+            site = (
+                "archiveofourown" if "archiveofourown" in path_or_url else "fanfiction"
+            )
+            observed_jars.append((site, vars(options).get("cookiejar")))
+            if site == "archiveofourown":
+                options.cookiejar = ao3_jar
+
+        with patch("fanficfare.cli.do_download", side_effect=fake_do_download):
+            execute_fanficfare_direct(
+                self.mock_cdb,
+                self.mock_fanfic,
+                "https://archiveofourown.org/works/1",
+                "/tmp/test",
+            )
+            execute_fanficfare_direct(
+                self.mock_cdb,
+                ffnet_fanfic,
+                "https://www.fanfiction.net/s/1",
+                "/tmp/test",
+            )
+
+        self.assertEqual(
+            observed_jars,
+            [("archiveofourown", None), ("fanfiction", None)],
+        )
+
+    def test_cookiejar_invalidated_when_personal_ini_changes(self):
+        """Modifying personal.ini (e.g. changing username/password) clears cached cookiejars."""
+        jar1 = object()
+        jar2 = object()
+        observed_jars_before_download: list[object | None] = []
+        call_num = 0
+
+        def fake_do_download(path_or_url, options, **kwargs):
+            nonlocal call_num
+            call_num += 1
+            observed_jars_before_download.append(vars(options).get("cookiejar"))
+            if vars(options).get("cookiejar") is None:
+                options.cookiejar = jar1 if call_num <= 2 else jar2
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            personal_ini_path = os.path.join(tmp_dir, "personal.ini")
+            with open(personal_ini_path, "w", encoding="utf-8") as fh:
+                fh.write("[archiveofourown.org]\nusername: user1\npassword: pass1\n")
+
+            self.mock_cdb.personal_ini = personal_ini_path
+
+            with patch("fanficfare.cli.do_download", side_effect=fake_do_download):
+                # Download 1 & 2 with user1 credentials -> jar1 created then reused
+                execute_fanficfare_direct(
+                    self.mock_cdb,
+                    self.mock_fanfic,
+                    "https://archiveofourown.org/works/1",
+                    tmp_dir,
+                )
+                execute_fanficfare_direct(
+                    self.mock_cdb,
+                    self.mock_fanfic,
+                    "https://archiveofourown.org/works/2",
+                    tmp_dir,
+                )
+
+                # User updates personal.ini credentials
+                with open(personal_ini_path, "w", encoding="utf-8") as fh:
+                    fh.write(
+                        "[archiveofourown.org]\nusername: user2_new\npassword: pass2_new\n"
+                    )
+
+                # Download 3 & 4 -> jar1 must be invalidated on Download 3, then jar2 reused on Download 4
+                execute_fanficfare_direct(
+                    self.mock_cdb,
+                    self.mock_fanfic,
+                    "https://archiveofourown.org/works/3",
+                    tmp_dir,
+                )
+                execute_fanficfare_direct(
+                    self.mock_cdb,
+                    self.mock_fanfic,
+                    "https://archiveofourown.org/works/4",
+                    tmp_dir,
+                )
+
+        self.assertEqual(
+            observed_jars_before_download,
+            [None, jar1, None, jar2],
+        )
 
 
 class TestExtractOutputFilenameTemplate(unittest.TestCase):
@@ -472,14 +631,7 @@ class TestExtractOutputFilenameTemplate(unittest.TestCase):
 
     def test_execute_fanficfare_direct_real_fff_config_forces_temp_dir(self):
         """Real FFF mkParser + expandOptions + Configuration resolves output_filename into temp_dir even when [archiveofourown.org] sets output_filename."""
-        import os
-        import tempfile
-        from pathlib import Path
-        import fanficfare.configurable as configurable
-
-        defaults_ini = str(
-            Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini"
-        )
+        defaults_ini = get_packaged_defaults_ini_path()
         with tempfile.TemporaryDirectory() as tmp_dir:
             personal_ini = os.path.join(tmp_dir, "personal.ini")
             with open(personal_ini, "w", encoding="utf-8") as fh:

@@ -17,10 +17,10 @@ Examples:
 """
 
 import argparse
+from pathlib import Path
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 
 def read_current_version(version_file: Path) -> str:
@@ -146,54 +146,6 @@ def update_python_version(python_file: Path, new_version: str) -> None:
             break
 
 
-def update_defaults_ini(repo_dir: Path) -> bool:
-    """Copy defaults.ini from the installed FanFicFare package.
-
-    The file is written to ``root/config.default/defaults.ini`` so it stays
-    in sync with whatever FFF version is installed in the current Python
-    environment.  If fanficfare is not importable (e.g. running outside the
-    project venv) the function falls back to downloading from FFF's GitHub
-    master branch.
-
-    Returns:
-        True if the destination file was updated successfully.
-    """
-    destination = repo_dir / "root" / "config.default" / "defaults.ini"
-
-    # Prefer the installed package – exact match for the current dependency.
-    try:
-        import fanficfare
-        import shutil
-
-        src = Path(fanficfare.__file__).parent / "defaults.ini"
-        if src.exists():
-            shutil.copy2(src, destination)
-            installed_ver = getattr(fanficfare, "__version__", "unknown")
-            print(f"✅ Updated defaults.ini from installed FanFicFare {installed_ver}")
-            return True
-        print("⚠️  fanficfare package found but defaults.ini not in expected location")
-    except ImportError:
-        print(
-            "⚠️  fanficfare not importable in this environment; falling back to GitHub"
-        )
-
-    # Fall back: download from FFF’s GitHub master branch.
-    import urllib.request
-
-    url = "https://raw.githubusercontent.com/JimmXinu/FanFicFare/master/fanficfare/defaults.ini"
-    try:
-        print(f"📥 Downloading defaults.ini from {url} …")
-        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310
-            content = resp.read().decode("utf-8")
-        with open(destination, "w", encoding="utf-8", newline="\n") as f:
-            f.write(content)
-        print("✅ Updated defaults.ini from FanFicFare GitHub (master)")
-        return True
-    except Exception as exc:
-        print(f"❌ Failed to update defaults.ini: {exc}")
-        return False
-
-
 def run_git_command(command: list[str], cwd: Path) -> tuple[bool, str]:
     """Run a git command and return success status and output."""
     try:
@@ -254,7 +206,6 @@ def commit_and_push_changes(
     version: str,
     bump_type: str,
     reason: str,
-    extra_files: list[str] | None = None,
 ) -> bool:
     """Commit and push the version changes."""
     print("📦 Committing and pushing changes...")
@@ -265,8 +216,6 @@ def commit_and_push_changes(
         "root/app/fanficdownload.py",
         "pyproject.toml",
     ]
-    if extra_files:
-        files_to_add.extend(extra_files)
 
     for file_path in files_to_add:
         success, output = run_git_command(["git", "add", file_path], repo_dir)
@@ -340,12 +289,6 @@ Examples:
         help="Force git operations even with uncommitted changes",
     )
 
-    parser.add_argument(
-        "--update-defaults-ini",
-        action="store_true",
-        help="Copy defaults.ini from the installed FanFicFare package into root/config.default/defaults.ini",
-    )
-
     args = parser.parse_args()
 
     # Define file paths
@@ -400,11 +343,6 @@ Examples:
         update_version_file(version_file, new_version)
         update_python_version(python_file, new_version)
         update_pyproject_version(pyproject_file, new_version)
-        # Optionally sync defaults.ini from the installed FanFicFare package
-        defaults_ini_updated = False
-        if args.update_defaults_ini:
-            print()
-            defaults_ini_updated = update_defaults_ini(script_dir)
         print()
         print("🎉 Version bump complete!")
         print(f"📊 Summary: {current_version} → {new_version} ({args.bump_type} bump)")
@@ -412,21 +350,15 @@ Examples:
         # Git operations
         if not args.no_git:
             print()
-            print("� Git operations:")
+            print("Git operations:")
 
             # Check git status
             if args.force_git or check_git_status(script_dir):
-                extra_git_files = (
-                    ["root/config.default/defaults.ini"]
-                    if defaults_ini_updated
-                    else None
-                )
                 success = commit_and_push_changes(
                     script_dir,
                     new_version,
                     args.bump_type,
                     args.reason,
-                    extra_files=extra_git_files,
                 )
                 if success:
                     print()
@@ -451,8 +383,6 @@ Examples:
             manual_files = (
                 "release-versions/latest.txt root/app/fanficdownload.py pyproject.toml"
             )
-            if defaults_ini_updated:
-                manual_files += " root/config.default/defaults.ini"
             print(f"   git add {manual_files}")
             print(f'   git commit -m "bump: {args.bump_type} version to {new_version}"')
             print("   git push")

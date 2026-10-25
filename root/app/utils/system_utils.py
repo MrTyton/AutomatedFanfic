@@ -60,8 +60,7 @@ import gc
 def get_packaged_defaults_ini_path() -> str:
     """Return the filesystem path to the packaged FanFicFare defaults.ini.
 
-    Checks the installed fanficfare package directory first, then the repo/container
-    default config directory (`root/config.default/defaults.ini` or `/config.default/defaults.ini`).
+    Checks the installed fanficfare package directory.
 
     Returns:
         str: Absolute path to the packaged defaults.ini file, or empty string if not found.
@@ -72,15 +71,6 @@ def get_packaged_defaults_ini_path() -> str:
             return str(fff_ini)
     except Exception:
         pass
-
-    # Fallbacks for repo structure or container filesystem
-    candidates = [
-        Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini",
-        Path("/config.default/defaults.ini"),
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
 
     return ""
 

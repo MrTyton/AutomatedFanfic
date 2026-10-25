@@ -1,12 +1,13 @@
+from queue import Empty
 import unittest
 from unittest.mock import MagicMock, patch
 
-from workers import pipeline
-from models.fanfic_info import FanficInfo
+from calibre_integration import calibredb_utils
 from models import config_models
 from models.context import WorkerContext
-from calibre_integration import calibredb_utils
+from models.fanfic_info import FanficInfo
 from notifications import notification_wrapper
+from workers import pipeline
 from workers.command import FanFicFareResult
 
 
@@ -44,7 +45,6 @@ class TestPipeline(unittest.TestCase):
     ):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
-        from workers.command import FanFicFareResult
 
         mock_command.FanFicFareResult = FanFicFareResult
         mock_command.execute_fanficfare_direct.return_value = FanFicFareResult(
@@ -70,8 +70,6 @@ class TestPipeline(unittest.TestCase):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
 
-        from workers.command import FanFicFareResult
-
         mock_command.FanFicFareResult = FanFicFareResult
         mock_command.execute_fanficfare_direct.return_value = FanFicFareResult(
             failure_messages=["Bytes Output"]
@@ -94,8 +92,6 @@ class TestPipeline(unittest.TestCase):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "file.epub"
         mock_common.extract_title_from_epub_path.return_value = "file.epub"
-
-        from workers.command import FanFicFareResult
 
         mock_command.FanFicFareResult = FanFicFareResult
         mock_command.execute_fanficfare_direct.return_value = FanFicFareResult()
@@ -154,8 +150,6 @@ class TestPipeline(unittest.TestCase):
         self, mock_monotonic, mock_logging, mock_reclaim_memory
     ):
         """Worker with idle_timeout=60.0 exits after staying idle for >= 60.0s."""
-        from queue import Empty
-
         queue = MagicMock()
         queue.get.side_effect = Empty
         # Initial last_active_time = 0.0, intermediate idle check = 30.0, timeout check = 65.0
@@ -178,8 +172,6 @@ class TestPipeline(unittest.TestCase):
         self, mock_monotonic, mock_logging, mock_reclaim_memory
     ):
         """Worker with idle_timeout=None does not exit when idle."""
-        from queue import Empty
-
         queue = MagicMock()
         queue.get.side_effect = [Empty, Empty, None]
         mock_monotonic.side_effect = [0.0, 100.0, 200.0]
@@ -210,9 +202,6 @@ class TestPipeline(unittest.TestCase):
         mock_addition,
     ):
         """Worker resets idle timer when draining a site queue."""
-        from queue import Empty
-        from workers.command import FanFicFareResult
-
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_fff.return_value = FanFicFareResult()
 
@@ -307,7 +296,6 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "http://example.com/story"
-        from workers.command import FanFicFareResult
 
         mock_command.FanFicFareResult = FanFicFareResult
 
@@ -334,8 +322,6 @@ class TestPipelineEdgeCases(unittest.TestCase):
     @patch("workers.pipeline.ff_logging")
     def test_url_worker_adaptive_queue_timeout(self, mock_logging, mock_process_task):
         """Worker uses 2.0s timeout when idle and 0.05s timeout while holding a site lock."""
-        from queue import Empty
-
         queue = MagicMock()
         queue.get.side_effect = [Empty, self.fanfic, Empty, None]
 
@@ -343,6 +329,117 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
         timeouts = [call.kwargs.get("timeout") for call in queue.get.call_args_list]
         self.assertEqual(timeouts, [2.0, 2.0, 0.05, 2.0])
+
+    @patch("workers.pipeline.time.sleep")
+    @patch("workers.pipeline.handlers.process_fanfic_addition", return_value=True)
+    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch(
+        "workers.pipeline.common.get_path_or_url",
+        return_value="https://archiveofourown.org/works/1",
+    )
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.pipeline.ff_logging")
+    def test_url_worker_applies_cooldown_sleep_between_failed_task_and_next_same_site_task(
+        self,
+        mock_logging,
+        mock_temp_dir,
+        mock_path_or_url,
+        mock_fff,
+        mock_addition,
+        mock_sleep,
+    ):
+        """When a download fails (bypassing FFF SleepDecorator), worker sleeps FAILURE_COOLDOWN_SECONDS before starting the next task on the same site."""
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp"
+        fanfic1 = FanficInfo(
+            url="https://archiveofourown.org/works/1",
+            site="archiveofourown",
+            title="Story 1",
+        )
+        fanfic2 = FanficInfo(
+            url="https://archiveofourown.org/works/2",
+            site="archiveofourown",
+            title="Story 2",
+        )
+        fanfic3 = FanficInfo(
+            url="https://archiveofourown.org/works/3",
+            site="archiveofourown",
+            title="Story 3",
+        )
+        mock_fff.side_effect = [
+            FanFicFareResult(failure_messages=["HTTP Error 525"]),
+            FanFicFareResult(),
+            FanFicFareResult(),
+        ]
+
+        queue = MagicMock()
+        queue.get.side_effect = [fanfic1, fanfic2, fanfic3, None]
+
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
+
+        # Cooldown sleep must be called once (between failed fanfic1 and fanfic2),
+        # and NOT between successful fanfic2 and fanfic3.
+        mock_sleep.assert_called_once_with(pipeline.FAILURE_COOLDOWN_SECONDS)
+
+    @patch("workers.pipeline.time.sleep")
+    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch(
+        "workers.pipeline.common.get_path_or_url",
+        return_value="https://archiveofourown.org/works/1",
+    )
+    @patch("workers.pipeline.system_utils.temporary_directory")
+    @patch("workers.pipeline.ff_logging")
+    def test_url_worker_does_not_sleep_cooldown_when_queue_drains_after_failure(
+        self,
+        mock_logging,
+        mock_temp_dir,
+        mock_path_or_url,
+        mock_fff,
+        mock_sleep,
+    ):
+        """When a task fails and the site queue is empty, worker releases the site lock without a pointless cooldown sleep."""
+        mock_temp_dir.return_value.__enter__.return_value = "/tmp"
+        fanfic1 = FanficInfo(
+            url="https://archiveofourown.org/works/1",
+            site="archiveofourown",
+            title="Story 1",
+        )
+        mock_fff.return_value = FanFicFareResult(failure_messages=["HTTP Error 525"])
+
+        queue = MagicMock()
+        queue.get.side_effect = [fanfic1, Empty, None]
+
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
+
+        mock_sleep.assert_not_called()
+
+    @patch("workers.pipeline.time.sleep")
+    @patch("workers.pipeline._process_task")
+    @patch("workers.pipeline.ff_logging")
+    def test_url_worker_applies_cooldown_sleep_after_unhandled_task_exception(
+        self,
+        mock_logging,
+        mock_process_task,
+        mock_sleep,
+    ):
+        """When _process_task raises an unhandled exception, worker cools down before the next task on the same site."""
+        fanfic1 = FanficInfo(
+            url="https://archiveofourown.org/works/1",
+            site="archiveofourown",
+            title="Story 1",
+        )
+        fanfic2 = FanficInfo(
+            url="https://archiveofourown.org/works/2",
+            site="archiveofourown",
+            title="Story 2",
+        )
+        mock_process_task.side_effect = [RuntimeError("unexpected crash"), True]
+
+        queue = MagicMock()
+        queue.get.side_effect = [fanfic1, fanfic2, None]
+
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
+
+        mock_sleep.assert_called_once_with(pipeline.FAILURE_COOLDOWN_SECONDS)
 
 
 @patch("workers.pipeline.ff_logging")

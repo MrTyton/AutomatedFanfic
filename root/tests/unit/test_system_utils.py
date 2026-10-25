@@ -1,13 +1,15 @@
+import os
+from typing import NamedTuple, Optional
 import unittest
 from unittest.mock import patch
+
 from parameterized import parameterized
 
 from utils.system_utils import (
-    temporary_directory,
     get_files,
+    get_packaged_defaults_ini_path,
+    temporary_directory,
 )
-import os
-from typing import NamedTuple, Optional
 
 
 class TestSystemUtils(unittest.TestCase):
@@ -71,8 +73,6 @@ class TestSystemUtils(unittest.TestCase):
 
     def test_get_packaged_defaults_ini_path_cached(self):
         """get_packaged_defaults_ini_path caches result across repeated calls via lru_cache."""
-        from utils.system_utils import get_packaged_defaults_ini_path
-
         get_packaged_defaults_ini_path.cache_clear()
         p1 = get_packaged_defaults_ini_path()
         p2 = get_packaged_defaults_ini_path()
@@ -80,6 +80,20 @@ class TestSystemUtils(unittest.TestCase):
         info = get_packaged_defaults_ini_path.cache_info()
         self.assertEqual(info.misses, 1)
         self.assertEqual(info.hits, 1)
+
+    def test_get_packaged_defaults_ini_path_returns_empty_when_package_file_missing(
+        self,
+    ):
+        """get_packaged_defaults_ini_path returns empty string when fanficfare package defaults.ini is missing (no repo fallback)."""
+        get_packaged_defaults_ini_path.cache_clear()
+        try:
+            with patch(
+                "utils.system_utils.fanficfare.__file__",
+                "/nonexistent/site-packages/fanficfare/__init__.py",
+            ):
+                self.assertEqual(get_packaged_defaults_ini_path(), "")
+        finally:
+            get_packaged_defaults_ini_path.cache_clear()
 
 
 if __name__ == "__main__":

@@ -11,12 +11,27 @@ When one of these tests fails after a FanFicFare update, the fix is either:
   2. Pin FanFicFare to the last known-good version until the new API is understood.
 """
 
+import ast
+import importlib.metadata as m
+import inspect
+from pathlib import Path
+import re
+import subprocess
+import sys
 import unittest
 
 import fanficfare.adapters as adapters
+import fanficfare.cli as fff_cli
 import fanficfare.configurable as configurable
 import fanficfare.exceptions as exceptions
 import fanficfare.geturls as geturls
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+from packaging.version import Version
+
+from config.config_store import ConfigStore
+from services.url_ingester import _make_fff_get_configuration
+from utils.system_utils import get_packaged_defaults_ini_path
 
 
 class TestFanFicFareGeturlsAPI(unittest.TestCase):
@@ -129,9 +144,6 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
     """Verify fanficfare.cli entry points and real GetURLs/Configuration integration."""
 
     def test_cli_exports_mkParser_expandOptions_do_download(self):
-        import inspect
-        import fanficfare.cli as fff_cli
-
         self.assertTrue(callable(getattr(fff_cli, "mkParser", None)))
         self.assertTrue(callable(getattr(fff_cli, "expandOptions", None)))
         self.assertTrue(callable(getattr(fff_cli, "do_download", None)))
@@ -184,15 +196,9 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
 
     def test_make_fff_get_configuration_with_real_GetURLs_html_extraction(self):
         """Real _make_fff_get_configuration + GetURLs extracts URLs from HTML without AttributeError."""
-        from pathlib import Path
-        from config.config_store import ConfigStore
-        from services.url_ingester import _make_fff_get_configuration
-
-        defaults_ini = (
-            Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini"
-        )
+        defaults_ini = get_packaged_defaults_ini_path()
         store = ConfigStore({})
-        store.update("calibre.default_ini", str(defaults_ini))
+        store.update("calibre.default_ini", defaults_ini)
         get_config_fn = _make_fff_get_configuration(store)
         initial_config = get_config_fn("test1.com")
         gu = geturls.GetURLs(config=initial_config, get_config=get_config_fn)
@@ -219,10 +225,6 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
 
     @staticmethod
     def _parse_requirements_txt() -> dict[str, str]:
-        from pathlib import Path
-        from packaging.requirements import Requirement
-        from packaging.utils import canonicalize_name
-
         req_path = Path(__file__).resolve().parents[3] / "requirements.txt"
         parsed: dict[str, str] = {}
         for raw_line in req_path.read_text(encoding="utf-8").splitlines():
@@ -235,11 +237,6 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
 
     def test_requirements_txt_contains_all_fanficfare_runtime_dependencies(self):
         """Every Linux runtime requirement of FanFicFare must be in requirements.txt."""
-        import importlib.metadata as m
-        from packaging.requirements import Requirement
-        from packaging.utils import canonicalize_name
-        from packaging.version import Version
-
         reqs_txt = self._parse_requirements_txt()
         fff_requires = m.requires("FanFicFare") or []
         self.assertGreater(
@@ -287,13 +284,6 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
 
     def test_requirements_txt_covers_all_app_third_party_imports(self):
         """Every third-party module imported in root/app must be covered by requirements.txt."""
-        import ast
-        import importlib.metadata as m
-        from pathlib import Path
-        import sys
-        from packaging.requirements import Requirement
-        from packaging.utils import canonicalize_name
-
         app_root = Path(__file__).resolve().parents[2] / "app"
         local_modules = {p.stem for p in app_root.glob("*.py")} | {
             p.name for p in app_root.iterdir() if p.is_dir()
@@ -352,10 +342,6 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
 
     def test_fanficdownload_entrypoint_runs_help_cleanly(self):
         """Running fanficdownload.py --help in a subprocess must succeed with exit code 0."""
-        from pathlib import Path
-        import subprocess
-        import sys
-
         entrypoint = Path(__file__).resolve().parents[2] / "app" / "fanficdownload.py"
         result = subprocess.run(
             [sys.executable, str(entrypoint), "--help"],
@@ -371,9 +357,6 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
 
     def test_dockerfile_does_not_use_no_deps_and_verifies_entrypoint(self):
         """Dockerfile must resolve FanFicFare dependencies (no --no-deps) and verify entrypoint imports."""
-        from pathlib import Path
-        import re
-
         dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
         content = dockerfile.read_text(encoding="utf-8")
 
@@ -399,8 +382,6 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
 
     def test_dockerfile_defines_slim_and_standalone_targets(self):
         """Dockerfile must define runtime-slim (without /opt/calibre or CALIBRE_RELEASE) and runtime-standalone."""
-        from pathlib import Path
-
         dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
         content = dockerfile.read_text(encoding="utf-8")
         non_comment_lines = [

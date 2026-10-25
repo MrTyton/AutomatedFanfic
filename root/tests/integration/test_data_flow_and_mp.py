@@ -27,6 +27,7 @@ from history.database import AsyncHistoryDB, SyncHistoryDB
 from history.recorder import HistoryRecorder, HistoryWriter
 from models import config_models
 from models.active_urls import ActiveUrlsDict
+from models.context import SharedIPCContext, WorkerContext
 from models.fanfic_info import FanficInfo
 from notifications.notification_wrapper import NotificationWrapper
 from parsers.auto_url_parsers import generate_url_parsers_from_fanficfare
@@ -34,8 +35,8 @@ from services import supervisor
 from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor
 from services.url_ingester import EmailInfo
-from models.context import SharedIPCContext
-from workers import command, pipeline
+from utils.system_utils import get_packaged_defaults_ini_path
+from workers import command, handlers, pipeline
 
 
 def _child_verify_supervisor_process_boot(
@@ -207,8 +208,6 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     hail_mary_wait_hours=12.0,
                 )
 
-                from models.context import WorkerContext
-
                 worker_ctx = WorkerContext(
                     calibre_client=mock_client,
                     notification_info=mock_notif,
@@ -232,6 +231,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                             failure_messages=["HTTP Error 503 Service Unavailable"]
                         ),
                     ),
+                    patch("workers.pipeline.time.sleep"),
                 ):
                     mock_td.return_value.__enter__.return_value = tmp_dir
                     pipeline.url_worker(
@@ -457,16 +457,12 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             )
 
             # 3. RetryConfig hot-reloads max_normal_retries and hail_mary_enabled from ConfigStore inside handle_failure
-            from workers import handlers
-
             retry_cfg = config_models.RetryConfig(
                 max_normal_retries=11, hail_mary_enabled=True
             )
             retry_cfg.set_config_store(store)
             store.update("retry.max_normal_retries", 1)
             store.update("retry.hail_mary_enabled", False)
-
-            from models.context import WorkerContext
 
             fanfic = FanficInfo(
                 url="archiveofourown.org/works/1",
@@ -495,9 +491,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
 
     def test_spawn_multiprocessing_pickling_of_all_process_arguments(self):
         """All objects passed to child processes must survive 'spawn' pickling and sync with a live mp.Manager ConfigStore."""
-        defaults_ini = str(
-            Path(__file__).resolve().parents[2] / "config.default" / "defaults.ini"
-        )
+        defaults_ini = get_packaged_defaults_ini_path()
         with tempfile.TemporaryDirectory() as tmp_dir:
             cfg_path = os.path.join(tmp_dir, "config.toml")
             with open(cfg_path, "w", encoding="utf-8") as fh:
