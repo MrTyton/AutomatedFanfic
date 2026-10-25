@@ -1,8 +1,8 @@
 # Builder Pattern Strategy:
-# 1. 'builder-base': Common build tools (curl, jq, xz)
-# 2. 'calibre-downloader': Downloads and prunes Calibre. CACHED until CALIBRE_RELEASE changes.
+# 1. 'base': Common Python runtime base.
+# 2. 'calibre-downloader': Downloads and prunes Calibre (inherits from node:22-slim so Python base image updates do not invalidate Calibre). CACHED until CALIBRE_RELEASE changes.
 # 3. 'python-deps': Installs Python libs. CACHED until requirements.txt changes.
-# 4. 'runtime': Final image. Copies artifacts from previous stages. Small, clean, secure.
+# 4. 'runtime-slim' / 'runtime-standalone': Final images copying artifacts from previous stages. Small, clean, secure.
 
 # Base Stage: Common python base
 FROM python:3.15-slim AS base
@@ -13,26 +13,26 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive
 
-# Builder Tools Stage: Install tools needed for building/downloading
-FROM base AS builder-tools
+# Calibre Downloader Stage: Downloads and prunes Calibre
+# Uses node:22-slim (already pulled for frontend-builder) so frequent upstream
+# python:3.15-slim rebuilds do not invalidate the 192 MB Calibre layer.
+FROM node:22-slim AS calibre-downloader
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
     jq \
-    xz-utils && \
-    pip install --no-cache-dir --upgrade pip setuptools wheel
-
-# Calibre Downloader Stage: Downloads and prunes Calibre
-FROM builder-tools AS calibre-downloader
+    xz-utils
 
 ARG TARGETPLATFORM
 ARG CALIBRE_RELEASE
 
 # Download and extract Calibre
-RUN --mount=type=cache,target=/tmp/calibre-cache \
-    echo "**** install calibre ****" && \
+RUN echo "**** install calibre ****" && \
     mkdir -p /opt/calibre && \
     case "${TARGETPLATFORM:-linux/amd64}" in \
     "linux/amd64") CALIBRE_ARCH="x86_64" ;; \
@@ -47,14 +47,7 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     fi && \
     echo "Using Calibre version: ${CALIBRE_VERSION} (${CALIBRE_ARCH})" && \
     CALIBRE_URL="https://download.calibre-ebook.com/${CALIBRE_VERSION}/calibre-${CALIBRE_VERSION}-${CALIBRE_ARCH}.txz" && \
-    CALIBRE_CACHE_FILE="/tmp/calibre-cache/calibre-${CALIBRE_VERSION}-${CALIBRE_ARCH}.txz" && \
-    if [ ! -f "${CALIBRE_CACHE_FILE}" ] || [ ! -s "${CALIBRE_CACHE_FILE}" ]; then \
-    echo "Downloading fresh copy..." && \
-    curl -o "${CALIBRE_CACHE_FILE}" -L "${CALIBRE_URL}"; \
-    else \
-    echo "Using cached binary..."; \
-    fi && \
-    tar xf "${CALIBRE_CACHE_FILE}" -C /opt/calibre && \
+    curl -fsSL "${CALIBRE_URL}" | tar xJf - -C /opt/calibre && \
     # Cleanup Calibre: keep only calibredb and calibre-parallel CLI runners
     find /opt/calibre/bin -type f ! -name "calibredb" ! -name "calibre-parallel" -delete 2>/dev/null || true && \
     find /opt/calibre -maxdepth 1 -type f ! -name "calibredb" ! -name "calibre-parallel" -delete 2>/dev/null || true && \
@@ -128,7 +121,7 @@ RUN --mount=type=cache,target=/tmp/calibre-cache \
     /opt/calibre/lib/calibre-extensions/_test* 2>/dev/null || true
 
 # Python Dependencies Stage
-FROM builder-tools AS python-deps
+FROM base AS python-deps
 # Install build tools and common dev libs for C extensions that may not yet
 # have pre-built wheels for the current Python version (e.g. Brotli, uvloop,
 # Pillow on a freshly-released Python release).
@@ -142,7 +135,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libpng-dev \
     libfreetype6-dev \
     libwebp-dev \
-    libopenjp2-7-dev
+    libopenjp2-7-dev && \
+    pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --prefix=/install --no-warn-script-location -r /tmp/requirements.txt && \
@@ -187,15 +181,6 @@ ARG PUID="911"
 ARG PGID="911"
 ARG TARGETPLATFORM
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
 RUN groupadd --gid "$PGID" abc && \
     useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
     mkdir -p /data && chown abc:abc /data
@@ -236,22 +221,11 @@ FROM base AS runtime-standalone
 
 ARG PUID="911"
 ARG PGID="911"
-# TARGETPLATFORM declared early as it's used in apt-get conditional below
 ARG TARGETPLATFORM
 
-# Install minimalistic runtime deps
-# NOTE: ARG VERSION and ARG CALIBRE_RELEASE are declared AFTER these stable layers
-# so that a version bump does NOT invalidate these cached layers.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
 # Create user and data directory
+# NOTE: ARG VERSION and ARG CALIBRE_RELEASE are declared AFTER all stable layers
+# so that a version bump does NOT invalidate these cached layers.
 RUN groupadd --gid "$PGID" abc && \
     useradd --create-home --shell /bin/bash --uid "$PUID" --gid abc abc && \
     mkdir -p /data && chown abc:abc /data

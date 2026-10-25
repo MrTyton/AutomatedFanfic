@@ -400,3 +400,64 @@ class TestRequirementsAndDockerDependencies(unittest.TestCase):
         self.assertNotIn("/opt/calibre", slim_stage)
         self.assertNotIn("CALIBRE_RELEASE", slim_stage)
         self.assertIn("COPY --chown=abc:abc --chmod=755 root/app/ /app/", slim_stage)
+
+    def test_dockerfile_cache_isolation_and_apt_cache_preservation(self):
+        """calibre-downloader must be decoupled from python base and apt cache mounts must not be wiped."""
+        dockerfile = Path(__file__).resolve().parents[3] / "Dockerfile"
+        content = dockerfile.read_text(encoding="utf-8")
+        non_comment_lines = [
+            line for line in content.splitlines() if not line.strip().startswith("#")
+        ]
+        active_dockerfile = "\n".join(non_comment_lines)
+
+        self.assertIn(
+            "FROM node:22-slim AS calibre-downloader",
+            active_dockerfile,
+            "calibre-downloader must inherit from node:22-slim so upstream python:3.15-slim updates do not invalidate the 192 MB Calibre layer",
+        )
+        self.assertIn(
+            "FROM base AS python-deps",
+            active_dockerfile,
+            "python-deps should inherit directly from base without a shared builder-tools stage",
+        )
+        self.assertNotIn(
+            "AS builder-tools",
+            active_dockerfile,
+            "builder-tools stage should be removed so calibre-downloader and python-deps do not share an unnecessary parent stage",
+        )
+        self.assertNotIn(
+            "/var/lib/apt/lists",
+            active_dockerfile,
+            "Dockerfile must not delete /var/lib/apt/lists inside shared BuildKit cache mounts",
+        )
+        self.assertNotIn(
+            "apt-get clean",
+            active_dockerfile,
+            "Dockerfile must not run apt-get clean inside shared BuildKit cache mounts",
+        )
+
+    def test_docker_workflow_does_not_duplicate_cache_to_exports(self):
+        """docker-image.yml must export to a single registry tag and single GHA scope per platform."""
+        workflow = (
+            Path(__file__).resolve().parents[3]
+            / ".github"
+            / "workflows"
+            / "docker-image.yml"
+        )
+        content = workflow.read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "cache-calibre-",
+            content,
+            "docker-image.yml must not use redundant cache-calibre-* registry tags that duplicate full-graph cache exports",
+        )
+        self.assertNotIn(
+            "cache-fanficfare-",
+            content,
+            "docker-image.yml must not use redundant cache-fanficfare-* registry tags that duplicate full-graph cache exports",
+        )
+        self.assertNotIn(
+            "scope=calibre-",
+            content,
+            "docker-image.yml must not use redundant scope=calibre-* GHA cache scopes that duplicate full-graph cache uploads",
+        )

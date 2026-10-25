@@ -281,22 +281,16 @@ jobs:
           tags: ${{ env.PLATFORM_TAG }}
           # Cache strategy:
           # - Registry cache (mode=max) is primary: persistent, no eviction, stores all stages
-          # - GHA cache is fallback: faster reads when registry is cold
-          # Stable layers (builder-tools, python-deps, runtime-base) use cache-stable.
-          # Version-specific layers (calibre, fanficfare) have dedicated scopes for
-          # cross-version reuse when only one dependency updates.
+          #   (calibre-downloader, python-deps, fanficfare-installer, frontend-builder, runtime).
+          # - GHA cache (mode=max) is fallback: faster reads when registry is cold.
+          # BuildKit cache-to exports the entire build graph per entry, so a single
+          # registry tag and single GHA scope avoid duplicating cache uploads.
           cache-from: |
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
-            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }}
           cache-to: |
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
             type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=calibre-${{ env.CALIBRE_VERSION }}-${{ steps.platform.outputs.arch }},mode=max
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             CALIBRE_RELEASE=${{ env.CALIBRE_VERSION }}
@@ -318,7 +312,6 @@ jobs:
           # here so the slim stage graph does not overwrite the standalone cache manifest.
           cache-from: |
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
