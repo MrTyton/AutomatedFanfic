@@ -10,7 +10,7 @@ inputs:
     required: false
     default: "true"
   install-dev-tools:
-    description: "Whether to install development tools (flake8, pytest)"
+    description: "Whether to install development tools (pytest)"
     required: false
     default: "true"
   requirements-file:
@@ -41,17 +41,18 @@ runs:
         echo "Upgrading pip..."
         python -m pip install --upgrade pip
 
+        # Install development tools if requested
+        if [ "${{ inputs.install-dev-tools }}" == "true" ]; then
+          echo "Installing development tools..."
+          pip install pytest
+        fi
+
         # Install application requirements from the specified file
         if [ -f "${{ inputs.requirements-file }}" ]; then
           echo "Installing requirements from ${{ inputs.requirements-file }}..."
           pip install -r "${{ inputs.requirements-file }}"
         else
           echo "::warning::${{ inputs.requirements-file }} not found, skipping application dependencies"
-        fi
-
-        # Ensure pytest is available when install-dev-tools is enabled with a non-dev requirements file
-        if [ "${{ inputs.install-dev-tools }}" == "true" ] && [ "${{ inputs.requirements-file }}" != "requirements-dev.txt" ]; then
-          pip install pytest
         fi
 
     - name: Install FanFicFare
