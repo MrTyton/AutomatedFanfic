@@ -14,11 +14,6 @@ on:
         options:
           - "true"
           - "false"
-      keep_versions:
-        description: "Number of recent versions to keep (default: 5)"
-        required: false
-        default: "5"
-        type: string
 
 permissions:
   actions: write # Required to delete GitHub Actions cache
@@ -32,9 +27,6 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
       - name: Setup GitHub CLI
         run: |
           # GitHub CLI is pre-installed on GitHub runners
@@ -85,18 +77,6 @@ jobs:
             echo "✅ GitHub Actions cache cleanup completed"
           fi
 
-      - name: Get current and recent versions
-        id: versions
-        run: |
-          KEEP_VERSIONS=${{ github.event.inputs.keep_versions || '5' }}
-          CURRENT_VERSION=$(cat release-versions/latest.txt)
-
-          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          echo "keep_versions=$KEEP_VERSIONS" >> $GITHUB_OUTPUT
-
-          echo "Current version: $CURRENT_VERSION"
-          echo "Will keep the latest $KEEP_VERSIONS versions"
-
       - name: Setup Docker Hub API access
         env:
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
@@ -129,8 +109,6 @@ jobs:
         env:
           DOCKER_TOKEN: ${{ env.DOCKER_TOKEN }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-          CURRENT_VERSION: ${{ steps.versions.outputs.current_version }}
-          KEEP_VERSIONS: ${{ steps.versions.outputs.keep_versions }}
         run: |
           echo "📋 Fetching and processing Docker Hub tags..."
 
@@ -161,20 +139,20 @@ jobs:
           # Parse tags from this page and identify what to keep vs delete
           echo "$TAGS_RESPONSE" | jq -r '.results[] | "\(.name) \(.last_updated)"' | while read -r tag_name last_updated; do
 
-            # Always preserve the latest tag
-            if [ "$tag_name" = "latest" ]; then
-              echo "🔒 Keeping: $tag_name (latest tag - never delete)"
+            # Always preserve floating release tags (latest, standalone, slim)
+            if [ "$tag_name" = "latest" ] || [ "$tag_name" = "standalone" ] || [ "$tag_name" = "slim" ]; then
+              echo "🔒 Keeping: $tag_name (floating release tag - never delete)"
               continue
             fi
 
-            # Always preserve semantic version tags (e.g., 1.2.35, 2.5.2)
-            if echo "$tag_name" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            # Always preserve semantic version tags (e.g., 1.2.35, 6.5.2-standalone, 6.5.2-slim)
+            if echo "$tag_name" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-(standalone|slim))?$'; then
               echo "🔒 Keeping: $tag_name (semantic version - never delete)"
               continue
             fi
 
-            # Always preserve architecture-specific version tags (e.g., 1.2.35-amd64, 2.5.2-arm64)
-            if echo "$tag_name" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-(amd64|arm64)$'; then
+            # Always preserve architecture-specific version tags (e.g., 1.2.35-amd64, 6.5.2-slim-arm64)
+            if echo "$tag_name" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-slim)?-(amd64|arm64)$'; then
               echo "🔒 Keeping: $tag_name (architecture version tag - never delete)"
               continue
             fi

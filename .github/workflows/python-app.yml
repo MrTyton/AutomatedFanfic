@@ -36,6 +36,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: python-ci-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read # Needed to checkout the code
 
@@ -57,6 +61,16 @@ jobs:
           install-fanficfare: "true" # Needed for full type resolution
           install-dev-tools: "true"
           requirements-file: "requirements-dev.txt"
+
+      - name: Cache pre-commit and npm environments
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pre-commit
+            ~/.npm
+          key: ${{ runner.os }}-lint-tools-${{ hashFiles('.pre-commit-config.yaml', 'pyrightconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-lint-tools-
 
       - name: Run pre-commit hooks
         run: |

@@ -314,32 +314,15 @@ jobs:
           tags: ${{ env.SLIM_PLATFORM_TAG }}
           # Slim image omits Calibre and ARG CALIBRE_RELEASE; on Calibre-only updates
           # all upstream layers hit cache and only the final /app layer is rebuilt.
+          # Standalone build above already exports cache-stable-${arch}; omit cache-to
+          # here so the slim stage graph does not overwrite the standalone cache manifest.
           cache-from: |
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }}
             type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-fanficfare-${{ env.FANFICFARE_VERSION }}-${{ steps.platform.outputs.arch }}
             type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }}
-          cache-to: |
-            type=registry,ref=${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:cache-stable-${{ steps.platform.outputs.arch }},mode=max
-            type=gha,scope=stable-deps-${{ steps.platform.outputs.arch }},mode=max
           build-args: |
             VERSION=${{ env.SPECIFIC_VERSION }}
             FANFICFARE_VERSION=${{ env.FANFICFARE_VERSION }}
-
-      # Store platform digest for manifest creation
-      - name: Export platform digest
-        if: steps.should_build.outputs.build == 'true'
-        run: |
-          mkdir -p /tmp/digests
-          DIGEST=$(docker buildx imagetools inspect ${{ env.PLATFORM_TAG }} --format '{{.Manifest.Digest}}')
-          echo "Platform digest: $DIGEST"
-          echo "$DIGEST" > /tmp/digests/${{ steps.platform.outputs.arch }}
-
-      - name: Upload platform digest
-        if: steps.should_build.outputs.build == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: digest-${{ steps.platform.outputs.arch }}
-          path: /tmp/digests/${{ steps.platform.outputs.arch }}
 
   # Merge job to create multi-platform manifest and release
   merge_and_release:
@@ -352,13 +335,6 @@ jobs:
         with:
           ref: ${{ needs.build_matrix.outputs.commit_sha }}
           fetch-depth: 0
-
-      - name: Download platform digests
-        uses: actions/download-artifact@v8
-        with:
-          pattern: digest-*
-          merge-multiple: true
-          path: /tmp/digests
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v4

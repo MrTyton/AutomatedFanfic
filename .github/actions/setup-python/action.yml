@@ -21,17 +21,19 @@ runs:
   using: "composite"
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Cache pip dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', '**/pyproject.toml', '**/setup.py', 'release-versions/fanficfare.txt') }}-${{ inputs.python-version }}
+        key: ${{ runner.os }}-pip-${{ inputs.python-version }}-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt') }}-${{ hashFiles('release-versions/fanficfare.txt') }}
         restore-keys: |
-          ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt', '**/pyproject.toml', '**/setup.py', 'release-versions/fanficfare.txt') }}-${{ inputs.python-version }}
+          ${{ runner.os }}-pip-${{ inputs.python-version }}-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt') }}-
+          ${{ runner.os }}-pip-${{ inputs.python-version }}-
+          ${{ runner.os }}-pip-
 
     - name: Install base dependencies
       shell: bash
@@ -39,18 +41,17 @@ runs:
         echo "Upgrading pip..."
         python -m pip install --upgrade pip
 
-        # Install development tools if requested
-        if [ "${{ inputs.install-dev-tools }}" == "true" ]; then
-          echo "Installing development tools..."
-          pip install flake8 pytest
-        fi
-
         # Install application requirements from the specified file
         if [ -f "${{ inputs.requirements-file }}" ]; then
           echo "Installing requirements from ${{ inputs.requirements-file }}..."
           pip install -r "${{ inputs.requirements-file }}"
         else
           echo "::warning::${{ inputs.requirements-file }} not found, skipping application dependencies"
+        fi
+
+        # Ensure pytest is available when install-dev-tools is enabled with a non-dev requirements file
+        if [ "${{ inputs.install-dev-tools }}" == "true" ] && [ "${{ inputs.requirements-file }}" != "requirements-dev.txt" ]; then
+          pip install pytest
         fi
 
     - name: Install FanFicFare
@@ -63,7 +64,7 @@ runs:
           echo "Target FanFicFare version: $FANFICFARE_VERSION"
 
           echo "Installing FanFicFare==$FANFICFARE_VERSION from PyPI + TestPyPI..."
-          python -m pip install --no-cache-dir --extra-index-url https://test.pypi.org/simple/ "FanFicFare==$FANFICFARE_VERSION"
+          python -m pip install --extra-index-url https://test.pypi.org/simple/ "FanFicFare==$FANFICFARE_VERSION"
 
           echo "Verifying FanFicFare installation..."
           # FanFicFare stores version in cli.py, not in __version__

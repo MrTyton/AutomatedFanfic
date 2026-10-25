@@ -32,25 +32,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # Read current versions needed later if no update occurs
-      - name: Read current Calibre version
-        id: read_calibre
-        run: echo "version=$(cat release-versions/calibre.txt)" >> $GITHUB_OUTPUT
-
-      - name: Set up Python 3.15
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.15"
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-update-deps-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-update-deps-
-            ${{ runner.os }}-pip-
-
       - name: Check for dependency updates
         id: check_updates
         run: |
@@ -312,9 +293,10 @@ jobs:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
     secrets: inherit # Inherit secrets if python-app ever needs them
 
-  # Build Docker - always run after successful CI, let docker-image.yml decide if build is needed
+  # Build Docker - run after successful CI when dependency changes were detected
   build_docker:
     needs: [check_and_update, run_ci]
+    if: needs.check_and_update.outputs.changes_detected == 'true'
     uses: ./.github/workflows/docker-image.yml
     with:
       commit_sha: ${{ needs.check_and_update.outputs.commit_sha }}
