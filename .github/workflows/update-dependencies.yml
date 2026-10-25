@@ -5,6 +5,13 @@ on:
     - cron: "0 23 * * *" # Every day at 11pm UTC
   workflow_dispatch:
 
+# Share the 'release-pipeline' concurrency group with dependabot-auto-merge.yml
+# so daily Calibre/FanFicFare updates and Dependabot PR auto-merges never race
+# to bump the same version or release out of order.
+concurrency:
+  group: release-pipeline
+  cancel-in-progress: false
+
 permissions:
   contents: write # Needed to commit changes and read repository files
   actions: write # Needed to call other workflows
@@ -181,6 +188,14 @@ jobs:
                  root/tests/unit/test_url_ingester.py \
                  root/tests/unit/test_series_utils.py -v
 
+      - name: Sync latest base version from origin/master
+        id: sync_base
+        if: steps.check_updates.outputs.any_changed == 'true'
+        run: |
+          git fetch origin master
+          BASE_VERSION=$(git show origin/master:release-versions/latest.txt | tr -d '[:space:]')
+          echo "base_version=$BASE_VERSION" >> $GITHUB_OUTPUT
+
       - name: Update latest.txt if any changes were made
         id: update_latest_txt
         if: steps.check_updates.outputs.any_changed == 'true'
@@ -188,6 +203,7 @@ jobs:
         with:
           bump-type: "patch"
           reason: "dependency"
+          current-version: ${{ steps.sync_base.outputs.base_version }}
 
       - name: Update version in fanficdownload.py
         if: steps.update_latest_txt.outputs.version-changed == 'true'

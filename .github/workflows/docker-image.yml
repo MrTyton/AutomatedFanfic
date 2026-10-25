@@ -28,6 +28,12 @@ on:
         required: false
         default: "master"
 
+# Serialize Docker builds and GitHub release creation so two releases can never
+# build concurrently or publish out of order.
+concurrency:
+  group: publish-docker-image
+  cancel-in-progress: false
+
 permissions:
   contents: write # Required to create releases/tags
 
@@ -80,12 +86,23 @@ jobs:
               COMMIT_TO_CHECKOUT="${{ github.sha }}"
             fi
           elif [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-            DISPATCH_REF="${{ github.event.inputs.ref || github.ref_name }}"
-            echo "Attempting checkout for workflow_dispatch (ref: $DISPATCH_REF)..."
-            git clone $GITHUB_SERVER_URL/$GITHUB_REPOSITORY .
-            git checkout $DISPATCH_REF
-            COMMIT_TO_CHECKOUT=$(git rev-parse HEAD)
-            echo "Using commit SHA for workflow_dispatch (ref: $DISPATCH_REF): $COMMIT_TO_CHECKOUT"
+            DISPATCH_REF="${{ github.event.inputs.ref || '' }}"
+            if [ -z "$DISPATCH_REF" ] || [ "$DISPATCH_REF" == "master" ]; then
+              COMMIT_TO_CHECKOUT="${{ github.sha }}"
+              echo "Using workflow_dispatch github.sha for master: $COMMIT_TO_CHECKOUT"
+            elif [[ "$DISPATCH_REF" =~ ^[0-9a-f]{40}$ ]]; then
+              COMMIT_TO_CHECKOUT="$DISPATCH_REF"
+              echo "Using explicit commit SHA from workflow_dispatch input: $COMMIT_TO_CHECKOUT"
+            else
+              echo "Resolving ref for workflow_dispatch (ref: $DISPATCH_REF)..."
+              COMMIT_TO_CHECKOUT=$(git ls-remote "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" "$DISPATCH_REF" | awk 'NR==1{print $1}')
+              if [ -z "$COMMIT_TO_CHECKOUT" ]; then
+                git clone "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" .
+                git checkout "$DISPATCH_REF"
+                COMMIT_TO_CHECKOUT=$(git rev-parse HEAD)
+              fi
+              echo "Using commit SHA for workflow_dispatch (ref: $DISPATCH_REF): $COMMIT_TO_CHECKOUT"
+            fi
           else
              echo "::error::Unknown event type '$EVENT_NAME' or unable to determine SHA."
              exit 1
@@ -368,6 +385,23 @@ jobs:
           echo "CALIBRE_VERSION=$CALIBRE_VERSION" >> $GITHUB_ENV
           echo "FANFICFARE_VERSION=$FANFICFARE_VERSION" >> $GITHUB_ENV
 
+          # Check whether SPECIFIC_VERSION is >= all existing vX.Y.Z tags so an older
+          # build can never overwrite :latest/:standalone/:slim or GitHub's Latest badge.
+          HIGHEST_TAG_VERSION=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -V | tail -n 1)
+          if [ -z "$HIGHEST_TAG_VERSION" ]; then
+            IS_LATEST="true"
+          else
+            HIGHEST_OVERALL=$(printf '%s\n%s\n' "$HIGHEST_TAG_VERSION" "$SPECIFIC_VERSION" | sort -V | tail -n 1)
+            if [ "$HIGHEST_OVERALL" = "$SPECIFIC_VERSION" ]; then
+              IS_LATEST="true"
+            else
+              IS_LATEST="false"
+            fi
+          fi
+          echo "Highest existing version tag: ${HIGHEST_TAG_VERSION:-none} -> is_latest=$IS_LATEST"
+          echo "IS_LATEST=$IS_LATEST" >> $GITHUB_ENV
+          echo "is_latest=$IS_LATEST" >> $GITHUB_OUTPUT
+
           # Create final tags
           TAGS="${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${SPECIFIC_VERSION},${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest"
           echo "TAGS=$TAGS" >> $GITHUB_ENV
@@ -401,19 +435,23 @@ jobs:
           docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-standalone \
             $AMD64_TAG $ARM64_TAG
 
-          echo "Creating manifest for latest and standalone tags"
-          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest \
-            $AMD64_TAG $ARM64_TAG
-
-          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:standalone \
-            $AMD64_TAG $ARM64_TAG
-
-          echo "Creating slim manifests for version ${{ env.SPECIFIC_VERSION }}-slim and slim tag"
+          echo "Creating slim manifest for version ${{ env.SPECIFIC_VERSION }}-slim"
           docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:${{ env.SPECIFIC_VERSION }}-slim \
             $SLIM_AMD64_TAG $SLIM_ARM64_TAG
 
-          docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:slim \
-            $SLIM_AMD64_TAG $SLIM_ARM64_TAG
+          if [ "${{ env.IS_LATEST }}" = "true" ]; then
+            echo "Creating floating manifests for latest, standalone, and slim tags"
+            docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:latest \
+              $AMD64_TAG $ARM64_TAG
+
+            docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:standalone \
+              $AMD64_TAG $ARM64_TAG
+
+            docker buildx imagetools create -t ${{ env.IMAGE_REPO }}/${{ env.IMAGE_NAME }}:slim \
+              $SLIM_AMD64_TAG $SLIM_ARM64_TAG
+          else
+            echo "Skipping floating tags (:latest, :standalone, :slim) because ${{ env.SPECIFIC_VERSION }} is older than an existing release tag."
+          fi
 
       # Updated step to generate filtered changelog including requirements.txt and excluding bot commits
       # Check if dependency versions changed
@@ -549,6 +587,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ env.SPECIFIC_VERSION }}
+          target_commitish: ${{ needs.build_matrix.outputs.commit_sha }}
+          make_latest: ${{ steps.set_versions.outputs.is_latest }}
           name: Release v${{ env.SPECIFIC_VERSION }}
           body: |
             Automated release for version ${{ env.SPECIFIC_VERSION }}.

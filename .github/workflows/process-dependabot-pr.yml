@@ -34,14 +34,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: |
-          AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json author --jq '.author.login')
-          HEAD_REF=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefName --jq '.headRefName')
-          BASE_REF=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json baseRefName --jq '.baseRefName')
-          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
-          IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
-          MERGE_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeStateStatus --jq '.mergeStateStatus')
-          PR_TITLE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json title --jq '.title')
-          PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json body --jq '.body // ""')
+          PR_JSON=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json author,headRefName,headRefOid,baseRefName,state,isDraft,mergeStateStatus,title,body,commits,files)
+          AUTHOR=$(echo "$PR_JSON" | jq -r '.author.login')
+          HEAD_REF=$(echo "$PR_JSON" | jq -r '.headRefName')
+          HEAD_SHA=$(echo "$PR_JSON" | jq -r '.headRefOid')
+          BASE_REF=$(echo "$PR_JSON" | jq -r '.baseRefName')
+          PR_STATE=$(echo "$PR_JSON" | jq -r '.state')
+          IS_DRAFT=$(echo "$PR_JSON" | jq -r '.isDraft')
+          MERGE_STATE=$(echo "$PR_JSON" | jq -r '.mergeStateStatus')
+          PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+          PR_BODY=$(echo "$PR_JSON" | jq -r '.body // ""')
+
+          # Find the latest non-version-bump commit SHA to check CI against
+          # (since GITHUB_TOKEN version-bump pushes do not trigger pull_request CI runs)
+          CHECK_SHA=$(echo "$PR_JSON" | jq -r '[.commits[] | select(.messageHeadline | startswith("chore: bump version to ") | not)] | last | .oid // empty')
+          if [ -z "$CHECK_SHA" ]; then
+            CHECK_SHA="$HEAD_SHA"
+          fi
+
+          # Determine whether Python application CI is expected based on changed files
+          CI_FILES=$(echo "$PR_JSON" | jq -r '.files[].path' | grep -E '^([^/]+\.py|root/.*\.py|root/config\.default/.*|root/web-ui/.*|requirements\.txt|requirements-dev\.txt|pyproject\.toml|pyrightconfig\.json|release-versions/.*|\.github/workflows/python-app\.yml)$' || true)
+          if [ -n "$CI_FILES" ]; then
+            EXPECT_CI=true
+          else
+            EXPECT_CI=false
+          fi
 
           if echo "$PR_TITLE $PR_BODY" | grep -Eiq "security|vulnerability|CVE"; then
             IS_SECURITY=true
@@ -51,6 +68,9 @@ jobs:
 
           echo "author=$AUTHOR" >> $GITHUB_OUTPUT
           echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "check_sha=$CHECK_SHA" >> $GITHUB_OUTPUT
+          echo "expect_ci=$EXPECT_CI" >> $GITHUB_OUTPUT
           echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
           echo "pr_state=$PR_STATE" >> $GITHUB_OUTPUT
           echo "is_draft=$IS_DRAFT" >> $GITHUB_OUTPUT
@@ -67,6 +87,9 @@ jobs:
           if [ "${{ steps.pr-meta.outputs.pr_state }}" != "OPEN" ]; then
             SKIP=true
             REASON="PR is no longer open"
+          elif [ "${{ steps.pr-meta.outputs.is_draft }}" = "true" ]; then
+            SKIP=true
+            REASON="PR is a draft"
           elif ! echo "$AUTHOR" | grep -Eiq 'dependabot'; then
             SKIP=true
             REASON="PR author is not dependabot (author=$AUTHOR)"
@@ -75,8 +98,100 @@ jobs:
           echo "skip=$SKIP" >> $GITHUB_OUTPUT
           echo "reason=$REASON" >> $GITHUB_OUTPUT
 
-      - name: Checkout PR branch
+      - name: Wait for CI checks before bumping version
         if: steps.eligibility.outputs.skip != 'true'
+        id: wait-checks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          CHECK_SHA="${{ steps.pr-meta.outputs.check_sha }}"
+          EXPECT_CI="${{ steps.pr-meta.outputs.expect_ci }}"
+          echo "Waiting for CI checks on commit $CHECK_SHA (expect_ci=$EXPECT_CI)..."
+
+          waited=0
+          max_wait=1800
+          startup_grace=120
+
+          while [ $waited -lt $max_wait ]; do
+            pr_state=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
+            if [ "$pr_state" != "OPEN" ]; then
+              echo "PR is no longer open (state=$pr_state)."
+              echo "checks_status=closed" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            runs_json=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$CHECK_SHA" --jq '[.workflow_runs[] | select(.name != "Auto-merge Dependabot PRs")]')
+            total_runs=$(echo "$runs_json" | jq 'length')
+
+            if [ "$total_runs" -eq 0 ]; then
+              if [ "$EXPECT_CI" = "true" ] && [ $waited -lt $startup_grace ]; then
+                echo "Waiting for CI workflow run to register on $CHECK_SHA... (${waited}s elapsed)"
+                sleep 15
+                waited=$((waited + 15))
+                continue
+              elif [ "$EXPECT_CI" = "false" ] && [ $waited -eq 0 ]; then
+                sleep 15
+                waited=$((waited + 15))
+                continue
+              elif [ "$EXPECT_CI" = "true" ]; then
+                echo "::error::Expected Python application CI to run on $CHECK_SHA, but no workflow runs registered within ${startup_grace}s."
+                echo "checks_status=failed" >> $GITHUB_OUTPUT
+                exit 0
+              else
+                echo "No CI workflows triggered for this PR (non-CI paths only)."
+                echo "checks_status=none" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+            fi
+
+            latest_runs=$(echo "$runs_json" | jq 'group_by(.name) | map(max_by(.id))')
+            in_progress=$(echo "$latest_runs" | jq '[.[] | select(.status != "completed")] | length')
+
+            if [ "$in_progress" -gt 0 ]; then
+              summary=$(echo "$latest_runs" | jq -r '.[] | "\(.name): \(.status) (\(.conclusion // "pending"))"' | tr '\n' '; ')
+              echo "Checks still running (${waited}s elapsed): $summary"
+              sleep 30
+              waited=$((waited + 30))
+              continue
+            fi
+
+            failed_runs=$(echo "$latest_runs" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")] | length')
+            summary=$(echo "$latest_runs" | jq -r '.[] | "\(.name): \(.conclusion)"' | tr '\n' '; ')
+            echo "All checks completed: $summary"
+
+            if [ "$failed_runs" -eq 0 ]; then
+              echo "checks_status=passed" >> $GITHUB_OUTPUT
+            else
+              echo "checks_status=failed" >> $GITHUB_OUTPUT
+            fi
+            exit 0
+          done
+
+          echo "::error::Timed out after ${max_wait}s waiting for CI checks on $CHECK_SHA."
+          echo "checks_status=failed" >> $GITHUB_OUTPUT
+
+      - name: Request Copilot fix for failed checks
+        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_TRIGGER_PAT }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          existing_request=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-fix-requested]" || true)
+          if [ -n "$existing_request" ]; then
+            exit 0
+          fi
+
+          COPILOT_COMMENT="[auto-copilot-fix-requested]"$'\n\n'"🤖 **Required checks failed**"$'\n\n'"@copilot Please fix this Dependabot PR so all required checks pass."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
+          GH_TOKEN="${COPILOT_TOKEN:-$GITHUB_TOKEN}" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COPILOT_COMMENT"
+
+      - name: Stop when checks fail
+        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
+        run: exit 1
+
+      - name: Checkout PR branch
+        if: steps.eligibility.outputs.skip != 'true' && (steps.wait-checks.outputs.checks_status == 'passed' || steps.wait-checks.outputs.checks_status == 'none')
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.pr-meta.outputs.head_ref }}
@@ -84,7 +199,7 @@ jobs:
           fetch-depth: 0
 
       - name: Determine version bump type
-        if: steps.eligibility.outputs.skip != 'true'
+        if: steps.eligibility.outputs.skip != 'true' && (steps.wait-checks.outputs.checks_status == 'passed' || steps.wait-checks.outputs.checks_status == 'none')
         id: bump-type
         run: |
           if [ "${{ steps.pr-meta.outputs.is_security }}" = "true" ]; then
@@ -95,16 +210,54 @@ jobs:
             echo "bump_reason=dependency" >> $GITHUB_OUTPUT
           fi
 
-      - name: Decide whether version bump is needed
-        if: steps.eligibility.outputs.skip != 'true'
+      - name: Sync with base branch and decide whether version bump is needed
+        if: steps.eligibility.outputs.skip != 'true' && (steps.wait-checks.outputs.checks_status == 'passed' || steps.wait-checks.outputs.checks_status == 'none')
         id: bump-decision
         run: |
-          current_version=$(cat release-versions/latest.txt)
-          git fetch origin "${{ steps.pr-meta.outputs.base_ref }}"
-          base_version=$(git show "origin/${{ steps.pr-meta.outputs.base_ref }}:release-versions/latest.txt" 2>/dev/null || echo "")
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          BASE_REF="${{ steps.pr-meta.outputs.base_ref }}"
+          git fetch origin "$BASE_REF"
+
+          base_version=$(git show "origin/${BASE_REF}:release-versions/latest.txt" 2>/dev/null | tr -d '[:space:]' || echo "")
+          current_version=$(cat release-versions/latest.txt | tr -d '[:space:]')
+          has_conflict=false
+
+          # Merge origin/$BASE_REF into the PR branch if it is not already an ancestor
+          # so the PR's merge-base matches origin/master and version-file changes never conflict on squash merge.
+          if ! git merge-base --is-ancestor "origin/$BASE_REF" HEAD; then
+            echo "Syncing PR branch with origin/$BASE_REF..."
+            set +e
+            git merge "origin/$BASE_REF" --no-edit
+            merge_rc=$?
+            set -e
+            if [ $merge_rc -ne 0 ]; then
+              conflicted_files=$(git diff --name-only --diff-filter=U)
+              non_version_conflicts=$(echo "$conflicted_files" | grep -vE '^(release-versions/latest\.txt|pyproject\.toml|root/app/fanficdownload\.py)$' || true)
+              if [ -z "$non_version_conflicts" ] && [ -n "$conflicted_files" ]; then
+                echo "Resolving version-file-only conflicts using origin/$BASE_REF..."
+                git checkout --theirs release-versions/latest.txt pyproject.toml root/app/fanficdownload.py
+                git add release-versions/latest.txt pyproject.toml root/app/fanficdownload.py
+                git commit --no-edit
+              else
+                echo "Non-version merge conflict with origin/$BASE_REF detected; aborting local merge so conflict handler can run."
+                git merge --abort || true
+                has_conflict=true
+              fi
+            fi
+            current_version=$(cat release-versions/latest.txt | tr -d '[:space:]')
+          fi
 
           echo "current_version=$current_version" >> $GITHUB_OUTPUT
           echo "base_version=$base_version" >> $GITHUB_OUTPUT
+          echo "has_conflict=$has_conflict" >> $GITHUB_OUTPUT
+
+          if [ "$has_conflict" = "true" ]; then
+            echo "should_bump=false" >> $GITHUB_OUTPUT
+            echo "decision_reason=PR has merge conflicts with base branch" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           if [ -z "$base_version" ]; then
             echo "should_bump=true" >> $GITHUB_OUTPUT
@@ -115,22 +268,23 @@ jobs:
           lowest=$(printf '%s\n%s\n' "$current_version" "$base_version" | sort -V | head -n1)
           if [ "$current_version" = "$base_version" ] || [ "$lowest" = "$current_version" ]; then
             echo "should_bump=true" >> $GITHUB_OUTPUT
-            echo "decision_reason=PR version is behind or equal to base" >> $GITHUB_OUTPUT
+            echo "decision_reason=PR version ($current_version) is behind or equal to base ($base_version)" >> $GITHUB_OUTPUT
           else
             echo "should_bump=false" >> $GITHUB_OUTPUT
-            echo "decision_reason=PR version already ahead of base" >> $GITHUB_OUTPUT
+            echo "decision_reason=PR version ($current_version) already ahead of base ($base_version)" >> $GITHUB_OUTPUT
           fi
 
       - name: Bump version
-        if: steps.eligibility.outputs.skip != 'true' && steps.bump-decision.outputs.should_bump == 'true'
+        if: steps.eligibility.outputs.skip != 'true' && (steps.wait-checks.outputs.checks_status == 'passed' || steps.wait-checks.outputs.checks_status == 'none') && steps.bump-decision.outputs.should_bump == 'true'
         id: version-bump
         uses: ./.github/actions/bump-version
         with:
           bump-type: ${{ steps.bump-type.outputs.bump_type }}
           reason: ${{ steps.bump-type.outputs.bump_reason }}
+          current-version: ${{ steps.bump-decision.outputs.base_version }}
 
       - name: Commit version bump
-        if: steps.eligibility.outputs.skip != 'true' && steps.bump-decision.outputs.should_bump == 'true' && steps.version-bump.outputs.version-changed == 'true'
+        if: steps.eligibility.outputs.skip != 'true' && (steps.wait-checks.outputs.checks_status == 'passed' || steps.wait-checks.outputs.checks_status == 'none') && steps.bump-decision.outputs.should_bump == 'true' && steps.version-bump.outputs.version-changed == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
@@ -147,55 +301,25 @@ jobs:
           git commit -m "$COMMIT_MSG"
           git push origin HEAD
 
-      - name: Wait for required checks
-        if: steps.eligibility.outputs.skip != 'true'
-        id: wait-checks
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ inputs.pr_number }}
-        run: |
-          set +e
-          output=$(gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 30 2>&1)
-          exit_code=$?
-          set -e
-          echo "$output"
-          if [ $exit_code -ne 0 ] && echo "$output" | grep -qE "no (required )?checks reported"; then
-            echo "checks_status=none" >> $GITHUB_OUTPUT
-          elif [ $exit_code -eq 0 ]; then
-            echo "checks_status=passed" >> $GITHUB_OUTPUT
-          else
-            echo "checks_status=failed" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Request Copilot fix for failed checks
-        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COPILOT_TOKEN: ${{ secrets.COPILOT_TRIGGER_PAT }}
-          PR_NUMBER: ${{ inputs.pr_number }}
-        run: |
-          existing_request=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-fix-requested]" || true)
-          if [ -n "$existing_request" ]; then
-            exit 0
-          fi
-
-          COPILOT_COMMENT="[auto-copilot-fix-requested]"$'\n\n'"🤖 **Required checks failed**"$'\n\n'"@copilot Please fix this Dependabot PR so all required checks pass."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
-          GH_TOKEN="$COPILOT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COPILOT_COMMENT"
-
-      - name: Stop when checks fail
-        if: steps.eligibility.outputs.skip != 'true' && steps.wait-checks.outputs.checks_status == 'failed'
-        run: exit 1
-
       - name: Re-check merge readiness
-        if: steps.eligibility.outputs.skip != 'true'
+        if: steps.eligibility.outputs.skip != 'true' && (steps.wait-checks.outputs.checks_status == 'passed' || steps.wait-checks.outputs.checks_status == 'none')
         id: ready
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: |
-          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state --jq '.state')
-          IS_DRAFT=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
-          MERGE_STATE=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeStateStatus --jq '.mergeStateStatus')
+          # Wait briefly if GitHub is still recomputing mergeability after pushing the version bump
+          for _ in $(seq 1 15); do
+            PR_INFO=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json state,isDraft,mergeable,mergeStateStatus)
+            PR_STATE=$(echo "$PR_INFO" | jq -r '.state')
+            IS_DRAFT=$(echo "$PR_INFO" | jq -r '.isDraft')
+            MERGEABLE=$(echo "$PR_INFO" | jq -r '.mergeable')
+            MERGE_STATE=$(echo "$PR_INFO" | jq -r '.mergeStateStatus')
+            if [ "$MERGEABLE" != "UNKNOWN" ] && [ "$MERGE_STATE" != "UNKNOWN" ]; then
+              break
+            fi
+            sleep 2
+          done
 
           if [ "$IS_DRAFT" = "true" ] || [ "$PR_STATE" != "OPEN" ]; then
             echo "can_merge=false" >> $GITHUB_OUTPUT
@@ -204,7 +328,7 @@ jobs:
           fi
 
       - name: Merge PR
-        if: steps.eligibility.outputs.skip != 'true' && steps.ready.outputs.can_merge == 'true'
+        if: steps.eligibility.outputs.skip != 'true' && (steps.wait-checks.outputs.checks_status == 'passed' || steps.wait-checks.outputs.checks_status == 'none') && steps.ready.outputs.can_merge == 'true'
         id: merge
         timeout-minutes: 30
         env:
@@ -215,7 +339,7 @@ jobs:
           transient_count=0
           while true; do
             set +e
-            merge_output=$(GH_TOKEN="$COPILOT_TOKEN" gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER" 2>&1)
+            merge_output=$(gh pr merge --repo "$GH_REPO" --squash --delete-branch "$PR_NUMBER" 2>&1)
             merge_exit=$?
             set -e
             echo "$merge_output"
@@ -224,12 +348,21 @@ jobs:
               echo "merge_result=success" >> $GITHUB_OUTPUT
               break
 
+            elif echo "$merge_output" | grep -qiE "base branch was modified|try the merge again"; then
+              transient_count=$((transient_count + 1))
+              if [ $transient_count -ge 3 ]; then
+                echo "merge_result=failed" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+              echo "Transient error (attempt $transient_count/3), retrying in 10s..."
+              sleep 10
+
             elif echo "$merge_output" | grep -qiE "merge conflict|not mergeable|cannot be cleanly created|has merge conflicts"; then
               # Post Copilot comment once (deduped)
               existing=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json comments --jq '.comments[].body' | grep -F "[auto-copilot-conflict-fix]" || true)
               if [ -z "$existing" ]; then
                 COMMENT="[auto-copilot-conflict-fix]"$'\n\n'"🤖 **Merge conflict detected**"$'\n\n'"@copilot Please resolve the merge conflicts in this Dependabot PR so it can be auto-merged."$'\n\n'"Context:"$'\n'"- Repository: ${{ github.repository }}"$'\n'"- PR: #$PR_NUMBER"$'\n'"- Trigger: Dependabot automation"
-                GH_TOKEN="$COPILOT_TOKEN" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
+                GH_TOKEN="${COPILOT_TOKEN:-$GITHUB_TOKEN}" gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$COMMENT"
               fi
 
               # Poll until Copilot pushes a fix (HEAD SHA changes) or timeout
@@ -248,9 +381,10 @@ jobs:
                 fi
                 new_sha=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')
                 if [ "$new_sha" != "$current_sha" ]; then
-                  echo "New commit detected (${new_sha}), retrying merge..."
-                  fixed=true
-                  break
+                  echo "New commit detected (${new_sha}), re-dispatching auto-merge workflow so CI and version bump run on the resolved branch..."
+                  gh workflow run dependabot-auto-merge.yml --repo "$GH_REPO" --ref master || true
+                  echo "merge_result=skipped" >> $GITHUB_OUTPUT
+                  exit 0
                 fi
                 echo "  Still waiting for Copilot fix... (${waited}s elapsed)"
               done
@@ -259,15 +393,6 @@ jobs:
                 echo "merge_result=conflict_timeout" >> $GITHUB_OUTPUT
                 exit 1
               fi
-
-            elif echo "$merge_output" | grep -qiE "base branch was modified|try the merge again"; then
-              transient_count=$((transient_count + 1))
-              if [ $transient_count -ge 3 ]; then
-                echo "merge_result=failed" >> $GITHUB_OUTPUT
-                exit 1
-              fi
-              echo "Transient error (attempt $transient_count/3), retrying in 30s..."
-              sleep 30
 
             else
               echo "merge_result=failed" >> $GITHUB_OUTPUT
@@ -314,21 +439,31 @@ jobs:
           gh pr comment "$PR_NUMBER" --repo "$GH_REPO" --body "$MERGE_COMMENT"
 
       - name: Trigger Docker build after successful merge
-        # Dispatch the Docker workflow using GITHUB_TOKEN (workflow_dispatch events
-        # are not subject to the anti-recursion restriction that blocks push-triggered
-        # workflows from firing when GITHUB_TOKEN merges a PR).  This ensures a
-        # release and Docker image are built even when COPILOT_TRIGGER_PAT is unset.
-        # We dispatch whenever a version bump was attempted (should_bump == true),
-        # covering both the case where the squash includes the version change and the
-        # case where the bump was absorbed (master already at the same version) — in
-        # the latter case the dispatch rebuilds the current version with the new deps.
         if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'success' && steps.bump-decision.outputs.should_bump == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
         run: |
-          echo "Dispatching Docker build workflow for release..."
-          gh workflow run docker-image.yml --repo "$GH_REPO" --ref master
+          MERGED_SHA=$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json mergeCommit --jq '.mergeCommit.oid // empty')
+          if [ -n "$MERGED_SHA" ]; then
+            echo "Dispatching Docker build workflow for release at commit $MERGED_SHA..."
+            gh workflow run docker-image.yml --repo "$GH_REPO" --ref master -f ref="$MERGED_SHA"
+          else
+            echo "Dispatching Docker build workflow for release on master..."
+            gh workflow run docker-image.yml --repo "$GH_REPO" --ref master
+          fi
           echo "Docker workflow dispatch triggered successfully."
+
+      - name: Sweep remaining open Dependabot PRs if queued runs coalesced
+        if: steps.eligibility.outputs.skip != 'true' && steps.merge.outputs.merge_result == 'success' && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REMAINING=$(gh pr list --repo "$GH_REPO" --state open --search "is:pr is:open author:app/dependabot" --json number --jq 'length')
+          if [ "$REMAINING" -gt 0 ]; then
+            echo "Found $REMAINING remaining open Dependabot PR(s); dispatching sweep on master..."
+            gh workflow run dependabot-auto-merge.yml --repo "$GH_REPO" --ref master || true
+          fi
 
       - name: Add skip notification
         if: steps.eligibility.outputs.skip == 'true'
