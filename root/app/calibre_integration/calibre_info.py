@@ -228,32 +228,22 @@ class CalibreInfo:
             ff_logging.log_failure(f"Error checking Calibre installation: {e}")
             return False
 
-    def __str__(self) -> str:
-        """Provides a formatted command-line argument string for Calibre operations.
+    def to_args(self) -> list[str]:
+        """Return calibredb library/auth arguments as a safe argument list.
 
-        This method constructs the appropriate command-line arguments needed to
-        interact with the Calibre library, including library location and optional
-        authentication credentials. The resulting string can be used directly in
-        subprocess calls to calibredb or other Calibre command-line tools.
+        Returns individual strings that can be extended directly onto a
+        subprocess argument list, avoiding shell-quoting entirely.  Values
+        that contain spaces, quotes, or other special characters are passed
+        verbatim and will never trigger shlex parsing errors.
 
         Returns:
-            str: A formatted string containing Calibre command-line arguments,
-                including --with-library, --username, and --password flags as
-                needed. Arguments are properly quoted for shell safety.
-
-        Example:
-            For a local library: ' --with-library "/path/to/library"'
-            For a server with auth: ' --with-library "http://server:8080"
-                                   --username "user" --password "pass"'
+            list[str]: Calibre command-line arguments starting with
+                ``--with-library``, optionally followed by ``--username``
+                and ``--password`` when those are non-empty.
         """
-        # Start with the required library location argument
-        parts = [f' --with-library "{self.location}"']
-
-        # Add optional authentication arguments if provided
+        args = ["--with-library", self.location]
         if self.username:
-            parts.append(f'--username "{self.username}"')
+            args.extend(["--username", self.username])
         if self.password:
-            parts.append(f'--password "{self.password}"')
-
-        # Join all parts into a single command-line string
-        return " ".join(parts)
+            args.extend(["--password", self.password])
+        return args

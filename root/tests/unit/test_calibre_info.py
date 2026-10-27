@@ -115,15 +115,29 @@ class TestCalibreInfo(unittest.TestCase):
                 "/test/path",
                 "test_user",
                 "test_pass",
-                ' --with-library "/test/path" --username "test_user" --password "test_pass"',
+                [
+                    "--with-library",
+                    "/test/path",
+                    "--username",
+                    "test_user",
+                    "--password",
+                    "test_pass",
+                ],
             ),
-            ("no_auth", "/simple/path", "", "", ' --with-library "/simple/path"'),
+            ("no_auth", "/simple/path", "", "", ["--with-library", "/simple/path"]),
             (
                 "long_path",
                 "/very/long/path/to/calibre/library",
                 "admin",
                 "secret",
-                ' --with-library "/very/long/path/to/calibre/library" --username "admin" --password "secret"',
+                [
+                    "--with-library",
+                    "/very/long/path/to/calibre/library",
+                    "--username",
+                    "admin",
+                    "--password",
+                    "secret",
+                ],
             ),
         ]
     )
@@ -135,7 +149,7 @@ class TestCalibreInfo(unittest.TestCase):
         path,
         username,
         password,
-        expected_str,
+        expected_args,
         mock_isfile,
         mock_manager,
     ):
@@ -145,7 +159,65 @@ class TestCalibreInfo(unittest.TestCase):
 
         calibre_info = CalibreInfo(calibre_cfg, mock_manager())
 
-        self.assertEqual(str(calibre_info), expected_str)
+        self.assertEqual(calibre_info.to_args(), expected_args)
+
+    @parameterized.expand(
+        [
+            (
+                "full_auth",
+                "/test/path",
+                "test_user",
+                "test_pass",
+                [
+                    "--with-library",
+                    "/test/path",
+                    "--username",
+                    "test_user",
+                    "--password",
+                    "test_pass",
+                ],
+            ),
+            (
+                "no_auth",
+                "/simple/path",
+                "",
+                "",
+                ["--with-library", "/simple/path"],
+            ),
+            (
+                "path_with_double_quote",
+                '/path/with"quote',
+                "user",
+                'pass"word',
+                [
+                    "--with-library",
+                    '/path/with"quote',
+                    "--username",
+                    "user",
+                    "--password",
+                    'pass"word',
+                ],
+            ),
+        ]
+    )
+    @patch("multiprocessing.Manager")
+    @patch("pathlib.Path.is_file")
+    def test_to_args(
+        self,
+        name,
+        path,
+        username,
+        password,
+        expected_args,
+        mock_isfile,
+        mock_manager,
+    ):
+        calibre_cfg = CalibreConfig(path=path, username=username, password=password)
+        mock_manager.return_value = MagicMock()
+        mock_isfile.return_value = True
+
+        ci = CalibreInfo(calibre_cfg, mock_manager())
+        self.assertEqual(ci.to_args(), expected_args)
 
 
 class TestCalibreInfoEdgeCases(unittest.TestCase):

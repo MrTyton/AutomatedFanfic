@@ -94,8 +94,7 @@ class CalibreDBClient(CalibreClient):
         else:
             cmd = ["calibredb", *command_args]
 
-        # CalibreInfo currently exposes CLI args via __str__.
-        return [*cmd, *shlex.split(str(self.cdb_info))]
+        return [*cmd, *self.cdb_info.to_args()]
 
     @staticmethod
     def _format_command_error(
