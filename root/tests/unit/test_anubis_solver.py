@@ -368,3 +368,32 @@ def test_probe_and_solve_anubis_returns_false_when_not_challenged() -> None:
         )
 
         assert solved is False
+
+
+def test_probe_and_solve_anubis_normalizes_schemeless_url() -> None:
+    with patch("requests.Session") as mock_sess_cls:
+        mock_sess = MagicMock()
+        mock_sess_cls.return_value = mock_sess
+        mock_sess.get.return_value = MagicMock(
+            status_code=200, text="<html>Normal</html>"
+        )
+
+        solved, _ = probe_and_solve_anubis(
+            url="royalroad.com/fiction/129182",
+            user_agent=DEFAULT_USER_AGENT,
+            cookiejar=None,
+        )
+
+        assert solved is False
+        mock_sess.get.assert_called_once_with(
+            "https://royalroad.com/fiction/129182", timeout=15
+        )
+
+
+def test_probe_and_solve_anubis_empty_or_epub_url_returns_false() -> None:
+    solved, _ = probe_and_solve_anubis(
+        url="",
+        user_agent=DEFAULT_USER_AGENT,
+        cookiejar=None,
+    )
+    assert solved is False

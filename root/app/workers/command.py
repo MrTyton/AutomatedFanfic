@@ -9,6 +9,7 @@ import functools
 import importlib.metadata
 import io
 from pathlib import Path
+import re
 import sys
 import threading
 from typing import IO, cast
@@ -20,6 +21,7 @@ from models import fanfic_info
 from parsers import regex_parsing
 from utils import anubis_solver
 from utils import ff_logging
+from utils import url_utils
 
 # ---------------------------------------------------------------------------
 # Per-site CookieJar cache
@@ -254,6 +256,24 @@ def _extract_user_agent(ini_text: str, site: str) -> str:
     return anubis_solver.DEFAULT_USER_AGENT
 
 
+def _resolve_target_url(
+    fanfic: fanfic_info.FanficInfo,
+    path_or_url: str,
+    captured_output: str,
+) -> str:
+    """Resolve the HTTP(S) URL for FanFicFare execution or probing."""
+    raw_url = getattr(fanfic, "url", "")
+    if raw_url and not raw_url.endswith(".epub"):
+        return url_utils.normalize_url(raw_url)
+    if captured_output:
+        match = re.search(r"URL:\s*(https?://[^\s,]+)", captured_output)
+        if match:
+            return match.group(1).strip()
+    if path_or_url and not path_or_url.endswith(".epub"):
+        return url_utils.normalize_url(path_or_url)
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Public API: direct Python API execution
 # ---------------------------------------------------------------------------
@@ -385,9 +405,10 @@ def execute_fanficfare_direct(
         if "user_agent:" not in personal_ini_base:
             passed_personalini += f"\n[defaults]\nuser_agent: {anubis_user_agent}\n"
 
+        target_url = _resolve_target_url(fanfic, path_or_url, "")
         cookiejar = anubis_solver.ensure_anubis_session(
             site=site_key,
-            url=getattr(fanfic, "url", path_or_url),
+            url=target_url,
             user_agent=anubis_user_agent,
             cookiejar=cast(anubis_solver.LWPCookieJar | None, cached_cookiejar),
         )
@@ -437,60 +458,64 @@ def execute_fanficfare_direct(
     # to test whether the site is serving an Anubis anti-bot challenge.
     if result.has_failure:
         anubis_user_agent = _extract_user_agent(personal_ini_base, site_key)
-        target_url = getattr(fanfic, "url", path_or_url)
-        solved, updated_jar = anubis_solver.probe_and_solve_anubis(
-            url=target_url,
-            user_agent=anubis_user_agent,
-            cookiejar=cast(
-                anubis_solver.LWPCookieJar | None, getattr(options, "cookiejar", None)
-            ),
-        )
-        if solved:
-            ff_logging.log(
-                f"({site_key}) Anubis challenge solved on reactive probe. Retrying FanFicFare..."
+        target_url = _resolve_target_url(fanfic, path_or_url, captured_output)
+        if target_url:
+            solved, updated_jar = anubis_solver.probe_and_solve_anubis(
+                url=target_url,
+                user_agent=anubis_user_agent,
+                cookiejar=cast(
+                    anubis_solver.LWPCookieJar | None,
+                    getattr(options, "cookiejar", None),
+                ),
             )
-            anubis_solver.mark_site_anubis_protected(site_key)
-            _set_site_cookiejar(site_key, updated_jar)
-            options.cookiejar = updated_jar
-            if "user_agent:" not in passed_personalini:
-                passed_personalini += f"\n[defaults]\nuser_agent: {anubis_user_agent}\n"
-
-            result = FanFicFareResult()
-            captured_output_retry = ""
-            try:
-                with tl_stdout.capture() as captured_buf:
-                    try:
-                        fff_cli.do_download(
-                            path_or_url,
-                            options,
-                            passed_defaultsini=passed_defaultsini,
-                            passed_personalini=passed_personalini,
-                            warn=warn_callback,
-                            fail=fail_callback,
-                        )
-                    finally:
-                        captured_output_retry = captured_buf.getvalue()
+            if solved:
                 ff_logging.log(
-                    f"({site_key}) FanFicFare retry succeeded after Anubis resolution."
+                    f"({site_key}) Anubis challenge solved on reactive probe. Retrying FanFicFare..."
                 )
-            except Exception as e:
-                result.exception = e
-                ff_logging.log_failure(f"\tFanFicFare retry raised exception: {e}")
-                return result
-            finally:
-                updated_cookiejar = vars(options).get("cookiejar")
-                if updated_cookiejar is not None and site_key:
-                    _set_site_cookiejar(site_key, updated_cookiejar)
+                anubis_solver.mark_site_anubis_protected(site_key)
+                _set_site_cookiejar(site_key, updated_jar)
+                options.cookiejar = updated_jar
+                if "user_agent:" not in passed_personalini:
+                    passed_personalini += (
+                        f"\n[defaults]\nuser_agent: {anubis_user_agent}\n"
+                    )
 
-            if captured_output_retry:
-                ff_logging.log_debug(
-                    f"\tFanFicFare stdout (retry): {captured_output_retry}"
-                )
+                result = FanFicFareResult()
+                captured_output_retry = ""
+                try:
+                    with tl_stdout.capture() as captured_buf:
+                        try:
+                            fff_cli.do_download(
+                                path_or_url,
+                                options,
+                                passed_defaultsini=passed_defaultsini,
+                                passed_personalini=passed_personalini,
+                                warn=warn_callback,
+                                fail=fail_callback,
+                            )
+                        finally:
+                            captured_output_retry = captured_buf.getvalue()
+                    ff_logging.log(
+                        f"({site_key}) FanFicFare retry succeeded after Anubis resolution."
+                    )
+                except Exception as e:
+                    result.exception = e
+                    ff_logging.log_failure(f"\tFanFicFare retry raised exception: {e}")
+                    return result
+                finally:
+                    updated_cookiejar = vars(options).get("cookiejar")
+                    if updated_cookiejar is not None and site_key:
+                        _set_site_cookiejar(site_key, updated_cookiejar)
 
-            if regex_parsing.check_failure_from_message(captured_output_retry):
-                result.failure_messages.append(
-                    f"FanFicFare silent failure: {captured_output_retry.strip()}"
-                )
+                if captured_output_retry:
+                    ff_logging.log_debug(
+                        f"\tFanFicFare stdout (retry): {captured_output_retry}"
+                    )
+
+                if regex_parsing.check_failure_from_message(captured_output_retry):
+                    result.failure_messages.append(
+                        f"FanFicFare silent failure: {captured_output_retry.strip()}"
+                    )
 
     return result
 

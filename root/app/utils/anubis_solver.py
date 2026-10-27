@@ -20,6 +20,7 @@ import argon2.low_level
 from fanficfare.fetchers.base_fetcher import LWPCookieJar
 
 from utils import ff_logging
+from utils import url_utils
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -251,6 +252,13 @@ def probe_and_solve_anubis(
     else:
         target_jar = _create_lwp_cookiejar()
 
+    if not url:
+        return False, target_jar
+
+    normalized_url = url_utils.normalize_url(url)
+    if not normalized_url.startswith(("http://", "https://")):
+        return False, target_jar
+
     session = requests.Session()
     session.headers["User-Agent"] = user_agent
 
@@ -258,12 +266,14 @@ def probe_and_solve_anubis(
         session.cookies.set_cookie(cookie)
 
     try:
-        probe_resp = session.get(url, timeout=15)
+        probe_resp = session.get(normalized_url, timeout=15)
         if is_anubis_challenge(probe_resp.text):
-            ff_logging.log(f"Detected Anubis anti-bot challenge on {url}. Solving...")
+            ff_logging.log(
+                f"Detected Anubis anti-bot challenge on {normalized_url}. Solving..."
+            )
             solved = solve_anubis_challenge(
                 session=session,
-                page_url=url,
+                page_url=normalized_url,
                 html=probe_resp.text,
                 user_agent=user_agent,
             )
@@ -273,7 +283,7 @@ def probe_and_solve_anubis(
                 return True, target_jar
             return False, target_jar
     except Exception as e:
-        ff_logging.log_debug(f"Anubis probe exception for {url}: {e}")
+        ff_logging.log_debug(f"Anubis probe exception for {normalized_url}: {e}")
 
     return False, target_jar
 
@@ -301,5 +311,12 @@ def ensure_anubis_session(
     if _has_valid_anubis_cookie(target_jar):
         return target_jar
 
-    _, updated_jar = probe_and_solve_anubis(url, user_agent, target_jar)
+    if not url:
+        return target_jar
+
+    normalized_url = url_utils.normalize_url(url)
+    if not normalized_url.startswith(("http://", "https://")):
+        return target_jar
+
+    _, updated_jar = probe_and_solve_anubis(normalized_url, user_agent, target_jar)
     return updated_jar

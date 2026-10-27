@@ -16,6 +16,7 @@ from workers import command
 from workers.command import (
     _build_argv,
     _extract_output_filename_template,
+    _resolve_target_url,
     _ThreadLocalStdout,
     execute_fanficfare_direct,
     FanFicFareResult,
@@ -766,6 +767,40 @@ class TestExtractOutputFilenameTemplate(unittest.TestCase):
                 out_dir.replace("\\", "/") + "/MyCustom_${title}_${storyId}.epub"
             )
             self.assertEqual(captured["output_filename"], expected_prefix)
+
+
+class TestResolveTargetUrl(unittest.TestCase):
+    """Tests for _resolve_target_url."""
+
+    def test_schemeless_fanfic_url_normalized(self):
+        fanfic = FanficInfo(url="royalroad.com/fiction/129182", site="royalroad")
+        url = _resolve_target_url(fanfic, "/tmp/story.epub", "")
+        self.assertEqual(url, "https://royalroad.com/fiction/129182")
+
+    def test_https_fanfic_url_preserved(self):
+        fanfic = FanficInfo(
+            url="https://royalroad.com/fiction/129182", site="royalroad"
+        )
+        url = _resolve_target_url(fanfic, "/tmp/story.epub", "")
+        self.assertEqual(url, "https://royalroad.com/fiction/129182")
+
+    def test_extract_url_from_captured_output_when_fanfic_url_empty(self):
+        fanfic = FanficInfo(url="", site="royalroad")
+        output = (
+            "Updating /tmp/story.epub, URL: https://www.royalroad.com/fiction/129182"
+        )
+        url = _resolve_target_url(fanfic, "/tmp/story.epub", output)
+        self.assertEqual(url, "https://www.royalroad.com/fiction/129182")
+
+    def test_fallback_to_path_or_url_when_not_epub(self):
+        fanfic = FanficInfo(url="", site="royalroad")
+        url = _resolve_target_url(fanfic, "royalroad.com/fiction/129182", "")
+        self.assertEqual(url, "https://royalroad.com/fiction/129182")
+
+    def test_empty_when_no_url_available(self):
+        fanfic = FanficInfo(url="", site="royalroad")
+        url = _resolve_target_url(fanfic, "/tmp/story.epub", "")
+        self.assertEqual(url, "")
 
 
 if __name__ == "__main__":
