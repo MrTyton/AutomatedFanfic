@@ -12,10 +12,14 @@ class TestCoordinatorStatePublishing(unittest.TestCase):
         coord = Coordinator(
             ingress_queue=MagicMock(),
             worker_queues={},
-            verbose=False,
             shutdown_event=MagicMock(),
+            active_urls={},
+            history_recorder=MagicMock(),
+            url_parsers={},
+            config_store=MagicMock(),
             scale_queue=MagicMock(),
             coordinator_status=status_dict,
+            verbose=False,
         )
         coord.state.assignments = {"archiveofourown.org": "worker_0"}
         coord.state.idle_workers = {"worker_1"}
@@ -44,10 +48,14 @@ class TestCoordinatorStatePublishing(unittest.TestCase):
         coord = Coordinator(
             ingress_queue=MagicMock(),
             worker_queues={},
-            verbose=False,
             shutdown_event=MagicMock(),
+            active_urls={},
+            history_recorder=MagicMock(),
+            url_parsers={},
+            config_store=MagicMock(),
             scale_queue=MagicMock(),
             coordinator_status=None,
+            verbose=False,
         )
         # Should not raise exception
         coord._publish_state()
@@ -60,10 +68,14 @@ class TestCoordinatorStatePublishing(unittest.TestCase):
         coord = Coordinator(
             ingress_queue=ingress_q,
             worker_queues=worker_queues,
-            verbose=False,
             shutdown_event=threading.Event(),
+            active_urls={},
+            history_recorder=MagicMock(),
+            url_parsers={},
+            config_store=MagicMock(),
             scale_queue=MagicMock(),
             coordinator_status=status_dict,
+            verbose=False,
         )
 
         # Initially idle
