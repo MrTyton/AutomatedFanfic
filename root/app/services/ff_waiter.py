@@ -180,10 +180,11 @@ def wait_processor(
                     active_urls,
                     fanfic.url,
                     merge=True,
-                    pop_keys=("heap_gen",),
+                    pop_keys=("heap_gen", "wait_until", "delay_seconds"),
                 )
             except Exception as e:
                 ff_logging.log_debug(f"Waiter: Suppressed active_urls read error: {e}")
+            ingress_queue.put(fanfic)
             history_recorder.record_retry_fired(fanfic.url, fanfic.repeats or 0)
 
         # --- Calculate how long we can sleep ---
@@ -222,6 +223,9 @@ def wait_processor(
             calibre_id=getattr(fanfic_item, "calibre_id", None),
             heap_gen=heap_gen,
             delete_if_cancelled=True,
+            wait_until=time.time() + delay,
+            delay_seconds=float(delay),
+            retry_count=fanfic_item.repeats if fanfic_item.repeats is not None else 0,
         ):
             continue
         heapq.heappush(pending_heap, (expiry, seq, fanfic_item, heap_gen))

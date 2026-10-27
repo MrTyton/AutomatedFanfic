@@ -48,6 +48,7 @@ def run_supervisor(
     scale_queue = ipc.scale_queue
     shutdown_event = ipc.shutdown_event
     check_emails_event = ipc.check_emails_event
+    coordinator_status = ipc.coordinator_status
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
@@ -130,6 +131,7 @@ def run_supervisor(
                 url_parsers,
                 config_store,
                 scale_queue,
+                coordinator_status,
             ),
             name="Coordinator",
         )

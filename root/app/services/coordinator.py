@@ -19,6 +19,7 @@ Architecture Note:
 """
 
 import collections
+from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 
 from queue import Empty
@@ -112,11 +113,13 @@ class Coordinator:
         ingress_queue: IngressQueue,
         worker_queues: WorkerQueues,
         shutdown_event: ShutdownEvent,
-        active_urls: ActiveUrlsDict,
-        history_recorder: HistoryRecorder,
-        url_parsers: dict,
-        config_store: ConfigStore,
-        scale_queue: ScaleQueue,
+        active_urls: ActiveUrlsDict | None = None,
+        history_recorder: HistoryRecorder | None = None,
+        url_parsers: dict | None = None,
+        config_store: ConfigStore | None = None,
+        scale_queue: ScaleQueue | None = None,
+        coordinator_status: MutableMapping[str, object] | None = None,
+        verbose: bool = False,
     ) -> None:
         """Initialize the Coordinator.
 
@@ -144,6 +147,8 @@ class Coordinator:
         self.url_parsers = url_parsers
         self.config_store = config_store
         self.scale_queue = scale_queue
+        self.coordinator_status = coordinator_status
+        self.verbose = verbose
 
         # Encapsulated coordinator state
         worker_ids = set(worker_queues.keys())
@@ -164,6 +169,39 @@ class Coordinator:
 
         # Shutdown flag
         self.running = True
+
+        # Publish initial state
+        self._publish_state()
+
+    def _publish_state(self) -> None:
+        """Snapshot internal assignments, worker states, and backlogs to shared state."""
+        if self.coordinator_status is None:
+            return
+        try:
+            backlog_snapshot = {
+                site: [
+                    {
+                        "url": getattr(task, "url", str(task)),
+                        "site": getattr(task, "site", site),
+                        "repeats": getattr(task, "repeats", 0),
+                        "repeat_count": getattr(task, "repeats", 0) or 0,
+                        "calibre_id": getattr(task, "calibre_id", None),
+                        "behavior": getattr(task, "behavior", None),
+                        "title": getattr(task, "title", None),
+                    }
+                    for task in deque
+                ]
+                for site, deque in self.state.backlog.items()
+                if deque
+            }
+            self.coordinator_status["assignments"] = dict(self.state.assignments)
+            self.coordinator_status["idle_workers"] = sorted(self.state.idle_workers)
+            self.coordinator_status["dormant_workers"] = sorted(
+                self.state.dormant_workers
+            )
+            self.coordinator_status["backlog"] = backlog_snapshot
+        except Exception as e:
+            ff_logging.log_debug(f"Coordinator: Suppressed error publishing state: {e}")
 
     def get_state_snapshot(self) -> dict:
         """Return a serialisable snapshot of the coordinator's internal state."""
@@ -223,6 +261,7 @@ class Coordinator:
                 f"for site '{site}' — these will be recovered on restart if "
                 f"resume_uncompleted_on_startup is enabled: {urls}"
             )
+        self._publish_state()
 
     def _process_single_ingress_item(self, timeout: float | None = None):
         """
@@ -386,6 +425,7 @@ class Coordinator:
         # 2. Site is not active. Add to backlog.
         self.state.backlog[site].append(task)
         ff_logging.log_debug(f"Coordinator: Added {task.url} to backlog (Site: {site})")
+        self._publish_state()
 
         # 3. Try to assign immediately if we have waiting workers
         self._assign_work_if_possible()
@@ -438,6 +478,7 @@ class Coordinator:
         ff_logging.log_debug(
             f"Coordinator: Worker {worker_id} stopped and marked dormant"
         )
+        self._publish_state()
 
     def _find_unassigned_site(self) -> str | None:
         """Find a site in backlog that is not currently assigned to any worker."""
@@ -570,6 +611,8 @@ class Coordinator:
                 else:
                     break
 
+        self._publish_state()
+
 
 def start_coordinator(
     ingress_queue: IngressQueue,
@@ -581,6 +624,7 @@ def start_coordinator(
     url_parsers: dict,
     config_store: ConfigStore,
     scale_queue: ScaleQueue,
+    coordinator_status: MutableMapping[str, object] | None = None,
 ) -> None:
     """Entry point for the coordinator thread/process.
 
@@ -610,6 +654,8 @@ def start_coordinator(
         url_parsers,
         config_store,
         scale_queue=scale_queue,
+        coordinator_status=coordinator_status,
+        verbose=verbose,
     )
     try:
         coordinator.run()
