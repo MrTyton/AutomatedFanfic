@@ -112,6 +112,29 @@ def test_mcp_cli_offline_fallback(
         assert "web.enabled" in captured.err
 
 
+def test_mcp_cli_health_check_error_dict(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    """Verify run_cli returns exit code 1 when get_health returns an error dictionary."""
+    monkeypatch.setenv("AUTOMATEDFANFIC_API_URL", "http://localhost:8080")
+    with (
+        patch("mcp_server.cli.AutomatedFanficClient") as mock_client_cls,
+        patch("mcp_server.cli.create_mcp_server"),
+    ):
+        mock_client = MagicMock()
+        mock_client.get_health.return_value = {
+            "ok": False,
+            "error": "Server unreachable",
+        }
+        mock_client_cls.from_url.return_value = mock_client
+
+        exit_code = run_cli(check_connection=True)
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Server unreachable" in captured.err
+        assert "web.enabled" in captured.err
+
+
 def test_mcp_cli_server_run_connection_error(
     capsys: pytest.CaptureFixture[str],
 ):

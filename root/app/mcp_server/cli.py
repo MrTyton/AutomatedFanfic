@@ -27,8 +27,17 @@ def run_cli(check_connection: bool = True) -> int:
     if check_connection:
         try:
             health_call = client.get_health()
-            if inspect.iscoroutine(health_call):
+            res = (
                 asyncio.run(health_call)
+                if inspect.iscoroutine(health_call)
+                else health_call
+            )
+            if isinstance(res, dict) and not res.get("ok", True):
+                sys.stderr.write(
+                    f"Error: Unable to connect to AutomatedFanfic API at {api_url}: {res.get('error')}\n"
+                    "Ensure the AutomatedFanfic service is running and 'web.enabled = true' in config.toml.\n"
+                )
+                return 1
         except (httpx.HTTPError, ConnectionError, OSError) as exc:
             sys.stderr.write(
                 f"Error: Unable to connect to AutomatedFanfic API at {api_url}: {exc}\n"
