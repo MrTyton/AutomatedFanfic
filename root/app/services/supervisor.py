@@ -47,6 +47,7 @@ def run_supervisor(
     log_queue = ipc.log_queue
     scale_queue = ipc.scale_queue
     shutdown_event = ipc.shutdown_event
+    check_emails_event = ipc.check_emails_event
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
@@ -95,6 +96,7 @@ def run_supervisor(
                 shutdown_event,
                 history_recorder,
                 config_store,
+                check_emails_event,
             ),
             name="EmailWatcher",
         )

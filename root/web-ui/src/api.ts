@@ -136,6 +136,12 @@ export function redownloadScratch(payload: QueueActionRequest) {
     })
 }
 
+export function checkEmails() {
+    return apiFetch<QueueActionResponse>('/api/controls/check-emails', {
+        method: 'POST',
+    })
+}
+
 // ── Config ─────────────────────────────────────────────────────
 export interface ConfigResponse {
     config: Record<string, unknown>

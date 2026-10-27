@@ -116,6 +116,14 @@ table {
     border-collapse: collapse;
 }
 
+table.table-fixed {
+    table-layout: fixed;
+}
+
+tbody tr {
+    transition: background-color 0.2s ease;
+}
+
 th,
 td {
     text-align: left;
@@ -123,10 +131,16 @@ td {
     border-bottom: 1px solid var(--surface2);
 }
 
-th {
-    color: var(--text-muted);
-    font-weight: 600;
-    font-size: 0.85rem;
+.table-fixed td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.table-fixed td.cell-wrap {
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 /* Status badges */
@@ -136,6 +150,7 @@ th {
     border-radius: 4px;
     font-size: 0.8rem;
     font-weight: 600;
+    transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 .badge-success {

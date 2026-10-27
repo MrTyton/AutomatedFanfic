@@ -2,13 +2,15 @@
 
 import asyncio
 import unittest
-from unittest.mock import MagicMock
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 import web.routes.websocket as ws_module
 from history.database import AsyncHistoryDB
 from web.dependencies import WebState
+from web.routes.websocket import _build_snapshot, _connections, _snapshot_loop
 from web.server import create_app
 
 
@@ -192,8 +194,6 @@ class TestWebSocketDashboard(unittest.TestCase):
 
     def test_history_cache_avoids_repeat_queries(self):
         """_build_snapshot should only refresh history queries when TTL expires."""
-        from web.routes.websocket import _build_snapshot
-
         call_counts = {"downloads": 0, "activity": 0}
 
         class StubHistoryDB(AsyncHistoryDB):
@@ -305,9 +305,6 @@ class TestWebSocketDashboard(unittest.TestCase):
 
     def test_snapshot_loop_skips_build_when_no_clients_connected(self):
         """_snapshot_loop must not call _build_and_push_snapshot when _connections is empty."""
-        from unittest.mock import AsyncMock, patch
-        from web.routes.websocket import _snapshot_loop, _connections
-
         _connections.clear()
 
         async def _stop_sleep(_delay):
@@ -322,3 +319,79 @@ class TestWebSocketDashboard(unittest.TestCase):
             with self.assertRaises(asyncio.CancelledError):
                 asyncio.run(_snapshot_loop(self.state))
             mock_build.assert_not_called()
+
+    def test_build_snapshot_deterministic_sorting(self):
+        """_build_snapshot deterministically sorts active, queued, and waiting URLs by queued_at and url."""
+        self.state.active_urls = {
+            "https://ao3.org/works/3": {
+                "status": "queued",
+                "queued_at": 300.0,
+                "site": "ao3",
+            },
+            "https://ao3.org/works/1": {
+                "status": "queued",
+                "queued_at": 100.0,
+                "site": "ao3",
+            },
+            "https://ao3.org/works/2": {
+                "status": "queued",
+                "queued_at": 200.0,
+                "site": "ao3",
+            },
+            "https://ffnet.net/s/2": {
+                "status": "processing",
+                "queued_at": 20.0,
+                "site": "ffnet",
+            },
+            "https://ffnet.net/s/1": {
+                "status": "processing",
+                "queued_at": 10.0,
+                "site": "ffnet",
+            },
+            "https://rr.com/f/2": {
+                "status": "waiting",
+                "queued_at": 50.0,
+                "site": "rr",
+            },
+            "https://rr.com/f/1": {
+                "status": "waiting",
+                "queued_at": 40.0,
+                "site": "rr",
+            },
+        }
+
+        snapshot = asyncio.run(_build_snapshot(self.state))
+
+        # Check queued order: works/1 (100.0), works/2 (200.0), works/3 (300.0)
+        queued_data = cast(dict[str, Any], snapshot["queued_downloads"])
+        queued_urls = [item["url"] for item in queued_data["items"]]
+        self.assertEqual(
+            queued_urls,
+            [
+                "https://ao3.org/works/1",
+                "https://ao3.org/works/2",
+                "https://ao3.org/works/3",
+            ],
+        )
+
+        # Check processing order: s/1 (10.0), s/2 (20.0)
+        active_data = cast(dict[str, Any], snapshot["active_downloads"])
+        active_urls = [item["url"] for item in active_data["items"]]
+        self.assertEqual(
+            active_urls,
+            [
+                "https://ffnet.net/s/1",
+                "https://ffnet.net/s/2",
+            ],
+        )
+
+        # Check waiting order: f/1 (40.0), f/2 (50.0)
+        waiting_data = cast(dict[str, Any], snapshot["waiting_downloads"])
+        waiting_urls = [item["url"] for item in waiting_data["items"]]
+        self.assertEqual(
+            waiting_urls,
+            [
+                "https://rr.com/f/1",
+                "https://rr.com/f/2",
+            ],
+        )

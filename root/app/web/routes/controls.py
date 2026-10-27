@@ -510,3 +510,14 @@ async def redownload_scratch(request: Request, body: QueueActionRequest):
         ok=True,
         message=f"Queued redownload for {fanfic.url}, but Calibre removal failed: {removal_message}",
     )
+
+
+@router.post("/check-emails", response_model=ActionResponse)
+async def check_emails_now(request: Request) -> ActionResponse:
+    """Trigger an immediate check of monitored email accounts."""
+    state = request.app.state.web_state
+    if state.check_emails_event is None:
+        return ActionResponse(ok=False, message="Email check event not configured")
+    state.check_emails_event.set()
+    invalidate_history_cache()
+    return ActionResponse(ok=True, message="Email check triggered")

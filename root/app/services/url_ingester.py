@@ -79,7 +79,7 @@ from notifications import notification_wrapper
 from models import active_urls as active_urls_utils
 from models.active_urls import ActiveUrlsDict
 from models.config_models import EmailConfig
-from models.queue_types import IngressQueue, ShutdownEvent
+from models.queue_types import CheckEmailsEvent, IngressQueue, ShutdownEvent
 
 
 def _make_fff_get_configuration(config_store: ConfigStore):
@@ -393,7 +393,11 @@ class EmailInfo:
 
         return urls
 
-    def _idle_wait_for_notification(self, shutdown_event: ShutdownEvent) -> bool:
+    def _idle_wait_for_notification(
+        self,
+        shutdown_event: ShutdownEvent,
+        check_emails_event: CheckEmailsEvent | None = None,
+    ) -> bool:
         """
         Block using IMAP IDLE until the server signals new mail or shutdown.
 
@@ -439,7 +443,14 @@ class EmailInfo:
                         client.idle_done()
                         return False
 
-                    responses = client.idle_check(timeout=CHECK_INTERVAL)
+                    if check_emails_event is not None and check_emails_event.is_set():
+                        ff_logging.log_debug(
+                            "EmailWatcher: manual email check triggered during IMAP IDLE"
+                        )
+                        client.idle_done()
+                        return True
+
+                    responses = client.idle_check(timeout=min(2, CHECK_INTERVAL))
 
                     # Server signalled new/changed messages
                     if any(
@@ -478,6 +489,7 @@ def email_watcher(
     shutdown_event: ShutdownEvent,
     history_recorder: HistoryRecorder,
     config_store: ConfigStore,
+    check_emails_event: CheckEmailsEvent | None = None,
 ) -> None:
     """
     Continuously monitor email for fanfiction URLs and route to the ingress queue.
@@ -503,16 +515,24 @@ def email_watcher(
             and download creation events to the history database.
         config_store (ConfigStore): Shared ConfigStore instance for hot-reloading
             email credentials and settings between poll cycles.
+        check_emails_event (CheckEmailsEvent | None): Optional event to trigger an
+            immediate out-of-band email check from the web UI.
     """
     # Initialize logging for this process
     ff_logging.set_verbose(verbose)
     ff_logging.set_thread_color("\033[93m")  # Yellow
+    is_manual = False
 
     while True:
         # Check for shutdown signal
         if shutdown_event.is_set():
             ff_logging.log_debug("EmailWatcher received shutdown signal")
             break
+
+        if check_emails_event is not None and check_emails_event.is_set():
+            check_emails_event.clear()
+            is_manual = True
+            ff_logging.log("EmailWatcher: manual email check triggered")
 
         # Hot-reload: sync credentials from ConfigStore if they changed
         if email_info.update_from_config_store(config_store):
@@ -579,18 +599,43 @@ def email_watcher(
             history_recorder.record_download_created(fic.url, fic.site, fic.behavior)
 
         # Record email check event
+        trigger = (
+            "manual" if is_manual else ("idle" if email_info.imap_idle else "poll")
+        )
+        is_manual = False
         history_recorder.record_email_check(
             urls_found=urls_found,
             urls_new=urls_new,
             urls_duplicate=urls_duplicate,
             urls_disabled_site=urls_disabled_site,
-            trigger="idle" if email_info.imap_idle else "poll",
+            trigger=trigger,
         )
 
         # Wait before next email check cycle
         if email_info.imap_idle:
             # Push mode: block in IMAP IDLE until the server notifies us
-            if not email_info._idle_wait_for_notification(shutdown_event):
+            if check_emails_event is not None:
+                idle_notified = email_info._idle_wait_for_notification(
+                    shutdown_event, check_emails_event
+                )
+            else:
+                idle_notified = email_info._idle_wait_for_notification(shutdown_event)
+            if not idle_notified:
                 break  # shutdown signalled inside IDLE wait
-        elif shutdown_event.wait(timeout=email_info.sleep_time):
-            break
+        elif check_emails_event is None:
+            if shutdown_event.wait(timeout=email_info.sleep_time):
+                break
+        else:
+            # Polling mode with manual trigger event: wait sleep_time or wake on event / shutdown
+            start_wait = time.monotonic()
+            while not shutdown_event.is_set():
+                if check_emails_event.is_set():
+                    break
+                elapsed = time.monotonic() - start_wait
+                remaining = email_info.sleep_time - elapsed
+                if remaining <= 0:
+                    break
+                if shutdown_event.wait(timeout=min(1.0, remaining)):
+                    break
+            if shutdown_event.is_set():
+                break

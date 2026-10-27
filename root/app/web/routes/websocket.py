@@ -98,6 +98,16 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
         else:
             queued_urls.append({"url": u, **meta})
 
+    active_urls_list.sort(
+        key=lambda x: (float(x.get("queued_at") or 0.0), str(x.get("url") or ""))
+    )
+    queued_urls.sort(
+        key=lambda x: (float(x.get("queued_at") or 0.0), str(x.get("url") or ""))
+    )
+    waiting_urls.sort(
+        key=lambda x: (float(x.get("queued_at") or 0.0), str(x.get("url") or ""))
+    )
+
     snapshot["active_downloads"] = {
         "items": active_urls_list,
         "count": len(active_urls_list),

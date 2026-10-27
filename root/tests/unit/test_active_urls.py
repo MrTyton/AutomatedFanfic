@@ -41,7 +41,9 @@ class TestActiveUrlsHelpers:
             title="Story 1",
             calibre_id="42",
         )
-        assert store["https://example.com/1"] == {
+        res1 = dict(store["https://example.com/1"])
+        assert isinstance(res1.pop("queued_at", None), float)
+        assert res1 == {
             "site": "example",
             "title": "Story 1",
             "status": "queued",
@@ -62,7 +64,9 @@ class TestActiveUrlsHelpers:
             merge=True,
             pop_keys=("heap_gen",),
         )
-        assert store["https://example.com/2"] == {
+        res2 = dict(store["https://example.com/2"])
+        assert isinstance(res2.pop("queued_at", None), float)
+        assert res2 == {
             "site": "ao3",
             "title": "Story 2",
             "status": "queued",
@@ -74,7 +78,9 @@ class TestActiveUrlsHelpers:
             "https://example.com/1": {"status": "queued", "heap_gen": 3}
         }
         active_urls.mark_url_processing(store, "https://example.com/1", site="ao3")
-        assert store["https://example.com/1"] == {
+        res_proc = dict(store["https://example.com/1"])
+        assert isinstance(res_proc.pop("queued_at", None), float)
+        assert res_proc == {
             "site": "ao3",
             "status": "processing",
             "heap_gen": 3,
@@ -86,7 +92,9 @@ class TestActiveUrlsHelpers:
             title="Extracted Title",
             site="ao3",
         )
-        assert store["https://example.com/1"] == {
+        res_updated = dict(store["https://example.com/1"])
+        assert isinstance(res_updated.pop("queued_at", None), float)
+        assert res_updated == {
             "site": "ao3",
             "title": "Extracted Title",
             "status": "processing",

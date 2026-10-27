@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from models.active_urls import ActiveUrlsDict
     from models.queue_types import (
         IngressQueue,
+        CheckEmailsEvent,
         LogQueue,
         ScaleQueue,
         ShutdownEvent,
@@ -85,5 +86,6 @@ class SharedIPCContext:
     config_store: ConfigStore
     scale_queue: ScaleQueue
     shutdown_event: ShutdownEvent
+    check_emails_event: CheckEmailsEvent | None = None
     log_queue: LogQueue | None = None
     verbose: bool = False

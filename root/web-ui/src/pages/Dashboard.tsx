@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
-import { addUrls, cancelDownload, cancelRetry, redownloadScratch, retryNow, type AddUrlResult } from '../api'
+import { addUrls, cancelDownload, cancelRetry, checkEmails, redownloadScratch, retryNow, type AddUrlResult } from '../api'
 import { statusBadgeClass } from '../statusColors'
 
 interface Props {
@@ -108,6 +108,7 @@ export default function Dashboard({ data }: Props) {
     const [urlText, setUrlText] = useState('')
     const [results, setResults] = useState<AddUrlResult[]>([])
     const [loading, setLoading] = useState(false)
+    const [checkingEmails, setCheckingEmails] = useState(false)
     const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({})
     const [selectedError, setSelectedError] = useState<ErrorModalState | null>(null)
     const [copied, setCopied] = useState(false)
@@ -155,6 +156,18 @@ export default function Dashboard({ data }: Props) {
             setResults([{ accepted: false, message: String(err) }])
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleCheckEmails = async () => {
+        setCheckingEmails(true)
+        try {
+            const res = await checkEmails()
+            setResults([{ accepted: res.ok, message: res.message }])
+        } catch (err) {
+            setResults([{ accepted: false, message: String(err) }])
+        } finally {
+            setCheckingEmails(false)
         }
     }
 
@@ -249,9 +262,19 @@ export default function Dashboard({ data }: Props) {
                         rows={3}
                         style={{ resize: 'vertical', marginBottom: '0.5rem' }}
                     />
-                    <button type="submit" disabled={loading}>
-                        {loading ? 'Adding…' : 'Add to Queue'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <button type="submit" disabled={loading}>
+                            {loading ? 'Adding…' : 'Add to Queue'}
+                        </button>
+                        <button
+                            type="button"
+                            className="secondary"
+                            disabled={checkingEmails}
+                            onClick={handleCheckEmails}
+                        >
+                            {checkingEmails ? 'Checking…' : 'Check Emails Now'}
+                        </button>
+                    </div>
                 </form>
                 {results.length > 0 && (
                     <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
@@ -267,24 +290,24 @@ export default function Dashboard({ data }: Props) {
             {/* In-Flight Downloads: Active, Queued, and Waiting */}
             <div className="card">
                 <h2>In-Flight Downloads</h2>
-                <table>
+                <table className="table-fixed">
                     <thead>
                         <tr>
-                            <th>Status</th>
-                            <th>Site</th>
+                            <th style={{ width: '110px' }}>Status</th>
+                            <th style={{ width: '130px' }}>Site</th>
                             <th>Title / URL</th>
-                            <th>Story ID</th>
-                            <th>Time</th>
-                            <th>Actions</th>
+                            <th style={{ width: '90px' }}>Story ID</th>
+                            <th style={{ width: '110px' }}>Time</th>
+                            <th style={{ width: '220px' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {/* Active downloads (truly processing by a worker thread) */}
                         {activeUrls.map((dl) => (
-                            <tr key={`active-${dl.url}`}>
+                            <tr key={dl.url}>
                                 <td><span className="badge badge-warning">processing</span></td>
                                 <td>{dl.site || extractSite(dl.url)}</td>
-                                <td>
+                                <td className="cell-wrap">
                                     {dl.title ? (
                                         <><strong>{dl.title}</strong>{' '}{renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
                                     ) : (
@@ -294,18 +317,20 @@ export default function Dashboard({ data }: Props) {
                                 <td>—</td>
                                 <td></td>
                                 <td>
-                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                        Processing…
-                                    </span>
+                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', minHeight: '32px', alignItems: 'center' }}>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                            Processing…
+                                        </span>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
                         {/* Queued downloads (accepted, waiting for coordinator/worker assignment) */}
                         {queuedItems.map((dl) => (
-                            <tr key={`queued-${dl.url}`}>
+                            <tr key={dl.url}>
                                 <td><span className="badge badge-info">queued</span></td>
                                 <td>{dl.site || extractSite(dl.url)}</td>
-                                <td>
+                                <td className="cell-wrap">
                                     {dl.title ? (
                                         <><strong>{dl.title}</strong>{' '}{renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
                                     ) : (
@@ -315,22 +340,24 @@ export default function Dashboard({ data }: Props) {
                                 <td>—</td>
                                 <td></td>
                                 <td>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`cancel-${dl.url}`]}
-                                        onClick={() => runAction(`cancel-${dl.url}`, () => cancelDownload({ url: dl.url, site: dl.site, title: dl.title }))}
-                                    >
-                                        Cancel
-                                    </button>
+                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', minHeight: '32px', alignItems: 'center' }}>
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`cancel-${dl.url}`]}
+                                            onClick={() => runAction(`cancel-${dl.url}`, () => cancelDownload({ url: dl.url, site: dl.site, title: dl.title }))}
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
                         {/* Waiting downloads (retry backoff) */}
                         {waitingItems.map((w) => (
-                            <tr key={`waiting-${w.url}`}>
+                            <tr key={w.url}>
                                 <td><span className="badge badge-info">waiting</span></td>
                                 <td>{w.site || extractSite(w.url)}</td>
-                                <td>
+                                <td className="cell-wrap">
                                     {w.title ? (
                                         <>
                                             <strong>{w.title}</strong>{' '}
@@ -354,28 +381,30 @@ export default function Dashboard({ data }: Props) {
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                                     {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
                                 </td>
-                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`retry-${w.url}`]}
-                                        onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
-                                    >
-                                        Retry now
-                                    </button>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`cancel-${w.url}`]}
-                                        onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
-                                    >
-                                        Cancel retry
-                                    </button>
-                                    <button
-                                        className="secondary"
-                                        disabled={!!actionBusy[`redl-${w.url}`]}
-                                        onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
-                                    >
-                                        Redownload
-                                    </button>
+                                <td>
+                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', minHeight: '32px', alignItems: 'center' }}>
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`retry-${w.url}`]}
+                                            onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
+                                        >
+                                            Retry now
+                                        </button>
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`cancel-${w.url}`]}
+                                            onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
+                                        >
+                                            Cancel retry
+                                        </button>
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`redl-${w.url}`]}
+                                            onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
+                                        >
+                                            Redownload
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -389,15 +418,15 @@ export default function Dashboard({ data }: Props) {
             {/* Recent Completed Downloads */}
             <div className="card">
                 <h2>Recent Completed Downloads</h2>
-                <table>
+                <table className="table-fixed">
                     <thead>
                         <tr>
-                            <th>Status</th>
-                            <th>Site</th>
+                            <th style={{ width: '110px' }}>Status</th>
+                            <th style={{ width: '130px' }}>Site</th>
                             <th>Title / URL</th>
-                            <th>Story ID</th>
-                            <th>Time</th>
-                            <th>Actions</th>
+                            <th style={{ width: '90px' }}>Story ID</th>
+                            <th style={{ width: '110px' }}>Time</th>
+                            <th style={{ width: '220px' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -409,7 +438,7 @@ export default function Dashboard({ data }: Props) {
                                     </span>
                                 </td>
                                 <td>{dl.site || extractSite(dl.url || '')}</td>
-                                <td>
+                                <td className="cell-wrap">
                                     {dl.title ? (
                                         <>
                                             <strong>{dl.title}</strong>{' '}
@@ -433,27 +462,29 @@ export default function Dashboard({ data }: Props) {
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                                     {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
                                 </td>
-                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                    {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
-                                        <button
-                                            className="secondary"
-                                            disabled={!!actionBusy[`retry-${dl.url}`]}
-                                            onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
-                                        >
-                                            Retry now
-                                        </button>
-                                    )}
-                                    {dl.url ? (
-                                        <button
-                                            className="secondary"
-                                            disabled={!!actionBusy[`redl-${dl.url}`]}
-                                            onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
-                                        >
-                                            Redownload
-                                        </button>
-                                    ) : (
-                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
-                                    )}
+                                <td>
+                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', minHeight: '32px', alignItems: 'center' }}>
+                                        {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`retry-${dl.url}`]}
+                                                onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
+                                            >
+                                                Retry now
+                                            </button>
+                                        )}
+                                        {dl.url ? (
+                                            <button
+                                                className="secondary"
+                                                disabled={!!actionBusy[`redl-${dl.url}`]}
+                                                onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
+                                            >
+                                                Redownload
+                                            </button>
+                                        ) : (
+                                            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
+                                        )}
+                                    </div>
                                 </td>
                             </tr>
                         ))}

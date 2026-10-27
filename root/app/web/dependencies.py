@@ -13,7 +13,12 @@ from history.database import AsyncHistoryDB
 from history.recorder import HistoryRecorder
 from models.active_urls import ActiveUrlsDict
 from models.config_models import AppConfig
-from models.queue_types import IngressQueue, WaitingQueue, WorkerQueues
+from models.queue_types import (
+    CheckEmailsEvent,
+    IngressQueue,
+    WaitingQueue,
+    WorkerQueues,
+)
 
 
 @dataclass
@@ -46,6 +51,9 @@ class WebState:
 
     # Web server auto-restart event (set by config route when web.* fields change)
     web_restart_event: Event | None = None
+
+    # Manual email check trigger event (set by controls route to wake EmailWatcher)
+    check_emails_event: CheckEmailsEvent | None = None
 
     # Verbose flag
     verbose: bool = False

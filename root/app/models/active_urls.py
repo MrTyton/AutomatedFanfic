@@ -7,6 +7,7 @@ encapsulates that pattern and provides a single source of truth for URL status
 transitions and queue-depth snapshots.
 """
 
+import time
 from collections.abc import MutableMapping
 from typing import NotRequired, Required, TypedDict, cast
 
@@ -23,6 +24,7 @@ class ActiveUrlEntry(TypedDict, total=False):
     behavior: NotRequired[str]
     error: NotRequired[str]
     heap_gen: NotRequired[int]
+    queued_at: NotRequired[float]
 
 
 ActiveUrlsDict = MutableMapping[str, ActiveUrlEntry]
@@ -79,6 +81,7 @@ def mark_url_queued(
             entry["calibre_id"] = calibre_id
         if behavior is not None:
             entry["behavior"] = behavior
+        entry.setdefault("queued_at", time.time())
         entry["status"] = "queued"
         active_urls[url] = cast(ActiveUrlEntry, entry)
     except Exception:
@@ -95,6 +98,7 @@ def mark_url_processing(
         existing = dict(active_urls.get(url, {}))
         if site is not None:
             existing.setdefault("site", site)
+        existing.setdefault("queued_at", time.time())
         existing["status"] = "processing"
         active_urls[url] = cast(ActiveUrlEntry, existing)
     except Exception:

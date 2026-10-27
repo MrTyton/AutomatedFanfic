@@ -1,5 +1,6 @@
 """Tests for the web server routes and app factory."""
 
+import threading
 import unittest
 from typing import cast
 from models.active_urls import ActiveUrlsDict
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from models.fanfic_info import FanficInfo
 from web.dependencies import WebState
+from web.routes.controls import _remove_from_calibre_if_possible
 from web.server import create_app
 
 
@@ -331,8 +333,6 @@ class TestControlRoutes(unittest.TestCase):
         self, mock_generate, mock_parsers, mock_remove
     ):
         """redownload should queue a fresh force task when safe."""
-        from models.fanfic_info import FanficInfo
-
         mock_parsers.return_value = {}
         mock_generate.return_value = FanficInfo(
             url="https://ao3.org/works/1", site="ao3", title="Story"
@@ -358,14 +358,32 @@ class TestControlRoutes(unittest.TestCase):
         self.assertEqual(queued.url, "https://ao3.org/works/1")
         self.assertEqual(queued.behavior, "force")
 
+    def test_check_emails_now_success(self):
+        """POST /api/controls/check-emails sets event and invalidates cache."""
+        event = threading.Event()
+        self.state.check_emails_event = event
+
+        with patch("web.routes.controls.invalidate_history_cache") as mock_inv:
+            resp = self.client.post("/api/controls/check-emails")
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.json()["ok"])
+            self.assertTrue(event.is_set())
+            mock_inv.assert_called_once()
+
+    def test_check_emails_now_not_configured(self):
+        """POST /api/controls/check-emails returns ok=False when event is None."""
+        self.state.check_emails_event = None
+        resp = self.client.post("/api/controls/check-emails")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["ok"])
+        self.assertIn("not configured", resp.json()["message"])
+
     @patch("web.routes.controls.calibre_factory.create_calibre_client")
     @patch("calibre_integration.calibre_info.CalibreInfo")
     def test_remove_from_calibre_if_possible_uses_config_and_config_store(
         self, mock_calibre_info_cls, mock_create_client
     ):
         """_remove_from_calibre_if_possible constructs CalibreInfo from state.config.calibre and passes state.config_store."""
-        from web.routes.controls import _remove_from_calibre_if_possible
-
         fanfic = FanficInfo(url="https://ao3.org/works/1", site="ao3", calibre_id="42")
 
         # Missing state.config returns False

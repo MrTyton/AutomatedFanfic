@@ -867,6 +867,39 @@ class TestEmailWatcher(unittest.TestCase):
             shutdown_event
         )
 
+    def test_email_watcher_manual_check_event(self):
+        """When check_emails_event is set, it is cleared, and email_check is recorded with trigger='manual'."""
+        self.mock_email_info.get_urls.side_effect = [
+            [],
+            KeyboardInterrupt(),
+        ]
+        mock_recorder = MagicMock()
+        check_emails_event = threading.Event()
+        check_emails_event.set()
+
+        with self.assertRaises(KeyboardInterrupt):
+            email_watcher(
+                self.mock_email_info,
+                self.mock_notification_info,
+                self.ingress_queue,
+                self.mock_url_parsers,
+                {},
+                False,
+                threading.Event(),
+                mock_recorder,
+                ConfigStore({}),
+                check_emails_event,
+            )
+
+        self.assertFalse(check_emails_event.is_set())
+        mock_recorder.record_email_check.assert_called_once_with(
+            urls_found=0,
+            urls_new=0,
+            urls_duplicate=0,
+            urls_disabled_site=0,
+            trigger="manual",
+        )
+
 
 class TestEmailInfoIdleWait(unittest.TestCase):
     """Tests for EmailInfo._idle_wait_for_notification (IMAP IDLE mode)."""
@@ -920,6 +953,21 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         result = self._make_email_info()._idle_wait_for_notification(threading.Event())
 
         self.assertTrue(result)
+
+    @patch("imapclient.IMAPClient")
+    def test_returns_true_on_check_emails_event(self, mock_cls):
+        """check_emails_event set during IDLE check triggers return True."""
+        mock_conn = self._setup_mock_conn(mock_cls)
+        check_emails_event = threading.Event()
+        check_emails_event.set()
+
+        result = self._make_email_info()._idle_wait_for_notification(
+            threading.Event(), check_emails_event
+        )
+
+        self.assertTrue(result)
+        mock_conn.idle.assert_called_once()
+        mock_conn.idle_done.assert_called_once()
 
     @patch("imapclient.IMAPClient")
     def test_returns_false_on_shutdown_before_idle_check(self, mock_cls):
