@@ -5,6 +5,7 @@ from http.cookiejar import LWPCookieJar, MozillaCookieJar
 import imaplib
 import multiprocessing
 from pathlib import Path
+from typing import Any
 import re
 import time
 import urllib.error
@@ -38,7 +39,7 @@ class _LockFactory:
         return multiprocessing.Lock()
 
 
-def _get_calibre_client(request: Request) -> object | None:
+def _get_calibre_client(request: Request) -> Any | None:
     """Obtain or instantiate CalibreClient if available."""
     client = getattr(request.app.state, "calibre_client", None)
     if client is not None:
@@ -57,7 +58,7 @@ def _get_calibre_client(request: Request) -> object | None:
         return None
 
 
-def _resolve_calibre_book_id(client: object, query: str) -> str | int | None:
+def _resolve_calibre_book_id(client: Any, query: str) -> str | int | None:
     """Resolve a query (ID, URL, or title) to a Calibre book ID."""
     q = query.strip()
     if not q:
@@ -109,7 +110,7 @@ def _resolve_calibre_book_id(client: object, query: str) -> str | int | None:
 
 
 def _get_calibre_metadata(
-    client: object, book_id: str | int, url: str
+    client: Any, book_id: str | int, url: str
 ) -> dict[str, object] | None:
     """Fetch metadata for a given Calibre book ID."""
     if hasattr(client, "get_story_metadata"):
@@ -414,7 +415,7 @@ async def get_calibre_book(
 
     resolved_id = meta.get("id", book_id)
     if str(resolved_id).isdigit():
-        resolved_id = int(resolved_id)
+        resolved_id = int(str(resolved_id))
 
     custom_cols = {
         k: v for k, v in meta.items() if k.startswith("#") or k.startswith("*")
@@ -451,7 +452,7 @@ class SimulateEmailRequest(BaseModel):
     body: str
 
 
-def _mask_cookie_value(val: str) -> str:
+def _mask_cookie_value(val: str | None) -> str:
     """Mask secret cookie value while preserving length cue."""
     if not val:
         return ""
@@ -460,7 +461,7 @@ def _mask_cookie_value(val: str) -> str:
     return "********"
 
 
-def _resolve_cookiejar_path(state: object, domain: str) -> Path | None:
+def _resolve_cookiejar_path(state: Any, domain: str) -> Path | None:
     """Locate configured or disk cookiejar for a domain."""
     raw_personal = None
     if getattr(state, "config", None) and getattr(state.config, "calibre", None):

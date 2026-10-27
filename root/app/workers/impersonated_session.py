@@ -10,7 +10,7 @@ exports or site-specific hacks.
 
 from collections.abc import Mapping
 from http.cookiejar import CookieJar
-from typing import Any
+from typing import Any, cast
 import requests
 from requests.exceptions import (
     ConnectionError as RequestsConnectionError,
@@ -31,9 +31,13 @@ try:
     CURL_CFFI_AVAILABLE = True
 except ImportError:  # pragma: no cover
     cffi_requests = None  # type: ignore[assignment]
-    CffiConnectionError = None  # type: ignore[assignment]
-    CffiRequestException = None  # type: ignore[assignment]
-    CffiTimeout = None  # type: ignore[assignment]
+    CffiConnectionError: type[Exception] = type(
+        "_FakeConnectionError", (Exception,), {}
+    )
+    CffiRequestException: type[Exception] = type(
+        "_FakeRequestException", (Exception,), {}
+    )
+    CffiTimeout: type[Exception] = type("_FakeTimeout", (Exception,), {})
     CURL_CFFI_AVAILABLE = False
 
 lazy from fanficfare.fetchers import fetcher_requests as fff_fetcher_requests
@@ -104,7 +108,7 @@ class ImpersonatedSession:
         self._cookiejar = jar
         if self._cffi_session is not None:
             self._cffi_session.cookies = jar
-        self._file_session.cookies = jar
+        self._file_session.cookies = cast(Any, jar)
 
     def mount(self, prefix: str, adapter: Any) -> None:
         """
@@ -218,8 +222,12 @@ def install_impersonated_session() -> bool:
         if self.getConfig("https_proxy"):
             session.proxies["https"] = self.getConfig("https_proxy")
 
-    fff_fetcher_requests.RequestsFetcher.make_sesssion = _make_impersonated_session
-    fff_fetcher_requests.RequestsFetcher.do_mounts = _do_impersonated_mounts
+    setattr(
+        fff_fetcher_requests.RequestsFetcher,
+        "make_sesssion",
+        _make_impersonated_session,
+    )
+    setattr(fff_fetcher_requests.RequestsFetcher, "do_mounts", _do_impersonated_mounts)
     _IS_INSTALLED = True
     ff_logging.log_debug(
         "Generic browser impersonation (curl-cffi) active for FanFicFare RequestsFetcher"
@@ -230,8 +238,10 @@ def install_impersonated_session() -> bool:
 def uninstall_impersonated_session() -> None:
     """Restore FanFicFare's RequestsFetcher to original make_sesssion / do_mounts implementations."""
     global _IS_INSTALLED
-    fff_fetcher_requests.RequestsFetcher.make_sesssion = _ORIGINAL_MAKE_SESSION
-    fff_fetcher_requests.RequestsFetcher.do_mounts = _ORIGINAL_DO_MOUNTS
+    setattr(
+        fff_fetcher_requests.RequestsFetcher, "make_sesssion", _ORIGINAL_MAKE_SESSION
+    )
+    setattr(fff_fetcher_requests.RequestsFetcher, "do_mounts", _ORIGINAL_DO_MOUNTS)
     _IS_INSTALLED = False
 
 

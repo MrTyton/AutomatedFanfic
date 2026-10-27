@@ -14,7 +14,7 @@ async def test_antibot_status() -> dict[str, Any]:
     return await client.get_antibot()
 
 
-test_antibot_status.__test__ = False
+setattr(test_antibot_status, "__test__", False)
 
 
 async def inspect_cookiejar(domain: str) -> dict[str, Any]:

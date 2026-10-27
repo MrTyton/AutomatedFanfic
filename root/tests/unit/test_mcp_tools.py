@@ -1,7 +1,9 @@
 """Unit tests for FastMCP modular tool suite."""
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock
+from mcp.types import CallToolResult, TextContent
 import pytest
 
 from mcp_server.base import _current_client, get_client, set_client
@@ -21,6 +23,13 @@ from mcp_server.tools.logs import query_logs
 from mcp_server.tools.queues import inspect_queues
 from mcp_server.tools.story import get_story_diagnostics
 from mcp_server.tools.system import get_system_overview, inspect_coordinator_locks
+
+
+def _tool_payload(res: Any) -> Any:
+    assert isinstance(res, CallToolResult)
+    content = res.content[0]
+    assert isinstance(content, TextContent)
+    return json.loads(content.text)
 
 
 @pytest.fixture
@@ -93,12 +102,12 @@ async def test_system_tools_invocation(mock_client: AsyncMock):
     server = create_mcp_server(mock_client)
 
     res = await server.call_tool("get_system_overview", {})
-    payload = json.loads(res.content[0].text)
+    payload = _tool_payload(res)
     assert payload == {"status": "ok"}
     mock_client.get_health.assert_awaited_once()
 
     res_coord = await server.call_tool("inspect_coordinator_locks", {})
-    payload_coord = json.loads(res_coord.content[0].text)
+    payload_coord = _tool_payload(res_coord)
     assert "assignments" in payload_coord
     mock_client.get_coordinator.assert_awaited_once()
 
@@ -115,7 +124,7 @@ async def test_queues_tools_invocation(mock_client: AsyncMock):
     server = create_mcp_server(mock_client)
 
     res = await server.call_tool("inspect_queues", {})
-    payload = json.loads(res.content[0].text)
+    payload = _tool_payload(res)
     assert "queued" in payload
     mock_client.get_queues.assert_awaited_once()
 
@@ -132,7 +141,7 @@ async def test_logs_tools_invocation(mock_client: AsyncMock):
         "query_logs",
         {"level": "DEBUG", "component": "worker", "search": "error", "limit": 25},
     )
-    payload = json.loads(res.content[0].text)
+    payload = _tool_payload(res)
     assert "items" in payload
     mock_client.get_logs.assert_awaited_with(
         level="DEBUG", component="worker", search="error", limit=25
@@ -153,7 +162,7 @@ async def test_story_tools_invocation(mock_client: AsyncMock):
     url = "https://archiveofourown.org/works/123"
 
     res = await server.call_tool("get_story_diagnostics", {"url": url})
-    payload = json.loads(res.content[0].text)
+    payload = _tool_payload(res)
     assert payload["status"] == "ok"
     mock_client.get_story_diagnostics.assert_awaited_with(url=url)
 
@@ -167,12 +176,12 @@ async def test_calibre_tools_invocation(mock_client: AsyncMock):
     server = create_mcp_server(mock_client)
 
     res_book = await server.call_tool("inspect_calibre_book", {"query": "123"})
-    payload_book = json.loads(res_book.content[0].text)
+    payload_book = _tool_payload(res_book)
     assert payload_book["found"] is True
     mock_client.get_calibre_book.assert_awaited_with(query="123")
 
     res_conn = await server.call_tool("test_calibre_connection", {})
-    payload_conn = json.loads(res_conn.content[0].text)
+    payload_conn = _tool_payload(res_conn)
     assert payload_conn["status"] == "ok"
     mock_client.run_diagnostic.assert_awaited_with("calibre")
 
@@ -188,14 +197,14 @@ async def test_antibot_tools_invocation(mock_client: AsyncMock):
     server = create_mcp_server(mock_client)
 
     res_bot = await server.call_tool("test_antibot_status", {})
-    payload_bot = json.loads(res_bot.content[0].text)
+    payload_bot = _tool_payload(res_bot)
     assert "flaresolverr" in payload_bot
     mock_client.get_antibot.assert_awaited_once()
 
     res_jar = await server.call_tool(
         "inspect_cookiejar", {"domain": "archiveofourown.org"}
     )
-    payload_jar = json.loads(res_jar.content[0].text)
+    payload_jar = _tool_payload(res_jar)
     assert payload_jar["domain"] == "archiveofourown.org"
     mock_client.get_cookiejar.assert_awaited_with(domain="archiveofourown.org")
 
@@ -212,7 +221,7 @@ async def test_config_tools_invocation(mock_client: AsyncMock):
     url = "https://archiveofourown.org/works/123"
 
     res = await server.call_tool("resolve_config_for_url", {"url": url})
-    payload = json.loads(res.content[0].text)
+    payload = _tool_payload(res)
     assert "sections" in payload
     mock_client.resolve_config.assert_awaited_with(url=url)
 
@@ -227,7 +236,7 @@ async def test_diagnostics_tools_invocation(mock_client: AsyncMock):
 
     # test_email_connection
     res_email = await server.call_tool("test_email_connection", {})
-    payload_email = json.loads(res_email.content[0].text)
+    payload_email = _tool_payload(res_email)
     assert payload_email["status"] == "ok"
     mock_client.run_diagnostic.assert_awaited_with("email")
 
@@ -235,7 +244,7 @@ async def test_diagnostics_tools_invocation(mock_client: AsyncMock):
     res_notif = await server.call_tool(
         "test_notification", {"title": "Hello", "body": "World"}
     )
-    payload_notif = json.loads(res_notif.content[0].text)
+    payload_notif = _tool_payload(res_notif)
     assert payload_notif["status"] == "ok"
     mock_client.run_diagnostic.assert_awaited_with("notifications")
 
@@ -243,7 +252,7 @@ async def test_diagnostics_tools_invocation(mock_client: AsyncMock):
     res_sim = await server.call_tool(
         "simulate_email_parse", {"subject": "Subj", "body": "Body text"}
     )
-    payload_sim = json.loads(res_sim.content[0].text)
+    payload_sim = _tool_payload(res_sim)
     assert payload_sim["count"] == 1
     mock_client.simulate_email.assert_awaited_with(subject="Subj", body="Body text")
 
@@ -251,7 +260,7 @@ async def test_diagnostics_tools_invocation(mock_client: AsyncMock):
     res_dry = await server.call_tool(
         "dry_run_fanfic_url", {"url": "https://archiveofourown.org/works/123"}
     )
-    payload_dry = json.loads(res_dry.content[0].text)
+    payload_dry = _tool_payload(res_dry)
     assert payload_dry["title"] == "Test Fic"
     mock_client.dry_run.assert_awaited_with(url="https://archiveofourown.org/works/123")
 
@@ -274,19 +283,19 @@ async def test_controls_tools_invocation(mock_client: AsyncMock):
 
     # inject_download
     res_inj = await server.call_tool("inject_download", {"url": url, "force": True})
-    payload_inj = json.loads(res_inj.content[0].text)
+    payload_inj = _tool_payload(res_inj)
     assert payload_inj["accepted"] is True
     mock_client.add_url.assert_awaited_with(url=url, force=True)
 
     # cancel_download
     res_canc = await server.call_tool("cancel_download", {"url": url})
-    payload_canc = json.loads(res_canc.content[0].text)
+    payload_canc = _tool_payload(res_canc)
     assert payload_canc["ok"] is True
     mock_client.cancel_url.assert_awaited_with(url=url)
 
     # retry_now
     res_ret = await server.call_tool("retry_now", {"url": url})
-    payload_ret = json.loads(res_ret.content[0].text)
+    payload_ret = _tool_payload(res_ret)
     assert payload_ret["ok"] is True
     mock_client.retry_now.assert_awaited_with(url=url)
 

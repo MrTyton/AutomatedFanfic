@@ -4,6 +4,7 @@ from http.cookiejar import Cookie, LWPCookieJar
 import os
 from pathlib import Path
 import tempfile
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from httpx import ASGITransport, AsyncClient
@@ -23,18 +24,18 @@ def _make_app_config(
     email_password: str = "",
     email_mailbox: str = "INBOX",
     apprise_urls: list[str] | None = None,
-    metadata_preservation_mode: str = "preserve_metadata",
-    update_method: str = "update",
+    metadata_preservation_mode: Any = "preserve_metadata",
+    update_method: Any = "update",
 ) -> AppConfig:
     return AppConfig(
         email=EmailConfig(
             server=email_server or "imap.example.com",
-            user=email_user or "user@example.com",
+            email=email_user or "user@example.com",
             password=email_password or "password123",
             mailbox=email_mailbox,
         ),
         calibre=CalibreConfig(
-            location="/fake/calibre/library",
+            path="/fake/calibre/library",
             personal_ini=personal_ini or None,
             metadata_preservation_mode=metadata_preservation_mode,
             update_method=update_method,
@@ -95,7 +96,7 @@ async def test_antibot_flaresolverr_configured_and_reachable():
 @pytest.mark.anyio
 async def test_controls_add_url_accepts_force_flag():
     mock_queue = MagicMock()
-    active_urls: dict[str, dict] = {}
+    active_urls: Any = {}
     state = WebState(ingress_queue=mock_queue, active_urls=active_urls)
     app = create_app(state)
 
@@ -118,7 +119,7 @@ async def test_controls_add_url_accepts_force_flag():
 @pytest.mark.anyio
 async def test_controls_add_url_default_force_is_false():
     mock_queue = MagicMock()
-    active_urls: dict[str, dict] = {}
+    active_urls: Any = {}
     state = WebState(ingress_queue=mock_queue, active_urls=active_urls)
     app = create_app(state)
 
@@ -176,7 +177,7 @@ async def test_cookiejar_existing_file_inspects_and_masks_tokens():
             discard=False,
             comment=None,
             comment_url=None,
-            rest={"HttpOnly": None},
+            rest={"HttpOnly": ""},
         )
         jar.set_cookie(c)
         jar.save(ignore_discard=True, ignore_expires=True)

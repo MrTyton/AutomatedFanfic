@@ -63,13 +63,14 @@ Thread Safety:
     shared queues and is safe for concurrent operation.
 """
 
+import hashlib
 import os
 import socket
 import time
 import logging
 from contextlib import contextmanager
 lazy from fanficfare import geturls
-from config.config_store import ConfigStore
+from config.config_store import ConfigStore, read_ini_file_cached
 from history.recorder import HistoryRecorder
 lazy import imapclient
 from utils import ff_logging
@@ -233,6 +234,7 @@ class EmailInfo:
         self.config_store = config_store
         self._geturls = None
         self._geturls_ini_mtime = 0.0
+        self._last_ini_hash = ""
         if not lazy:
             self._build_geturls()
 
@@ -255,6 +257,7 @@ class EmailInfo:
         state = self.__dict__.copy()
         state.pop("_geturls", None)
         state.pop("_geturls_ini_mtime", None)
+        state.pop("_last_ini_hash", None)
         return state
 
     def __setstate__(self, state: dict) -> None:
@@ -309,11 +312,24 @@ class EmailInfo:
                     pass
         return latest
 
+    def _current_ini_hash(self) -> str:
+        """Return a combined hash of defaults.ini and personal.ini contents, or empty string if none exist."""
+        has_content = False
+        hasher = hashlib.sha256()
+        for path in (self.default_ini, self.personal_ini):
+            if path and os.path.isfile(path):
+                content = read_ini_file_cached(path)
+                if content is not None:
+                    hasher.update(path.encode("utf-8", errors="replace"))
+                    hasher.update(content.encode("utf-8", errors="replace"))
+                    has_content = True
+        return hasher.hexdigest() if has_content else ""
+
     def _build_geturls(self) -> None:
         """(Re)create the GetURLs instance from ConfigStore.
 
-        Stores the ini modification time so get_urls() can detect when
-        personal.ini or defaults.ini has changed and rebuild accordingly.
+        Stores the ini content hash and modification time so get_urls() can detect
+        when personal.ini or defaults.ini has actually changed and rebuild accordingly.
         """
         _get_config = None
         _initial_config = None
@@ -327,6 +343,7 @@ class EmailInfo:
 
         self._geturls = geturls.GetURLs(config=_initial_config, get_config=_get_config)
         self._geturls_ini_mtime = self._ini_mtime()
+        self._last_ini_hash = self._current_ini_hash()
 
     def get_urls(self) -> set[str]:
         """
@@ -368,9 +385,12 @@ class EmailInfo:
         # Ensure _geturls is built; rebuild if ini files have been modified
         # since last build – ensures credential changes take effect without
         # requiring a process restart.
+        current_hash = self._current_ini_hash()
         if self._geturls is None:
             self._build_geturls()
-        elif self._ini_mtime() > self._geturls_ini_mtime:
+        elif (self._last_ini_hash and current_hash != self._last_ini_hash) or (
+            not self._last_ini_hash and self._ini_mtime() > self._geturls_ini_mtime
+        ):
             ff_logging.log("EmailWatcher: ini files changed, rebuilding URL extractor")
             self._build_geturls()
         assert self._geturls is not None

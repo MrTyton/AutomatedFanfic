@@ -27,3 +27,13 @@ repos:
       - id: check-merge-conflict
       - id: check-docstring-first
       - id: debug-statements
+
+  # Pyright: Static type checking matching CI
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: npx --yes pyright
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -2,6 +2,8 @@
 
 import json
 import multiprocessing
+from typing import Any
+from mcp.types import CallToolResult, TextContent
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +14,13 @@ from models.fanfic_info import FanficInfo
 from utils import ff_logging
 from web.dependencies import WebState
 from web.server import create_app
+
+
+def _tool_text(res: Any) -> str:
+    assert isinstance(res, CallToolResult)
+    content = res.content[0]
+    assert isinstance(content, TextContent)
+    return content.text
 
 
 @pytest.mark.integration
@@ -32,8 +41,9 @@ async def test_mcp_e2e_tool_execution():
     server = create_mcp_server(client)
 
     queues_result = await server.call_tool("inspect_queues", {})
-    assert len(queues_result.content) > 0
-    assert "https://archiveofourown.org/works/999" in queues_result.content[0].text
+    text = _tool_text(queues_result)
+    assert len(text) > 0
+    assert "https://archiveofourown.org/works/999" in text
 
 
 @pytest.mark.integration
@@ -73,18 +83,18 @@ async def test_mcp_e2e_full_tool_suite_integration():
 
     # Tool 1: inspect_queues
     res_queues = await server.call_tool("inspect_queues", {})
-    queues_data = json.loads(res_queues.content[0].text)
+    queues_data = json.loads(_tool_text(res_queues))
     assert len(queues_data["queued"]) == 1
     assert queues_data["queued"][0]["url"] == sample_url
 
     # Tool 2: get_system_overview
     res_system = await server.call_tool("get_system_overview", {})
-    system_data = json.loads(res_system.content[0].text)
+    system_data = json.loads(_tool_text(res_system))
     assert system_data["status"] == "ok"
 
     # Tool 3: inspect_coordinator_locks
     res_coord = await server.call_tool("inspect_coordinator_locks", {})
-    coord_data = json.loads(res_coord.content[0].text)
+    coord_data = json.loads(_tool_text(res_coord))
     assert coord_data["assignments"]["ao3-worker"] == "archiveofourown.org"
     assert "ffnet-worker" in coord_data["idle_workers"]
 
@@ -92,7 +102,7 @@ async def test_mcp_e2e_full_tool_suite_integration():
     marker_message = "e2e_mcp_integration_test_log_event"
     ff_logging.log(marker_message)
     res_logs = await server.call_tool("query_logs", {"search": marker_message})
-    logs_data = json.loads(res_logs.content[0].text)
+    logs_data = json.loads(_tool_text(res_logs))
     assert logs_data["count"] >= 1
     assert any(marker_message in item.get("message", "") for item in logs_data["items"])
 
@@ -101,14 +111,14 @@ async def test_mcp_e2e_full_tool_suite_integration():
         "get_story_diagnostics",
         {"url": sample_url},
     )
-    diag_data = json.loads(res_diag.content[0].text)
+    diag_data = json.loads(_tool_text(res_diag))
     assert diag_data["url"] == sample_url
     assert diag_data["active_state"]["status"] == "queued"
     assert diag_data["active_state"]["title"] == "Integration Test Fic"
 
     # Tool 6: test_calibre_connection
     res_calibre = await server.call_tool("test_calibre_connection", {})
-    calibre_data = json.loads(res_calibre.content[0].text)
+    calibre_data = json.loads(_tool_text(res_calibre))
     assert calibre_data["status"] == "ok"
     assert calibre_data["details"]["version"] == "7.16.0"
 
@@ -124,7 +134,7 @@ async def test_mcp_e2e_full_tool_suite_integration():
             "dry_run_fanfic_url",
             {"url": sample_url},
         )
-    dry_data = json.loads(res_dry.content[0].text)
+    dry_data = json.loads(_tool_text(res_dry))
     assert dry_data["status"] == "ok"
     assert dry_data["title"] == "Dry Run Title"
     assert dry_data["chapters"] == 8
@@ -134,14 +144,15 @@ async def test_mcp_e2e_full_tool_suite_integration():
         "inject_download",
         {"url": new_url, "force": True},
     )
-    inject_data = json.loads(res_inject.content[0].text)
+    inject_data = json.loads(_tool_text(res_inject))
     assert inject_data["accepted"] is True
     assert "archiveofourown.org/works/12345" in inject_data["message"]
 
     # Verify background side-effects of inject_download
-    enqueued_fic = ingress_q.get_nowait()
+    enqueued_fic = ingress_q.get(timeout=5.0)
     assert isinstance(enqueued_fic, FanficInfo)
     assert enqueued_fic.url == "archiveofourown.org/works/12345"
     assert enqueued_fic.behavior == "force"
+    assert state.active_urls is not None
     assert "archiveofourown.org/works/12345" in state.active_urls
     assert state.active_urls["archiveofourown.org/works/12345"]["status"] == "queued"

@@ -1,10 +1,12 @@
 """Unit tests for story diagnostics autopsy and Calibre book inspection debug routes."""
 
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 from httpx import ASGITransport, AsyncClient
 import pytest
 
+from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from utils import ff_logging
 from web.dependencies import WebState
@@ -266,10 +268,10 @@ async def test_story_diagnostics_calibre_client_standard_interface():
 @pytest.mark.anyio
 async def test_story_diagnostics_active_url_fanfic_info_instance():
     fanfic = FanficInfo(url="https://ao3.org/obj", site="ao3", title="Active Fic")
-    fanfic.last_status = "processing"
+    setattr(fanfic, "last_status", "processing")
 
     state = WebState(
-        active_urls={"https://ao3.org/obj": fanfic},
+        active_urls=cast(ActiveUrlsDict, {"https://ao3.org/obj": fanfic}),
     )
     app = create_app(state)
 

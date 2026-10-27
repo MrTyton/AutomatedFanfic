@@ -10,6 +10,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from multiprocessing.synchronize import Event
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -19,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Receive, Scope, Send
 
-from mcp.server.sse import TransportSecuritySettings
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
 from models.config_models import AppConfig, ConfigManager
@@ -44,7 +45,7 @@ lazy from web.routes import debug
 class _SSEValidationMiddleware:
     """ASGI middleware ensuring SSE GET requests provide Accept: text/event-stream."""
 
-    def __init__(self, app: object) -> None:
+    def __init__(self, app: Any) -> None:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:

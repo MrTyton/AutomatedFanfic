@@ -10,6 +10,6 @@ FastMCP = MCPServer
 def create_mcp_server(client: AutomatedFanficClient) -> FastMCP:
     """Create and configure a FastMCP server instance attached to AutomatedFanficClient."""
     server = FastMCP("AutomatedFanfic")
-    server.client = client
+    setattr(server, "client", client)
     register_all_tools(server, client)
     return server

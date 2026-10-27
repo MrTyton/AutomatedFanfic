@@ -72,16 +72,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-lint-tools-
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
       - name: Run pre-commit hooks
         run: |
           pip install pre-commit
           echo "Running pre-commit on all files..."
           pre-commit run --all-files
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
 
       - name: Run Pyright
         run: npx --yes pyright

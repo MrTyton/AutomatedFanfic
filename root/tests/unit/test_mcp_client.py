@@ -256,7 +256,7 @@ async def test_create_mcp_server():
     server = create_mcp_server(client)
     assert isinstance(server, FastMCP)
     assert server.name == "AutomatedFanfic"
-    assert server.client is client
+    assert getattr(server, "client") is client
     tools = await server.list_tools()
     assert isinstance(tools, list)
     await client.close()

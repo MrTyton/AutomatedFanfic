@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import patch
@@ -9,24 +10,23 @@ from web.server import create_app
 
 @pytest.mark.anyio
 async def test_debug_queues_inspect():
-    state = WebState(
-        active_urls={
-            "https://ao3.org/1": {"status": "queued", "site": "ao3"},
-            "https://ao3.org/2": {
-                "status": "processing",
-                "site": "ao3",
-                "worker_id": "worker_0",
-            },
-            "https://ffnet.net/1": {
-                "status": "waiting",
-                "site": "ffnet",
-                "wait_until": 1729837400,
-                "retry_count": 2,
-            },
-            "https://ao3.org/ignore": "not-a-dict",  # malformed entry
-            "https://ao3.org/cancelled": {"status": "cancelled", "site": "ao3"},
-        }
-    )
+    active_urls: Any = {
+        "https://ao3.org/1": {"status": "queued", "site": "ao3"},
+        "https://ao3.org/2": {
+            "status": "processing",
+            "site": "ao3",
+            "worker_id": "worker_0",
+        },
+        "https://ffnet.net/1": {
+            "status": "waiting",
+            "site": "ffnet",
+            "wait_until": 1729837400,
+            "retry_count": 2,
+        },
+        "https://ao3.org/ignore": "not-a-dict",  # malformed entry
+        "https://ao3.org/cancelled": {"status": "cancelled", "site": "ao3"},
+    }
+    state = WebState(active_urls=active_urls)
     app = create_app(state)
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

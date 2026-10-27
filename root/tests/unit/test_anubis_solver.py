@@ -11,6 +11,7 @@ from utils.anubis_solver import (
     probe_and_solve_anubis,
     solve_anubis_challenge,
     solve_pow,
+    solve_sha256_pow,
     validate_anubis_hash,
 )
 
@@ -397,3 +398,97 @@ def test_probe_and_solve_anubis_empty_or_epub_url_returns_false() -> None:
         cookiejar=None,
     )
     assert solved is False
+
+
+def test_solve_sha256_pow_finds_hash_with_leading_zeroes() -> None:
+    random_data = "6aecd0a2d854c6a1e27afa4dc07968c0"
+    difficulty = 3
+    nonce, result_hash = solve_sha256_pow(random_data, difficulty)
+    assert nonce >= 0
+    assert result_hash.startswith("000")
+
+
+def test_solve_anubis_challenge_fast_algorithm_sha256() -> None:
+    challenge_payload = (
+        '{"rules": {"algorithm": "fast", "difficulty": 2}, '
+        '"challenge": {"id": "fast-uuid-1", "randomData": "deadbeef123"}}'
+    )
+    challenge_html = f'<script id="anubis_challenge">{challenge_payload}</script>'
+
+    mock_session = MagicMock()
+    mock_pass_resp = MagicMock(status_code=200, history=[])
+    mock_session.get.return_value = mock_pass_resp
+    mock_session.cookies = [
+        http.cookiejar.Cookie(
+            version=0,
+            name="techaro.lol-anubis-auth-xyz",
+            value="token",
+            port=None,
+            port_specified=False,
+            domain=".royalroad.com",
+            domain_specified=True,
+            domain_initial_dot=True,
+            path="/",
+            path_specified=True,
+            secure=True,
+            expires=9999999999,
+            discard=False,
+            comment=None,
+            comment_url=None,
+            rest={},
+        )
+    ]
+
+    success = solve_anubis_challenge(
+        session=mock_session,
+        page_url="https://www.royalroad.com/fiction/127120",
+        html=challenge_html,
+        user_agent=DEFAULT_USER_AGENT,
+    )
+    assert success is True
+    # Verify that SHA-256 solution was submitted
+    assert mock_session.get.call_count == 1
+    call_args = mock_session.get.call_args
+    params = call_args[1]["params"]
+    assert params["id"] == "fast-uuid-1"
+    assert params["response"].startswith("00")
+
+
+def test_solve_anubis_challenge_accepts_302_redirect_status() -> None:
+    challenge_payload = (
+        '{"rules": {"algorithm": "fast", "difficulty": 2}, '
+        '"challenge": {"id": "uuid-302", "randomData": "feedface"}}'
+    )
+    challenge_html = f'<script id="anubis_challenge">{challenge_payload}</script>'
+
+    mock_session = MagicMock()
+    mock_pass_resp = MagicMock(status_code=302, history=[])
+    mock_session.get.return_value = mock_pass_resp
+    mock_session.cookies = [
+        http.cookiejar.Cookie(
+            version=0,
+            name="techaro.lol-anubis-auth-302",
+            value="token_jwt",
+            port=None,
+            port_specified=False,
+            domain=".royalroad.com",
+            domain_specified=True,
+            domain_initial_dot=True,
+            path="/",
+            path_specified=True,
+            secure=True,
+            expires=9999999999,
+            discard=False,
+            comment=None,
+            comment_url=None,
+            rest={},
+        )
+    ]
+
+    success = solve_anubis_challenge(
+        session=mock_session,
+        page_url="https://www.royalroad.com/fiction/127120",
+        html=challenge_html,
+        user_agent=DEFAULT_USER_AGENT,
+    )
+    assert success is True

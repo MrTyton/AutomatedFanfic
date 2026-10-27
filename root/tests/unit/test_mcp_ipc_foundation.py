@@ -1,5 +1,6 @@
 import multiprocessing as mp
 import unittest
+from unittest.mock import MagicMock
 
 from models.context import SharedIPCContext
 from web.dependencies import WebState
@@ -14,8 +15,8 @@ class TestMcpIpcFoundation(unittest.TestCase):
                 waiting_queue=manager.Queue(),
                 worker_queues={},
                 active_urls=manager.dict(),
-                history_recorder=None,
-                config_store=None,
+                history_recorder=MagicMock(),
+                config_store=MagicMock(),
                 scale_queue=manager.Queue(),
                 shutdown_event=manager.Event(),
                 coordinator_status=coord_dict,

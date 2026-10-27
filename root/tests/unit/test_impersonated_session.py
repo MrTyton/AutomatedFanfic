@@ -83,12 +83,14 @@ def test_impersonated_response_raise_for_status_errors():
     resp_404 = ImpersonatedResponse(DummyRawResponse(status_code=404))
     with pytest.raises(RequestsHTTPError) as exc_info:
         resp_404.raise_for_status()
+    assert exc_info.value.response is not None
     assert exc_info.value.response.status_code == 404
     assert "404 Client Error" in str(exc_info.value)
 
     resp_525 = ImpersonatedResponse(DummyRawResponse(status_code=525))
     with pytest.raises(RequestsHTTPError) as exc_info:
         resp_525.raise_for_status()
+    assert exc_info.value.response is not None
     assert exc_info.value.response.status_code == 525
     assert "525 Server Error" in str(exc_info.value)
 

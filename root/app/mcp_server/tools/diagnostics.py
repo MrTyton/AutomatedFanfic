@@ -14,7 +14,7 @@ async def test_email_connection() -> dict[str, Any]:
     return await client.run_diagnostic("email")
 
 
-test_email_connection.__test__ = False
+setattr(test_email_connection, "__test__", False)
 
 
 async def test_notification(
@@ -26,7 +26,7 @@ async def test_notification(
     return await client.run_diagnostic("notifications")
 
 
-test_notification.__test__ = False
+setattr(test_notification, "__test__", False)
 
 
 async def simulate_email_parse(subject: str, body: str) -> dict[str, Any]:

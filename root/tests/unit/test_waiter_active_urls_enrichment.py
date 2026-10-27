@@ -72,6 +72,7 @@ class TestWaiterActiveUrlsEnrichment(unittest.TestCase):
 
         entry = active_urls.get(fic.url)
         self.assertIsNotNone(entry)
+        assert entry is not None
         self.assertEqual(entry["status"], "waiting")
         self.assertEqual(entry["delay_seconds"], 300.0)
         self.assertEqual(entry["retry_count"], 2)

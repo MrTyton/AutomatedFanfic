@@ -1,3 +1,6 @@
+import os
+import tempfile
+import time
 from parameterized import parameterized
 import pickle
 import unittest
@@ -243,6 +246,47 @@ class TestUrlIngester(unittest.TestCase):
 
         # GetURLs must have been rebuilt once more for the changed ini
         assert mock_get_urls_class.call_count == 2
+
+    @patch("services.url_ingester.geturls.GetURLs")
+    def test_email_info_get_urls_rebuilds_only_on_content_change(
+        self, mock_get_urls_class
+    ):
+        """Touching INI mtime without modifying content does not rebuild; modifying content does rebuild."""
+        email_config = EmailConfig(
+            email="testuser", password="pass", server="srv", mailbox="INBOX"
+        )
+        mock_get_urls_class.return_value.get_urls_from_imap.return_value = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            p_ini = os.path.join(tmp_dir, "personal.ini")
+            with open(p_ini, "w", encoding="utf-8") as f:
+                f.write("[defaults]\nuser_agent: test\n")
+
+            store = ConfigStore({})
+            store.update("calibre.personal_ini", p_ini)
+
+            email_info = EmailInfo(email_config, config_store=store)
+            self.assertEqual(mock_get_urls_class.call_count, 1)
+
+            # Touch the file to change mtime, but leave content identical
+            new_mtime = time.time() + 500
+            os.utime(p_ini, (new_mtime, new_mtime))
+            email_info.get_urls()
+
+            # Must NOT rebuild because content hash is identical
+            self.assertEqual(mock_get_urls_class.call_count, 1)
+
+            # Now modify content
+            with open(p_ini, "w", encoding="utf-8") as f:
+                f.write("[defaults]\nuser_agent: changed\n")
+
+            # Reset cache if needed or let cached reader see mtime/size change
+            newer_mtime = time.time() + 1000
+            os.utime(p_ini, (newer_mtime, newer_mtime))
+            email_info.get_urls()
+
+            # Must rebuild because content actually changed
+            self.assertEqual(mock_get_urls_class.call_count, 2)
 
     # ------------------------------------------------------------------
     # imap_idle attribute tests

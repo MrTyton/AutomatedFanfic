@@ -20,7 +20,7 @@ async def test_calibre_connection() -> dict[str, Any]:
     return await client.run_diagnostic("calibre")
 
 
-test_calibre_connection.__test__ = False
+setattr(test_calibre_connection, "__test__", False)
 
 
 def register_tools(server: FastMCP, client: AutomatedFanficClient) -> None:

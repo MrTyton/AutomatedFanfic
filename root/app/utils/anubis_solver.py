@@ -11,6 +11,7 @@ and FanFicFare cookiejar integration so downloads proceed automatically without 
 
 from typing import cast
 from urllib.parse import urlparse
+import hashlib
 import json
 import threading
 import time
@@ -113,6 +114,38 @@ def solve_pow(data_bytes: bytes, difficulty: int, use_le: bool) -> tuple[int, by
         nonce += 1
 
 
+def solve_sha256_pow(
+    random_data: str,
+    difficulty: int,
+    max_iterations: int = 10_000_000,
+) -> tuple[int, str]:
+    """
+    Solve Anubis fast/slow/sha256 proof-of-work.
+
+    Computes SHA-256(random_data + str(nonce)) until the resulting hex string
+    begins with `difficulty` zero characters.
+
+    Args:
+        random_data: The challenge salt string.
+        difficulty: Number of leading zero hex characters required.
+        max_iterations: Safety limit to prevent infinite loops.
+
+    Returns:
+        A tuple of (winning_nonce, winning_hex_hash).
+    """
+    target_prefix = "0" * difficulty
+    nonce = 0
+    while nonce < max_iterations:
+        candidate = f"{random_data}{nonce}".encode("utf-8")
+        h = hashlib.sha256(candidate).hexdigest()
+        if h.startswith(target_prefix):
+            return nonce, h
+        nonce += 1
+    raise RuntimeError(
+        f"Anubis SHA-256 PoW could not be solved within {max_iterations} iterations"
+    )
+
+
 def solve_anubis_challenge(
     session: requests.Session,
     page_url: str,
@@ -148,16 +181,18 @@ def solve_anubis_challenge(
             ff_logging.log_debug("Anubis challenge payload missing id or randomData.")
             return False
 
-        parsed_url = urlparse(page_url)
+        session.headers["User-Agent"] = user_agent
+
+        page_url_str = str(page_url)
+        parsed_url = urlparse(page_url_str)
         origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
         # 1. Handle challenge extensions (e.g. css-load)
-        extensions = rules.get("extensions", [])
+        extensions = rules.get("extensions") or []
         if "css-load" in extensions:
             css_url = (
                 f"{origin}/.within.website/x/cmd/anubis/ext/css-load/{challenge_id}"
             )
-            session.headers["User-Agent"] = user_agent
             try:
                 css_resp = session.get(css_url, timeout=10)
                 ff_logging.log_debug(
@@ -166,33 +201,52 @@ def solve_anubis_challenge(
             except Exception as e:
                 ff_logging.log_debug(f"Anubis css-load request failed: {e}")
 
-        # 2. Compute Argon2id proof-of-work
-        data_bytes = bytes.fromhex(random_hex)
+        # 2. Compute proof-of-work based on challenge algorithm
+        algorithm = str(rules.get("algorithm", "fast")).lower()
         difficulty = int(rules.get("difficulty", 4))
-        use_le = data_bytes[-1] >= 128 if data_bytes else True
 
         t0 = time.time()
-        nonce, found_hash = solve_pow(data_bytes, difficulty, use_le)
+        if algorithm == "argon2id":
+            data_bytes = bytes.fromhex(random_hex)
+            use_le = data_bytes[-1] >= 128 if data_bytes else True
+            nonce, found_hash_bytes = solve_pow(data_bytes, difficulty, use_le)
+            found_hash = found_hash_bytes.hex()
+        else:
+            nonce, found_hash = solve_sha256_pow(random_hex, difficulty)
         elapsed_ms = int((time.time() - t0) * 1000)
 
         ff_logging.log(
-            f"Anubis proof-of-work solved (difficulty {difficulty}, nonce {nonce}, {elapsed_ms}ms)"
+            f"Anubis proof-of-work solved ({algorithm}, difficulty {difficulty}, nonce {nonce}, {elapsed_ms}ms)"
         )
 
         # 3. Submit solution to pass-challenge endpoint
         pass_url = f"{origin}/.within.website/x/cmd/anubis/api/pass-challenge"
         params = {
             "id": challenge_id,
-            "response": found_hash.hex(),
+            "response": found_hash,
             "nonce": str(nonce),
-            "redir": page_url,
+            "redir": page_url_str,
             "elapsedTime": str(elapsed_ms),
         }
 
         pass_resp = session.get(
-            pass_url, params=params, allow_redirects=True, timeout=15
+            pass_url,
+            params=params,
+            headers={"Referer": page_url_str},
+            allow_redirects=True,
+            timeout=15,
         )
-        if pass_resp.status_code == 200:
+        history_list = getattr(pass_resp, "history", None)
+        has_302_in_history = (
+            any(getattr(r, "status_code", None) == 302 for r in history_list)
+            if isinstance(history_list, list)
+            else False
+        )
+        if (
+            pass_resp.status_code in (200, 302)
+            or has_302_in_history
+            or _has_valid_anubis_cookie(session.cookies)
+        ):
             ff_logging.log("Anubis authentication granted successfully.")
             return True
 
@@ -268,12 +322,16 @@ def probe_and_solve_anubis(
     try:
         probe_resp = session.get(normalized_url, timeout=15)
         if is_anubis_challenge(probe_resp.text):
+            resp_url = getattr(probe_resp, "url", None)
+            final_url = (
+                resp_url if isinstance(resp_url, str) and resp_url else normalized_url
+            )
             ff_logging.log(
-                f"Detected Anubis anti-bot challenge on {normalized_url}. Solving..."
+                f"Detected Anubis anti-bot challenge on {final_url}. Solving..."
             )
             solved = solve_anubis_challenge(
                 session=session,
-                page_url=normalized_url,
+                page_url=final_url,
                 html=probe_resp.text,
                 user_agent=user_agent,
             )
