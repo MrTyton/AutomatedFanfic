@@ -266,6 +266,7 @@ def register_processes(
     waiting_queue = mp.Queue()
     scale_queue = mp.Queue()
     active_urls = manager.dict()
+    coordinator_status = manager.dict()
 
     # Cross-process log forwarding queue: when the web server is enabled, all
     # non-web-server processes push log entries here; the web server drains it
@@ -341,6 +342,7 @@ def register_processes(
         log_queue=log_queue,
         check_emails_event=check_emails_event,
         verbose=args.verbose,
+        coordinator_status=coordinator_status,
     )
 
     # Rehydrate uncompleted downloads from history.db on startup if enabled

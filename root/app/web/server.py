@@ -177,6 +177,7 @@ def run_web_server(
         web_restart_event=web_restart_event,
         check_emails_event=ipc.check_emails_event,
         verbose=ipc.verbose,
+        coordinator_status=ipc.coordinator_status,
     )
 
     app = create_app(web_state)

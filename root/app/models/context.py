@@ -4,6 +4,7 @@ Context dataclasses for bundling worker and cross-process dependencies.
 
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -76,6 +77,7 @@ class SharedIPCContext:
         shutdown_event (ShutdownEvent): Shared event for coordinating graceful cross-process shutdown.
         log_queue (LogQueue | None): Optional queue for forwarding logs to the web server.
         verbose (bool): Whether verbose debug logging is enabled across processes.
+        coordinator_status (MutableMapping[str, object] | None): Shared dict for coordinator state and worker assignments.
     """
 
     ingress_queue: IngressQueue
@@ -89,3 +91,4 @@ class SharedIPCContext:
     check_emails_event: CheckEmailsEvent | None = None
     log_queue: LogQueue | None = None
     verbose: bool = False
+    coordinator_status: MutableMapping[str, object] | None = None
