@@ -105,7 +105,7 @@ class AutomatedFanficClient:
                     "status_code": response.status_code,
                     "error": response.text,
                 }
-        except httpx.ConnectError, httpx.NetworkError:
+        except (httpx.ConnectError, httpx.NetworkError):  # fmt: skip
             return {
                 "ok": False,
                 "error": f"AutomatedFanfic web server is not reachable at {self._base_url}. Ensure 'web.enabled = true'.",
