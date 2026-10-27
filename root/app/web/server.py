@@ -15,9 +15,13 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Receive, Scope, Send
 
+from mcp.server.sse import TransportSecuritySettings
+from mcp_server.client import AutomatedFanficClient
+from mcp_server.server import create_mcp_server
 from models.config_models import AppConfig, ConfigManager
 from history.database import AsyncHistoryDB
 from models.context import SharedIPCContext
@@ -34,6 +38,32 @@ from web.routes import (
     websocket,
     widget,
 )
+lazy from web.routes import debug
+
+
+class _SSEValidationMiddleware:
+    """ASGI middleware ensuring SSE GET requests provide Accept: text/event-stream."""
+
+    def __init__(self, app: object) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] == "http"
+            and scope["method"] == "GET"
+            and scope["path"].rstrip("/").endswith("/sse")
+        ):
+            headers = dict(scope.get("headers", []))
+            accept = headers.get(b"accept", b"").decode("latin1")
+            if "text/event-stream" not in accept:
+                response = Response(
+                    content="SSE endpoint requires 'Accept: text/event-stream' header.",
+                    status_code=400,
+                    media_type="text/plain",
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 @asynccontextmanager
@@ -96,6 +126,18 @@ def create_app(web_state: WebState) -> FastAPI:
     app.include_router(websocket.router)
     app.include_router(widget.router)
     app.include_router(stats.router)
+    app.include_router(debug.router)
+
+    # Mount FastMCP SSE server
+    mcp_client = AutomatedFanficClient.from_app(app)
+    mcp_server = create_mcp_server(mcp_client)
+    app.state.mcp_server = mcp_server
+    sse_subapp = mcp_server.sse_app(
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
+    )
+    app.mount("/api/mcp", _SSEValidationMiddleware(sse_subapp))
 
     # Serve React SPA static files (must come after API routes)
     _static_dir = Path(__file__).resolve().parent.parent.parent / "web-ui" / "dist"
@@ -177,6 +219,7 @@ def run_web_server(
         web_restart_event=web_restart_event,
         check_emails_event=ipc.check_emails_event,
         verbose=ipc.verbose,
+        coordinator_status=ipc.coordinator_status,
     )
 
     app = create_app(web_state)

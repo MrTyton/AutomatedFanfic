@@ -25,6 +25,9 @@ class ActiveUrlEntry(TypedDict, total=False):
     error: NotRequired[str]
     heap_gen: NotRequired[int]
     queued_at: NotRequired[float]
+    wait_until: NotRequired[float]
+    delay_seconds: NotRequired[float]
+    retry_count: NotRequired[int]
 
 
 ActiveUrlsDict = MutableMapping[str, ActiveUrlEntry]
@@ -133,6 +136,9 @@ def mark_url_waiting(
     calibre_id: str | None = None,
     heap_gen: int | None = None,
     delete_if_cancelled: bool = False,
+    wait_until: float | None = None,
+    delay_seconds: float | None = None,
+    retry_count: int | None = None,
 ) -> bool:
     """Mark `url` as `'waiting'` in `active_urls` unless it has been cancelled.
 
@@ -155,6 +161,12 @@ def mark_url_waiting(
         existing["status"] = "waiting"
         if heap_gen is not None:
             existing["heap_gen"] = heap_gen
+        if wait_until is not None:
+            existing["wait_until"] = wait_until
+        if delay_seconds is not None:
+            existing["delay_seconds"] = delay_seconds
+        if retry_count is not None:
+            existing["retry_count"] = retry_count
         active_urls[url] = cast(ActiveUrlEntry, existing)
         return True
     except Exception:

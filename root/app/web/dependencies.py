@@ -4,7 +4,7 @@ WebState holds references to all shared multiprocessing objects and config,
 injected into route handlers via FastAPI's Depends() mechanism.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from multiprocessing.synchronize import Event
 
@@ -57,3 +57,6 @@ class WebState:
 
     # Verbose flag
     verbose: bool = False
+
+    # Coordinator status (shared dict for assignments, backlogs, worker states)
+    coordinator_status: MutableMapping[str, object] | None = None

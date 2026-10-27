@@ -30,6 +30,7 @@ class AddUrlRequest(BaseModel):
     """Request body for adding a URL to the processing queue."""
 
     url: str
+    force: bool = False
 
 
 class AddUrlsRequest(BaseModel):
@@ -258,11 +259,14 @@ def _ingest_single_url(
     raw_url: str,
     url_parsers: dict,
     *,
+    force: bool = False,
     duplicate_prefix: str = "URL already in queue",
     added_suffix: str = " to processing queue",
 ) -> AddUrlResponse:
     """Normalize, parse, deduplicate, mark queued, and enqueue a single URL."""
     fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
+    if force:
+        fanfic.behavior = "force"
 
     if active_urls_utils.is_url_active(state.active_urls, fanfic.url):
         return AddUrlResponse(
@@ -270,7 +274,9 @@ def _ingest_single_url(
             message=f"{duplicate_prefix}: {fanfic.url}",
         )
 
-    active_urls_utils.mark_url_queued(state.active_urls, fanfic.url, site=fanfic.site)
+    active_urls_utils.mark_url_queued(
+        state.active_urls, fanfic.url, site=fanfic.site, behavior=fanfic.behavior
+    )
     state.ingress_queue.put(fanfic)
 
     if state.history_recorder:
@@ -297,6 +303,7 @@ async def add_url(request: Request, body: AddUrlRequest):
         state,
         body.url,
         url_parsers,
+        force=body.force,
         duplicate_prefix="URL already in queue",
         added_suffix=" to processing queue",
     )
