@@ -34,6 +34,7 @@ from web.routes import (
     websocket,
     widget,
 )
+lazy from web.routes import debug
 
 
 @asynccontextmanager
@@ -96,6 +97,7 @@ def create_app(web_state: WebState) -> FastAPI:
     app.include_router(websocket.router)
     app.include_router(widget.router)
     app.include_router(stats.router)
+    app.include_router(debug.router)
 
     # Serve React SPA static files (must come after API routes)
     _static_dir = Path(__file__).resolve().parent.parent.parent / "web-ui" / "dist"
