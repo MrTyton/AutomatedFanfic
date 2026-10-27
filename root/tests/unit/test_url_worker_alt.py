@@ -1,6 +1,7 @@
 import inspect
 import io
 import os
+from pathlib import Path
 import tempfile
 import threading
 import unittest
@@ -11,11 +12,13 @@ import fanficfare.configurable as configurable
 
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo
+from utils import anubis_solver
 from utils.system_utils import get_packaged_defaults_ini_path
 from workers import command
 from workers.command import (
     _build_argv,
     _extract_output_filename_template,
+    _resolve_fanficfare_user_agent,
     _resolve_target_url,
     _ThreadLocalStdout,
     execute_fanficfare_direct,
@@ -801,6 +804,69 @@ class TestResolveTargetUrl(unittest.TestCase):
         fanfic = FanficInfo(url="", site="royalroad")
         url = _resolve_target_url(fanfic, "/tmp/story.epub", "")
         self.assertEqual(url, "")
+
+
+class TestResolveFanficfareUserAgent(unittest.TestCase):
+    """Tests for _resolve_fanficfare_user_agent."""
+
+    def setUp(self):
+        parser = mkParser(calibre=False)
+        self.options, _ = parser.parse_args(["-u"])
+        expandOptions(self.options)
+        defaults_path = get_packaged_defaults_ini_path()
+        self.defaults_ini = (
+            Path(defaults_path).read_text(encoding="utf-8")
+            if defaults_path and Path(defaults_path).is_file()
+            else None
+        )
+
+    def test_site_specific_user_agent_used(self):
+        personal = (
+            f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
+            "[www.royalroad.com]\nuser_agent: CustomRRUA/1.0\n"
+        )
+        ua = _resolve_fanficfare_user_agent(
+            "https://www.royalroad.com/fiction/129182",
+            self.defaults_ini,
+            personal,
+            self.options,
+        )
+        self.assertEqual(ua, "CustomRRUA/1.0")
+
+    def test_user_defaults_user_agent_overrides_fallback(self):
+        personal = (
+            f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
+            "[defaults]\nuser_agent: CustomDefaultUA/2.0\n"
+        )
+        ua = _resolve_fanficfare_user_agent(
+            "https://www.royalroad.com/fiction/129182",
+            self.defaults_ini,
+            personal,
+            self.options,
+        )
+        self.assertEqual(ua, "CustomDefaultUA/2.0")
+
+    def test_unset_user_agent_falls_back_to_default_browser_ua(self):
+        personal = (
+            f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
+            "[defaults]\nis_adult: true\n[www.fanfiction.net]\nuser_agent: FFNetUA/3.0\n"
+        )
+        ua = _resolve_fanficfare_user_agent(
+            "https://www.royalroad.com/fiction/129182",
+            self.defaults_ini,
+            personal,
+            self.options,
+        )
+        self.assertEqual(ua, anubis_solver.DEFAULT_USER_AGENT)
+
+    def test_empty_target_url_returns_default(self):
+        ua = _resolve_fanficfare_user_agent(
+            "",
+            self.defaults_ini,
+            "",
+            self.options,
+        )
+        self.assertEqual(ua, anubis_solver.DEFAULT_USER_AGENT)
 
 
 if __name__ == "__main__":
