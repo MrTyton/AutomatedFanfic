@@ -40,6 +40,8 @@ from models.queue_types import (
 lazy from utils import series_utils
 lazy from parsers import regex_parsing
 
+_MAX_SERIES_DEPTH: int = 10
+
 
 class SignalType(Enum):
     """Types of signals that can be sent to the coordinator."""
@@ -202,6 +204,26 @@ class Coordinator:
             except Exception as e:
                 ff_logging.log_failure(f"Coordinator: Error in main loop: {e}")
 
+        self._log_and_drain_backlog_on_shutdown()
+
+    def _log_and_drain_backlog_on_shutdown(self) -> None:
+        """Log a warning for each site with pending backlog tasks on shutdown.
+
+        URLs already recorded in active_urls as "queued" will be recovered on the
+        next startup if resume_uncompleted_on_startup is enabled.  This method
+        makes the orphan visible so operators know work was not lost silently.
+        """
+        for site in list(self.state.backlog):
+            tasks = self.state.backlog[site]
+            if not tasks:
+                continue
+            urls = [t.url for t in tasks]
+            ff_logging.log_failure(
+                f"Coordinator: Shutdown with {len(tasks)} queued task(s) "
+                f"for site '{site}' — these will be recovered on restart if "
+                f"resume_uncompleted_on_startup is enabled: {urls}"
+            )
+
     def _process_single_ingress_item(self, timeout: float | None = None):
         """
         Wait for and handle a single item from the ingress queue.
@@ -234,7 +256,7 @@ class Coordinator:
 
             # Handle task
             if isinstance(item, FanficInfo):
-                self._handle_new_task(item)
+                self._handle_new_task(item, 0)
             else:
                 ff_logging.log_failure(
                     f"Coordinator: Received invalid item type {type(item)}"
@@ -246,12 +268,18 @@ class Coordinator:
             # Timeout path used by targeted tests and optional timeout callers.
             pass
 
-    def _handle_new_task(self, task: FanficInfo):
+    def _handle_new_task(self, task: FanficInfo, depth: int = 0):
         """Route new task to appropriate worker or backlog.
 
         Automatically detects and expands series/collection URLs into individual
         story tasks before routing.
         """
+        if depth >= _MAX_SERIES_DEPTH:
+            ff_logging.log_failure(
+                f"Coordinator: Aborting series expansion — max depth {_MAX_SERIES_DEPTH} "
+                f"reached for {task.url} (possible circular series reference)"
+            )
+            return
         # Check if the task was cancelled before routing or expanding
         if self.active_urls is not None:
             try:
@@ -262,8 +290,10 @@ class Coordinator:
                         f"Coordinator: Dropped cancelled task {task.url}"
                     )
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                ff_logging.log_debug(
+                    f"Coordinator: Suppressed active_urls read error in _handle_new_task: {e}"
+                )
 
         site = task.site
 
@@ -310,8 +340,10 @@ class Coordinator:
                         child_url = parsed.url
                         if parsed.site and parsed.site != "other":
                             child_site = parsed.site
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        ff_logging.log_debug(
+                            f"Coordinator: Suppressed URL parser error for {story_url}: {e}"
+                        )
 
                 story_task = FanficInfo(
                     url=child_url,
@@ -331,10 +363,11 @@ class Coordinator:
                         self.history_recorder.record_download_created(
                             story_task.url, story_task.site, story_task.behavior
                         )
-                    except Exception:
-                        pass
-                # Recursively handle each story
-                self._handle_new_task(story_task)
+                    except Exception as e:
+                        ff_logging.log_debug(
+                            f"Coordinator: Suppressed history recorder error for {story_task.url}: {e}"
+                        )
+                self._handle_new_task(story_task, depth + 1)
 
             return
 
@@ -427,9 +460,10 @@ class Coordinator:
                             f"Coordinator: Dropped cancelled backlog task {task.url}"
                         )
                         continue
-                except Exception:
-                    pass
-            queue.put(task)
+                except Exception as e:
+                    ff_logging.log_debug(
+                        f"Coordinator: Suppressed active_urls read error in _drain_site_backlog: {e}"
+                    )
             tasks_pushed.append(task)
 
         # Cleanup empty backlog entry

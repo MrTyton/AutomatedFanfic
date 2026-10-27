@@ -560,5 +560,46 @@ class TestWaitProcessorHeapGen(unittest.TestCase):
         self.assertEqual(active_urls[stale_url].get("status"), "queued")
 
 
+class TestWaitProcessorSilentExceptLogging(unittest.TestCase):
+    """Test that bare except clauses in wait_processor log at debug level."""
+
+    @patch("services.ff_waiter._get_delay_seconds")
+    @patch("services.ff_waiter.ff_logging.log_debug")
+    def test_active_urls_proxy_error_logged_at_debug(
+        self, mock_log_debug, mock_get_delay
+    ):
+        """When active_urls.get raises during heap drain, the error must appear in log_debug."""
+        mock_get_delay.return_value = 0
+
+        wq, iq = mp.Queue(), mp.Queue()
+
+        # Succeed on the first N calls to .get() (needed by mark_url_waiting),
+        # then raise so the heap-drain try/except is exercised.
+        class CountingFailUrls(dict):
+            _call_count = 0
+
+            def get(self, key, default=None):
+                CountingFailUrls._call_count += 1
+                if CountingFailUrls._call_count > 1:
+                    raise RuntimeError("active_urls proxy gone")
+                return super().get(key, default)
+
+        active_urls = CountingFailUrls()
+        fanfic = fanfic_info.FanficInfo(
+            url="http://example.com/probe", site="site", repeats=1
+        )
+        wq.put(fanfic)
+        wq.put(None)
+
+        _run_wait_processor(iq, wq, active_urls=active_urls)
+
+        debug_calls = " ".join(str(c) for c in mock_log_debug.call_args_list)
+        self.assertIn(
+            "active_urls proxy gone",
+            debug_calls,
+            f"Expected suppressed error in debug log, got: {debug_calls}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -182,9 +182,8 @@ def wait_processor(
                     merge=True,
                     pop_keys=("heap_gen",),
                 )
-            except Exception:
-                pass
-            ingress_queue.put(fanfic)
+            except Exception as e:
+                ff_logging.log_debug(f"Waiter: Suppressed active_urls read error: {e}")
             history_recorder.record_retry_fired(fanfic.url, fanfic.repeats or 0)
 
         # --- Calculate how long we can sleep ---
