@@ -261,3 +261,110 @@ button.secondary {
     padding: 0.35rem 0.75rem;
     font-size: 0.8rem;
 }
+
+
+/* Modal Dialog */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+}
+
+.modal-card {
+    background: var(--surface);
+    border: 1px solid var(--surface2);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 680px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--surface2);
+}
+
+.modal-header h3 {
+    font-size: 1rem;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 0.5rem;
+}
+
+.modal-close-btn {
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0.2rem 0.5rem;
+    line-height: 1;
+}
+
+.modal-close-btn:hover {
+    color: var(--text);
+}
+
+.modal-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-body pre {
+    background: var(--bg);
+    border: 1px solid var(--surface2);
+    border-radius: 6px;
+    padding: 0.75rem;
+    color: var(--error);
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: monospace;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--surface2);
+}
+
+.badge-error-btn {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    border: none;
+    background: var(--error);
+    color: #fff;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}
+
+.badge-error-btn:hover {
+    opacity: 0.85;
+}

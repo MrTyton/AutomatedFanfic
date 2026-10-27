@@ -122,6 +122,13 @@ export function cancelRetry(payload: QueueActionRequest) {
     })
 }
 
+export function cancelDownload(payload: QueueActionRequest) {
+    return apiFetch<QueueActionResponse>('/api/controls/cancel', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    })
+}
+
 export function redownloadScratch(payload: QueueActionRequest) {
     return apiFetch<QueueActionResponse>('/api/controls/redownload-scratch', {
         method: 'POST',

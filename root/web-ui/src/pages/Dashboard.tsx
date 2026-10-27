@@ -1,6 +1,6 @@
-import { Fragment, useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import type { DashboardSnapshot, ActiveDownload } from '../hooks/useWebSocket'
-import { addUrls, cancelRetry, redownloadScratch, retryNow, type AddUrlResult } from '../api'
+import { addUrls, cancelDownload, cancelRetry, redownloadScratch, retryNow, type AddUrlResult } from '../api'
 import { statusBadgeClass } from '../statusColors'
 
 interface Props {
@@ -30,6 +30,12 @@ interface WaitingUrl {
     title?: string
     error_message?: string
     calibre_id?: string
+}
+
+interface ErrorModalState {
+    title: string
+    url: string
+    error: string
 }
 
 function extractSite(url: string): string {
@@ -69,10 +75,6 @@ function urlLink(url: string): ReactNode {
     return renderUrl(url, { color: 'var(--text-muted)' })
 }
 
-function makeExpandableRowKey(prefix: string, url: string | undefined, timestamp?: string): string {
-    return `${prefix}-${url ?? 'unknown'}-${timestamp ?? 'unknown'}`
-}
-
 function formatEvent(evt: RecentEvent): { icon: string; text: ReactNode; time: string; sortKey: number } | null {
     const rawTs = evt.timestamp || evt.completed_at
     const time = rawTs ? new Date(rawTs).toLocaleTimeString() : ''
@@ -106,8 +108,9 @@ export default function Dashboard({ data }: Props) {
     const [urlText, setUrlText] = useState('')
     const [results, setResults] = useState<AddUrlResult[]>([])
     const [loading, setLoading] = useState(false)
-    const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({})
     const [actionBusy, setActionBusy] = useState<Record<string, boolean>>({})
+    const [selectedError, setSelectedError] = useState<ErrorModalState | null>(null)
+    const [copied, setCopied] = useState(false)
     const resultTimer = useRef<number>(0)
 
     // Clear results after 5 seconds
@@ -118,6 +121,24 @@ export default function Dashboard({ data }: Props) {
         }
         return () => clearTimeout(resultTimer.current)
     }, [results])
+
+    // Close error modal on Escape key
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setSelectedError(null)
+        }
+        if (selectedError) {
+            window.addEventListener('keydown', handleKeyDown)
+        }
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [selectedError])
+
+    const handleCopyError = () => {
+        if (!selectedError) return
+        navigator.clipboard.writeText(selectedError.error)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+    }
 
     const handleAddUrls = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -135,10 +156,6 @@ export default function Dashboard({ data }: Props) {
         } finally {
             setLoading(false)
         }
-    }
-
-    const toggleExpandedError = (rowKey: string) => {
-        setExpandedErrors(prev => ({ ...prev, [rowKey]: !prev[rowKey] }))
     }
 
     if (!data) return <p>Waiting for data…</p>
@@ -171,13 +188,18 @@ export default function Dashboard({ data }: Props) {
         ? (waitingData as { items: WaitingUrl[]; count: number }).count ?? 0
         : 0
 
-    // Recent completed downloads (separate feed, not diluted by other events)
-    const recentDownloads = (data.recent_downloads as RecentEvent[])
-        .filter(e => e.status !== 'pending' && e.status !== 'waiting')
+    // Set of currently in-flight URLs so completed history never duplicates them
+    const inFlightUrls = new Set([
+        ...activeUrls.map(a => a.url),
+        ...queuedItems.map(q => q.url),
+        ...waitingItems.map(w => w.url),
+    ])
+
+    // Recent completed downloads: excludes pending, waiting, and currently in-flight tasks
+    const completedDownloads = (data.recent_downloads as RecentEvent[])
+        .filter(e => e.status !== 'pending' && e.status !== 'waiting' && (!e.url || !inFlightUrls.has(e.url)))
 
     // Build activity feed: downloads + retries + notifications.
-    // Email checks are excluded server-side since they fire frequently
-    // and push out events the user actually cares about.
     const downloadActivity = (data.recent_downloads as RecentEvent[])
         .map(e => formatEvent({ ...e, event_type: 'download' }))
     const otherActivity = (data.recent_activity as RecentEvent[])
@@ -187,6 +209,8 @@ export default function Dashboard({ data }: Props) {
             e !== null && e.text != null)
         .sort((a, b) => b.sortKey - a.sortKey)
         .slice(0, 20)
+
+    const hasInFlight = activeUrls.length > 0 || queuedItems.length > 0 || waitingItems.length > 0
 
     return (
         <>
@@ -240,9 +264,9 @@ export default function Dashboard({ data }: Props) {
                 )}
             </div>
 
-            {/* Combined Downloads: Currently Processing + Recent Completed */}
+            {/* In-Flight Downloads: Active, Queued, and Waiting */}
             <div className="card">
-                <h2>Downloads</h2>
+                <h2>In-Flight Downloads</h2>
                 <table>
                     <thead>
                         <tr>
@@ -271,7 +295,7 @@ export default function Dashboard({ data }: Props) {
                                 <td></td>
                                 <td>
                                     <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                        Redownload unavailable while processing
+                                        Processing…
                                     </span>
                                 </td>
                             </tr>
@@ -291,159 +315,150 @@ export default function Dashboard({ data }: Props) {
                                 <td>—</td>
                                 <td></td>
                                 <td>
-                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                        Redownload unavailable while queued
-                                    </span>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`cancel-${dl.url}`]}
+                                        onClick={() => runAction(`cancel-${dl.url}`, () => cancelDownload({ url: dl.url, site: dl.site, title: dl.title }))}
+                                    >
+                                        Cancel
+                                    </button>
                                 </td>
                             </tr>
                         ))}
                         {/* Waiting downloads (retry backoff) */}
-                        {waitingItems.map((w) => {
-                            const rowKey = makeExpandableRowKey('waiting', w.url, w.updated_at)
-                            const isExpanded = !!expandedErrors[rowKey]
-
-                            return (
-                                <Fragment key={rowKey}>
-                                    <tr>
-                                        <td><span className="badge badge-info">waiting</span></td>
-                                        <td>{w.site || extractSite(w.url)}</td>
-                                        <td>
-                                            {w.title ? (
-                                                <><strong>{w.title}</strong>{' '}{renderUrl(w.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}</>
-                                            ) : (
-                                                renderUrl(w.url)
-                                            )}
-                                            {w.error_message && (
-                                                <div style={{ marginTop: '0.35rem' }}>
-                                                    <button
-                                                        type="button"
-                                                        className="secondary"
-                                                        onClick={() => toggleExpandedError(rowKey)}
-                                                        aria-expanded={isExpanded}
-                                                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
-                                                    >
-                                                        {isExpanded ? 'Hide error' : 'Show error'}
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td>—</td>
-                                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                            {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
-                                        </td>
-                                        <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                            <button
-                                                className="secondary"
-                                                disabled={!!actionBusy[`retry-${w.url}`]}
-                                                onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
-                                            >
-                                                Retry now
-                                            </button>
-                                            <button
-                                                className="secondary"
-                                                disabled={!!actionBusy[`cancel-${w.url}`]}
-                                                onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
-                                            >
-                                                Cancel retry
-                                            </button>
-                                            <button
-                                                className="secondary"
-                                                disabled={!!actionBusy[`redl-${w.url}`]}
-                                                onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
-                                            >
-                                                Redownload
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    {w.error_message && isExpanded && (
-                                        <tr>
-                                            <td></td>
-                                            <td colSpan={5} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                {w.error_message}
-                                            </td>
-                                        </tr>
+                        {waitingItems.map((w) => (
+                            <tr key={`waiting-${w.url}`}>
+                                <td><span className="badge badge-info">waiting</span></td>
+                                <td>{w.site || extractSite(w.url)}</td>
+                                <td>
+                                    {w.title ? (
+                                        <>
+                                            <strong>{w.title}</strong>{' '}
+                                            {renderUrl(w.url, { fontSize: '0.85rem', color: 'var(--text-muted)' })}
+                                        </>
+                                    ) : (
+                                        renderUrl(w.url)
                                     )}
-                                </Fragment>
-                            )
-                        })}
-                        {/* Recent completed downloads */}
-                        {recentDownloads.map((dl, i) => {
-                            const rowKey = makeExpandableRowKey(
-                                'download',
-                                dl.url,
-                                dl.completed_at ?? dl.timestamp ?? String(i),
-                            )
-                            const isExpanded = !!expandedErrors[rowKey]
-
-                            return (
-                                <Fragment key={rowKey}>
-                                    <tr>
-                                        <td>
-                                            <span className={statusBadgeClass(dl.status)}>
-                                                {dl.status}
-                                            </span>
-                                        </td>
-                                        <td>{dl.site || extractSite(dl.url || '')}</td>
-                                        <td>
-                                            {dl.title ? (
-                                                <><strong>{dl.title}</strong>{' '}{dl.url ? renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' }) : null}</>
-                                            ) : (
-                                                dl.url ? renderUrl(dl.url) : '—'
-                                            )}
-                                            {dl.error_message && (
-                                                <div style={{ marginTop: '0.35rem' }}>
-                                                    <button
-                                                        type="button"
-                                                        className="secondary"
-                                                        onClick={() => toggleExpandedError(rowKey)}
-                                                        aria-expanded={isExpanded}
-                                                        style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
-                                                    >
-                                                        {isExpanded ? 'Hide error' : 'Show error'}
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td>{dl.calibre_id ?? '—'}</td>
-                                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                            {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
-                                        </td>
-                                        <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                                            {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
-                                                <button
-                                                    className="secondary"
-                                                    disabled={!!actionBusy[`retry-${dl.url}`]}
-                                                    onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
-                                                >
-                                                    Retry now
-                                                </button>
-                                            )}
-                                            {dl.url ? (
-                                                <button
-                                                    className="secondary"
-                                                    disabled={!!actionBusy[`redl-${dl.url}`]}
-                                                    onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
-                                                >
-                                                    Redownload
-                                                </button>
-                                            ) : (
-                                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                    {dl.error_message && isExpanded && (
-                                        <tr>
-                                            <td></td>
-                                            <td colSpan={5} style={{ color: 'var(--error)', fontSize: '0.85rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                                {dl.error_message}
-                                            </td>
-                                        </tr>
+                                    {w.error_message && (
+                                        <button
+                                            type="button"
+                                            className="badge-error-btn"
+                                            onClick={() => setSelectedError({ title: w.title || w.url, url: w.url, error: w.error_message! })}
+                                            title="View error details"
+                                        >
+                                            Error
+                                        </button>
                                     )}
-                                </Fragment>
-                            )
-                        })}
-                        {activeUrls.length === 0 && queuedItems.length === 0 && waitingItems.length === 0 && recentDownloads.length === 0 && (
-                            <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No downloads yet</td></tr>
+                                </td>
+                                <td>—</td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    {w.updated_at ? new Date(w.updated_at).toLocaleString() : '—'}
+                                </td>
+                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`retry-${w.url}`]}
+                                        onClick={() => runAction(`retry-${w.url}`, () => retryNow({ url: w.url, site: w.site, title: w.title }))}
+                                    >
+                                        Retry now
+                                    </button>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`cancel-${w.url}`]}
+                                        onClick={() => runAction(`cancel-${w.url}`, () => cancelRetry({ url: w.url, site: w.site }))}
+                                    >
+                                        Cancel retry
+                                    </button>
+                                    <button
+                                        className="secondary"
+                                        disabled={!!actionBusy[`redl-${w.url}`]}
+                                        onClick={() => runAction(`redl-${w.url}`, () => redownloadScratch({ url: w.url, site: w.site, title: w.title, calibre_id: w.calibre_id }))}
+                                    >
+                                        Redownload
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        {!hasInFlight && (
+                            <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No in-flight downloads</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Recent Completed Downloads */}
+            <div className="card">
+                <h2>Recent Completed Downloads</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Site</th>
+                            <th>Title / URL</th>
+                            <th>Story ID</th>
+                            <th>Time</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {completedDownloads.map((dl, i) => (
+                            <tr key={`completed-${dl.url ?? i}-${dl.completed_at ?? dl.timestamp ?? i}`}>
+                                <td>
+                                    <span className={statusBadgeClass(dl.status)}>
+                                        {dl.status}
+                                    </span>
+                                </td>
+                                <td>{dl.site || extractSite(dl.url || '')}</td>
+                                <td>
+                                    {dl.title ? (
+                                        <>
+                                            <strong>{dl.title}</strong>{' '}
+                                            {dl.url ? renderUrl(dl.url, { fontSize: '0.85rem', color: 'var(--text-muted)' }) : null}
+                                        </>
+                                    ) : (
+                                        dl.url ? renderUrl(dl.url) : '—'
+                                    )}
+                                    {dl.error_message && (
+                                        <button
+                                            type="button"
+                                            className="badge-error-btn"
+                                            onClick={() => setSelectedError({ title: dl.title || dl.url || 'Download Error', url: dl.url || '', error: dl.error_message! })}
+                                            title="View error details"
+                                        >
+                                            Error
+                                        </button>
+                                    )}
+                                </td>
+                                <td>{dl.calibre_id ?? '—'}</td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                    {dl.completed_at ? new Date(dl.completed_at).toLocaleString() : dl.timestamp ? new Date(dl.timestamp).toLocaleString() : '—'}
+                                </td>
+                                <td style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                    {dl.url && (dl.status === 'failed' || dl.status === 'abandoned') && (
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`retry-${dl.url}`]}
+                                            onClick={() => runAction(`retry-${dl.url}`, () => retryNow({ url: dl.url!, site: dl.site, title: dl.title }))}
+                                        >
+                                            Retry now
+                                        </button>
+                                    )}
+                                    {dl.url ? (
+                                        <button
+                                            className="secondary"
+                                            disabled={!!actionBusy[`redl-${dl.url}`]}
+                                            onClick={() => runAction(`redl-${dl.url}`, () => redownloadScratch({ url: dl.url!, site: dl.site, title: dl.title, calibre_id: dl.calibre_id }))}
+                                        >
+                                            Redownload
+                                        </button>
+                                    ) : (
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>URL unavailable</span>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                        {completedDownloads.length === 0 && (
+                            <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No completed downloads recorded yet</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -465,6 +480,54 @@ export default function Dashboard({ data }: Props) {
                             ))}
                         </tbody>
                     </table>
+                </div>
+            )}
+
+            {/* Error Details Modal */}
+            {selectedError && (
+                <div
+                    className="modal-overlay"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setSelectedError(null)
+                    }}
+                >
+                    <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+                        <div className="modal-header">
+                            <h3 id="modal-title" title={selectedError.title}>Error: {selectedError.title}</h3>
+                            <button
+                                type="button"
+                                className="modal-close-btn"
+                                onClick={() => setSelectedError(null)}
+                                aria-label="Close error modal"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            {selectedError.url && (
+                                <div style={{ marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+                                    <strong>URL:</strong>{' '}
+                                    {renderUrl(selectedError.url, { color: 'var(--accent)' })}
+                                </div>
+                            )}
+                            <pre>{selectedError.error}</pre>
+                        </div>
+                        <div className="modal-footer">
+                            <button
+                                type="button"
+                                className="secondary"
+                                onClick={handleCopyError}
+                            >
+                                {copied ? 'Copied!' : 'Copy Error'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedError(null)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </>
