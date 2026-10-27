@@ -11,13 +11,14 @@ import io
 from pathlib import Path
 import sys
 import threading
-from typing import IO
+from typing import IO, cast
 
 lazy from fanficfare import cli as fff_cli
 from calibre_integration import calibre_info
 from config.config_store import read_ini_file_cached
 from models import fanfic_info
 from parsers import regex_parsing
+from utils import anubis_solver
 from utils import ff_logging
 
 # ---------------------------------------------------------------------------
@@ -225,6 +226,34 @@ def _extract_output_filename_template(ini_text: str, site: str | None = None) ->
     return _DEFAULT
 
 
+def _extract_user_agent(ini_text: str, site: str) -> str:
+    """Extract configured user_agent for site from ini_text, falling back to default."""
+    if not ini_text:
+        return anubis_solver.DEFAULT_USER_AGENT
+    try:
+        parser = configparser.RawConfigParser(strict=False)
+        parser.read_string(ini_text)
+        sections_to_check: list[str] = []
+        if site:
+            site_lower = site.lower()
+            for section in parser.sections():
+                if (
+                    section not in ("overrides", "defaults")
+                    and site_lower in section.lower()
+                ):
+                    sections_to_check.append(section)
+                    break
+        sections_to_check.append("defaults")
+        for section in sections_to_check:
+            try:
+                return parser.get(section, "user_agent")
+            except configparser.NoSectionError, configparser.NoOptionError:
+                continue
+    except Exception:
+        pass
+    return anubis_solver.DEFAULT_USER_AGENT
+
+
 # ---------------------------------------------------------------------------
 # Public API: direct Python API execution
 # ---------------------------------------------------------------------------
@@ -336,7 +365,7 @@ def execute_fanficfare_direct(
         personal_ini_base, fanfic.site
     )
     output_override = (
-        "\n[overrides]\n" f"output_filename: {output_dir}/{_filename_template}\n"
+        f"\n[overrides]\noutput_filename: {output_dir}/{_filename_template}\n"
     )
 
     passed_personalini = personal_ini_base + output_override
@@ -350,28 +379,44 @@ def execute_fanficfare_direct(
 
     site_key = getattr(fanfic, "site", "") or ""
     cached_cookiejar = _get_site_cookiejar(site_key, personal_ini_base)
-    if cached_cookiejar is not None:
+
+    if anubis_solver.is_site_anubis_protected(site_key):
+        anubis_user_agent = _extract_user_agent(personal_ini_base, site_key)
+        if "user_agent:" not in personal_ini_base:
+            passed_personalini += f"\n[defaults]\nuser_agent: {anubis_user_agent}\n"
+
+        cookiejar = anubis_solver.ensure_anubis_session(
+            site=site_key,
+            url=getattr(fanfic, "url", path_or_url),
+            user_agent=anubis_user_agent,
+            cookiejar=cast(anubis_solver.LWPCookieJar | None, cached_cookiejar),
+        )
+        options.cookiejar = cookiejar
+        _set_site_cookiejar(site_key, cookiejar)
+    elif cached_cookiejar is not None:
         options.cookiejar = cached_cookiejar
 
     ff_logging.log(f"Executing FanFicFare directly: {path_or_url}")
 
     tl_stdout = _ensure_tl_stdout()
 
+    captured_output = ""
     try:
         with tl_stdout.capture() as captured_buf:
-            fff_cli.do_download(
-                path_or_url,
-                options,
-                passed_defaultsini=passed_defaultsini,
-                passed_personalini=passed_personalini,
-                warn=warn_callback,
-                fail=fail_callback,
-            )
-        captured_output = captured_buf.getvalue()
+            try:
+                fff_cli.do_download(
+                    path_or_url,
+                    options,
+                    passed_defaultsini=passed_defaultsini,
+                    passed_personalini=passed_personalini,
+                    warn=warn_callback,
+                    fail=fail_callback,
+                )
+            finally:
+                captured_output = captured_buf.getvalue()
     except Exception as e:
         result.exception = e
         ff_logging.log_failure(f"\tFanFicFare raised exception: {e}")
-        return result
     finally:
         updated_cookiejar = vars(options).get("cookiejar")
         if updated_cookiejar is not None and site_key:
@@ -387,6 +432,65 @@ def execute_fanficfare_direct(
         result.failure_messages.append(
             f"FanFicFare silent failure: {captured_output.strip()}"
         )
+
+    # Reactive Anubis check: if the download failed, probe the target URL
+    # to test whether the site is serving an Anubis anti-bot challenge.
+    if result.has_failure:
+        anubis_user_agent = _extract_user_agent(personal_ini_base, site_key)
+        target_url = getattr(fanfic, "url", path_or_url)
+        solved, updated_jar = anubis_solver.probe_and_solve_anubis(
+            url=target_url,
+            user_agent=anubis_user_agent,
+            cookiejar=cast(
+                anubis_solver.LWPCookieJar | None, getattr(options, "cookiejar", None)
+            ),
+        )
+        if solved:
+            ff_logging.log(
+                f"({site_key}) Anubis challenge solved on reactive probe. Retrying FanFicFare..."
+            )
+            anubis_solver.mark_site_anubis_protected(site_key)
+            _set_site_cookiejar(site_key, updated_jar)
+            options.cookiejar = updated_jar
+            if "user_agent:" not in passed_personalini:
+                passed_personalini += f"\n[defaults]\nuser_agent: {anubis_user_agent}\n"
+
+            result = FanFicFareResult()
+            captured_output_retry = ""
+            try:
+                with tl_stdout.capture() as captured_buf:
+                    try:
+                        fff_cli.do_download(
+                            path_or_url,
+                            options,
+                            passed_defaultsini=passed_defaultsini,
+                            passed_personalini=passed_personalini,
+                            warn=warn_callback,
+                            fail=fail_callback,
+                        )
+                    finally:
+                        captured_output_retry = captured_buf.getvalue()
+                ff_logging.log(
+                    f"({site_key}) FanFicFare retry succeeded after Anubis resolution."
+                )
+            except Exception as e:
+                result.exception = e
+                ff_logging.log_failure(f"\tFanFicFare retry raised exception: {e}")
+                return result
+            finally:
+                updated_cookiejar = vars(options).get("cookiejar")
+                if updated_cookiejar is not None and site_key:
+                    _set_site_cookiejar(site_key, updated_cookiejar)
+
+            if captured_output_retry:
+                ff_logging.log_debug(
+                    f"\tFanFicFare stdout (retry): {captured_output_retry}"
+                )
+
+            if regex_parsing.check_failure_from_message(captured_output_retry):
+                result.failure_messages.append(
+                    f"FanFicFare silent failure: {captured_output_retry.strip()}"
+                )
 
     return result
 

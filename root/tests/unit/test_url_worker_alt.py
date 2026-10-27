@@ -541,6 +541,101 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
             [None, jar1, None, jar2],
         )
 
+    def test_execute_fanficfare_direct_calls_anubis_solver_for_protected_site(self):
+        """When site is marked anubis-protected, ensure_anubis_session is called and injected into options.cookiejar."""
+        self.mock_fanfic.site = "some_site"
+        self.mock_fanfic.url = "https://example.com/fiction/74983"
+        mock_options = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.parse_args.return_value = (mock_options, [])
+        mock_jar = MagicMock()
+
+        with (
+            patch("workers.command.ff_logging.is_verbose", return_value=False),
+            patch("fanficfare.cli.mkParser", return_value=mock_parser),
+            patch("fanficfare.cli.expandOptions"),
+            patch("fanficfare.cli.do_download"),
+            patch("utils.anubis_solver.is_site_anubis_protected", return_value=True),
+            patch(
+                "utils.anubis_solver.ensure_anubis_session", return_value=mock_jar
+            ) as mock_ensure,
+        ):
+            res = execute_fanficfare_direct(
+                self.mock_cdb, self.mock_fanfic, self.mock_fanfic.url, "/tmp/test"
+            )
+            self.assertFalse(res.has_failure)
+            mock_ensure.assert_called_once()
+            self.assertEqual(mock_options.cookiejar, mock_jar)
+
+    def test_execute_fanficfare_direct_reactive_retry_on_anubis_challenge(self):
+        """When any site fails and reactive probe detects Anubis, it solves, marks site, and retries."""
+        self.mock_fanfic.site = "scribblehub"
+        self.mock_fanfic.url = "https://scribblehub.com/series/123"
+        mock_options = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.parse_args.return_value = (mock_options, [])
+        mock_solved_jar = MagicMock()
+
+        call_count = 0
+
+        def fake_download(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("'NoneType' object is not subscriptable")
+
+        with (
+            patch("workers.command.ff_logging.is_verbose", return_value=False),
+            patch("fanficfare.cli.mkParser", return_value=mock_parser),
+            patch("fanficfare.cli.expandOptions"),
+            patch("fanficfare.cli.do_download", side_effect=fake_download),
+            patch(
+                "utils.anubis_solver.probe_and_solve_anubis",
+                return_value=(True, mock_solved_jar),
+            ) as mock_probe,
+            patch("utils.anubis_solver.mark_site_anubis_protected") as mock_mark,
+        ):
+            res = execute_fanficfare_direct(
+                self.mock_cdb, self.mock_fanfic, self.mock_fanfic.url, "/tmp/test"
+            )
+            self.assertFalse(res.has_failure)
+            self.assertEqual(call_count, 2)
+            mock_probe.assert_called_once()
+            mock_mark.assert_called_once_with("scribblehub")
+            self.assertEqual(mock_options.cookiejar, mock_solved_jar)
+
+    def test_execute_fanficfare_direct_no_retry_when_not_anubis_challenge(self):
+        """When download fails but probe detects no Anubis challenge, it does not retry."""
+        self.mock_fanfic.site = "archiveofourown"
+        self.mock_fanfic.url = "https://archiveofourown.org/works/1"
+        mock_options = MagicMock()
+        mock_parser = MagicMock()
+        mock_parser.parse_args.return_value = (mock_options, [])
+
+        call_count = 0
+
+        def fake_download(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("404 Not Found")
+
+        with (
+            patch("workers.command.ff_logging.is_verbose", return_value=False),
+            patch("fanficfare.cli.mkParser", return_value=mock_parser),
+            patch("fanficfare.cli.expandOptions"),
+            patch("fanficfare.cli.do_download", side_effect=fake_download),
+            patch(
+                "utils.anubis_solver.probe_and_solve_anubis",
+                return_value=(False, MagicMock()),
+            ) as mock_probe,
+        ):
+            res = execute_fanficfare_direct(
+                self.mock_cdb, self.mock_fanfic, self.mock_fanfic.url, "/tmp/test"
+            )
+            self.assertTrue(res.has_failure)
+            self.assertEqual(call_count, 1)
+            mock_probe.assert_called_once()
+
 
 class TestExtractOutputFilenameTemplate(unittest.TestCase):
     """Tests for _extract_output_filename_template()."""

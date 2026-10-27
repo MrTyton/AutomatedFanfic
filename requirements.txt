@@ -27,6 +27,7 @@ certifi==2026.10.19
 idna==3.20
 urllib3==2.8.0
 imapclient==4.1.0
+argon2-cffi>=25.1.0
 
 # Image processing (for cover images)
 pillow==13.0.0
