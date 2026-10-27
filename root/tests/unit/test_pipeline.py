@@ -541,6 +541,69 @@ class TestUpdateOnlyMode(unittest.TestCase):
         mock_command.execute_fanficfare_direct.assert_called_once()
         self.history_recorder.record_download_abandoned.assert_not_called()
 
+    @patch("workers.pipeline.anubis_solver")
+    def test_anubis_challenge_solved_and_retried_in_pipeline(
+        self,
+        mock_anubis,
+        mock_command,
+        mock_handlers,
+        mock_common,
+        mock_sys,
+        mock_logging,
+    ):
+        mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
+        mock_common.get_path_or_url.return_value = self.fanfic.url
+        mock_command.FanFicFareResult = FanFicFareResult
+
+        failed_res = FanFicFareResult(
+            failure_messages=["'NoneType' object is not subscriptable"],
+            target_url="https://example.com/fiction/1",
+            effective_user_agent="Mozilla/5.0",
+        )
+        success_res = FanFicFareResult()
+        mock_command.execute_fanficfare_direct.side_effect = [
+            failed_res,
+            success_res,
+        ]
+
+        mock_solved_jar = MagicMock()
+        mock_anubis.probe_and_solve_anubis.return_value = (True, mock_solved_jar)
+
+        pipeline._process_task(self.fanfic, self.ctx)
+
+        self.assertEqual(mock_command.execute_fanficfare_direct.call_count, 2)
+        mock_anubis.probe_and_solve_anubis.assert_called_once()
+        mock_anubis.mark_site_anubis_protected.assert_called_once_with(self.fanfic.site)
+        mock_handlers.process_fanfic_addition.assert_called_once()
+
+    @patch("workers.pipeline.anubis_solver")
+    def test_anubis_not_challenged_does_not_retry_in_pipeline(
+        self,
+        mock_anubis,
+        mock_command,
+        mock_handlers,
+        mock_common,
+        mock_sys,
+        mock_logging,
+    ):
+        mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
+        mock_common.get_path_or_url.return_value = self.fanfic.url
+        mock_command.FanFicFareResult = FanFicFareResult
+
+        failed_res = FanFicFareResult(
+            failure_messages=["404 Not Found"],
+            target_url="https://example.com/fiction/1",
+            effective_user_agent="Mozilla/5.0",
+        )
+        mock_command.execute_fanficfare_direct.return_value = failed_res
+        mock_anubis.probe_and_solve_anubis.return_value = (False, MagicMock())
+
+        pipeline._process_task(self.fanfic, self.ctx)
+
+        self.assertEqual(mock_command.execute_fanficfare_direct.call_count, 1)
+        mock_anubis.probe_and_solve_anubis.assert_called_once()
+        mock_handlers.handle_failure.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

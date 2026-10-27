@@ -23,10 +23,10 @@ from models import fanfic_info
 from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
 from models.queue_types import IngressQueue, WorkerQueue
-from utils import ff_logging, system_utils
+from utils import anubis_solver, ff_logging, system_utils
 
 # Import from sibling modules
-from . import command, common, handlers
+from . import command, common, cookie_cache, handlers
 
 # Cooldown applied between a failed task and the next queued task on the same site,
 # compensating for FanFicFare's SleepDecorator being bypassed when a request raises.
@@ -157,6 +157,28 @@ def _process_task(
         fff_result = command.execute_fanficfare_direct(
             calibre_client.cdb_info, fanfic, path_or_url, temp_dir
         )
+
+        # Reactive Anubis check: if download failed, probe whether site serves an Anubis challenge
+        if fff_result.has_failure and fff_result.target_url:
+            cached_jar = cookie_cache.get_site_cookiejar(site, "")
+            solved, updated_jar = anubis_solver.probe_and_solve_anubis(
+                url=fff_result.target_url,
+                user_agent=fff_result.effective_user_agent,
+                cookiejar=cast(anubis_solver.LWPCookieJar | None, cached_jar),
+            )
+            if solved:
+                ff_logging.log(
+                    f"({site}) Anubis challenge solved on reactive probe. Retrying FanFicFare..."
+                )
+                anubis_solver.mark_site_anubis_protected(site)
+                cookie_cache.set_site_cookiejar(site, updated_jar)
+                fff_result = command.execute_fanficfare_direct(
+                    calibre_client.cdb_info, fanfic, path_or_url, temp_dir
+                )
+                if not fff_result.has_failure:
+                    ff_logging.log(
+                        f"({site}) FanFicFare retry succeeded after Anubis resolution."
+                    )
 
         # 5. Evaluate result
         if fff_result.has_failure:
@@ -341,9 +363,10 @@ def url_worker(
             ff_logging.set_thread_site(fanfic.site)
 
             # Mark as actively being processed by this worker thread
-            active_urls_utils.mark_url_processing(
-                active_urls, fanfic.url, site=fanfic.site
-            )
+            if active_urls is not None:
+                active_urls_utils.mark_url_processing(
+                    active_urls, fanfic.url, site=fanfic.site
+                )
             if ctx.history_recorder:
                 ctx.history_recorder.record_download_processing(
                     fanfic.url, site=fanfic.site
