@@ -12,6 +12,7 @@ lazy from calibre_integration import (
 from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
 lazy from parsers import auto_url_parsers, regex_parsing
+from web.routes.websocket import invalidate_history_cache
 
 router = APIRouter(prefix="/api/controls", tags=["controls"])
 _queue_surgery_lock = threading.Lock()
@@ -336,9 +337,10 @@ async def add_urls(request: Request, body: AddUrlsRequest):
     return AddUrlsResponse(results=results)
 
 
+@router.post("/cancel", response_model=ActionResponse)
 @router.post("/cancel-retry", response_model=ActionResponse)
 async def cancel_retry(request: Request, body: QueueActionRequest):
-    """Cancel a pending retry (waiting/backoff) for a URL."""
+    """Cancel a pending retry (waiting/backoff) or queued download for a URL."""
     state = request.app.state.web_state
     if state.ingress_queue is None or state.waiting_queue is None:
         return ActionResponse(ok=False, message="Queues not available")
@@ -349,8 +351,8 @@ async def cancel_retry(request: Request, body: QueueActionRequest):
         candidate_urls,
         _canonical_fanfic,
         site,
-        _title,
-        _calibre_id,
+        title,
+        calibre_id,
     ) = await _resolve_candidate_urls(state, body)
 
     waiting_removed, ingress_removed, worker_removed = _dequeue_from_all_queues(
@@ -376,7 +378,11 @@ async def cancel_retry(request: Request, body: QueueActionRequest):
             canonical_url,
             "Retry canceled from web UI by user request",
             site=site,
+            title=title,
+            calibre_id=calibre_id,
         )
+
+    invalidate_history_cache()
 
     removed_count = (
         len(waiting_removed)
@@ -386,9 +392,10 @@ async def cancel_retry(request: Request, body: QueueActionRequest):
     )
     if removed_count == 0:
         return ActionResponse(
-            ok=True, message=f"No pending retry found for {canonical_url}"
+            ok=True,
+            message=f"No pending retry or queue entry found for {canonical_url}",
         )
-    return ActionResponse(ok=True, message=f"Canceled retry for {canonical_url}")
+    return ActionResponse(ok=True, message=f"Canceled {canonical_url}")
 
 
 @router.post("/retry-now", response_model=ActionResponse)

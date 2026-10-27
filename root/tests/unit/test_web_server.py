@@ -284,6 +284,35 @@ class TestControlRoutes(unittest.TestCase):
         with self.assertRaises(Empty):
             self.state.ingress_queue.get_nowait()
 
+    def test_controls_cancel_endpoint_preserves_metadata_and_invalidates_cache(self):
+        """POST /api/controls/cancel should mark cancelled, preserve metadata, and invalidate cache."""
+        self.state.ingress_queue = Queue()
+        self.state.waiting_queue = Queue()
+        self.state.active_urls = {"ao3.org/works/42": {"status": "queued"}}
+        mock_recorder = MagicMock()
+        self.state.history_recorder = mock_recorder
+
+        with patch("web.routes.controls.invalidate_history_cache") as mock_inv:
+            resp = self.client.post(
+                "/api/controls/cancel",
+                json={
+                    "url": "https://ao3.org/works/42",
+                    "site": "ao3",
+                    "title": "Story 42",
+                    "calibre_id": "777",
+                },
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.json()["ok"])
+            mock_inv.assert_called_once()
+            mock_recorder.record_download_abandoned.assert_called_once_with(
+                "ao3.org/works/42",
+                "Retry canceled from web UI by user request",
+                site="ao3",
+                title="Story 42",
+                calibre_id="777",
+            )
+
     def test_redownload_scratch_rejects_processing_item(self):
         """redownload should be blocked while actively processing."""
         self.state.ingress_queue = Queue()

@@ -36,6 +36,11 @@ _history_cache: dict[str, object] = {
 }
 
 
+def invalidate_history_cache() -> None:
+    """Reset the historical database queries cache TTL so the next broadcast fetches fresh data."""
+    _history_cache["expires_at"] = 0.0
+
+
 async def _build_snapshot(state: WebState) -> dict[str, object]:
     """Build a JSON-serialisable dashboard snapshot from WebState."""
     now_ts = time.time()

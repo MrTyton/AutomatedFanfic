@@ -94,7 +94,12 @@ class HistoryRecorder:
         )
 
     def record_download_abandoned(
-        self, url: str, error_message: str | None = None, site: str | None = None
+        self,
+        url: str,
+        error_message: str | None = None,
+        site: str | None = None,
+        title: str | None = None,
+        calibre_id: str | None = None,
     ) -> None:
         self._put(
             HistoryMessage(
@@ -104,6 +109,8 @@ class HistoryRecorder:
                     "status": DownloadStatus.ABANDONED.value,
                     "error_message": error_message,
                     "site": site,
+                    "title": title,
+                    "calibre_id": calibre_id,
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
