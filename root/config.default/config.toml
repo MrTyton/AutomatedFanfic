@@ -120,6 +120,9 @@ hail_mary_wait_hours = 12.0
 # Normal retries use exponential backoff (1min, 2min, 3min, etc.)
 max_normal_retries = 11
 
+# Whether to resume in-flight, waiting, and interrupted downloads from history DB on startup
+resume_uncompleted_on_startup = true
+
 # ============================================================================
 # PROCESS CONFIGURATION
 # Configuration for process management and monitoring

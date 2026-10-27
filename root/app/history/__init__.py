@@ -15,6 +15,7 @@ from history.models import (
     RetryEvent,
 )
 from history.recorder import HistoryRecorder, HistoryWriter
+from history.recovery import recover_uncompleted_downloads
 
 __all__ = [
     "AsyncHistoryDB",
@@ -29,4 +30,5 @@ __all__ = [
     "NotificationEvent",
     "RetryAction",
     "RetryEvent",
+    "recover_uncompleted_downloads",
 ]

@@ -331,6 +331,10 @@ def url_worker(
             active_urls_utils.mark_url_processing(
                 active_urls, fanfic.url, site=fanfic.site
             )
+            if ctx.history_recorder:
+                ctx.history_recorder.record_download_processing(
+                    fanfic.url, site=fanfic.site
+                )
 
             # Process Task
             should_remove = True

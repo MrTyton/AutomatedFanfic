@@ -482,6 +482,11 @@ class RetryConfig(BaseModel):
         description="Maximum number of normal retry attempts before Hail-Mary",
     )
 
+    resume_uncompleted_on_startup: bool = Field(
+        default=True,
+        description="Whether to resume in-flight and waiting downloads from history database on startup",
+    )
+
     _config_store: ConfigStore | None = PrivateAttr(default=None)
 
     def set_config_store(self, config_store: ConfigStore) -> None:
@@ -501,6 +506,7 @@ class RetryConfig(BaseModel):
             "max_normal_retries": "retry.max_normal_retries",
             "hail_mary_enabled": "retry.hail_mary_enabled",
             "hail_mary_wait_hours": "retry.hail_mary_wait_hours",
+            "resume_uncompleted_on_startup": "retry.resume_uncompleted_on_startup",
         }
         for attr, key in mapping.items():
             val = self._config_store.get(key)
@@ -675,6 +681,10 @@ class AppConfig(BaseSettings):
 
     # Application settings
     version: str = Field(default="1.3.23", description="Application version")
+
+    @property
+    def resume_uncompleted_on_startup(self) -> bool:
+        return self.retry.resume_uncompleted_on_startup
 
     @property
     def max_workers(self) -> int:

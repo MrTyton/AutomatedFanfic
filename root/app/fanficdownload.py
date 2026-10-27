@@ -52,6 +52,7 @@ from models.config_models import ConfigError, ConfigValidationError
 from models.context import SharedIPCContext
 from process_management import ProcessManager
 from history.recorder import HistoryRecorder, HistoryWriter
+from history.recovery import recover_uncompleted_downloads
 from config.config_store import ConfigStore
 lazy from web import server as web_server
 lazy from calibre_integration.http_client import CalibreHttpClient
@@ -333,6 +334,15 @@ def register_processes(
         log_queue=log_queue,
         verbose=args.verbose,
     )
+
+    # Rehydrate uncompleted downloads from history.db on startup if enabled
+    if config.retry.resume_uncompleted_on_startup and history_db_path:
+        recover_uncompleted_downloads(
+            history_db_path=history_db_path,
+            ingress_queue=ingress_queue,
+            active_urls=active_urls,
+            history_recorder=history_recorder,
+        )
 
     # Register Supervisor Process (Hosts Email, Waiter, Coordinator)
     process_manager.register_process(

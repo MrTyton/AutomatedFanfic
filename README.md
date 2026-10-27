@@ -329,11 +329,13 @@ Configure the retry behavior and Hail-Mary protocol settings:
 hail_mary_enabled = true
 hail_mary_wait_hours = 12.0
 max_normal_retries = 11
+resume_uncompleted_on_startup = true
 ```
 
 - `hail_mary_enabled`: Whether to enable the Hail-Mary protocol (defaults to `true` for backward compatibility). When `false`, stories that reach maximum retry attempts will be permanently failed without the final extended wait attempt.
 - `hail_mary_wait_hours`: Hours to wait before attempting the final Hail-Mary retry (defaults to `12.0`). Can be set to any value between 0.1 and 168 hours (1 week). This allows customization for different use cases - you might want 24 or 36 hours for sites with longer outages.
 - `max_normal_retries`: Maximum number of normal retry attempts before activating Hail-Mary protocol (defaults to `11`). Normal retries use exponential backoff (1min, 2min, 3min, etc.). Can be set between 1 and 50 attempts.
+- `resume_uncompleted_on_startup`: Whether to automatically resume in-flight, waiting, and interrupted downloads from the SQLite history database (`history.db`) upon application or container restart (defaults to `true`). When enabled, any downloads that were queued, waiting in backoff retry, or interrupted mid-download when the container shut down are resumed as fresh attempts (with retry counters reset to 0). This persistence operates in the core application process and works even if the web dashboard is disabled.
 
 **Backward Compatibility:** If this section is omitted from your configuration, the application will use the original behavior: 11 normal retries followed by a 12-hour Hail-Mary attempt.
 
@@ -395,7 +397,7 @@ history_db_path = "/data/history.db"
 - `enabled`: Set to `true` to start the web dashboard server. Defaults to `false`.
 - `host`: The address the web server binds to. Use `"0.0.0.0"` to listen on all interfaces (required for Docker), or `"127.0.0.1"` for local-only access.
 - `port`: The port the web server listens on (1–65535). Defaults to `8080`.
-- `history_db_path`: Path to the SQLite database file used for storing download history, retry events, email checks, and notifications. Defaults to `"/data/history.db"` (the `/data` Docker volume).
+- `history_db_path`: Path to the SQLite database file used for storing download history, retry events, email checks, notifications, and persistent task state across container restarts. Defaults to `"/data/history.db"` (the `/data` Docker volume). Runs in the core application process and remains active even when `web.enabled = false`.
 
 **Dashboard Features:**
 - **Live Dashboard**: Real-time view of active downloads, waiting retries, queue depths, and process status

@@ -109,6 +109,19 @@ class HistoryRecorder:
             )
         )
 
+    def record_download_processing(self, url: str, site: str | None = None) -> None:
+        """Move an existing 'pending' download row to 'processing' status."""
+        self._put(
+            HistoryMessage(
+                event_type=HistoryEventType.DOWNLOAD_UPDATED,
+                payload={
+                    "url": url,
+                    "status": DownloadStatus.PROCESSING.value,
+                    "site": site,
+                },
+            )
+        )
+
     def record_download_waiting(
         self,
         url: str,
@@ -131,11 +144,16 @@ class HistoryRecorder:
         )
 
     def record_download_requeued(
-        self, url: str, site: str | None = None, title: str | None = None
+        self,
+        url: str,
+        site: str | None = None,
+        title: str | None = None,
+        error_message: str | None = None,
     ) -> None:
-        """Move an existing 'waiting' download row back to 'pending' status.
+        """Move an existing download row back to 'pending' status.
 
-        Used when a user manually retries a URL from the web UI. Updates the
+        Used when a user manually retries a URL from the web UI or when
+        uncompleted downloads are rehydrated on startup. Updates the
         existing row rather than inserting a duplicate.
         """
         self._put(
@@ -146,6 +164,7 @@ class HistoryRecorder:
                     "status": DownloadStatus.PENDING.value,
                     "site": site,
                     "title": title,
+                    "error_message": error_message,
                 },
             )
         )

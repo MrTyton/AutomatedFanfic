@@ -184,7 +184,11 @@ class SyncHistoryDB:
         if isinstance(status, str):
             status = DownloadStatus(status)
         now_str = _dt_to_str(datetime.now(timezone.utc))
-        is_in_progress = status in (DownloadStatus.PENDING, DownloadStatus.WAITING)
+        is_in_progress = status in (
+            DownloadStatus.PENDING,
+            DownloadStatus.PROCESSING,
+            DownloadStatus.WAITING,
+        )
         cur = self._conn.execute(
             """UPDATE download_events
                SET status = ?,
@@ -197,7 +201,7 @@ class SyncHistoryDB:
                    updated_at = ?
                WHERE id = (
                    SELECT id FROM download_events
-                   WHERE url = ? AND status IN ('pending', 'waiting', 'failed', 'abandoned')
+                   WHERE url = ? AND status IN ('pending', 'processing', 'waiting', 'failed', 'abandoned')
                    ORDER BY started_at DESC, id DESC LIMIT 1
                )""",
             (
@@ -342,6 +346,27 @@ class SyncHistoryDB:
         if commit:
             self._conn.commit()
         return cur.lastrowid or 0
+
+    def get_uncompleted_downloads(self) -> list[dict]:
+        """Get the latest uncompleted download rows (pending, processing, waiting).
+
+        Used during startup rehydration to resume in-flight and waiting tasks.
+        Returns the most recent record per URL.
+        """
+        assert self._conn is not None
+        cur = self._conn.execute("""WITH latest_uncompleted AS (
+                   SELECT url, MAX(started_at) AS latest_started_at, MAX(id) AS latest_id
+                   FROM download_events
+                   WHERE status IN ('pending', 'processing', 'waiting')
+                   GROUP BY url
+               )
+               SELECT d.id, d.url, d.site, d.title, d.calibre_id, d.behavior, d.status, d.error_message
+               FROM download_events d
+               JOIN latest_uncompleted lu
+                 ON d.url = lu.url AND d.id = lu.latest_id
+               ORDER BY d.started_at ASC, d.id ASC""")
+        columns = [col[0] for col in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
 
 
 # ---------------------------------------------------------------------------
@@ -590,6 +615,23 @@ class AsyncHistoryDB:
                    ORDER BY started_at DESC LIMIT ?""",
                 (limit,),
             )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def get_uncompleted_downloads(self) -> list[dict]:
+        """Get latest uncompleted download rows (pending, processing, waiting)."""
+        async with self._connection() as conn:
+            cursor = await conn.execute("""WITH latest_uncompleted AS (
+                       SELECT url, MAX(started_at) AS latest_started_at, MAX(id) AS latest_id
+                       FROM download_events
+                       WHERE status IN ('pending', 'processing', 'waiting')
+                       GROUP BY url
+                   )
+                   SELECT d.id, d.url, d.site, d.title, d.calibre_id, d.behavior, d.status, d.error_message
+                   FROM download_events d
+                   JOIN latest_uncompleted lu
+                     ON d.url = lu.url AND d.id = lu.latest_id
+                   ORDER BY d.started_at ASC, d.id ASC""")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 

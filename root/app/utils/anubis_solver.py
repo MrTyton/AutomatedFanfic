@@ -223,6 +223,14 @@ def _has_valid_anubis_cookie(jar: object) -> bool:
     return False
 
 
+def _create_lwp_cookiejar() -> LWPCookieJar:
+    """Create a new LWPCookieJar compatible with FanFicFare's expectations."""
+    jar = LWPCookieJar()
+    setattr(jar, "autosave", False)
+    jar.filename = None
+    return jar
+
+
 def probe_and_solve_anubis(
     url: str,
     user_agent: str,
@@ -241,9 +249,7 @@ def probe_and_solve_anubis(
     ):
         target_jar = cast(LWPCookieJar, cookiejar)
     else:
-        target_jar = LWPCookieJar()
-        target_jar.autosave = False
-        target_jar.filename = None
+        target_jar = _create_lwp_cookiejar()
 
     session = requests.Session()
     session.headers["User-Agent"] = user_agent
@@ -287,9 +293,7 @@ def ensure_anubis_session(
     ):
         target_jar = cast(LWPCookieJar, cookiejar)
     else:
-        target_jar = LWPCookieJar()
-        target_jar.autosave = False
-        target_jar.filename = None
+        target_jar = _create_lwp_cookiejar()
 
     if not is_site_anubis_protected(site):
         return target_jar

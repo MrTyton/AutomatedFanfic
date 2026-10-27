@@ -195,7 +195,7 @@ def test_ensure_anubis_session_solves_and_populates_jar() -> None:
         )
 
         assert result_jar is not None
-        assert result_jar.autosave is False
+        assert getattr(result_jar, "autosave", None) is False
         cookie_names = [c.name for c in result_jar]
         assert "techaro.lol-anubis-auth-999" in cookie_names
 

@@ -18,6 +18,7 @@ class DownloadStatus(str, Enum):
     """Status of a download event throughout its lifecycle."""
 
     PENDING = "pending"
+    PROCESSING = "processing"
     SUCCESS = "success"
     FAILED = "failed"
     WAITING = "waiting"

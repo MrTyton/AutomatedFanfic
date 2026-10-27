@@ -728,6 +728,14 @@ path = ""
         with self.assertRaises(Exception):
             ProcessConfig(max_workers=-1)
 
+    def test_retry_config_resume_uncompleted_on_startup(self):
+        """Test resume_uncompleted_on_startup default and toggle."""
+        retry_config = RetryConfig()
+        self.assertTrue(retry_config.resume_uncompleted_on_startup)
+
+        retry_config_disabled = RetryConfig(resume_uncompleted_on_startup=False)
+        self.assertFalse(retry_config_disabled.resume_uncompleted_on_startup)
+
     def tearDown(self):
         """Clean up after each test."""
         ConfigManager.clear_cache()

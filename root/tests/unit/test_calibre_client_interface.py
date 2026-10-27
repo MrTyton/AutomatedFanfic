@@ -167,20 +167,28 @@ def test_refresh_if_changed_invokes_hook_when_updated() -> None:
 
 
 def test_log_metadata_comparison() -> None:
-    cap = LogCapture()
-    ff_logging.set_log_forward_queue(cap)
-    cap.drain()
-    mock_info = MagicMock(spec=CalibreInfo)
-    mock_store = MagicMock(spec=ConfigStore)
-    client = _DummyCalibreClient(mock_info, mock_store)
+    old_verbose = ff_logging.is_verbose()
+    old_web = bool(ff_logging.web_enabled.value)
+    ff_logging.set_verbose(True)
+    ff_logging.web_enabled.value = True
+    try:
+        cap = LogCapture()
+        ff_logging.set_log_forward_queue(cap)
+        cap.drain()
+        mock_info = MagicMock(spec=CalibreInfo)
+        mock_store = MagicMock(spec=ConfigStore)
+        client = _DummyCalibreClient(mock_info, mock_store)
 
-    fanfic = FanficInfo(
-        site="ao3", url="https://archiveofourown.org/works/1", calibre_id="1"
-    )
-    client.log_metadata_comparison(
-        fanfic,
-        {"#tag": "old", "#lost": "val", "same": "1"},
-        {"#tag": "new", "#added": "val", "same": "1"},
-    )
-    ff_logging.set_log_forward_queue(None)
-    assert len(cap.messages()) > 0
+        fanfic = FanficInfo(
+            site="ao3", url="https://archiveofourown.org/works/1", calibre_id="1"
+        )
+        client.log_metadata_comparison(
+            fanfic,
+            {"#tag": "old", "#lost": "val", "same": "1"},
+            {"#tag": "new", "#added": "val", "same": "1"},
+        )
+        ff_logging.set_log_forward_queue(None)
+        assert len(cap.messages()) > 0
+    finally:
+        ff_logging.set_verbose(old_verbose)
+        ff_logging.web_enabled.value = old_web
