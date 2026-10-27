@@ -4,7 +4,7 @@ import asyncio
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from history.database import AsyncHistoryDB, SyncHistoryDB
 from history.models import (
@@ -274,6 +274,48 @@ class TestAsyncHistoryDB(unittest.TestCase):
             return loop.run_until_complete(coro)
         finally:
             loop.close()
+
+    def test_get_recent_downloads_deduplicates_by_url_and_orders_by_latest_completion(
+        self,
+    ):
+        """get_recent_downloads should deduplicate by URL and return the latest status."""
+        self.sync_db.insert_download(
+            DownloadEvent(
+                url="https://ao3.org/works/1",
+                site="ao3",
+                title="Story A",
+                status=DownloadStatus.SUCCESS,
+                started_at=datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc),
+                completed_at=datetime(2026, 1, 1, 10, 5, tzinfo=timezone.utc),
+            )
+        )
+        self.sync_db.insert_download(
+            DownloadEvent(
+                url="https://ao3.org/works/1",
+                site="ao3",
+                title="Story A",
+                status=DownloadStatus.ABANDONED,
+                started_at=datetime(2026, 1, 2, 10, 0, tzinfo=timezone.utc),
+                completed_at=datetime(2026, 1, 2, 10, 1, tzinfo=timezone.utc),
+            )
+        )
+        self.sync_db.insert_download(
+            DownloadEvent(
+                url="https://ao3.org/works/2",
+                site="ao3",
+                title="Story B",
+                status=DownloadStatus.SUCCESS,
+                started_at=datetime(2026, 1, 3, 10, 0, tzinfo=timezone.utc),
+                completed_at=datetime(2026, 1, 3, 10, 5, tzinfo=timezone.utc),
+            )
+        )
+
+        results = self._run(self.async_db.get_recent_downloads(limit=10))
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["url"], "https://ao3.org/works/2")
+        self.assertEqual(results[0]["status"], "success")
+        self.assertEqual(results[1]["url"], "https://ao3.org/works/1")
+        self.assertEqual(results[1]["status"], "abandoned")
 
     def test_get_downloads_empty(self):
         results = self._run(self.async_db.get_downloads())

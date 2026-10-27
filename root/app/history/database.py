@@ -605,14 +605,24 @@ class AsyncHistoryDB:
             return events[:limit]
 
     async def get_recent_downloads(self, limit: int = 20) -> list[dict]:
-        """Get the most recent download events for the dashboard."""
+        """Get the most recent download events for the dashboard, deduplicated by URL."""
         async with self._connection() as conn:
             cursor = await conn.execute(
-                """SELECT id, url, site, title, calibre_id, status,
-                          error_message, started_at, completed_at,
-                          COALESCE(completed_at, started_at) as timestamp
-                   FROM download_events
-                   ORDER BY started_at DESC LIMIT ?""",
+                """WITH ranked_downloads AS (
+                       SELECT id, url, site, title, calibre_id, status,
+                              error_message, started_at, completed_at,
+                              COALESCE(completed_at, started_at) as timestamp,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY url
+                                  ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
+                              ) as rn
+                       FROM download_events
+                   )
+                   SELECT id, url, site, title, calibre_id, status,
+                          error_message, started_at, completed_at, timestamp
+                   FROM ranked_downloads
+                   WHERE rn = 1
+                   ORDER BY timestamp DESC, id DESC LIMIT ?""",
                 (limit,),
             )
             rows = await cursor.fetchall()
