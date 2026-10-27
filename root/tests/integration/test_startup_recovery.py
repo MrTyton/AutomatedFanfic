@@ -2,6 +2,7 @@
 
 import argparse
 import multiprocessing as mp
+import queue
 from unittest.mock import MagicMock, patch
 
 from fanficdownload import register_processes
@@ -83,11 +84,14 @@ def test_startup_recovery_integration(tmp_path):
         ipc = supervisor_call[0].kwargs["args"][0]
 
         # Verify ingress_queue contains the 3 recovered stories
-        assert ipc.ingress_queue.qsize() == 3
-
         recovered_items = []
-        while not ipc.ingress_queue.empty():
-            recovered_items.append(ipc.ingress_queue.get_nowait())
+        for _ in range(3):
+            try:
+                recovered_items.append(ipc.ingress_queue.get(timeout=2))
+            except queue.Empty:
+                break
+
+        assert len(recovered_items) == 3
 
         urls = {item.url for item in recovered_items}
         assert urls == {
