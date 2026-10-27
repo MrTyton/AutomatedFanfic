@@ -464,6 +464,7 @@ class Coordinator:
                     ff_logging.log_debug(
                         f"Coordinator: Suppressed active_urls read error in _drain_site_backlog: {e}"
                     )
+            queue.put(task)
             tasks_pushed.append(task)
 
         # Cleanup empty backlog entry
