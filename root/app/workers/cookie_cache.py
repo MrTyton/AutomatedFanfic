@@ -11,19 +11,23 @@ _last_personal_ini_content: str | None = None
 _site_cookiejars_lock = threading.Lock()
 
 
-def get_site_cookiejar(site: str, personal_ini_content: str) -> object | None:
+def get_site_cookiejar(
+    site: str, personal_ini_content: str | None = None
+) -> object | None:
     """Return the persisted FanFicFare cookiejar for a site, invalidating all jars if personal.ini changed."""
     global _last_personal_ini_content
     with _site_cookiejars_lock:
         if (
-            _last_personal_ini_content is not None
+            personal_ini_content is not None
+            and _last_personal_ini_content is not None
             and _last_personal_ini_content != personal_ini_content
         ):
             _site_cookiejars.clear()
             ff_logging.log_debug(
                 "\tpersonal.ini changed — cleared cached site cookiejars"
             )
-        _last_personal_ini_content = personal_ini_content
+        if personal_ini_content is not None:
+            _last_personal_ini_content = personal_ini_content
         if not site:
             return None
         return _site_cookiejars.get(site)

@@ -160,7 +160,7 @@ def _process_task(
 
         # Reactive Anubis check: if download failed, probe whether site serves an Anubis challenge
         if fff_result.has_failure and fff_result.target_url:
-            cached_jar = cookie_cache.get_site_cookiejar(site, "")
+            cached_jar = cookie_cache.get_site_cookiejar(site)
             solved, updated_jar = anubis_solver.probe_and_solve_anubis(
                 url=fff_result.target_url,
                 user_agent=fff_result.effective_user_agent,

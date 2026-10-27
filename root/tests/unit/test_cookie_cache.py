@@ -22,6 +22,16 @@ class TestCookieCache(unittest.TestCase):
         self.assertIs(get_site_cookiejar("ao3", "ini_v1"), jar)
         self.assertIsNone(get_site_cookiejar("ao3", "ini_v2"))
 
+    def test_get_cookiejar_without_personal_ini_does_not_invalidate(self):
+        jar = object()
+        set_site_cookiejar("ao3", jar)
+        # Seed personal.ini tracking with ini_v1
+        self.assertIs(get_site_cookiejar("ao3", "ini_v1"), jar)
+        # Calling without personal_ini_content preserves jar and tracking
+        self.assertIs(get_site_cookiejar("ao3"), jar)
+        # Subsequent call with same ini_v1 is still valid
+        self.assertIs(get_site_cookiejar("ao3", "ini_v1"), jar)
+
     def test_clear_all_cookiejars(self):
         jar = object()
         set_site_cookiejar("ao3", jar)
