@@ -252,6 +252,19 @@ class Coordinator:
         Automatically detects and expands series/collection URLs into individual
         story tasks before routing.
         """
+        # Check if the task was cancelled before routing or expanding
+        if self.active_urls is not None:
+            try:
+                meta = dict(self.active_urls.get(task.url, {}))
+                if meta.get("status") == "cancelled":
+                    active_urls_utils.remove_active_url(self.active_urls, task.url)
+                    ff_logging.log_debug(
+                        f"Coordinator: Dropped cancelled task {task.url}"
+                    )
+                    return
+            except Exception:
+                pass
+
         site = task.site
 
         # Check if this is a series/collection URL
@@ -405,6 +418,17 @@ class Coordinator:
         tasks_pushed = []
         while self.state.backlog[site]:
             task = self.state.backlog[site].popleft()
+            if self.active_urls is not None:
+                try:
+                    meta = dict(self.active_urls.get(task.url, {}))
+                    if meta.get("status") == "cancelled":
+                        active_urls_utils.remove_active_url(self.active_urls, task.url)
+                        ff_logging.log_debug(
+                            f"Coordinator: Dropped cancelled backlog task {task.url}"
+                        )
+                        continue
+                except Exception:
+                    pass
             queue.put(task)
             tasks_pushed.append(task)
 

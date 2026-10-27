@@ -93,6 +93,25 @@ class TestCoordinatorIntegration(unittest.TestCase):
             self.assertEqual(res["idle_workers"], {"worker_0"})
             self.assertEqual(res["dormant_workers"], {"worker_1", "worker_2"})
 
+    def test_coordinator_drops_cancelled_task(self):
+        """Tasks marked 'cancelled' in active_urls should be discarded and not routed or backlogged."""
+        ingress_q = stdlib_queue.Queue()
+        worker_q = stdlib_queue.Queue()
+        active_urls = {"http://example.com/cancelled": {"status": "cancelled"}}
+
+        coordinator = _make_coordinator(
+            ingress_q,
+            {"worker_0": worker_q},
+            active_urls=active_urls,
+        )
+
+        task = FanficInfo(url="http://example.com/cancelled", site="ao3")
+        coordinator._handle_new_task(task)
+
+        self.assertEqual(worker_q.qsize(), 0)
+        self.assertEqual(len(coordinator.state.backlog["ao3"]), 0)
+        self.assertNotIn("http://example.com/cancelled", active_urls)
+
     def test_direct_assignment_same_site(self):
         """Test that multiple tasks for the same site are pushed directly to the assigned worker."""
         fic1 = FanficInfo(url="http://site1.com/1", site="site1")

@@ -320,6 +320,19 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
     @patch("workers.pipeline._process_task")
     @patch("workers.pipeline.ff_logging")
+    def test_url_worker_skips_cancelled_task(self, mock_logging, mock_process_task):
+        """Worker loop should discard a task if its active_urls status is 'cancelled'."""
+        self.ctx.active_urls[self.fanfic.url] = {"status": "cancelled"}
+        queue = MagicMock()
+        queue.get.side_effect = [self.fanfic, None]
+
+        pipeline.url_worker(queue, self.ctx, self.worker_id)
+
+        mock_process_task.assert_not_called()
+        self.assertNotIn(self.fanfic.url, self.ctx.active_urls)
+
+    @patch("workers.pipeline._process_task")
+    @patch("workers.pipeline.ff_logging")
     def test_url_worker_adaptive_queue_timeout(self, mock_logging, mock_process_task):
         """Worker uses 2.0s timeout when idle and 0.05s timeout while holding a site lock."""
         queue = MagicMock()

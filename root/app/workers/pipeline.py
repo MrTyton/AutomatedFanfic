@@ -323,6 +323,19 @@ def url_worker(
                 )
                 time.sleep(FAILURE_COOLDOWN_SECONDS)
 
+            # If the task was cancelled while queued, drop it immediately
+            if active_urls is not None:
+                try:
+                    meta = dict(active_urls.get(fanfic.url, {}))
+                    if meta.get("status") == "cancelled":
+                        active_urls_utils.remove_active_url(active_urls, fanfic.url)
+                        ff_logging.log(
+                            f"Worker {worker_id}: Dropped cancelled task {fanfic.url}"
+                        )
+                        continue
+                except Exception:
+                    pass
+
             # Track which site we're processing
             current_site = fanfic.site
             ff_logging.set_thread_site(fanfic.site)
