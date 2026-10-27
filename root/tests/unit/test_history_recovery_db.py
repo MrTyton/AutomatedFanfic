@@ -181,3 +181,99 @@ async def test_async_get_uncompleted_downloads(async_db):
     assert rows[0]["status"] == "processing"
     assert rows[0]["title"] == "Async Title"
     await async_db.close()
+
+
+def test_get_uncompleted_downloads_ignores_older_pending_when_later_row_is_abandoned_or_success(
+    sync_db,
+):
+    """When a story has multiple rows in download_events, only the true latest row determines status."""
+    # Attempt 1: was waiting
+    sync_db.insert_download(
+        DownloadEvent(
+            url="https://archiveofourown.org/works/101",
+            site="ao3",
+            status=DownloadStatus.WAITING,
+        )
+    )
+    # Attempt 2: later abandoned
+    sync_db.insert_download(
+        DownloadEvent(
+            url="https://archiveofourown.org/works/101",
+            site="ao3",
+            status=DownloadStatus.ABANDONED,
+        )
+    )
+
+    uncompleted = sync_db.get_uncompleted_downloads()
+    assert len(uncompleted) == 0
+
+
+def test_get_uncompleted_downloads_normalizes_scheme_variants(sync_db):
+    """Scheme variants (http, https, no scheme) for the same story must be grouped together."""
+    sync_db.insert_download(
+        DownloadEvent(
+            url="royalroad.com/fiction/100326",
+            site="royalroad",
+            status=DownloadStatus.WAITING,
+        )
+    )
+    sync_db.insert_download(
+        DownloadEvent(
+            url="https://royalroad.com/fiction/100326",
+            site="royalroad",
+            status=DownloadStatus.ABANDONED,
+        )
+    )
+
+    uncompleted = sync_db.get_uncompleted_downloads()
+    assert len(uncompleted) == 0
+
+
+def test_update_download_matches_scheme_variants(sync_db):
+    """update_download must match existing rows across scheme variants without inserting a duplicate."""
+    sync_db.insert_download(
+        DownloadEvent(
+            url="royalroad.com/fiction/100326",
+            site="royalroad",
+            status=DownloadStatus.WAITING,
+        )
+    )
+
+    # User cancels with https URL
+    sync_db.update_download(
+        "https://royalroad.com/fiction/100326",
+        status=DownloadStatus.ABANDONED,
+    )
+
+    # Should not insert a duplicate row
+    cur = sync_db._conn.execute("SELECT COUNT(*) FROM download_events")
+    assert cur.fetchone()[0] == 1
+
+    uncompleted = sync_db.get_uncompleted_downloads()
+    assert len(uncompleted) == 0
+
+
+@pytest.mark.anyio
+async def test_get_waiting_urls_ignores_abandoned_or_completed_variant(async_db):
+    """get_waiting_urls should not return a URL if its latest status is abandoned or completed."""
+    sync_db = SyncHistoryDB(async_db._db_path)
+    sync_db.connect()
+    sync_db.insert_download(
+        DownloadEvent(
+            url="royalroad.com/fiction/100326",
+            site="royalroad",
+            status=DownloadStatus.WAITING,
+        )
+    )
+    sync_db.insert_download(
+        DownloadEvent(
+            url="https://royalroad.com/fiction/100326",
+            site="royalroad",
+            status=DownloadStatus.ABANDONED,
+        )
+    )
+    sync_db.close()
+
+    waiting = await async_db.get_waiting_urls()
+    assert len(waiting) == 0
+    await async_db.close()

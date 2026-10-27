@@ -168,3 +168,40 @@ def test_recover_uncompleted_downloads_database_exception(tmp_path):
 
     assert count == 0
     mock_log_fail.assert_called_once()
+
+
+def test_recover_uncompleted_downloads_ignores_cancelled_and_scheme_variants(tmp_path):
+    db_file = str(tmp_path / "test_history.db")
+    db = SyncHistoryDB(db_file)
+    db.connect()
+
+    # Waiting attempt (without scheme, as created by worker/ingester)
+    db.insert_download(
+        DownloadEvent(
+            url="royalroad.com/fiction/100326",
+            site="royalroad",
+            title="Into the Unown",
+            status=DownloadStatus.WAITING,
+        )
+    )
+
+    # User cancels it (update or separate record with scheme)
+    db.update_download(
+        url="https://royalroad.com/fiction/100326",
+        status=DownloadStatus.ABANDONED,
+    )
+    db.close()
+
+    ingress_q = queue.Queue()
+    active_urls = {}
+
+    count = recover_uncompleted_downloads(
+        history_db_path=db_file,
+        ingress_queue=ingress_q,
+        active_urls=active_urls,
+        history_recorder=None,
+    )
+
+    assert count == 0
+    assert ingress_q.empty()
+    assert len(active_urls) == 0

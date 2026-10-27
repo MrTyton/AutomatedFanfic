@@ -189,6 +189,8 @@ class SyncHistoryDB:
             DownloadStatus.PROCESSING,
             DownloadStatus.WAITING,
         )
+        clean_url = url.removeprefix("https://").removeprefix("http://")
+        url_candidates = (clean_url, f"https://{clean_url}", f"http://{clean_url}")
         cur = self._conn.execute(
             """UPDATE download_events
                SET status = ?,
@@ -201,7 +203,8 @@ class SyncHistoryDB:
                    updated_at = ?
                WHERE id = (
                    SELECT id FROM download_events
-                   WHERE url = ? AND status IN ('pending', 'processing', 'waiting', 'failed', 'abandoned')
+                   WHERE (url = ? OR url = ? OR url = ?)
+                     AND status IN ('pending', 'processing', 'waiting', 'failed', 'abandoned')
                    ORDER BY started_at DESC, id DESC LIMIT 1
                )""",
             (
@@ -213,7 +216,9 @@ class SyncHistoryDB:
                 1 if is_in_progress else 0,
                 _dt_to_str(completed_at),
                 now_str,
-                url,
+                url_candidates[0],
+                url_candidates[1],
+                url_candidates[2],
             ),
         )
         if cur.rowcount == 0:
@@ -354,17 +359,18 @@ class SyncHistoryDB:
         Returns the most recent record per URL.
         """
         assert self._conn is not None
-        cur = self._conn.execute("""WITH latest_uncompleted AS (
-                   SELECT url, MAX(started_at) AS latest_started_at, MAX(id) AS latest_id
+        cur = self._conn.execute("""WITH ranked_downloads AS (
+                   SELECT id, url, site, title, calibre_id, behavior, status, error_message, started_at,
+                          ROW_NUMBER() OVER (
+                              PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
+                              ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
+                          ) as rn
                    FROM download_events
-                   WHERE status IN ('pending', 'processing', 'waiting')
-                   GROUP BY url
                )
-               SELECT d.id, d.url, d.site, d.title, d.calibre_id, d.behavior, d.status, d.error_message
-               FROM download_events d
-               JOIN latest_uncompleted lu
-                 ON d.url = lu.url AND d.id = lu.latest_id
-               ORDER BY d.started_at ASC, d.id ASC""")
+               SELECT id, url, site, title, calibre_id, behavior, status, error_message
+               FROM ranked_downloads
+               WHERE rn = 1 AND status IN ('pending', 'processing', 'waiting')
+               ORDER BY started_at ASC, id ASC""")
         columns = [col[0] for col in cur.description]
         return [dict(zip(columns, row)) for row in cur.fetchall()]
 
@@ -613,7 +619,7 @@ class AsyncHistoryDB:
                               error_message, started_at, completed_at,
                               COALESCE(completed_at, started_at) as timestamp,
                               ROW_NUMBER() OVER (
-                                  PARTITION BY url
+                                  PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
                                   ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
                               ) as rn
                        FROM download_events
@@ -631,17 +637,18 @@ class AsyncHistoryDB:
     async def get_uncompleted_downloads(self) -> list[dict]:
         """Get latest uncompleted download rows (pending, processing, waiting)."""
         async with self._connection() as conn:
-            cursor = await conn.execute("""WITH latest_uncompleted AS (
-                       SELECT url, MAX(started_at) AS latest_started_at, MAX(id) AS latest_id
+            cursor = await conn.execute("""WITH ranked_downloads AS (
+                       SELECT id, url, site, title, calibre_id, behavior, status, error_message, started_at,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
+                                  ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
+                              ) as rn
                        FROM download_events
-                       WHERE status IN ('pending', 'processing', 'waiting')
-                       GROUP BY url
                    )
-                   SELECT d.id, d.url, d.site, d.title, d.calibre_id, d.behavior, d.status, d.error_message
-                   FROM download_events d
-                   JOIN latest_uncompleted lu
-                     ON d.url = lu.url AND d.id = lu.latest_id
-                   ORDER BY d.started_at ASC, d.id ASC""")
+                   SELECT id, url, site, title, calibre_id, behavior, status, error_message
+                   FROM ranked_downloads
+                   WHERE rn = 1 AND status IN ('pending', 'processing', 'waiting')
+                   ORDER BY started_at ASC, id ASC""")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
@@ -652,33 +659,33 @@ class AsyncHistoryDB:
         not keep stale error messages visible after the story has since moved on.
         """
         async with self._connection() as conn:
-            cursor = await conn.execute("""WITH latest_waiting AS (
-                       SELECT url,
-                              MAX(started_at) AS latest_started_at
+            cursor = await conn.execute("""WITH ranked_downloads AS (
+                       SELECT url, site, title, calibre_id, status, updated_at, error_message,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
+                                  ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
+                              ) as rn
                        FROM download_events
-                       WHERE status = 'waiting'
-                       GROUP BY url
                    )
-                   SELECT d.url, d.site, d.title, d.calibre_id, d.updated_at, d.error_message
-                   FROM download_events d
-                   JOIN latest_waiting lw
-                     ON d.url = lw.url
-                    AND d.started_at = lw.latest_started_at
-                   WHERE d.status = 'waiting'""")
+                   SELECT url, site, title, calibre_id, updated_at, error_message
+                   FROM ranked_downloads
+                   WHERE rn = 1 AND status = 'waiting'""")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
     async def get_latest_download(self, url: str) -> dict | None:
         """Get latest known download row for URL."""
+        clean_url = url.removeprefix("https://").removeprefix("http://")
+        url_candidates = (clean_url, f"https://{clean_url}", f"http://{clean_url}")
         async with self._connection() as conn:
             cursor = await conn.execute(
                 """SELECT url, site, title, calibre_id, status, behavior,
                           started_at, completed_at, updated_at
                    FROM download_events
-                   WHERE url = ?
-                   ORDER BY started_at DESC
+                   WHERE url = ? OR url = ? OR url = ?
+                   ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
                    LIMIT 1""",
-                (url,),
+                url_candidates,
             )
             row = await cursor.fetchone()
             return dict(row) if row else None
