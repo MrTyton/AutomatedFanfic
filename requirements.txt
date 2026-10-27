@@ -10,6 +10,7 @@ pydantic-settings==2.16.1
 requests==2.34.2
 requests-file==3.0.1
 cloudscraper==1.2.71
+curl-cffi>=0.17.0
 
 # HTML parsing and processing
 beautifulsoup4==4.15.0

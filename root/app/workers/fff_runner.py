@@ -23,6 +23,7 @@ from utils import ff_logging
 from utils import thread_stdout
 from utils import url_utils
 from workers import cookie_cache
+from workers import impersonated_session
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -171,6 +172,7 @@ def run_fanficfare_download(
         result.failure_messages.append(msg_str)
 
     tl_stdout = thread_stdout.ensure_tl_stdout()
+    impersonated_session.install_impersonated_session()
     captured_output = ""
     try:
         with tl_stdout.capture() as captured_buf:

@@ -268,6 +268,10 @@ class TestCheckFailureFromMessage(unittest.TestCase):
                 expected=True,
             ),
             Case(
+                msg='Adult check required on non-interactive process. Set is_adult:true in personal.ini or pass -o "is_adult=true" to the command.',
+                expected=True,
+            ),
+            Case(
                 msg="400 Client Error: Bad Request for url: https://example.com",
                 expected=True,
             ),

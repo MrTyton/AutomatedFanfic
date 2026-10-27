@@ -85,6 +85,7 @@ more_chapters = re.compile(
 failed_login = re.compile(
     r".*Login Failed on non-interactive process. Set username and password in personal.ini."
 )
+adult_check = re.compile(r".*Adult check required on non-interactive process.*")
 bad_request = re.compile(r".*400 Client Error: Bad Request for url:.*")
 forbidden_client = re.compile(r".*403 Client Error: Forbidden for url:.*")
 flaresolverr = re.compile(r".*Connection to flaresolverr proxy server failed.*")
@@ -146,6 +147,7 @@ def check_failure_from_message(msg: str) -> bool:
         bad_chapters,
         no_url,
         failed_login,
+        adult_check,
         bad_request,
         forbidden_client,
         flaresolverr,

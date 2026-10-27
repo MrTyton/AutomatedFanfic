@@ -9,6 +9,13 @@ from workers.cookie_cache import (
     get_site_cookiejar,
     set_site_cookiejar,
 )
+from workers.impersonated_session import (
+    ImpersonatedResponse,
+    ImpersonatedSession,
+    install_impersonated_session,
+    is_impersonated_session_installed,
+    uninstall_impersonated_session,
+)
 from workers.fff_runner import (
     FanFicFareResult,
     build_argv,
@@ -51,6 +58,11 @@ __all__ = [
     "ff_logging",
     "get_fanficfare_version",
     "get_site_cookiejar",
+    "ImpersonatedResponse",
+    "ImpersonatedSession",
+    "install_impersonated_session",
+    "is_impersonated_session_installed",
+    "uninstall_impersonated_session",
     "resolve_fanficfare_user_agent",
     "resolve_target_url",
     "run_fanficfare_download",
