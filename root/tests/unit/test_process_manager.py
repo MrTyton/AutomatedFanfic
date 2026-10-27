@@ -234,6 +234,27 @@ class TestProcessManager(unittest.TestCase):
         self.assertEqual(process_info.state, ProcessState.STOPPED)
         self.assertFalse(process_info.is_alive())
 
+    def test_stop_process_zero_timeout_is_respected(self):
+        """timeout=0.0 must be used as-is; it must NOT fall back to the config value."""
+        self.manager.register_process("test", dummy_worker_function, (5.0,))
+        self.manager.start_process("test")
+
+        process_info = self.manager.processes["test"]
+        mock_proc = MagicMock()
+        mock_proc.is_alive.return_value = True
+        process_info.process = mock_proc
+
+        join_calls = []
+        mock_proc.join.side_effect = lambda t=None: join_calls.append(t)
+
+        self.manager.stop_process("test", timeout=0.0)
+
+        # The first join must be called with exactly 0.0, not the config fallback
+        self.assertTrue(len(join_calls) >= 1, "process.join was never called")
+        self.assertEqual(
+            join_calls[0], 0.0, f"Expected join(0.0) but got join({join_calls[0]})"
+        )
+
     def test_restart_process_success(self):
         """Test successful process restart."""
         self.manager.register_process("test", dummy_worker_function, (0.5,))
@@ -1012,6 +1033,65 @@ class TestProcessManagerEdgeCases(unittest.TestCase):
 
         # Should return False
         self.assertFalse(result)
+
+
+class TestProcessManagerOverheadScaling(unittest.TestCase):
+    """Tests for set_system_overhead and _check_worker_scaling."""
+
+    def setUp(self):
+        self.config = AppConfig(
+            email=EmailConfig(
+                email="testuser",
+                password="test_password",
+                server="test.server.com",
+            ),
+            calibre=CalibreConfig(path="/test/path"),
+            process=ProcessConfig(),
+        )
+        self.manager = ProcessManager(self.config)
+
+    def tearDown(self):
+        try:
+            self.manager.stop_all()
+        except Exception:
+            pass
+
+    def test_set_system_overhead_updates_value(self):
+        """set_system_overhead must update the internal overhead used for scaling."""
+        self.manager.set_system_overhead(5)
+        self.assertEqual(self.manager._overhead_count, 5)
+
+    def test_check_worker_scaling_uses_set_overhead(self):
+        """_check_worker_scaling must compute target_size using the injected overhead."""
+        mock_config_store = MagicMock()
+        mock_config_store.get.return_value = 8  # max_workers = 8
+
+        mock_create_queue = MagicMock(return_value=MagicMock())
+        worker_queues = {}
+        self.manager.set_worker_queues(worker_queues, mock_create_queue)
+        self.manager._config_store = mock_config_store
+
+        # With overhead=5 and max_workers=8, target = max(1, 8-5) = 3
+        self.manager.set_system_overhead(5)
+        self.manager._check_worker_scaling()
+
+        # Should have added 3 queues (worker_0, worker_1, worker_2)
+        self.assertEqual(len(worker_queues), 3)
+
+    def test_check_worker_scaling_default_overhead_is_four(self):
+        """Default overhead before any call to set_system_overhead must be 4."""
+        mock_config_store = MagicMock()
+        mock_config_store.get.return_value = 8  # max_workers = 8
+
+        mock_create_queue = MagicMock(return_value=MagicMock())
+        worker_queues = {}
+        self.manager.set_worker_queues(worker_queues, mock_create_queue)
+        self.manager._config_store = mock_config_store
+
+        # With default overhead=4 and max_workers=8, target = max(1, 8-4) = 4
+        self.manager._check_worker_scaling()
+
+        self.assertEqual(len(worker_queues), 4)
 
 
 if __name__ == "__main__":

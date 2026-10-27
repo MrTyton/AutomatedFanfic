@@ -74,6 +74,12 @@ class ProcessManager:
         self._create_queue_fn: Callable[[], WorkerQueue] | None = None
         self._history_writer: HistoryWriter | None = None
 
+        # System overhead: number of non-worker OS-level processes in the budget.
+        # Default of 4 covers Main + SyncManager + ResourceTracker + supervisor.
+        # Call set_system_overhead() after construction when web_server is also
+        # registered so scaling accounts for the extra process slot.
+        self._overhead_count: int = 4
+
         # Configuration validation and setup
         if config:
             self.config = config
@@ -91,6 +97,15 @@ class ProcessManager:
     def set_web_restart_event(self, web_restart_event: Event) -> None:
         """Inject web_restart_event after ProcessManager construction."""
         self._web_restart_event = web_restart_event
+
+    def set_system_overhead(self, overhead_count: int) -> None:
+        """Set the number of non-worker OS processes in the max_workers budget.
+
+        Must be called before the first scaling event.  The default of 4 covers
+        Main + SyncManager + ResourceTracker + supervisor.  Pass 5 when the web
+        server is also registered so dynamic scaling uses the correct headroom.
+        """
+        self._overhead_count = overhead_count
 
     def set_worker_queues(
         self,
@@ -201,7 +216,8 @@ class ProcessManager:
             return False
 
         # Use configured timeout if none provided
-        timeout = timeout or self.process_config.shutdown_timeout
+        if timeout is None:
+            timeout = self.process_config.shutdown_timeout
         process_info.state = ProcessState.STOPPING
 
         try:
@@ -560,8 +576,7 @@ class ProcessManager:
         if not isinstance(new_max, (int, float, str)):
             return
 
-        _OVERHEAD_COUNT = 4
-        target_size = max(1, int(new_max) - _OVERHEAD_COUNT)
+        target_size = max(1, int(new_max) - self._overhead_count)
 
         # Only manage queues that follow the worker_N naming convention
         managed_ids = sorted(

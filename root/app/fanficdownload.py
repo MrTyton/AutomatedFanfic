@@ -241,8 +241,14 @@ def register_processes(
     # Register Worker Pool (Single Process with Threads)
     # We use all available slots for threads as they are lightweight, but we respect the
     # max_workers limit as a "System Process Limit" since each thread spawns a subprocess.
-    # Overhead: Main(1) + SyncManager(1) + Coordinator(1) + Email(1) + Waiter(1) + ResourceTracker(1) = 6
-    overhead_count = 4
+    # Overhead = 3 fixed (Main + SyncManager + ResourceTracker)
+    #           + 1 for supervisor
+    #           + 1 for web_server (when enabled)
+    is_web_enabled = bool(getattr(config.web, "enabled", False))
+    _SYSTEM_OVERHEAD = 3  # Main + SyncManager + ResourceTracker
+    overhead_count = (
+        _SYSTEM_OVERHEAD + 1 + (1 if is_web_enabled else 0)
+    )  # +supervisor, +web_server?
     worker_pool_size = max(1, config.max_workers - overhead_count)
 
     ff_logging.log(
@@ -264,7 +270,6 @@ def register_processes(
     # Cross-process log forwarding queue: when the web server is enabled, all
     # non-web-server processes push log entries here; the web server drains it
     # into its own ring buffer so /api/logs shows logs from every process.
-    is_web_enabled = bool(getattr(config.web, "enabled", False))
     ff_logging.set_web_enabled(is_web_enabled)
     log_queue = mp.Queue() if is_web_enabled else None
 
@@ -316,6 +321,7 @@ def register_processes(
     process_manager.set_config_store(config_store)
     process_manager.set_web_restart_event(web_restart_event)
     process_manager.set_worker_queues(worker_queues, manager.Queue)
+    process_manager.set_system_overhead(overhead_count)
 
     # Arm the cross-process log-forwarding queue BEFORE processes are started
     # so that all forked child processes inherit the reference and push their
