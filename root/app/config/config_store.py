@@ -147,7 +147,7 @@ class ConfigStore:
 
     # ── Read ────────────────────────────────────────────────────
 
-    def get(self, key: str, default=None):
+    def get(self, key: str, default: object | None = None) -> object | None:
         """Get a config value by its dotted key (e.g. ``email.sleep_time``)."""
         try:
             return self._store.get(key, default)

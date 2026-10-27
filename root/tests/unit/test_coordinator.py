@@ -1052,5 +1052,162 @@ class TestCoordinatorWorkerLifecycle(unittest.TestCase):
         scale_q.put.assert_called_once_with("worker_1")
 
 
+class TestCoordinatorBareExceptLogging(unittest.TestCase):
+    """Tests that bare except clauses log debug messages instead of silently swallowing."""
+
+    def setUp(self):
+        self.ingress_queue = mp.Queue()
+        self.worker_queues = {"worker_0": stdlib_queue.Queue()}
+        self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
+
+    @patch("services.coordinator.ff_logging.log_debug")
+    def test_active_urls_proxy_error_in_handle_new_task_logs_debug(
+        self, mock_log_debug
+    ):
+        """When active_urls.get raises in the cancelled-task check, log_debug must be called."""
+        failing_urls = MagicMock()
+        failing_urls.get.side_effect = RuntimeError("proxy error")
+        self.coordinator.active_urls = failing_urls
+
+        fic = FanficInfo(url="http://site1.com/1", site="site1")
+        # Must not raise; must log the suppressed error
+        self.coordinator._handle_new_task(fic, 0)
+
+        debug_calls = " ".join(str(c) for c in mock_log_debug.call_args_list)
+        self.assertIn(
+            "proxy error",
+            debug_calls,
+            f"Expected suppressed error in debug log, got: {debug_calls}",
+        )
+
+    @patch("services.coordinator.ff_logging.log_debug")
+    def test_active_urls_proxy_error_in_drain_backlog_logs_debug(self, mock_log_debug):
+        """When active_urls.get raises during backlog drain, log_debug must be called."""
+        failing_urls = MagicMock()
+        failing_urls.get.side_effect = RuntimeError("drain proxy error")
+        self.coordinator.active_urls = failing_urls
+
+        fic = FanficInfo(url="http://site1.com/1", site="site1")
+        self.coordinator.state.backlog["site1"] = collections.deque([fic])
+
+        queue = self.worker_queues["worker_0"]
+        # Must not raise; must log the suppressed error
+        self.coordinator._drain_site_backlog("site1", queue)
+
+        debug_calls = " ".join(str(c) for c in mock_log_debug.call_args_list)
+        self.assertIn(
+            "drain proxy error",
+            debug_calls,
+            f"Expected suppressed error in debug log, got: {debug_calls}",
+        )
+
+
+class TestCoordinatorBacklogDrainOnShutdown(unittest.TestCase):
+    """Test that the coordinator logs/drains backlog items when shutting down."""
+
+    def setUp(self):
+        self.ingress_queue = mp.Queue()
+        self.worker_queues = {"worker_0": stdlib_queue.Queue()}
+        self.shutdown_event = threading.Event()
+        self.coordinator = _make_coordinator(
+            self.ingress_queue,
+            self.worker_queues,
+            shutdown_event=self.shutdown_event,
+        )
+
+    @patch("services.coordinator.ff_logging.log_failure")
+    def test_backlog_items_logged_on_shutdown(self, mock_log_failure):
+        """When coordinator exits via shutdown_event with a non-empty backlog,
+        it must log a warning for each orphaned site."""
+        fic = FanficInfo(url="http://site1.com/1", site="site1")
+        self.coordinator.state.backlog["site1"] = collections.deque([fic])
+
+        self.shutdown_event.set()
+        self.coordinator.run()
+
+        # Must have logged something about the orphaned URL
+        all_calls = " ".join(str(c) for c in mock_log_failure.call_args_list)
+        self.assertIn(
+            "site1",
+            all_calls,
+            f"Expected 'site1' in log failure calls, got: {all_calls}",
+        )
+
+    @patch("services.coordinator.ff_logging.log_failure")
+    def test_empty_backlog_no_warning_logged(self, mock_log_failure):
+        """When coordinator exits with an empty backlog, no backlog warning is logged."""
+        self.shutdown_event.set()
+        self.coordinator.run()
+
+        all_calls = " ".join(str(c) for c in mock_log_failure.call_args_list)
+        self.assertNotIn(
+            "backlog", all_calls.lower(), f"Unexpected backlog log: {all_calls}"
+        )
+
+
+class TestCoordinatorSeriesRecursionDepth(unittest.TestCase):
+    """Tests for series recursion depth limiting in _handle_new_task."""
+
+    def setUp(self):
+        self.ingress_queue = mp.Queue()
+        self.worker_queues = {"worker_0": stdlib_queue.Queue()}
+        self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
+
+    @patch("services.coordinator.ff_logging.log_failure")
+    @patch("utils.series_utils.process_url")
+    def test_recursive_series_stops_at_max_depth(
+        self, mock_process_url, mock_log_failure
+    ):
+        """A series that expands to another series must stop before RecursionError."""
+        # Always report the URL as a series with itself as the only child
+        # This would recurse forever without a depth limit
+        child_url = "https://archiveofourown.org/series/child"
+
+        def always_series(url, config_store=None):
+            return {
+                "is_series": True,
+                "urls": [child_url],
+                "count": 1,
+                "source_url": url,
+            }
+
+        mock_process_url.side_effect = always_series
+
+        task = FanficInfo(
+            url="https://archiveofourown.org/series/root", site="archiveofourown"
+        )
+
+        # Must not raise RecursionError
+        self.coordinator._handle_new_task(task, 0)
+
+        # Must have logged a failure about depth exceeded
+        failure_messages = [str(call) for call in mock_log_failure.call_args_list]
+        depth_exceeded = any(
+            "depth" in msg.lower()
+            or "recursion" in msg.lower()
+            or "series" in msg.lower()
+            for msg in failure_messages
+        )
+        self.assertTrue(
+            depth_exceeded,
+            f"Expected depth/series failure log, got: {failure_messages}",
+        )
+
+    @patch("utils.series_utils.process_url")
+    def test_normal_series_depth_allowed(self, mock_process_url):
+        """A series at depth 0 (normal call) must still expand correctly."""
+        story_url = "https://archiveofourown.org/works/1"
+        mock_process_url.return_value = {
+            "is_series": False,
+            "urls": [story_url],
+            "count": 1,
+            "source_url": story_url,
+        }
+
+        task = FanficInfo(url=story_url, site="archiveofourown")
+        # Should not crash
+        self.coordinator._handle_new_task(task, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

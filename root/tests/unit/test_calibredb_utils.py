@@ -15,8 +15,8 @@ class TestCalibreDBClient(unittest.TestCase):
     def setUp(self):
         """Set up commonly used mocks."""
         self.mock_calibre_info = MagicMock(spec=calibre_info.CalibreInfo)
-        self.mock_calibre_info.__str__ = MagicMock(
-            return_value='--with-library "/fake/library"'
+        self.mock_calibre_info.to_args = MagicMock(
+            return_value=["--with-library", "/fake/library"]
         )
         self.mock_calibre_info.lock = MagicMock()
         self.client = CalibreDBClient(self.mock_calibre_info, MagicMock())
@@ -658,8 +658,8 @@ class TestCalibreDBClientErrorPaths(unittest.TestCase):
     def setUp(self):
         """Set up commonly used mocks."""
         self.mock_calibre_info = MagicMock(spec=calibre_info.CalibreInfo)
-        self.mock_calibre_info.__str__ = MagicMock(
-            return_value='--with-library "/fake/library"'
+        self.mock_calibre_info.to_args = MagicMock(
+            return_value=["--with-library", "/fake/library"]
         )
         self.mock_calibre_info.lock = MagicMock()
         self.client = CalibreDBClient(self.mock_calibre_info, MagicMock())

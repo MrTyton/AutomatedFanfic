@@ -1,5 +1,6 @@
 """Tests for config store, TOML writer, coordinator snapshot, and updated config routes."""
 
+import inspect
 import os
 import tempfile
 import unittest
@@ -30,6 +31,21 @@ class TestConfigStoreBasics(unittest.TestCase):
         store = ConfigStore({})
         self.assertIsNone(store.get("nonexistent"))
         self.assertEqual(store.get("nonexistent", 42), 42)
+
+    def test_get_has_return_annotation(self):
+        sig = inspect.signature(ConfigStore.get)
+        self.assertIsNot(
+            sig.return_annotation,
+            inspect.Parameter.empty,
+            "ConfigStore.get() is missing a return type annotation",
+        )
+        # default parameter should also be annotated
+        default_param = sig.parameters["default"]
+        self.assertIsNot(
+            default_param.annotation,
+            inspect.Parameter.empty,
+            "ConfigStore.get() 'default' parameter is missing a type annotation",
+        )
 
     def test_update_many(self):
         store = ConfigStore({})
