@@ -68,6 +68,24 @@ class ActionResponse(BaseModel):
     message: str
 
 
+class ToggleSiteRequest(BaseModel):
+    """Request body for toggling site disabled status."""
+
+    site: str
+
+
+class ClearErrorsRequest(BaseModel):
+    """Request body for clearing error dismissals."""
+
+    url: str | None = None
+
+
+class RestartDaemonRequest(BaseModel):
+    """Request body for restarting a daemon service."""
+
+    name: str
+
+
 def _dequeue_matching_fics(queue_obj, target_url: str) -> list[FanficInfo]:
     """Remove matching FanficInfo entries from a multiprocessing queue."""
     if queue_obj is None:
@@ -528,3 +546,199 @@ async def check_emails_now(request: Request) -> ActionResponse:
     state.check_emails_event.set()
     invalidate_history_cache()
     return ActionResponse(ok=True, message="Email check triggered")
+
+
+@router.post("/toggle-coordinator", response_model=ActionResponse)
+async def toggle_coordinator(request: Request) -> ActionResponse:
+    """Toggle coordinator task assignment pause state."""
+    state = request.app.state.web_state
+    if state.coordinator_status is None:
+        return ActionResponse(ok=False, message="Coordinator status unavailable")
+    is_paused = bool(state.coordinator_status.get("paused", False))
+    new_state = not is_paused
+    state.coordinator_status["paused"] = new_state
+    return ActionResponse(
+        ok=True,
+        message="Coordinator paused" if new_state else "Coordinator resumed",
+    )
+
+
+@router.post("/toggle-site", response_model=ActionResponse)
+async def toggle_site(request: Request, body: ToggleSiteRequest) -> ActionResponse:
+    """Toggle a site in email.disabled_sites."""
+    site = body.site.strip()
+    if not site:
+        return ActionResponse(ok=False, message="Invalid site")
+    state = request.app.state.web_state
+    if state.config_store is None:
+        if state.config is None:
+            return ActionResponse(ok=False, message="Config unavailable")
+        disabled_sites = list(state.config.email.disabled_sites)
+        site_lower = site.lower()
+        if any(s.lower() == site_lower for s in disabled_sites):
+            disabled_sites = [s for s in disabled_sites if s.lower() != site_lower]
+            state.config.email.disabled_sites = disabled_sites
+            return ActionResponse(ok=True, message=f"Site {site} enabled")
+        else:
+            disabled_sites.append(site)
+            state.config.email.disabled_sites = disabled_sites
+            return ActionResponse(ok=True, message=f"Site {site} disabled")
+
+    cfg = state.config_store.get_config()
+    disabled_sites = list(cfg.email.disabled_sites)
+    site_lower = site.lower()
+    if any(s.lower() == site_lower for s in disabled_sites):
+        disabled_sites = [s for s in disabled_sites if s.lower() != site_lower]
+        state.config_store.set("email", "disabled_sites", disabled_sites)
+        return ActionResponse(ok=True, message=f"Site {site} enabled")
+    else:
+        disabled_sites.append(site)
+        state.config_store.set("email", "disabled_sites", disabled_sites)
+        return ActionResponse(ok=True, message=f"Site {site} disabled")
+
+
+@router.post("/retry-all", response_model=ActionResponse)
+async def retry_all(request: Request) -> ActionResponse:
+    """Requeue all downloads currently in waiting/backoff state."""
+    state = request.app.state.web_state
+    if state.ingress_queue is None:
+        return ActionResponse(ok=False, message="Ingress queue not available")
+
+    waiting_urls: list[str] = []
+    if state.active_urls is not None:
+        try:
+            for url, meta in state.active_urls.items():
+                if isinstance(meta, dict) and meta.get("status") == "waiting":
+                    waiting_urls.append(url)
+        except Exception:
+            pass
+
+    count = 0
+    for url in waiting_urls:
+        raw_meta = state.active_urls.get(url, {}) if state.active_urls else {}
+        meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
+        site_val = meta.get("site")
+        site = str(site_val) if site_val else "unknown"
+        title_val = meta.get("title")
+        title = str(title_val) if title_val else None
+        calibre_val = meta.get("calibre_id")
+        calibre_id = str(calibre_val) if calibre_val else None
+        try:
+            fanfic = _build_fanfic(url, site=site, title=title)
+        except Exception:
+            continue
+        fanfic.retry_decision = None
+        repeats_val = meta.get("retry_count", 0)
+        fanfic.repeats = (
+            int(repeats_val) if isinstance(repeats_val, (int, float)) else 0
+        )
+        if calibre_id:
+            fanfic.calibre_id = calibre_id
+        if state.active_urls is not None:
+            active_urls_utils.mark_url_queued(
+                state.active_urls,
+                url,
+                site=site,
+                title=title,
+                calibre_id=calibre_id,
+            )
+        state.ingress_queue.put(fanfic)
+        count += 1
+
+    invalidate_history_cache()
+    return ActionResponse(ok=True, message=f"Requeued {count} waiting downloads")
+
+
+@router.post("/cancel-all", response_model=ActionResponse)
+async def cancel_all(request: Request) -> ActionResponse:
+    """Cancel all in-flight downloads and drain queues."""
+    state = request.app.state.web_state
+    with _queue_surgery_lock:
+        if state.ingress_queue is not None:
+            while True:
+                try:
+                    state.ingress_queue.get_nowait()
+                except Exception:
+                    break
+        if state.waiting_queue is not None:
+            while True:
+                try:
+                    state.waiting_queue.get_nowait()
+                except Exception:
+                    break
+        if state.worker_queues is not None:
+            for q in state.worker_queues.values():
+                while True:
+                    try:
+                        q.get_nowait()
+                    except Exception:
+                        break
+
+    cancelled_count = 0
+    if state.active_urls is not None:
+        try:
+            for url in list(state.active_urls.keys()):
+                if active_urls_utils.mark_url_cancelled(state.active_urls, url):
+                    cancelled_count += 1
+        except Exception:
+            pass
+
+    invalidate_history_cache()
+    return ActionResponse(
+        ok=True, message=f"Cancelled {cancelled_count} in-flight downloads"
+    )
+
+
+@router.post("/clear-errors", response_model=ActionResponse)
+async def clear_errors(request: Request, body: ClearErrorsRequest) -> ActionResponse:
+    """Clear error dismissal status for a URL or all URLs."""
+    state = request.app.state.web_state
+    if state.active_urls is not None:
+        try:
+            if body.url:
+                if body.url in state.active_urls:
+                    meta = dict(state.active_urls[body.url])
+                    meta["error_dismissed"] = True
+                    state.active_urls[body.url] = meta
+            else:
+                for url in list(state.active_urls.keys()):
+                    meta = dict(state.active_urls[url])
+                    meta["error_dismissed"] = True
+                    state.active_urls[url] = meta
+        except Exception:
+            pass
+    return ActionResponse(ok=True, message="Errors cleared")
+
+
+@router.post("/restart-daemon", response_model=ActionResponse)
+async def restart_daemon(
+    request: Request, body: RestartDaemonRequest
+) -> ActionResponse:
+    """Request restart of a daemon process or service."""
+    state = request.app.state.web_state
+    name = body.name.strip()
+    name_lower = name.lower()
+
+    if name_lower in ("webserver", "web_server"):
+        if state.web_restart_event is not None:
+            state.web_restart_event.set()
+            return ActionResponse(ok=True, message="Web server restart triggered")
+        return ActionResponse(ok=False, message="Web restart event unavailable")
+
+    if name_lower in (
+        "supervisor",
+        "coordinator",
+        "emailwatcher",
+        "waiter",
+        "ffwaiter",
+        "urlingester",
+    ):
+        sup_event = getattr(state, "supervisor_restart_event", None)
+        if sup_event is not None:
+            sup_event.set()
+            return ActionResponse(
+                ok=True, message=f"Supervisor restart triggered for {name}"
+            )
+        return ActionResponse(ok=False, message="Supervisor restart event unavailable")
+
+    return ActionResponse(ok=False, message=f"Unknown daemon '{name}'")
