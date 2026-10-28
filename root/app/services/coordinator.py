@@ -245,11 +245,11 @@ class Coordinator:
         self._log_and_drain_backlog_on_shutdown()
 
     def _log_and_drain_backlog_on_shutdown(self) -> None:
-        """Log a warning for each site with pending backlog tasks on shutdown.
+        """Log a warning and requeue pending backlog tasks to ingress_queue on shutdown.
 
         URLs already recorded in active_urls as "queued" will be recovered on the
-        next startup if resume_uncompleted_on_startup is enabled.  This method
-        makes the orphan visible so operators know work was not lost silently.
+        next startup if resume_uncompleted_on_startup is enabled. Requeuing them
+        ensures that coordinator process restarts resume backlog seamlessly.
         """
         for site in list(self.state.backlog):
             tasks = self.state.backlog[site]
@@ -258,9 +258,16 @@ class Coordinator:
             urls = [t.url for t in tasks]
             ff_logging.log_failure(
                 f"Coordinator: Shutdown with {len(tasks)} queued task(s) "
-                f"for site '{site}' — these will be recovered on restart if "
-                f"resume_uncompleted_on_startup is enabled: {urls}"
+                f"for site '{site}' — requeuing to ingress_queue for restart: {urls}"
             )
+            while tasks:
+                task = tasks.popleft()
+                try:
+                    self.ingress_queue.put(task)
+                except Exception as e:
+                    ff_logging.log_failure(
+                        f"Coordinator: Failed to requeue task {task.url}: {e}"
+                    )
         self._publish_state()
 
     def _process_single_ingress_item(self, timeout: float | None = None):
@@ -543,6 +550,11 @@ class Coordinator:
 
     def _assign_work_if_possible(self):
         """Assign pending backlog items to idle workers."""
+        if self.coordinator_status and bool(
+            self.coordinator_status.get("paused", False)
+        ):
+            return
+
         # Simple greedy assignment: Give queued sites to free workers
         # We make a copy since we might modify the set during iteration
         available_workers = list(self.state.idle_workers)

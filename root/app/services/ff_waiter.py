@@ -230,3 +230,11 @@ def wait_processor(
             continue
         heapq.heappush(pending_heap, (expiry, seq, fanfic_item, heap_gen))
         seq += 1
+
+    # Drain unexpired pending items back onto waiting_queue on shutdown
+    while pending_heap:
+        _, _, fanfic, _ = heapq.heappop(pending_heap)
+        try:
+            waiting_queue.put(fanfic)
+        except Exception:
+            pass
