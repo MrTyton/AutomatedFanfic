@@ -39,17 +39,25 @@ async def list_downloads(
 @router.get("/retries")
 async def list_retries(
     request: Request,
+    site: str | None = None,
+    search: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=500),
+    limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
 ):
     """Paginated list of all retry events."""
     db = request.app.state.web_state.history_db
     if db is None:
         return {"items": [], "total": 0}
 
-    offset = (page - 1) * page_size
-    items = await db.get_retries(limit=page_size, offset=offset)
-    total = await db.get_retry_count()
+    actual_limit = limit if limit is not None else page_size
+    actual_offset = offset if offset is not None else (page - 1) * page_size
+
+    items = await db.get_retries(
+        limit=actual_limit, offset=actual_offset, site=site, search=search
+    )
+    total = await db.get_retry_count(site=site, search=search)
     return {"items": items, "total": total}
 
 
@@ -73,10 +81,15 @@ async def list_email_checks(
     """Paginated list of email check events."""
     db = request.app.state.web_state.history_db
     if db is None:
-        return {"items": []}
+        return {"items": [], "total": 0}
 
     items = await db.get_email_checks(limit=limit, offset=offset)
-    return {"items": items}
+    total = (
+        await db.get_email_checks_count()
+        if hasattr(db, "get_email_checks_count")
+        else len(items)
+    )
+    return {"items": items, "total": total}
 
 
 @router.get("/notifications")
@@ -88,10 +101,15 @@ async def list_notifications(
     """Paginated list of notification events."""
     db = request.app.state.web_state.history_db
     if db is None:
-        return {"items": []}
+        return {"items": [], "total": 0}
 
     items = await db.get_notifications(limit=limit, offset=offset)
-    return {"items": items}
+    total = (
+        await db.get_notifications_count()
+        if hasattr(db, "get_notifications_count")
+        else len(items)
+    )
+    return {"items": items, "total": total}
 
 
 @router.get("/recent")

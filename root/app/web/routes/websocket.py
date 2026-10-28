@@ -6,6 +6,7 @@ recent history events) and pushes JSON to all connected clients every 1-2 s.
 
 import asyncio
 import json
+import os
 import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -136,6 +137,172 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
     else:
         snapshot["processes"] = {}
 
+    is_coord_paused = (
+        bool(state.coordinator_status.get("paused", False))
+        if state.coordinator_status
+        else False
+    )
+    snapshot["coordinator_paused"] = is_coord_paused
+
+    disabled_sites: list[str] = []
+    if state.config_store is not None:
+        ds = state.config_store.get("email.disabled_sites")
+        if isinstance(ds, list):
+            disabled_sites = [str(s) for s in ds]
+    elif state.config is not None and getattr(state.config, "email", None) is not None:
+        disabled_sites = list(state.config.email.disabled_sites)
+    snapshot["disabled_sites"] = disabled_sites
+
+    max_normal_retries = 11
+    if state.config is not None and getattr(state.config, "retry", None) is not None:
+        max_normal_retries = getattr(state.config.retry, "max_normal_retries", 11)
+    snapshot["max_normal_retries"] = max_normal_retries
+
+    calibre_server_url: str | None = None
+    if state.config is not None and getattr(state.config, "calibre", None) is not None:
+        c_path = getattr(state.config.calibre, "path", "")
+        if isinstance(c_path, str) and c_path.startswith("http"):
+            calibre_server_url = c_path
+    snapshot["calibre_server_url"] = calibre_server_url
+
+    # Default processes for daemon_details if empty
+    daemon_processes = (
+        dict(snapshot["processes"])
+        if snapshot["processes"]
+        else {
+            "WebServer": "running",
+            "Coordinator": "paused" if is_coord_paused else "running",
+            "EmailWatcher": "running",
+            "FFWaiter": "running",
+        }
+    )
+
+    daemon_roles = {
+        "WebServer": "FastAPI Web Dashboard & REST/WebSocket server",
+        "Coordinator": "Task scheduler with domain locking politeness policy",
+        "EmailWatcher": "IMAP email poller for fanfiction update alerts",
+        "UrlIngester": "IMAP email poller for fanfiction update alerts",
+        "Waiter": "Exponential backoff retry queue scheduler",
+        "FFWaiter": "Exponential backoff retry queue scheduler",
+        "WorkerPool": "Site-specific download worker pool",
+    }
+
+    uptime_base = getattr(state, "_started_at", None)
+    if not isinstance(uptime_base, (int, float)):
+        uptime_base = now_ts
+        setattr(state, "_started_at", uptime_base)
+
+    daemon_details: dict[str, dict[str, object]] = {}
+    for name, status in daemon_processes.items():
+        st = "paused" if name == "Coordinator" and is_coord_paused else str(status)
+        daemon_details[name] = {
+            "name": name,
+            "status": st,
+            "pid": 0,
+            "uptime_sec": max(1, int(now_ts - uptime_base)),
+            "restarts": 0,
+            "role": daemon_roles.get(name, "Background service daemon"),
+        }
+    snapshot["daemon_details"] = daemon_details
+
+    # ── Site worker stats ───────────────────────────────────────
+    known_adapters = [
+        "archiveofourown.org",
+        "fanfiction.net",
+        "royalroad.com",
+        "wattpad.com",
+        "spacebattles.com",
+        "sufficientvelocity.com",
+        "questionablequesting.com",
+        "fictionpress.com",
+    ]
+    seen_sites = set(known_adapters)
+    for a in active_urls_list:
+        s = a.get("site")
+        if s:
+            seen_sites.add(str(s).lower())
+    for q in queued_urls:
+        s = q.get("site")
+        if s:
+            seen_sites.add(str(s).lower())
+    for w in waiting_urls:
+        s = w.get("site")
+        if s:
+            seen_sites.add(str(s).lower())
+    for ds_site in disabled_sites:
+        if ds_site:
+            seen_sites.add(ds_site.lower())
+
+    disabled_set = {ds_site.lower() for ds_site in disabled_sites}
+    catalog_sites: list[dict[str, object]] = []
+    for site in sorted(seen_sites):
+        active_for_site = [
+            a for a in active_urls_list if str(a.get("site", "")).lower() == site
+        ]
+        queued_for_site = [
+            q for q in queued_urls if str(q.get("site", "")).lower() == site
+        ]
+        waiting_for_site = [
+            w for w in waiting_urls if str(w.get("site", "")).lower() == site
+        ]
+
+        if site in disabled_set:
+            status_str = "disabled"
+        elif active_for_site:
+            status_str = "downloading"
+        elif queued_for_site:
+            status_str = "queued"
+        elif waiting_for_site:
+            status_str = "backoff"
+        else:
+            status_str = "idle"
+
+        active_fic = (
+            active_for_site[0]
+            if active_for_site
+            else (queued_for_site[0] if queued_for_site else None)
+        )
+        waiting_fic = waiting_for_site[0] if waiting_for_site else None
+
+        catalog_sites.append(
+            {
+                "site": site,
+                "status": status_str,
+                "queued_count": len(queued_for_site) + len(active_for_site),
+                "active_url": (active_fic.get("url") if active_fic else None)
+                or (waiting_fic.get("url") if waiting_fic else None),
+                "active_title": (active_fic.get("title") if active_fic else None)
+                or (waiting_fic.get("title") if waiting_fic else None),
+                "backoff_until": waiting_fic.get("wait_until") if waiting_fic else None,
+                "attempt_number": (
+                    waiting_fic.get("retry_count") if waiting_fic else None
+                ),
+            }
+        )
+
+    status_weights = {
+        "downloading": 0,
+        "queued": 1,
+        "backoff": 2,
+        "disabled": 3,
+        "idle": 4,
+    }
+    catalog_sites.sort(
+        key=lambda x: (
+            status_weights.get(str(x.get("status", "idle")), 4),
+            str(x.get("site", "")),
+        )
+    )
+    notable_sites = [s for s in catalog_sites if s.get("status") != "idle"]
+
+    max_threads = os.cpu_count() or 4
+    snapshot["site_worker_stats"] = {
+        "active_threads": len(active_urls_list),
+        "max_threads": max(max_threads, 4),
+        "notable_sites": notable_sites,
+        "catalog_sites": catalog_sites,
+    }
+
     # ── Recent history events (separate feeds, TTL-cached) ─────
     # get_recent_downloads and get_recent_activity return historical records that
     # rarely change more than once every few seconds. Cache them for
@@ -156,12 +323,19 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
                 )
             except Exception:
                 _history_cache["recent_activity"] = []
+            try:
+                checks = await state.history_db.get_email_checks(limit=1)
+                _history_cache["last_email_check"] = checks[0] if checks else None
+            except Exception:
+                _history_cache["last_email_check"] = None
             _history_cache["expires_at"] = now_ts + _HISTORY_CACHE_TTL
         snapshot["recent_downloads"] = _history_cache["recent_downloads"]
         snapshot["recent_activity"] = _history_cache["recent_activity"]
+        snapshot["last_email_check"] = _history_cache.get("last_email_check")
     else:
         snapshot["recent_downloads"] = []
         snapshot["recent_activity"] = []
+        snapshot["last_email_check"] = None
 
     return snapshot
 

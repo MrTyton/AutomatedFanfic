@@ -511,10 +511,29 @@ class AsyncHistoryDB:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def get_retries(self, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def get_retries(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        site: str | None = None,
+        search: str | None = None,
+    ) -> list[dict]:
         async with self._connection() as conn:
-            cursor = await conn.execute(
-                """WITH latest_downloads AS (
+            conditions: list[str] = []
+            params: list[object] = []
+
+            if site:
+                conditions.append("LOWER(r.site) = LOWER(?)")
+                params.append(site)
+            if search:
+                pattern = f"%{search.lower()}%"
+                conditions.append(
+                    "(LOWER(r.url) LIKE ? OR LOWER(COALESCE(d.title, ld.title, '')) LIKE ? OR LOWER(COALESCE(r.error_message, '')) LIKE ?)"
+                )
+                params.extend([pattern, pattern, pattern])
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"""WITH latest_downloads AS (
                        SELECT d1.url, d1.title
                        FROM download_events d1
                        JOIN (
@@ -532,15 +551,49 @@ class AsyncHistoryDB:
                    FROM retry_events r
                    LEFT JOIN download_events d ON d.id = r.download_event_id
                    LEFT JOIN latest_downloads ld ON ld.url = r.url
-                   ORDER BY r.scheduled_at DESC LIMIT ? OFFSET ?""",
-                (limit, offset),
-            )
+                   {where_clause}
+                   ORDER BY r.scheduled_at DESC LIMIT ? OFFSET ?"""
+
+            params.extend([limit, offset])
+            cursor = await conn.execute(query, tuple(params))
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def get_retry_count(self) -> int:
+    async def get_retry_count(
+        self, site: str | None = None, search: str | None = None
+    ) -> int:
         async with self._connection() as conn:
-            cursor = await conn.execute("SELECT COUNT(*) FROM retry_events")
+            conditions: list[str] = []
+            params: list[object] = []
+
+            if site:
+                conditions.append("LOWER(r.site) = LOWER(?)")
+                params.append(site)
+            if search:
+                pattern = f"%{search.lower()}%"
+                conditions.append(
+                    "(LOWER(r.url) LIKE ? OR LOWER(COALESCE(d.title, ld.title, '')) LIKE ? OR LOWER(COALESCE(r.error_message, '')) LIKE ?)"
+                )
+                params.extend([pattern, pattern, pattern])
+
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"""WITH latest_downloads AS (
+                       SELECT d1.url, d1.title
+                       FROM download_events d1
+                       JOIN (
+                           SELECT url, MAX(started_at) AS max_started_at
+                           FROM download_events
+                           GROUP BY url
+                       ) latest
+                       ON latest.url = d1.url AND latest.max_started_at = d1.started_at
+                   )
+                   SELECT COUNT(*)
+                   FROM retry_events r
+                   LEFT JOIN download_events d ON d.id = r.download_event_id
+                   LEFT JOIN latest_downloads ld ON ld.url = r.url
+                   {where_clause}"""
+
+            cursor = await conn.execute(query, tuple(params))
             row = await cursor.fetchone()
             return row[0] if row else 0
 
@@ -554,6 +607,12 @@ class AsyncHistoryDB:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def get_email_checks_count(self) -> int:
+        async with self._connection() as conn:
+            cursor = await conn.execute("SELECT COUNT(*) FROM email_events")
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
     async def get_notifications(self, limit: int = 50, offset: int = 0) -> list[dict]:
         async with self._connection() as conn:
             cursor = await conn.execute(
@@ -563,6 +622,12 @@ class AsyncHistoryDB:
             )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
+
+    async def get_notifications_count(self) -> int:
+        async with self._connection() as conn:
+            cursor = await conn.execute("SELECT COUNT(*) FROM notification_events")
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
     async def get_recent_events(self, limit: int = 10) -> list[dict]:
         """Get the most recent events across all tables for dashboard feed."""

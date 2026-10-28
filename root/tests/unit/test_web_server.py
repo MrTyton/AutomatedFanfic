@@ -89,12 +89,12 @@ class TestHistoryRoutes(unittest.TestCase):
     def test_emails_no_db(self):
         resp = self.client.get("/api/history/emails")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"items": []})
+        self.assertEqual(resp.json(), {"items": [], "total": 0})
 
     def test_notifications_no_db(self):
         resp = self.client.get("/api/history/notifications")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"items": []})
+        self.assertEqual(resp.json(), {"items": [], "total": 0})
 
     def test_recent_no_db(self):
         resp = self.client.get("/api/history/recent")
