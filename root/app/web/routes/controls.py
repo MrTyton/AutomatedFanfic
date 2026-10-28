@@ -693,6 +693,31 @@ async def cancel_all(request: Request) -> ActionResponse:
 async def clear_errors(request: Request, body: ClearErrorsRequest) -> ActionResponse:
     """Clear error dismissal status for a URL or all URLs."""
     state = request.app.state.web_state
+    if body.url:
+        state.dismissed_error_urls.add(body.url)
+    else:
+        if state.active_urls is not None:
+            try:
+                for url in list(state.active_urls.keys()):
+                    state.dismissed_error_urls.add(url)
+            except Exception:
+                pass
+        if state.history_db is not None:
+            try:
+                waiting = await state.history_db.get_waiting_urls()
+                for w in waiting:
+                    if w.get("url"):
+                        state.dismissed_error_urls.add(str(w["url"]))
+                recent = await state.history_db.get_recent_downloads(limit=50)
+                for r in recent:
+                    if r.get("url") and (
+                        r.get("error_message")
+                        or r.get("status") in {"failed", "abandoned"}
+                    ):
+                        state.dismissed_error_urls.add(str(r["url"]))
+            except Exception:
+                pass
+
     if state.active_urls is not None:
         try:
             if body.url:

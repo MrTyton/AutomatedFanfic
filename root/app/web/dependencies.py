@@ -5,7 +5,7 @@ injected into route handlers via FastAPI's Depends() mechanism.
 """
 
 from collections.abc import Callable, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from multiprocessing.synchronize import Event
 
 from config.config_store import ConfigStore
@@ -64,3 +64,6 @@ class WebState:
 
     # Coordinator status (shared dict for assignments, backlogs, worker states)
     coordinator_status: MutableMapping[str, object] | None = None
+
+    # Dismissed error URLs (set of URLs whose 24h error alerts were cleared by the user)
+    dismissed_error_urls: set[str] = field(default_factory=set)

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from config.config_store import ConfigStore, ReloadBehavior, FIELD_RELOAD_MAP
@@ -105,6 +105,27 @@ async def get_config(request: Request):
         return {"config": masked, "reload_map": _annotate_reload_behavior(config_dict)}
     except Exception:
         return {"config": {}, "error": "Failed to serialize config"}
+
+
+@router.get("/secret")
+async def get_secret(section: str, key: str, request: Request) -> dict[str, str]:
+    """Retrieve the unmasked value of a sensitive configuration field on demand."""
+    state = request.app.state.web_state
+    if state.config is None:
+        raise HTTPException(status_code=404, detail="No config loaded")
+
+    config_dict = state.config.model_dump()
+    sec_data = config_dict.get(section)
+    if not isinstance(sec_data, dict):
+        raise HTTPException(status_code=404, detail=f"Section '{section}' not found")
+
+    if key not in sec_data:
+        raise HTTPException(
+            status_code=404, detail=f"Key '{key}' not found in section '{section}'"
+        )
+
+    val = sec_data.get(key)
+    return {"value": str(val) if val is not None else ""}
 
 
 class ConfigUpdateRequest(BaseModel):

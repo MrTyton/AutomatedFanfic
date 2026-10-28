@@ -75,6 +75,7 @@ class TestWebsocketSnapshot(unittest.TestCase):
         assert isinstance(worker_stats, dict)
         self.assertIn("catalog_sites", worker_stats)
         self.assertIn("notable_sites", worker_stats)
+        self.assertEqual(snap.get("dismissed_error_urls"), [])
 
         # Review Focus 5: empty/uninitialized WebState must not raise exceptions
         empty_state = WebState()

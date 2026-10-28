@@ -7,7 +7,7 @@ import type {
     StatusPoint,
     LogEntry,
 } from '../api'
-import { STATUS_COLORS } from '../statusColors'
+import { STATUS_COLORS } from '../statusColors.ts'
 
 export interface ParsedUrlPreview {
     raw: string
@@ -180,6 +180,47 @@ const URL_EXTRACT_RE = /(https?:\/\/[^\s<>"')]+?)(?=[.,;:]?(?:\s|$))/
 const SITE_PREFIX_RE = /^\(([\w.-]+)\)/
 const RETRY_NUM_RE = /retry #(\d+)/i
 
+function isStoryCandidateUrl(rawUrl?: string): boolean {
+    if (!rawUrl) return false
+    try {
+        const parsed = new URL(rawUrl)
+        const host = parsed.hostname.toLowerCase()
+        if (
+            host === 'github.com' ||
+            host === 'api.github.com' ||
+            host === 'localhost' ||
+            host === '127.0.0.1' ||
+            host.startsWith('192.168.') ||
+            host.startsWith('10.') ||
+            /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+        ) {
+            return false
+        }
+    } catch {
+        return false
+    }
+    return true
+}
+
+function isStartupMessage(msg: string): boolean {
+    return (
+        msg.startsWith('Starting all processes') ||
+        msg.startsWith('All processes started') ||
+        msg.startsWith('Processes running') ||
+        msg.startsWith('FanFicFare version:') ||
+        msg.startsWith('Calibre version:') ||
+        msg.startsWith('WebServer:') ||
+        msg.startsWith('Configuration loaded') ||
+        msg.startsWith('Supervisor: Starting helper services') ||
+        msg.startsWith('Apprise enabled') ||
+        msg.startsWith('HistoryWriter: started') ||
+        (msg.startsWith('Worker ') && msg.includes('started')) ||
+        msg.startsWith('Spawning ') ||
+        msg.startsWith('Calibre Path:') ||
+        msg.startsWith('For issues and updates')
+    )
+}
+
 function extractEntrySite(entry: LogEntry): string {
     if (entry.thread_site) return entry.thread_site
     const m = entry.message.match(SITE_PREFIX_RE)
@@ -235,7 +276,9 @@ export function buildLogAttemptBlocks(
     for (const entry of chronological) {
         const site = extractEntrySite(entry)
         const urlMatch = entry.message.match(URL_EXTRACT_RE)
-        const url = entry.story_url || (urlMatch ? urlMatch[1] : undefined)
+        const isSystemBanner = isStartupMessage(entry.message)
+        const candidateUrl = entry.story_url || (urlMatch ? urlMatch[1] : undefined)
+        const url = isSystemBanner ? undefined : (isStoryCandidateUrl(candidateUrl) ? candidateUrl : undefined)
         const msgLower = entry.message.toLowerCase()
 
         // Determine if this line starts or belongs to a story attempt
@@ -340,19 +383,33 @@ export function buildLogAttemptBlocks(
             }
         } else {
             // System / Supervisor / IMAP IDLE event block
+            const isStartup = isStartupMessage(entry.message)
+            const targetTitle = isStartup
+                ? 'Application Startup & Lifecycle'
+                : entry.message.startsWith('UrlIngester:')
+                  ? 'IMAP Inbox Watcher Check'
+                  : entry.message.startsWith('Supervisor:') || entry.message.startsWith('ProcessManager:')
+                    ? 'Process Supervisor Lifecycle'
+                    : 'System & Coordinator Activity'
+
+            const timeDiffSec = currentSystemBlock
+                ? (() => {
+                      const d1 = new Date(entry.timestamp.replace(' ', 'T')).getTime()
+                      const d2 = new Date(currentSystemBlock.endedAt.replace(' ', 'T')).getTime()
+                      return isNaN(d1) || isNaN(d2) ? 0 : Math.abs(d1 - d2) / 1000
+                  })()
+                : 999999
+
             if (
                 !currentSystemBlock ||
-                currentSystemBlock.lines.length >= 6 ||
-                entry.timestamp.slice(0, 16) !== currentSystemBlock.endedAt.slice(0, 16)
+                currentSystemBlock.title !== targetTitle ||
+                timeDiffSec > 300 ||
+                currentSystemBlock.lines.length >= 100
             ) {
                 currentSystemBlock = {
                     id: `sys-${entry.timestamp}-${blocks.length}`,
                     kind: 'system',
-                    title: entry.message.startsWith('UrlIngester:')
-                        ? 'IMAP Inbox Watcher Check'
-                        : entry.message.startsWith('Supervisor:') || entry.message.startsWith('ProcessManager:')
-                          ? 'Process Supervisor Lifecycle'
-                          : 'System & Coordinator Activity',
+                    title: targetTitle,
                     attemptNumber: 1,
                     status: entry.level.toLowerCase() === 'error' ? 'failed' : 'system',
                     isActive: false,

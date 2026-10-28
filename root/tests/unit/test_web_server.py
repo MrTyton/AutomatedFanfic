@@ -442,6 +442,43 @@ class TestConfigRoutes(unittest.TestCase):
         self.assertEqual(data["email"]["server"], "imap.example.com")
         self.assertEqual(data["pushbullet"]["api_key"], "********")
 
+    def test_get_secret_success(self):
+        """GET /api/config/secret returns unmasked secret value."""
+        mock_config = MagicMock()
+        mock_config.model_dump.return_value = {
+            "email": {
+                "password": "super_secret_email_password",
+            },
+            "calibre": {
+                "password": "calibre_secret",
+            },
+        }
+        self.state.config = mock_config
+
+        resp = self.client.get("/api/config/secret?section=email&key=password")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"value": "super_secret_email_password"})
+
+        resp2 = self.client.get("/api/config/secret?section=calibre&key=password")
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.json(), {"value": "calibre_secret"})
+
+    def test_get_secret_not_found(self):
+        """GET /api/config/secret returns 404 when section or key not found."""
+        self.state.config = None
+        resp = self.client.get("/api/config/secret?section=email&key=password")
+        self.assertEqual(resp.status_code, 404)
+
+        mock_config = MagicMock()
+        mock_config.model_dump.return_value = {"email": {}}
+        self.state.config = mock_config
+
+        resp2 = self.client.get("/api/config/secret?section=email&key=nonexistent")
+        self.assertEqual(resp2.status_code, 404)
+
+        resp3 = self.client.get("/api/config/secret?section=invalid_sec&key=password")
+        self.assertEqual(resp3.status_code, 404)
+
     def test_validate_config(self):
         resp = self.client.post("/api/config/validate", json={"values": {}})
         self.assertEqual(resp.status_code, 200)

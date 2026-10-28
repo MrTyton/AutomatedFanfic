@@ -225,6 +225,14 @@ export default function Dashboard({ data }: Props) {
     const [expandAllPreviews, setExpandAllPreviews] = useState(false)
     const [showWorkerPoolModal, setShowWorkerPoolModal] = useState(false)
     const [workerSearch, setWorkerSearch] = useState('')
+    const [localDismissedUrls, setLocalDismissedUrls] = useState<Set<string>>(() => {
+        try {
+            const stored = localStorage.getItem('aff_dismissed_error_urls')
+            return stored ? new Set(JSON.parse(stored)) : new Set()
+        } catch {
+            return new Set()
+        }
+    })
 
     useEffect(() => {
         const id = setInterval(() => setNow(Date.now()), 1000)
@@ -426,11 +434,45 @@ export default function Dashboard({ data }: Props) {
         (d) => d.status === 'success' && isWithin24h(d.completed_at || d.timestamp)
     ).length
 
-    const dismissedErrorUrls = new Set(data.dismissed_error_urls || [])
+    const dismissedErrorUrls = useMemo(() => {
+        const combined = new Set(data.dismissed_error_urls || [])
+        for (const u of localDismissedUrls) {
+            combined.add(u)
+        }
+        return combined
+    }, [data.dismissed_error_urls, localDismissedUrls])
+
     const uniqueErrors = aggregateRecentErrors(waitingItems, recentDownloads, now).filter(
         (e) => !dismissedErrorUrls.has(e.url)
     )
     const totalErrorOccurrences = uniqueErrors.reduce((sum, e) => sum + e.occurrences, 0)
+
+    const handleClearAllErrors = () => {
+        const toDismiss = new Set(localDismissedUrls)
+        for (const e of uniqueErrors) {
+            toDismiss.add(e.url)
+        }
+        setLocalDismissedUrls(toDismiss)
+        try {
+            localStorage.setItem('aff_dismissed_error_urls', JSON.stringify(Array.from(toDismiss)))
+        } catch {
+            // ignore
+        }
+        clearErrors()
+        showBriefNotice('Cleared 24h error alerts')
+    }
+
+    const handleDismissSingleError = (url: string) => {
+        const toDismiss = new Set(localDismissedUrls)
+        toDismiss.add(url)
+        setLocalDismissedUrls(toDismiss)
+        try {
+            localStorage.setItem('aff_dismissed_error_urls', JSON.stringify(Array.from(toDismiss)))
+        } catch {
+            // ignore
+        }
+        clearErrors(url)
+    }
 
     const siteQueues = data.queues?.sites || {}
     const siteQueueEntries = Object.entries(siteQueues).filter(([, c]) => c > 0)
@@ -839,8 +881,7 @@ export default function Dashboard({ data }: Props) {
                                     type="button"
                                     className="danger btn-sm"
                                     onClick={() => {
-                                        clearErrors()
-                                        showBriefNotice('Cleared 24h error alerts')
+                                        handleClearAllErrors()
                                     }}
                                     style={{ padding: '0.18rem 0.45rem', minHeight: 26, fontSize: '0.72rem' }}
                                     title="Clear 24h error alerts"
@@ -1967,7 +2008,7 @@ export default function Dashboard({ data }: Props) {
                                             type="button"
                                             className="secondary btn-sm"
                                             onClick={() => {
-                                                clearErrors(errItem.url)
+                                                handleDismissSingleError(errItem.url)
                                                 if (uniqueErrors.length <= 1) {
                                                     setShowAllErrorsModal(false)
                                                 }
@@ -2032,9 +2073,8 @@ export default function Dashboard({ data }: Props) {
                                 type="button"
                                 className="danger"
                                 onClick={() => {
-                                    clearErrors()
+                                    handleClearAllErrors()
                                     setShowAllErrorsModal(false)
-                                    showBriefNotice('Cleared all 24h error alerts')
                                 }}
                             >
                                 <Trash2 size={14} /> Clear All Errors

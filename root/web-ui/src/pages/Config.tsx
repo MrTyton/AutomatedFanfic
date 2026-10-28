@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
     getConfig,
+    getSecret,
     updateConfigSection,
     testConfigSection,
     getIniFile,
@@ -202,6 +203,40 @@ export default function Config() {
         })
         setResult(null)
         setTestResult(null)
+    }
+
+    const handleToggleSecret = async (tab: string, fieldKey: string) => {
+        const fieldId = `${tab}.${fieldKey}`
+        const currentlyShowing = !!revealed[fieldId]
+        if (currentlyShowing) {
+            setRevealed((r) => ({ ...r, [fieldId]: false }))
+            return
+        }
+
+        const currentVal = (config?.[tab] as Record<string, unknown> | undefined)?.[fieldKey]
+        if (currentVal === '********') {
+            try {
+                const res = await getSecret(tab, fieldKey)
+                handleFieldChange(tab, fieldKey, res.value)
+                setInitialConfig((prev) => {
+                    if (!prev) return prev
+                    const sec = prev[tab] as Record<string, unknown> | undefined
+                    if (sec && sec[fieldKey] === '********') {
+                        return {
+                            ...prev,
+                            [tab]: {
+                                ...sec,
+                                [fieldKey]: res.value,
+                            },
+                        }
+                    }
+                    return prev
+                })
+            } catch {
+                // Keep existing masked representation if network error
+            }
+        }
+        setRevealed((r) => ({ ...r, [fieldId]: true }))
     }
 
     const handleSaveSection = async () => {
@@ -884,6 +919,11 @@ export default function Config() {
                                                                     : 'text'
                                                             }
                                                             value={String(val ?? '')}
+                                                            onFocus={(e) => {
+                                                                if (isSecret && e.target.value === '********') {
+                                                                    e.target.select()
+                                                                }
+                                                            }}
                                                             onChange={(e) =>
                                                                 handleFieldChange(
                                                                     activeTab,
@@ -898,12 +938,7 @@ export default function Config() {
                                                                 type="button"
                                                                 className="secondary btn-sm"
                                                                 aria-label={showSecret ? 'Hide secret' : 'Show secret'}
-                                                                onClick={() =>
-                                                                    setRevealed((r) => ({
-                                                                        ...r,
-                                                                        [fieldId]: !r[fieldId],
-                                                                    }))
-                                                                }
+                                                                onClick={() => handleToggleSecret(activeTab, key)}
                                                             >
                                                                 {showSecret ? (
                                                                     <EyeOff size={14} />

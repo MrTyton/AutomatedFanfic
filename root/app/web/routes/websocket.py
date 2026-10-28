@@ -122,6 +122,12 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
         "count": len(waiting_urls),
     }
 
+    dismissed_urls = set(state.dismissed_error_urls)
+    for u, meta in url_metadata.items():
+        if meta.get("error_dismissed"):
+            dismissed_urls.add(u)
+    snapshot["dismissed_error_urls"] = sorted(dismissed_urls)
+
     # ── Queue depths ────────────────────────────────────────────
     snapshot["queues"] = active_urls_utils.get_queue_depths(
         state.ingress_queue, state.waiting_queue, state.worker_queues

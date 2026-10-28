@@ -411,6 +411,12 @@ export function getConfig() {
     return apiFetch<ConfigResponse>('/api/config')
 }
 
+export function getSecret(section: string, key: string) {
+    return apiFetch<{ value: string }>(
+        `/api/config/secret?section=${encodeURIComponent(section)}&key=${encodeURIComponent(key)}`
+    )
+}
+
 export function updateConfigSection(section: string, values: Record<string, unknown>) {
     return apiFetch<ConfigUpdateResult>(
         `/api/config/${section}`,

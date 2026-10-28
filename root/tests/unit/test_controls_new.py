@@ -190,6 +190,9 @@ class TestNewControlsRoutes(unittest.TestCase):
         self.assertTrue(
             active["https://archiveofourown.org/works/1"].get("error_dismissed")
         )
+        self.assertIn(
+            "https://archiveofourown.org/works/1", self.state.dismissed_error_urls
+        )
 
         # Clear all errors
         resp2 = self.client.post("/api/controls/clear-errors", json={})

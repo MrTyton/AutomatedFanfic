@@ -15,8 +15,8 @@ import {
     diagnoseErrorSignature,
     computeIniLineDiff,
     extractIniSections,
-} from './dashboardLogic'
-import { STATUS_COLORS } from '../statusColors'
+} from './dashboardLogic.ts'
+import { STATUS_COLORS } from '../statusColors.ts'
 
 test('parseAndValidateUrlLines parses full and scheme-less URLs and detects disabled or duplicate sites', () => {
     const input = [
@@ -147,6 +147,31 @@ test('buildLogAttemptBlocks de-interleaves concurrent site worker logs into self
     assert.equal(ffnBlock.lines.length, 3)
     assert.equal(ffnBlock.title, 'Echoes of Eternity: Chapter 42')
     assert.ok(ffnBlock.traceback?.includes('Traceback: line 142'))
+})
+
+test('buildLogAttemptBlocks groups startup messages with non-story URLs into single lifecycle block', () => {
+    const startupLogs = [
+        { timestamp: '2026-10-28 11:07:12', level: 'info', message: 'For issues and updates, please go to https://github.com/MrTyton/AutomatedFanfic' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Calibre Path: http://192.168.1.161:8195/#Fanfiction' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'FanFicFare version: 4.62.18' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Calibre version: 9.17.0' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'WebServer: History database connection established' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Configuration loaded successfully from /config/config.toml' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'WebServer: Starting on 0.0.0.0:8080' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Supervisor: Starting helper services...' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Worker worker_0 started' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'All processes started successfully' },
+    ]
+
+    const blocks = buildLogAttemptBlocks(startupLogs)
+    const storyBlocks = blocks.filter((b) => b.kind === 'story_attempt')
+    assert.equal(storyBlocks.length, 0)
+
+    const systemBlocks = blocks.filter((b) => b.kind === 'system')
+    assert.equal(systemBlocks.length, 1)
+    assert.equal(systemBlocks[0].title, 'Application Startup & Lifecycle')
+    assert.equal(systemBlocks[0].lines.length, 10)
+    assert.equal(systemBlocks[0].isActive, false)
 })
 
 test('computeDirtySections tracks unsaved changes across all config sections and personal.ini', () => {
