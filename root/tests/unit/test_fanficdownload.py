@@ -529,8 +529,8 @@ class TestFanficDownloadMain(unittest.TestCase):
             with patch("fanficdownload.mp.Event") as mock_native_event:
                 fanficdownload.main()
                 self.assertEqual(mock_native_queue.call_count, 5)
-                # 2 native mp.Event calls: web_restart_event and check_emails_event
-                self.assertEqual(mock_native_event.call_count, 2)
+                # 3 native mp.Event calls: web_restart_event, check_emails_event, and supervisor_restart_event
+                self.assertEqual(mock_native_event.call_count, 3)
                 mock_set_web_enabled.assert_called_with(True)
 
     def test_python_version_guard_raises_on_unsupported_python(self):
