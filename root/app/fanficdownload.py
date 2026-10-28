@@ -291,7 +291,11 @@ def register_processes(
         else None
     )
 
-    # Start the HistoryWriter daemon thread (runs in main process)
+    # Initialize persistent file logging if web server is disabled (otherwise WebServer owns it)
+    if not config.web.enabled:
+        log_file_path = getattr(config.web, "log_file_path", None)
+        if isinstance(log_file_path, str) and log_file_path.strip():
+            ff_logging.init_persistent_logging(log_file_path)
     history_writer = HistoryWriter(
         history_queue,
         history_db_path or "/data/history.db",

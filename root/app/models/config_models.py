@@ -630,6 +630,10 @@ class WebConfig(BaseModel):
         default="/data/history.db",
         description="Path to the SQLite history database file",
     )
+    log_file_path: str = Field(
+        default="/data/automatedfanfic.log",
+        description="Path to the persistent rotating log file",
+    )
 
     @field_validator("history_db_path")
     @classmethod
@@ -639,6 +643,15 @@ class WebConfig(BaseModel):
         basename = v.rsplit("/", 1)[-1] if "/" in v else v
         if "." not in basename:
             v = v + "/history.db"
+        return v
+
+    @field_validator("log_file_path")
+    @classmethod
+    def validate_log_file_path(cls, v):
+        v = v.strip().rstrip("/")
+        basename = v.rsplit("/", 1)[-1] if "/" in v else v
+        if "." not in basename:
+            v = v + "/automatedfanfic.log"
         return v
 
 

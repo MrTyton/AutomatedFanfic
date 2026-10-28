@@ -1,6 +1,9 @@
-from typing import NamedTuple
+import json
+import os
 import queue
+import tempfile
 import time
+from typing import NamedTuple
 import unittest
 from unittest.mock import patch
 
@@ -244,6 +247,65 @@ class TestLogForwarding(unittest.TestCase):
         entry = q.get_nowait()
         self.assertEqual(entry["level"], "debug")
         self.assertEqual(entry["message"], "web debug entry")
+
+
+class TestPersistentLogging(unittest.TestCase):
+    """Tests for persistent rotating JSONL file logging and startup rehydration."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.log_path = os.path.join(self.temp_dir.name, "test_persistent.log")
+        ff_logging.set_web_enabled(True)
+        with ff_logging._log_buffer_lock:
+            ff_logging._log_buffer.clear()
+            ff_logging._startup_log_buffer.clear()
+
+    def tearDown(self):
+        ff_logging.close_persistent_logging()
+        self.temp_dir.cleanup()
+        with ff_logging._log_buffer_lock:
+            ff_logging._log_buffer.clear()
+            ff_logging._startup_log_buffer.clear()
+
+    def test_init_persistent_logging_and_append(self):
+        ff_logging.init_persistent_logging(self.log_path)
+        ff_logging.log("test persistent message")
+        with open(self.log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        self.assertEqual(len(lines), 1)
+        data = json.loads(lines[0])
+        self.assertEqual(data["message"], "test persistent message")
+
+    def test_rehydration_on_startup(self):
+        entries = [
+            {
+                "timestamp": "2026-10-28 10:00:00 AM",
+                "level": "info",
+                "message": "msg 1",
+                "story_url": "http://example.com/1",
+            },
+            {
+                "timestamp": "2026-10-28 10:01:00 AM",
+                "level": "error",
+                "message": "msg 2",
+                "attempt_id": "attempt-1",
+            },
+            "corrupted non-json line\n",
+        ]
+        with open(self.log_path, "w", encoding="utf-8") as f:
+            for e in entries:
+                if isinstance(e, dict):
+                    f.write(json.dumps(e) + "\n")
+                else:
+                    f.write(e)
+
+        ff_logging.init_persistent_logging(self.log_path)
+        recent = ff_logging.get_recent_logs(limit=10)
+        self.assertEqual(len(recent), 2)
+        self.assertEqual(recent[0]["message"], "msg 2")
+        self.assertEqual(recent[0]["attempt_id"], "attempt-1")
+        self.assertEqual(recent[1]["message"], "msg 1")
+        self.assertEqual(recent[1]["story_url"], "http://example.com/1")
 
 
 if __name__ == "__main__":

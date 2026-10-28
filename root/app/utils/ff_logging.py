@@ -34,6 +34,10 @@ from __future__ import annotations
 
 import collections
 import datetime
+import json
+import logging
+import logging.handlers
+from pathlib import Path
 from queue import Empty
 import threading
 from typing import TYPE_CHECKING
@@ -61,6 +65,88 @@ _STARTUP_COMPLETE_MARKERS = (
     "Processes running. Press Ctrl+C to stop gracefully.",
 )
 
+# ── Persistent disk logging ─────────────────────────────────────
+_persistent_logger = logging.getLogger("automatedfanfic.persistent")
+_persistent_logger.setLevel(logging.INFO)
+_persistent_logger.propagate = False
+_persistent_handler: logging.handlers.RotatingFileHandler | None = None
+_persistent_log_lock = threading.Lock()
+_persistent_log_path: str | None = None
+
+
+def init_persistent_logging(
+    log_path: str | None,
+    max_bytes: int = 5_000_000,
+    backup_count: int = 3,
+) -> None:
+    """Initialize persistent rotating JSONL log file and rehydrate in-memory ring buffer."""
+    global _persistent_handler, _persistent_log_path
+    if not isinstance(log_path, str) or not log_path.strip():
+        return
+
+    close_persistent_logging()
+
+    path_obj = Path(log_path)
+    try:
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    # Rehydrate existing entries from disk if file exists
+    if path_obj.exists():
+        try:
+            with open(path_obj, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            parsed: list[dict] = []
+            for line in lines[-_LOG_BUFFER_MAX:]:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if isinstance(data, dict) and "message" in data:
+                        parsed.append(data)
+                except Exception:
+                    continue
+            with _log_buffer_lock:
+                for entry in parsed:
+                    _log_buffer.append(entry)
+        except Exception:
+            pass
+
+    with _persistent_log_lock:
+        try:
+            handler = logging.handlers.RotatingFileHandler(
+                str(path_obj),
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding="utf-8",
+            )
+            handler.setFormatter(logging.Formatter("%(message)s"))
+            _persistent_logger.handlers.clear()
+            _persistent_logger.addHandler(handler)
+            _persistent_handler = handler
+            _persistent_log_path = str(path_obj)
+        except Exception:
+            _persistent_handler = None
+            _persistent_log_path = None
+
+
+def close_persistent_logging() -> None:
+    """Close and flush the persistent log handler."""
+    global _persistent_handler, _persistent_log_path
+    with _persistent_log_lock:
+        if _persistent_handler is not None:
+            try:
+                _persistent_handler.flush()
+                _persistent_handler.close()
+            except Exception:
+                pass
+            _persistent_logger.handlers.clear()
+            _persistent_handler = None
+            _persistent_log_path = None
+
+
 # ── Cross-process log forwarding ────────────────────────────────
 # When set, log() also puts entries into this queue so the web
 # server process (which runs in a separate subprocess) can drain
@@ -69,7 +155,7 @@ _log_forward_queue: LogQueue | None = None
 
 
 def _append_log_entry(entry: dict) -> None:
-    """Append an entry to runtime/startup buffers in a single critical section."""
+    """Append an entry to runtime/startup buffers and write to disk if enabled."""
     global _startup_capture_enabled
     message = str(entry.get("message", ""))
 
@@ -79,6 +165,15 @@ def _append_log_entry(entry: dict) -> None:
             _startup_log_buffer.append(entry)
             if any(marker in message for marker in _STARTUP_COMPLETE_MARKERS):
                 _startup_capture_enabled = False
+
+    if _persistent_handler is not None:
+        with _persistent_log_lock:
+            if _persistent_handler is not None:
+                try:
+                    line = json.dumps(entry, ensure_ascii=False)
+                    _persistent_logger.info(line)
+                except Exception:
+                    pass
 
 
 def _store_log_entry(

@@ -744,8 +744,8 @@ class AsyncHistoryDB:
         url_candidates = (clean_url, f"https://{clean_url}", f"http://{clean_url}")
         async with self._connection() as conn:
             cursor = await conn.execute(
-                """SELECT url, site, title, calibre_id, status, behavior,
-                          started_at, completed_at, updated_at
+                """SELECT id, url, site, title, calibre_id, status, behavior,
+                          error_message, started_at, completed_at, updated_at
                    FROM download_events
                    WHERE url = ? OR url = ? OR url = ?
                    ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
@@ -754,6 +754,37 @@ class AsyncHistoryDB:
             )
             row = await cursor.fetchone()
             return dict(row) if row else None
+
+    async def get_story_history(self, url: str) -> dict | None:
+        """Get complete latest history for a URL, including retries and notifications."""
+        download = await self.get_latest_download(url)
+        if not download:
+            return None
+
+        clean_url = url.removeprefix("https://").removeprefix("http://")
+        url_candidates = (clean_url, f"https://{clean_url}", f"http://{clean_url}")
+        async with self._connection() as conn:
+            cursor = await conn.execute(
+                """SELECT * FROM retry_events
+                   WHERE url = ? OR url = ? OR url = ?
+                   ORDER BY scheduled_at ASC""",
+                url_candidates,
+            )
+            retries = [dict(r) for r in await cursor.fetchall()]
+
+            cursor = await conn.execute(
+                """SELECT * FROM notification_events
+                   WHERE download_event_id = ?
+                   ORDER BY sent_at DESC""",
+                (download.get("id"),),
+            )
+            notifications = [dict(n) for n in await cursor.fetchall()]
+
+        return {
+            "download": download,
+            "retries": retries,
+            "notifications": notifications,
+        }
 
     async def get_recent_activity(self, limit: int = 20) -> list[dict]:
         """Get the most recent non-download events for the dashboard feed.

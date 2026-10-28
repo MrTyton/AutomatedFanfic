@@ -1,10 +1,35 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getLogs, getStartupLogs, clearLogs, getAttemptBlocksFromLogs, LogEntry } from '../api'
+import {
+    getLogs,
+    getStartupLogs,
+    clearLogs,
+    getAttemptBlocksFromLogs,
+    getHistoricalStoryDetails,
+    type LogEntry,
+    type HistoricalStoryDetails,
+} from '../api'
 import { formatAttemptBlockAsText, type LogAttemptBlock } from '../utils/dashboardLogic'
 import AttemptBlockCard from '../components/AttemptBlockCard'
 import GitHubIssueModal from '../components/GitHubIssueModal'
-import { Search, Pause, Play, Copy, Check, Trash2, ArrowUpToLine, X, Layers, List, Activity, Clock, Bug } from 'lucide-react'
+import {
+    Search,
+    Pause,
+    Play,
+    Copy,
+    Check,
+    Trash2,
+    ArrowUpToLine,
+    X,
+    Layers,
+    List,
+    Activity,
+    Clock,
+    Bug,
+    Database,
+    AlertTriangle,
+    ExternalLink,
+} from 'lucide-react'
 
 const LEVEL_COLORS: Record<string, string> = {
     debug: '#64748b',
@@ -125,6 +150,9 @@ export default function Logs() {
     const [paused, setPaused] = useState(false)
     const [copied, setCopied] = useState(false)
     const [confirmClear, setConfirmClear] = useState(false)
+    const [historicalFallback, setHistoricalFallback] = useState<HistoricalStoryDetails['story'] | null>(null)
+    const [historicalLoading, setHistoricalLoading] = useState(false)
+    const [copiedHistoricalTrace, setCopiedHistoricalTrace] = useState(false)
     const [issueModalTarget, setIssueModalTarget] = useState<{
         open: boolean
         block?: LogAttemptBlock | null
@@ -236,6 +264,40 @@ export default function Logs() {
         () => filteredAttemptBlocks.filter((b) => !b.isActive),
         [filteredAttemptBlocks]
     )
+
+    const hasLiveBlockForUrl = useMemo(
+        () => (focusedBlockUrl ? filteredAttemptBlocks.some((b) => b.url === focusedBlockUrl) : false),
+        [focusedBlockUrl, filteredAttemptBlocks]
+    )
+
+    useEffect(() => {
+        if (!focusedBlockUrl || hasLiveBlockForUrl) {
+            setHistoricalFallback(null)
+            return
+        }
+
+        let cancelled = false
+        setHistoricalLoading(true)
+        getHistoricalStoryDetails(focusedBlockUrl)
+            .then((res) => {
+                if (cancelled) return
+                if (res?.found && res.story) {
+                    setHistoricalFallback(res.story)
+                } else {
+                    setHistoricalFallback(null)
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setHistoricalFallback(null)
+            })
+            .finally(() => {
+                if (!cancelled) setHistoricalLoading(false)
+            })
+
+        return () => {
+            cancelled = true
+        }
+    }, [focusedBlockUrl, hasLiveBlockForUrl])
 
     // Scroll to focused block when navigated via ?block=<url>
     useEffect(() => {
@@ -542,6 +604,127 @@ export default function Logs() {
             >
                 {viewFormat === 'blocks' && mode === 'runtime' ? (
                     <div>
+                        {/* Pinned Historical DB Fallback Card if navigating to a block whose console logs rolled over */}
+                        {focusedBlockUrl && !hasLiveBlockForUrl && (
+                            <div
+                                style={{
+                                    background: 'var(--surface)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 'var(--radius)',
+                                    padding: '1rem',
+                                    marginBottom: '1.25rem',
+                                }}
+                            >
+                                {historicalLoading ? (
+                                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                        Checking persistent database for historical story records...
+                                    </div>
+                                ) : historicalFallback ? (
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                            <div>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                        <Database size={11} /> Historical DB Record
+                                                    </span>
+                                                    {historicalFallback.download.site && (
+                                                        <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--surface-hover)', color: 'var(--text-secondary)' }}>
+                                                            {historicalFallback.download.site}
+                                                        </span>
+                                                    )}
+                                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.45rem', borderRadius: '4px', background: historicalFallback.download.status === 'failed' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)', color: historicalFallback.download.status === 'failed' ? 'var(--danger)' : 'var(--success)' }}>
+                                                        {historicalFallback.download.status.toUpperCase()}
+                                                    </span>
+                                                    {historicalFallback.download.calibre_id && (
+                                                        <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--success)' }}>
+                                                            #{historicalFallback.download.calibre_id}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginTop: '0.35rem', marginBottom: '0.2rem' }}>
+                                                    {historicalFallback.download.title || focusedBlockUrl}
+                                                </h3>
+                                                <a href={focusedBlockUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', wordBreak: 'break-all', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                    <span>{focusedBlockUrl}</span>
+                                                    <ExternalLink size={10} />
+                                                </a>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="secondary btn-sm"
+                                                onClick={() => {
+                                                    const next = new URLSearchParams(searchParams)
+                                                    next.delete('block')
+                                                    setSearchParams(next)
+                                                    setFocusedBlockUrl('')
+                                                }}
+                                            >
+                                                <X size={12} /> Clear Focus
+                                            </button>
+                                        </div>
+
+                                        <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.8rem', fontSize: '0.78rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                                            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+                                            <span>
+                                                Live console logs from this previous session are no longer in memory (e.g., container restarted or logs rolled over). Displaying captured diagnostic record from the persistent history database.
+                                            </span>
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.85rem' }}>
+                                            <span>Started: <strong style={{ color: 'var(--text-primary)' }}>{historicalFallback.download.started_at}</strong></span>
+                                            {historicalFallback.download.completed_at && (
+                                                <span>Completed: <strong style={{ color: 'var(--text-primary)' }}>{historicalFallback.download.completed_at}</strong></span>
+                                            )}
+                                            <span>Total Retries: <strong style={{ color: 'var(--text-primary)' }}>{historicalFallback.retries.length}</strong></span>
+                                        </div>
+
+                                        {historicalFallback.download.error_message && (
+                                            <div style={{ marginTop: '0.5rem' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                                                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--danger)' }}>
+                                                        Captured Error & Traceback:
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary btn-xs"
+                                                        onClick={() => {
+                                                            if (historicalFallback?.download.error_message) {
+                                                                navigator.clipboard?.writeText(historicalFallback.download.error_message)
+                                                                setCopiedHistoricalTrace(true)
+                                                                setTimeout(() => setCopiedHistoricalTrace(false), 2000)
+                                                            }
+                                                        }}
+                                                    >
+                                                        {copiedHistoricalTrace ? <Check size={11} color="var(--success)" /> : <Copy size={11} />}
+                                                        <span style={{ marginLeft: '0.25rem' }}>{copiedHistoricalTrace ? 'Copied' : 'Copy Trace'}</span>
+                                                    </button>
+                                                </div>
+                                                <pre style={{ margin: 0, padding: '0.65rem 0.75rem', background: '#030712', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: 'var(--radius-sm)', color: '#fca5a5', fontSize: '0.76rem', lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 250, overflowY: 'auto' }}>
+                                                    {historicalFallback.download.error_message}
+                                                </pre>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                                        <span>No active log blocks or historical database records found matching URL: <code>{focusedBlockUrl}</code></span>
+                                        <button
+                                            type="button"
+                                            className="secondary btn-xs"
+                                            onClick={() => {
+                                                const next = new URLSearchParams(searchParams)
+                                                next.delete('block')
+                                                setSearchParams(next)
+                                                setFocusedBlockUrl('')
+                                            }}
+                                        >
+                                            <X size={12} /> Clear Focus
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Section 1: Active & Waiting Attempts */}
                         {activeAttemptBlocks.length > 0 && (
                             <div style={{ marginBottom: '1.25rem' }}>

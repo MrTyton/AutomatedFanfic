@@ -70,3 +70,43 @@ class TestHistoryApiUpdates(unittest.TestCase):
         self.mock_db.get_retry_count.assert_awaited_once_with(
             site="ao3", search="works/1"
         )
+
+    def test_get_story_history_found(self) -> None:
+        self.mock_db.get_story_history = AsyncMock(
+            return_value={
+                "download": {
+                    "id": 1,
+                    "url": "https://archiveofourown.org/works/123",
+                    "site": "archiveofourown",
+                    "title": "My Story",
+                    "status": "failed",
+                    "error_message": "HTTP 503",
+                },
+                "retries": [
+                    {"attempt_number": 1, "action": "requeue", "error_message": "503"}
+                ],
+                "notifications": [],
+            }
+        )
+
+        resp = self.client.get(
+            "/api/history/story?url=https://archiveofourown.org/works/123"
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["found"])
+        self.assertEqual(data["story"]["download"]["title"], "My Story")
+        self.assertEqual(data["story"]["download"]["error_message"], "HTTP 503")
+        self.mock_db.get_story_history.assert_awaited_once_with(
+            "https://archiveofourown.org/works/123"
+        )
+
+    def test_get_story_history_not_found(self) -> None:
+        self.mock_db.get_story_history = AsyncMock(return_value=None)
+        resp = self.client.get(
+            "/api/history/story?url=https://archiveofourown.org/works/unknown"
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["found"])
+        self.assertIsNone(data["story"])

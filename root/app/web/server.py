@@ -85,6 +85,7 @@ async def _lifespan(app: FastAPI):
     if state.history_db is not None:
         await state.history_db.close()
         ff_logging.log("WebServer: History database connection closed")
+    ff_logging.close_persistent_logging()
 
 
 def create_app(web_state: WebState) -> FastAPI:
@@ -204,6 +205,9 @@ def run_web_server(
     host = getattr(web_cfg, "host", "0.0.0.0") or "0.0.0.0"
     port = int(getattr(web_cfg, "port", 8080) or 8080)
     history_db_path = getattr(web_cfg, "history_db_path", None)
+    log_file_path = getattr(web_cfg, "log_file_path", None)
+    if isinstance(log_file_path, str) and log_file_path.strip():
+        ff_logging.init_persistent_logging(log_file_path)
 
     # Build shared state
     web_state = WebState(

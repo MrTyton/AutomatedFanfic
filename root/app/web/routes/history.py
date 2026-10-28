@@ -72,6 +72,19 @@ async def retries_for_url(request: Request, url: str):
     return {"items": items}
 
 
+@router.get("/story")
+async def get_story_history(request: Request, url: str):
+    """Retrieve full persistent download and retry history for a specific story URL."""
+    db = request.app.state.web_state.history_db
+    if db is None:
+        return {"found": False, "story": None}
+
+    story = await db.get_story_history(url)
+    if not story:
+        return {"found": False, "story": None}
+    return {"found": True, "story": story}
+
+
 @router.get("/emails")
 async def list_email_checks(
     request: Request,

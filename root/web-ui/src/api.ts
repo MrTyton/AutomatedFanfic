@@ -540,3 +540,20 @@ export function getStoryAttemptBlock(
 export function getStats(period: '24h' | '7d' | '30d' = '7d'): Promise<StatsResponse> {
     return apiFetch<StatsResponse>(`/api/stats?period=${period}`)
 }
+
+export interface HistoricalStoryDetails {
+    found: boolean
+    story: {
+        download: DownloadRow & { behavior?: string }
+        retries: RetryRow[]
+        notifications: NotificationRow[]
+    } | null
+}
+
+export async function getHistoricalStoryDetails(url: string): Promise<HistoricalStoryDetails | null> {
+    try {
+        return await apiFetch<HistoricalStoryDetails>(`/api/history/story?url=${encodeURIComponent(url)}`)
+    } catch {
+        return null
+    }
+}
