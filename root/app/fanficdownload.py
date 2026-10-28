@@ -316,11 +316,13 @@ def register_processes(
     # ProcessManager detects it and restarts only the web_server process.
     shutdown_event = manager.Event()
     web_restart_event = mp.Event()
+    supervisor_restart_event = mp.Event()
     check_emails_event = mp.Event()
 
     # Inject hot-reload helpers into ProcessManager (created before the Manager context)
     process_manager.set_config_store(config_store)
     process_manager.set_web_restart_event(web_restart_event)
+    process_manager.set_supervisor_restart_event(supervisor_restart_event)
     process_manager.set_worker_queues(worker_queues, manager.Queue)
     process_manager.set_system_overhead(overhead_count)
 
@@ -339,6 +341,7 @@ def register_processes(
         config_store=config_store,
         scale_queue=scale_queue,
         shutdown_event=shutdown_event,
+        supervisor_restart_event=supervisor_restart_event,
         log_queue=log_queue,
         check_emails_event=check_emails_event,
         verbose=args.verbose,

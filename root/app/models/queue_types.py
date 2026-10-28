@@ -64,3 +64,4 @@ class EventProtocol(Protocol):
 
 ShutdownEvent = EventProtocol
 CheckEmailsEvent = EventProtocol
+SupervisorRestartEvent = EventProtocol

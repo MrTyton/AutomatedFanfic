@@ -218,6 +218,7 @@ def run_web_server(
         config_path=config_path,
         config_store=ipc.config_store,
         web_restart_event=web_restart_event,
+        supervisor_restart_event=ipc.supervisor_restart_event,
         check_emails_event=ipc.check_emails_event,
         verbose=ipc.verbose,
         coordinator_status=ipc.coordinator_status,

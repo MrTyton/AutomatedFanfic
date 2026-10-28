@@ -47,6 +47,7 @@ class ProcessManager:
         config: AppConfig,
         config_store: ConfigStore | None = None,
         web_restart_event: Event | None = None,
+        supervisor_restart_event: Event | None = None,
     ) -> None:
         """
         Initialize the ProcessManager with configuration.
@@ -58,6 +59,8 @@ class ProcessManager:
             web_restart_event (Event | None, optional): Event signalling the web
                 server should be restarted (set by the config route on web field
                 changes; cleared here after the restart).
+            supervisor_restart_event (Event | None, optional): Event signalling the
+                supervisor process should be restarted.
         """
         # Process tracking and state management
         self.processes: dict[str, ProcessInfo] = {}
@@ -70,6 +73,7 @@ class ProcessManager:
         # Hot-reload helpers
         self._config_store: ConfigStore | None = config_store
         self._web_restart_event: Event | None = web_restart_event
+        self._supervisor_restart_event: Event | None = supervisor_restart_event
         self._worker_queues: MutableMapping[str, WorkerQueue] | None = None
         self._create_queue_fn: Callable[[], WorkerQueue] | None = None
         self._history_writer: HistoryWriter | None = None
@@ -97,6 +101,10 @@ class ProcessManager:
     def set_web_restart_event(self, web_restart_event: Event) -> None:
         """Inject web_restart_event after ProcessManager construction."""
         self._web_restart_event = web_restart_event
+
+    def set_supervisor_restart_event(self, supervisor_restart_event: Event) -> None:
+        """Inject supervisor_restart_event after ProcessManager construction."""
+        self._supervisor_restart_event = supervisor_restart_event
 
     def set_system_overhead(self, overhead_count: int) -> None:
         """Set the number of non-worker OS processes in the max_workers budget.
@@ -519,6 +527,7 @@ class ProcessManager:
                 # Hot-reload process config and handle web auto-restart
                 self._sync_process_config_from_store()
                 self._check_web_restart_event()
+                self._check_supervisor_restart_event()
                 self._check_worker_scaling()
 
                 # Sleep until next monitoring cycle
@@ -562,6 +571,20 @@ class ProcessManager:
         # Reset restart_count so this config-driven restart isn't penalised
         self.processes["web_server"].restart_count = 0
         self.restart_process("web_server")
+
+    def _check_supervisor_restart_event(self) -> None:
+        """Restart the supervisor process if the supervisor_restart_event is set."""
+        if (
+            self._supervisor_restart_event is None
+            or not self._supervisor_restart_event.is_set()
+            or "supervisor" not in self.processes
+        ):
+            return
+        ff_logging.log("ProcessManager: restart requested, restarting supervisor")
+        self._supervisor_restart_event.clear()
+        # Reset restart_count so this user-driven restart isn't penalised
+        self.processes["supervisor"].restart_count = 0
+        self.restart_process("supervisor")
 
     def _check_worker_scaling(self) -> None:
         """Dynamically add or remove worker queues when max_workers changes in ConfigStore."""

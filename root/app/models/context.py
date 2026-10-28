@@ -16,11 +16,12 @@ if TYPE_CHECKING:
     from models import config_models
     from models.active_urls import ActiveUrlsDict
     from models.queue_types import (
-        IngressQueue,
         CheckEmailsEvent,
+        IngressQueue,
         LogQueue,
         ScaleQueue,
         ShutdownEvent,
+        SupervisorRestartEvent,
         WaitingQueue,
         WorkerQueues,
     )
@@ -89,6 +90,7 @@ class SharedIPCContext:
     scale_queue: ScaleQueue
     shutdown_event: ShutdownEvent
     check_emails_event: CheckEmailsEvent | None = None
+    supervisor_restart_event: SupervisorRestartEvent | None = None
     log_queue: LogQueue | None = None
     verbose: bool = False
     coordinator_status: MutableMapping[str, object] | None = None

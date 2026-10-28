@@ -16,6 +16,7 @@ from models.config_models import AppConfig
 from models.queue_types import (
     CheckEmailsEvent,
     IngressQueue,
+    SupervisorRestartEvent,
     WaitingQueue,
     WorkerQueues,
 )
@@ -51,6 +52,9 @@ class WebState:
 
     # Web server auto-restart event (set by config route when web.* fields change)
     web_restart_event: Event | None = None
+
+    # Supervisor process restart event (set by controls route to bounce supervisor)
+    supervisor_restart_event: SupervisorRestartEvent | None = None
 
     # Manual email check trigger event (set by controls route to wake EmailWatcher)
     check_emails_event: CheckEmailsEvent | None = None
