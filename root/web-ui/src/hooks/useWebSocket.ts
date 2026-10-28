@@ -1,43 +1,53 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import type { DashboardSnapshot, ActiveDownload } from '../api'
 
-export interface ActiveDownload {
-    url: string
-    site?: string
-    title?: string
-}
-
-export interface DashboardSnapshot {
-    timestamp: number
-    active_downloads: { items: ActiveDownload[]; count: number }
-    queued_downloads?: { items: ActiveDownload[]; count: number }
-    queues: Record<string, number | Record<string, number>>
-    processes: Record<string, string>
-    recent_downloads: unknown[]
-    recent_activity: unknown[]
-    waiting_downloads?: { items: { url: string; updated_at?: string; site?: string; title?: string; calibre_id?: string; error_message?: string }[]; count: number }
-}
+export type { DashboardSnapshot, ActiveDownload }
 
 export function useDashboardSocket() {
     const [data, setData] = useState<DashboardSnapshot | null>(null)
     const [connected, setConnected] = useState(false)
+    const [connectionMode, setConnectionMode] = useState<'live' | 'local' | 'reconnecting'>('reconnecting')
     const wsRef = useRef<WebSocket | null>(null)
     const reconnectTimer = useRef<number>(0)
 
     const connect = useCallback(() => {
-        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const ws = new WebSocket(`${proto}//${window.location.host}/ws/dashboard`)
+        try {
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+            const ws = new WebSocket(`${proto}//${window.location.host}/ws/dashboard`)
 
-        ws.onopen = () => setConnected(true)
-        ws.onclose = () => {
+            ws.onopen = () => {
+                setConnected(true)
+                setConnectionMode('live')
+            }
+            ws.onmessage = (ev) => {
+                try {
+                    const parsed = JSON.parse(ev.data) as DashboardSnapshot
+                    if (parsed && typeof parsed === 'object') {
+                        setData(parsed)
+                        setConnected(true)
+                        setConnectionMode('live')
+                    }
+                } catch {
+                    // ignore non-JSON frames
+                }
+            }
+            ws.onclose = () => {
+                setConnected(false)
+                setConnectionMode('reconnecting')
+                clearTimeout(reconnectTimer.current)
+                reconnectTimer.current = window.setTimeout(connect, 3000)
+            }
+            ws.onerror = () => {
+                ws.close()
+            }
+
+            wsRef.current = ws
+        } catch {
             setConnected(false)
-            // Auto-reconnect after 3 s
+            setConnectionMode('reconnecting')
+            clearTimeout(reconnectTimer.current)
             reconnectTimer.current = window.setTimeout(connect, 3000)
         }
-        ws.onmessage = (ev) => {
-            try { setData(JSON.parse(ev.data)) } catch { /* ignore bad frames */ }
-        }
-
-        wsRef.current = ws
     }, [])
 
     useEffect(() => {
@@ -48,5 +58,5 @@ export function useDashboardSocket() {
         }
     }, [connect])
 
-    return { data, connected }
+    return { data, connected, connectionMode }
 }

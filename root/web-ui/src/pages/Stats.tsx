@@ -1,11 +1,32 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-    BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-    type PieLabelRenderProps
+    BarChart,
+    Bar,
+    LineChart,
+    Line,
+    PieChart,
+    Pie,
+    Cell,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    Legend,
 } from 'recharts'
+import {
+    TrendingUp,
+    CheckCircle2,
+    RotateCw,
+    Percent,
+    Calendar,
+    Globe,
+    Clock,
+} from 'lucide-react'
 import { getStats, type StatsResponse } from '../api'
-import { STATUS_COLORS as COLORS, PIE_COLORS } from '../statusColors'
+import { getStatusColor } from '../utils/dashboardLogic'
+import { getSiteBadgeInfo } from '../statusColors'
 
 type Period = '24h' | '7d' | '30d'
 type DistView = 'hourly' | 'weekly' | 'monthly'
@@ -17,29 +38,30 @@ function formatPct(num: number, denom: number): string {
     return `${((num / denom) * 100).toFixed(1)}%`
 }
 
-function fillDays(data: { date: string; total: number; success: number; failed: number }[], period: Period) {
-    if (data.length === 0) return data
-    const days = period === '24h' ? 1 : period === '7d' ? 7 : 30
-    const end = new Date()
-    const map = new Map(data.map(d => [d.date, d]))
-    const filled: typeof data = []
-    for (let i = days - 1; i >= 0; i--) {
-        const d = new Date(end)
-        d.setDate(d.getDate() - i)
-        const key = d.toISOString().slice(0, 10)
-        filled.push(map.get(key) ?? { date: key, total: 0, success: 0, failed: 0 })
-    }
-    return filled
+function loadPeriod(): Period {
+    const saved = localStorage.getItem('stats-period-v2')
+    return saved === '24h' || saved === '7d' || saved === '30d' ? saved : '7d'
 }
 
-function loadPeriod(): Period {
-    const saved = localStorage.getItem('stats-period')
-    return saved === '24h' || saved === '7d' || saved === '30d' ? saved : '24h'
+function formatTimelineTick(val: string): string {
+    if (val.includes(':')) return val
+    const date = new Date(val + 'T00:00')
+    if (isNaN(date.getTime())) return val
+    return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })
+}
+
+function formatStatusLabel(status: string): string {
+    if (!status) return 'Unknown'
+    return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 export default function Stats() {
+    const navigate = useNavigate()
     const [period, _setPeriod] = useState<Period>(loadPeriod)
-    const setPeriod = (p: Period) => { localStorage.setItem('stats-period', p); _setPeriod(p) }
+    const setPeriod = (p: Period) => {
+        localStorage.setItem('stats-period-v2', p)
+        _setPeriod(p)
+    }
     const [distView, setDistView] = useState<DistView>('hourly')
     const [stats, setStats] = useState<StatsResponse | null>(null)
     const [loading, setLoading] = useState(true)
@@ -52,292 +74,434 @@ export default function Stats() {
             .finally(() => setLoading(false))
     }, [period])
 
-    if (loading) return <p>Loading stats…</p>
-    if (!stats || stats.error) return <p>Failed to load stats.</p>
+    if (loading) {
+        return (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                Loading performance metrics…
+            </div>
+        )
+    }
 
-    const timeData = fillDays(stats.downloads_over_time, period)
-    const siteAxisWidth = Math.min(200, Math.max(120, ...(stats.downloads_by_site.map(s => s.site.length * 7.5))))
+    if (!stats || stats.error) {
+        return (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--error)' }}>
+                Failed to load statistics.
+            </div>
+        )
+    }
+
+    const timeData = stats.downloads_over_time
 
     return (
         <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                <h1>Stats</h1>
-                <div className="period-toggle">
-                    {(['24h', '7d', '30d'] as Period[]).map(p => (
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '1.25rem',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem',
+                }}
+            >
+                <div>
+                    <h1 style={{ fontSize: '1.4rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
+                        Download Performance & Analytics
+                    </h1>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                        Ingestion rates, site breakdowns, and retry efficiency trends ({period.toUpperCase()} window)
+                    </p>
+                </div>
+
+                <div className="segmented-control" style={{ width: 'auto' }}>
+                    {(['24h', '7d', '30d'] as Period[]).map((p) => (
                         <button
                             key={p}
-                            className={p === period ? '' : 'secondary'}
+                            type="button"
+                            className={`segmented-btn ${p === period ? 'active' : ''}`}
                             onClick={() => setPeriod(p)}
                         >
-                            {p}
+                            {p.toUpperCase()}
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* Summary Cards */}
-            <div className="grid grid-4">
-                <div className="card">
-                    <h2>Total Downloads</h2>
-                    <div className="stat">{stats.total_downloads.toLocaleString()}</div>
-                    <div className="stat-label">
-                        {formatPct(stats.total_success, stats.total_downloads)} success rate
+            {/* KPI Stat Cards Grid */}
+            <div className="grid grid-4" style={{ marginBottom: '1.25rem' }}>
+                <div className="stat-card">
+                    <div className="stat-header">
+                        <span>Total Processed</span>
+                        <TrendingUp size={16} color="var(--accent)" />
+                    </div>
+                    <div className="stat-value">{stats.total_downloads}</div>
+                    <div className="stat-footer">
+                        <span>{formatPct(stats.total_success, stats.total_downloads)} all-time success</span>
                     </div>
                 </div>
-                <div className="card">
-                    <h2>Downloads ({period})</h2>
-                    <div className="stat">{stats.period_downloads.toLocaleString()}</div>
-                    <div className="stat-label">
-                        {stats.period_success} success · {stats.period_failed} failed
+
+                <div className="stat-card">
+                    <div className="stat-header">
+                        <span>Downloads ({period.toUpperCase()})</span>
+                        <CheckCircle2 size={16} color="var(--success)" />
+                    </div>
+                    <div className="stat-value">{stats.period_downloads}</div>
+                    <div className="stat-footer">
+                        <span style={{ color: 'var(--success)' }}>{stats.period_success} ok</span>
+                        <span>·</span>
+                        <span style={{ color: 'var(--error)' }}>{stats.period_failed} failed</span>
                     </div>
                 </div>
-                <div className="card">
-                    <h2>Retry Rate</h2>
-                    <div className="stat">
-                        {formatPct(stats.downloads_with_retries, stats.total_downloads)}
+
+                <div className="stat-card">
+                    <div className="stat-header">
+                        <span>Retries ({period.toUpperCase()})</span>
+                        <RotateCw size={16} color="var(--warning)" />
                     </div>
-                    <div className="stat-label">
-                        {stats.total_retries.toLocaleString()} total retries
+                    <div className="stat-value">{stats.total_retries}</div>
+                    <div className="stat-footer">
+                        <span>{stats.downloads_with_retries} stories required backoff</span>
                     </div>
                 </div>
-                <div className="card">
-                    <h2>Avg Retries to Success</h2>
-                    <div className="stat">{stats.avg_retries_to_success}</div>
-                    <div className="stat-label">per successful download</div>
+
+                <div className="stat-card">
+                    <div className="stat-header">
+                        <span>Avg Retries / Story</span>
+                        <Percent size={16} color="var(--info)" />
+                    </div>
+                    <div className="stat-value">{stats.avg_retries_to_success}</div>
+                    <div className="stat-footer">
+                        <span>Attempts per retried story</span>
+                    </div>
                 </div>
             </div>
 
-            {/* Downloads Over Time */}
-            <div className="card">
-                <h2>Downloads Over Time</h2>
-                {timeData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={timeData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
+            {/* Downloads Over Time Chart */}
+            <div className="card" style={{ minWidth: 0 }}>
+                <div className="card-header">
+                    <h2>
+                        <Calendar size={18} color="var(--accent)" />
+                        <span>
+                            Downloads Timeline ({period === '24h' ? 'Hourly — Past 24h' : `Daily — Past ${period.toUpperCase()}`})
+                        </span>
+                    </h2>
+                </div>
+                <div style={{ height: 260, width: '100%', minWidth: 0 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={timeData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
                             <XAxis
                                 dataKey="date"
-                                stroke={COLORS.muted}
-                                tick={{ fill: COLORS.muted, fontSize: 12 }}
-                                tickFormatter={d => new Date(d + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                stroke="var(--text-faint)"
+                                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                                tickFormatter={formatTimelineTick}
                             />
-                            <YAxis stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} allowDecimals={false} />
+                            <YAxis
+                                stroke="var(--text-faint)"
+                                tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                                allowDecimals={false}
+                            />
                             <Tooltip
-                                contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
-                                labelStyle={{ color: '#eee' }}
+                                contentStyle={{
+                                    background: '#111827',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: 8,
+                                    color: '#f8fafc',
+                                }}
                             />
-                            <Legend />
-                            <Bar dataKey="success" stackId="a" fill={COLORS.success} name="Success" />
-                            <Bar dataKey="failed" stackId="a" fill={COLORS.failed} name="Failed" />
+                            <Legend wrapperStyle={{ paddingTop: 8, fontSize: 12 }} />
+                            <Bar dataKey="success" stackId="a" fill="var(--success)" radius={[0, 0, 0, 0]} name="Successful" />
+                            <Bar dataKey="failed" stackId="a" fill="var(--error)" radius={[4, 4, 0, 0]} name="Failed" />
                         </BarChart>
                     </ResponsiveContainer>
-                ) : (
-                    <p style={{ color: COLORS.muted }}>No data for this period.</p>
-                )}
+                </div>
             </div>
 
-            {/* Two-column: Site Breakdown + Status Pie */}
-            <div className="grid grid-2">
-                <div className="card">
-                    <h2>Downloads by Site</h2>
-                    {stats.downloads_by_site.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={300}>
-                            <BarChart data={stats.downloads_by_site} layout="vertical">
-                                <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
-                                <XAxis type="number" stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} allowDecimals={false} />
-                                <YAxis type="category" dataKey="site" stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} width={siteAxisWidth} />
-                                <Tooltip
-                                    contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
-                                    labelStyle={{ color: '#eee' }}
+            {/* Two Column Grid */}
+            <div className="grid grid-2" style={{ marginBottom: '1.25rem' }}>
+                {/* Downloads by Site */}
+                <div className="card" style={{ minWidth: 0 }}>
+                    <div className="card-header">
+                        <h2>
+                            <Globe size={18} color="var(--info)" />
+                            <span>Site Breakdown ({period.toUpperCase()})</span>
+                        </h2>
+                        <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                            Click a bar to view site history
+                        </span>
+                    </div>
+                    <div style={{ height: 260, width: '100%', minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                                data={stats.downloads_by_site}
+                                layout="vertical"
+                                margin={{ top: 10, right: 15, left: 10, bottom: 0 }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                                <XAxis
+                                    type="number"
+                                    stroke="var(--text-faint)"
+                                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                                    allowDecimals={false}
                                 />
-                                <Legend />
-                                <Bar dataKey="success" stackId="a" fill={COLORS.success} name="Success" />
-                                <Bar dataKey="failed" stackId="a" fill={COLORS.failed} name="Failed" />
+                                <YAxis
+                                    type="category"
+                                    dataKey="site"
+                                    stroke="var(--text-faint)"
+                                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                                    width={100}
+                                />
+                                <Tooltip
+                                    contentStyle={{
+                                        background: '#111827',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: 8,
+                                        color: '#f8fafc',
+                                    }}
+                                />
+                                <Legend wrapperStyle={{ paddingTop: 8, fontSize: 12 }} />
+                                <Bar
+                                    dataKey="success"
+                                    stackId="a"
+                                    fill="var(--success)"
+                                    name="Success"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={(entry: unknown) => {
+                                        const item = entry as { site?: string; payload?: { site?: string } } | undefined
+                                        const site = item?.site || item?.payload?.site
+                                        if (site) {
+                                            navigate(`/history?site=${encodeURIComponent(String(site))}`)
+                                        }
+                                    }}
+                                />
+                                <Bar
+                                    dataKey="failed"
+                                    stackId="a"
+                                    fill="var(--error)"
+                                    name="Failed"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={(entry: unknown) => {
+                                        const item = entry as { site?: string; payload?: { site?: string } } | undefined
+                                        const site = item?.site || item?.payload?.site
+                                        if (site) {
+                                            navigate(`/history?site=${encodeURIComponent(String(site))}&status=failed`)
+                                        }
+                                    }}
+                                />
                             </BarChart>
                         </ResponsiveContainer>
-                    ) : (
-                        <p style={{ color: COLORS.muted }}>No site data available.</p>
-                    )}
+                    </div>
                 </div>
-                <div className="card">
-                    <h2>Status Breakdown</h2>
-                    {stats.status_breakdown.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={300}>
+
+                {/* Status Breakdown Pie */}
+                <div className="card" style={{ minWidth: 0 }}>
+                    <div className="card-header">
+                        <h2>
+                            <CheckCircle2 size={18} color="var(--success)" />
+                            <span>Status Distribution ({period.toUpperCase()})</span>
+                        </h2>
+                        <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                            Click slice to filter history
+                        </span>
+                    </div>
+                    <div style={{ height: 260, width: '100%', minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
-                                    data={stats.status_breakdown}
+                                    data={stats.status_breakdown.map((s) => ({
+                                        ...s,
+                                        displayStatus: formatStatusLabel(s.status),
+                                    }))}
                                     dataKey="count"
-                                    nameKey="status"
+                                    nameKey="displayStatus"
                                     cx="50%"
-                                    cy="50%"
-                                    outerRadius={100}
-                                    label={(props: PieLabelRenderProps) => `${props.name ?? ''}: ${props.value ?? 0}`}
+                                    cy="46%"
+                                    innerRadius={52}
+                                    outerRadius={82}
+                                    paddingAngle={3}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={(entry: unknown) => {
+                                        const item = entry as { status?: string; payload?: { status?: string } } | undefined
+                                        const status = item?.status || item?.payload?.status
+                                        if (status) {
+                                            navigate(`/history?status=${encodeURIComponent(String(status))}`)
+                                        }
+                                    }}
+                                    label={(props: { name?: string; value?: number }) =>
+                                        `${props.name || ''}: ${props.value ?? 0}`
+                                    }
                                 >
-                                    {stats.status_breakdown.map((_, i) => (
-                                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                                    {stats.status_breakdown.map((entry, i) => (
+                                        <Cell key={`${entry.status}-${i}`} fill={getStatusColor(entry.status)} />
                                     ))}
                                 </Pie>
                                 <Tooltip
-                                    contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
-                                    labelStyle={{ color: '#eee' }}
+                                    contentStyle={{
+                                        background: '#111827',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        borderRadius: 8,
+                                        color: '#f8fafc',
+                                    }}
                                 />
+                                <Legend wrapperStyle={{ fontSize: 12 }} />
                             </PieChart>
                         </ResponsiveContainer>
-                    ) : (
-                        <p style={{ color: COLORS.muted }}>No status data available.</p>
-                    )}
+                    </div>
                 </div>
             </div>
 
-            {/* Two-column: Time Distribution (toggled) + Retry Distribution */}
+            {/* Time Distribution and Retries */}
             <div className="grid grid-2">
-                <div className="card">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                        <h2 style={{ margin: 0 }}>
-                            {distView === 'hourly' ? 'Hourly' : distView === 'weekly' ? 'Day of Week' : 'Day of Month'} Distribution (All Time)
+                {/* Time Distribution */}
+                <div className="card" style={{ minWidth: 0 }}>
+                    <div className="card-header">
+                        <h2>
+                            <Clock size={18} color="var(--warning)" />
+                            <span>Hourly & Daily Patterns</span>
                         </h2>
-                        <div className="period-toggle">
-                            {(['hourly', 'weekly', 'monthly'] as DistView[]).map(v => (
+                        <div className="segmented-control" style={{ width: 'auto' }}>
+                            {(['hourly', 'weekly', 'monthly'] as DistView[]).map((v) => (
                                 <button
                                     key={v}
-                                    className={v === distView ? '' : 'secondary'}
+                                    type="button"
+                                    className={`segmented-btn ${distView === v ? 'active' : ''}`}
                                     onClick={() => setDistView(v)}
-                                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                                    style={{ padding: '0.2rem 0.55rem', fontSize: '0.73rem', minHeight: 28 }}
                                 >
-                                    {v === 'hourly' ? 'Hour' : v === 'weekly' ? 'Weekday' : 'Month Day'}
+                                    {v === 'hourly' ? 'Hour' : v === 'weekly' ? 'Weekday' : 'Month'}
                                 </button>
                             ))}
                         </div>
                     </div>
 
-                    {distView === 'hourly' && (
-                        stats.hourly_distribution.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={250}>
-                                <BarChart data={stats.hourly_distribution}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
+                    <div style={{ height: 230, width: '100%', minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            {distView === 'hourly' ? (
+                                <BarChart data={stats.hourly_distribution} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
                                     <XAxis
                                         dataKey="hour"
-                                        stroke={COLORS.muted}
-                                        tick={{ fill: COLORS.muted, fontSize: 12 }}
-                                        tickFormatter={h => `${h}:00`}
+                                        stroke="var(--text-faint)"
+                                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                                        tickFormatter={(h) => `${h}:00`}
                                     />
-                                    <YAxis stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} allowDecimals={false} />
-                                    <Tooltip
-                                        contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
-                                        labelStyle={{ color: '#eee' }}
-                                        labelFormatter={h => `${h}:00 – ${h}:59`}
-                                    />
-                                    <Bar dataKey="count" fill={COLORS.accent} name="Downloads" />
+                                    <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} allowDecimals={false} />
+                                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                    <Bar dataKey="count" fill="var(--accent)" name="Downloads" radius={[4, 4, 0, 0]} />
                                 </BarChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <p style={{ color: COLORS.muted }}>No hourly data available.</p>
-                        )
-                    )}
-
-                    {distView === 'weekly' && (
-                        stats.weekly_distribution.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={250}>
-                                <BarChart data={stats.weekly_distribution}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
+                            ) : distView === 'weekly' ? (
+                                <BarChart data={stats.weekly_distribution} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
                                     <XAxis
                                         dataKey="day_of_week"
-                                        stroke={COLORS.muted}
-                                        tick={{ fill: COLORS.muted, fontSize: 12 }}
-                                        tickFormatter={d => DAY_NAMES[d] ?? String(d)}
+                                        stroke="var(--text-faint)"
+                                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                                        tickFormatter={(d) => DAY_NAMES[d] ?? String(d)}
                                     />
-                                    <YAxis stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} allowDecimals={false} />
-                                    <Tooltip
-                                        contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
-                                        labelStyle={{ color: '#eee' }}
-                                        labelFormatter={d => DAY_NAMES[d as number] ?? String(d)}
-                                    />
-                                    <Bar dataKey="count" fill={COLORS.accent} name="Downloads" />
+                                    <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} allowDecimals={false} />
+                                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                    <Bar dataKey="count" fill="var(--accent)" name="Downloads" radius={[4, 4, 0, 0]} />
                                 </BarChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <p style={{ color: COLORS.muted }}>No weekly data available.</p>
-                        )
-                    )}
-
-                    {distView === 'monthly' && (
-                        stats.monthly_distribution.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={250}>
-                                <BarChart data={stats.monthly_distribution}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
-                                    <XAxis
-                                        dataKey="day_of_month"
-                                        stroke={COLORS.muted}
-                                        tick={{ fill: COLORS.muted, fontSize: 12 }}
-                                    />
-                                    <YAxis stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} allowDecimals={false} />
-                                    <Tooltip
-                                        contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
-                                        labelStyle={{ color: '#eee' }}
-                                        labelFormatter={d => `Day ${d}`}
-                                    />
-                                    <Bar dataKey="count" fill={COLORS.accent} name="Downloads" />
+                            ) : (
+                                <BarChart data={stats.monthly_distribution} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                                    <XAxis dataKey="day_of_month" stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
+                                    <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} allowDecimals={false} />
+                                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                    <Bar dataKey="count" fill="var(--accent)" name="Downloads" radius={[4, 4, 0, 0]} />
                                 </BarChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <p style={{ color: COLORS.muted }}>No monthly data available.</p>
-                        )
-                    )}
+                            )}
+                        </ResponsiveContainer>
+                    </div>
                 </div>
-                <div className="card">
-                    <h2>Retry Distribution</h2>
-                    {stats.retry_distribution.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={250}>
-                            <LineChart data={stats.retry_distribution}>
-                                <CartesianGrid strokeDasharray="3 3" stroke={COLORS.surface2} />
+
+                {/* Retry Distribution */}
+                <div className="card" style={{ minWidth: 0 }}>
+                    <div className="card-header">
+                        <h2>
+                            <RotateCw size={18} color="var(--info)" />
+                            <span>Retry Attempts Distribution ({period.toUpperCase()})</span>
+                        </h2>
+                    </div>
+
+                    <div style={{ height: 230, width: '100%', minWidth: 0 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={stats.retry_distribution} margin={{ top: 10, right: 15, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
                                 <XAxis
                                     dataKey="attempt_number"
-                                    stroke={COLORS.muted}
-                                    tick={{ fill: COLORS.muted, fontSize: 12 }}
-                                    label={{ value: 'Attempt #', fill: COLORS.muted, position: 'insideBottom', offset: -5 }}
+                                    stroke="var(--text-faint)"
+                                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                                    label={{ value: 'Attempt #', fill: 'var(--text-muted)', position: 'insideBottom', offset: -4 }}
                                 />
-                                <YAxis stroke={COLORS.muted} tick={{ fill: COLORS.muted, fontSize: 12 }} allowDecimals={false} />
-                                <Tooltip
-                                    contentStyle={{ background: '#16213e', border: '1px solid #0f3460', borderRadius: 6 }}
-                                    labelStyle={{ color: '#eee' }}
-                                    labelFormatter={n => `Attempt #${n}`}
+                                <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} allowDecimals={false} />
+                                <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                <Line
+                                    type="monotone"
+                                    dataKey="count"
+                                    stroke="var(--accent)"
+                                    strokeWidth={2.5}
+                                    dot={{ fill: 'var(--accent)', r: 4 }}
+                                    name="Retries"
                                 />
-                                <Line type="monotone" dataKey="count" stroke={COLORS.accent} strokeWidth={2} dot={{ fill: COLORS.accent }} name="Retries" />
                             </LineChart>
                         </ResponsiveContainer>
-                    ) : (
-                        <p style={{ color: COLORS.muted }}>No retry data available.</p>
-                    )}
+                    </div>
                 </div>
             </div>
 
-            {/* Site Details Table */}
-            {stats.downloads_by_site.length > 0 && (
-                <div className="card">
-                    <h2>Site Details</h2>
+            {/* Site Performance & Failure Breakdown Table */}
+            <div className="card" style={{ marginTop: '1.25rem' }}>
+                <div className="card-header">
+                    <h2>
+                        <Globe size={18} color="var(--accent)" />
+                        <span>Site Adapter Performance & Failure Diagnostics ({period.toUpperCase()})</span>
+                    </h2>
+                </div>
+                <div className="table-container" style={{ border: 'none' }}>
                     <table>
                         <thead>
                             <tr>
-                                <th>Site</th>
+                                <th>Site Adapter</th>
                                 <th>Total</th>
-                                <th>Success</th>
-                                <th>Failed</th>
                                 <th>Success Rate</th>
+                                <th>Avg Duration</th>
+                                <th>Primary Failure Reason</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {stats.downloads_by_site.map(s => (
-                                <tr key={s.site}>
-                                    <td>{s.site}</td>
-                                    <td>{s.total}</td>
-                                    <td style={{ color: COLORS.success }}>{s.success}</td>
-                                    <td style={{ color: COLORS.failed }}>{s.failed}</td>
-                                    <td>{formatPct(s.success, s.total)}</td>
-                                </tr>
-                            ))}
+                            {stats.downloads_by_site.map((row) => {
+                                const info = getSiteBadgeInfo(row.site)
+                                return (
+                                    <tr
+                                        key={row.site}
+                                        onClick={() => navigate(`/history?site=${encodeURIComponent(row.site)}`)}
+                                        style={{ cursor: 'pointer' }}
+                                        title={`Click to filter History by ${info.name}`}
+                                    >
+                                        <td>
+                                            <span className="site-badge" style={{ color: 'var(--text)' }}>
+                                                <span className="site-dot" style={{ background: info.color }} />
+                                                <span>{info.name}</span>
+                                            </span>
+                                        </td>
+                                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{row.total}</td>
+                                        <td style={{ fontFamily: 'var(--font-mono)', color: row.failed > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                                            {formatPct(row.success, row.total)} ({row.success}/{row.total})
+                                        </td>
+                                        <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                                            {row.avg_duration_sec ? `${row.avg_duration_sec}s` : '—'}
+                                        </td>
+                                        <td style={{ fontSize: '0.76rem', color: row.top_error ? '#fca5a5' : 'var(--text-faint)' }}>
+                                            {row.top_error || 'No failures in window'}
+                                        </td>
+                                    </tr>
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>
-            )}
+            </div>
         </>
     )
 }

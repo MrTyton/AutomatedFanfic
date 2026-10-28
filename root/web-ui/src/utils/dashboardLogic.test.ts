@@ -1,0 +1,292 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {
+    parseAndValidateUrlLines,
+    filterRemainingInputAfterSubmit,
+    aggregateRecentErrors,
+    computeDirtySections,
+    getStatusColor,
+    buildTimelineBuckets,
+    filterDownloadsByPeriod,
+    buildLogAttemptBlocks,
+    scrubPiiFromLogText,
+    buildGitHubIssueDraft,
+    buildGitHubIssueUrl,
+    diagnoseErrorSignature,
+    computeIniLineDiff,
+    extractIniSections,
+} from './dashboardLogic'
+import { STATUS_COLORS } from '../statusColors'
+
+test('parseAndValidateUrlLines parses full and scheme-less URLs and detects disabled or duplicate sites', () => {
+    const input = [
+        'https://archiveofourown.org/works/54918203',
+        'royalroad.com/fiction/82194/chronicles-of-ember',
+        'https://www.wattpad.com/story/99999',
+        'not_a_url',
+    ].join('\n')
+
+    const previews = parseAndValidateUrlLines(
+        input,
+        ['wattpad'],
+        new Set(['https://archiveofourown.org/works/54918203'])
+    )
+
+    assert.equal(previews.length, 4)
+    assert.equal(previews[0].site, 'archiveofourown')
+    assert.equal(previews[0].inferredTitle, 'Work #54918203')
+    assert.equal(previews[0].isValid, true)
+    assert.equal(previews[0].isDuplicateInFlight, true)
+
+    assert.equal(previews[1].site, 'royalroad')
+    assert.equal(previews[1].inferredTitle, 'Chronicles of ember')
+    assert.equal(previews[1].isValid, true)
+    assert.equal(previews[1].isDisabledSite, false)
+
+    assert.equal(previews[2].site, 'wattpad')
+    assert.equal(previews[2].isDisabledSite, true)
+
+    assert.equal(previews[3].isValid, false)
+})
+
+test('filterRemainingInputAfterSubmit preserves rejected URLs instead of clearing all input', () => {
+    const raw = [
+        'https://archiveofourown.org/works/111',
+        'invalid-url',
+        'https://www.wattpad.com/story/222',
+    ]
+    const results = [
+        { accepted: true, message: 'Accepted' },
+        { accepted: false, message: 'Rejected invalid URL' },
+        { accepted: false, message: 'Site disabled' },
+    ]
+    const remaining = filterRemainingInputAfterSubmit(raw, results)
+    assert.equal(remaining, 'invalid-url\nhttps://www.wattpad.com/story/222')
+})
+
+test('aggregateRecentErrors deduplicates by URL while accumulating failure occurrences', () => {
+    const now = Date.now()
+    const waiting = [
+        {
+            url: 'https://www.fanfiction.net/s/13904512/1/',
+            site: 'fanfiction',
+            title: 'Echoes of Eternity',
+            attempt_number: 2,
+            error_message: 'HTTP 503 Cloudflare challenge',
+            updated_at: new Date(now - 60_000).toISOString(),
+        },
+    ]
+    const recent = [
+        {
+            url: 'https://www.fanfiction.net/s/13904512/1/',
+            site: 'fanfiction',
+            title: 'Echoes of Eternity',
+            status: 'failed',
+            error_message: 'HTTP 503 Cloudflare challenge',
+            completed_at: new Date(now - 120_000).toISOString(),
+        },
+        {
+            url: 'https://www.wattpad.com/story/28901234',
+            site: 'wattpad',
+            title: 'The Clockwork Sentinel',
+            status: 'abandoned',
+            error_message: 'HTTP 404 Not Found',
+            completed_at: new Date(now - 300_000).toISOString(),
+        },
+    ]
+
+    const errors = aggregateRecentErrors(waiting, recent, now)
+    assert.equal(errors.length, 2)
+    assert.equal(errors[0].url, 'https://www.fanfiction.net/s/13904512/1/')
+    assert.equal(errors[0].occurrences, 3)
+    assert.equal(errors[1].occurrences, 1)
+})
+
+test('buildLogAttemptBlocks de-interleaves concurrent site worker logs into self-contained attempt blocks', () => {
+    const interleavedLogs = [
+        { timestamp: '2026-10-27 17:15:12', level: 'info', message: '(archiveofourown) Processing https://archiveofourown.org/works/45892012', thread_site: 'archiveofourown' },
+        { timestamp: '2026-10-27 17:15:13', level: 'info', message: '(fanfiction) Processing https://www.fanfiction.net/s/13904512/1/', thread_site: 'fanfiction' },
+        { timestamp: '2026-10-27 17:15:15', level: 'debug', message: '(archiveofourown) FanFicFare CLI: fetching metadata & chapter list', thread_site: 'archiveofourown' },
+        { timestamp: '2026-10-27 17:15:16', level: 'error', message: '(fanfiction) Failed https://www.fanfiction.net/s/13904512/1/: HTTP 503 Cloudflare challenge', thread_site: 'fanfiction' },
+        { timestamp: '2026-10-27 17:15:17', level: 'warning', message: 'FFWaiter: Queued retry #2 for https://www.fanfiction.net/s/13904512/1/ (backoff: 2.0m)', thread_site: 'fanfiction' },
+        { timestamp: '2026-10-27 17:15:20', level: 'info', message: "(archiveofourown) Apprise notification dispatched for 'The Stars Are Cold and Bright'", thread_site: 'archiveofourown' },
+    ]
+
+    const blocks = buildLogAttemptBlocks(
+        interleavedLogs,
+        [
+            {
+                url: 'https://www.fanfiction.net/s/13904512/1/',
+                title: 'Echoes of Eternity: Chapter 42',
+                site: 'fanfiction',
+                status: 'failed',
+                error_message: 'HTTP 503: Cloudflare anti-bot challenge\nTraceback: line 142',
+            },
+        ],
+        [],
+        [{ url: 'https://www.fanfiction.net/s/13904512/1/', stage: 'waiting_retry' }]
+    )
+
+    assert.equal(blocks.length, 2)
+    assert.equal(blocks[0].site, 'fanfiction')
+    assert.equal(blocks[0].isActive, true)
+    assert.equal(blocks[0].activeStage, 'waiting_retry')
+    assert.equal(blocks[1].site, 'archiveofourown')
+    assert.equal(blocks[1].isActive, false)
+
+    const ao3Block = blocks.find((b) => b.site === 'archiveofourown')!
+    const ffnBlock = blocks.find((b) => b.site === 'fanfiction')!
+
+    assert.ok(ao3Block)
+    assert.equal(ao3Block.status, 'success')
+    assert.equal(ao3Block.lines.length, 3)
+    assert.equal(ao3Block.title, 'The Stars Are Cold and Bright')
+
+    assert.ok(ffnBlock)
+    assert.equal(ffnBlock.status, 'failed')
+    assert.equal(ffnBlock.lines.length, 3)
+    assert.equal(ffnBlock.title, 'Echoes of Eternity: Chapter 42')
+    assert.ok(ffnBlock.traceback?.includes('Traceback: line 142'))
+})
+
+test('computeDirtySections tracks unsaved changes across all config sections and personal.ini', () => {
+    const initCfg = {
+        email: { mailbox: 'INBOX', sleep_time: 60 },
+        calibre: { update_only: false },
+    }
+    const curCfg = {
+        email: { mailbox: 'Alerts', sleep_time: 60 },
+        calibre: { update_only: false },
+    }
+    const dirty = computeDirtySections(curCfg, initCfg, '[defaults]\nis_adult:true', '[defaults]\nis_adult:false')
+    assert.deepEqual(dirty.email, ['mailbox'])
+    assert.equal(dirty.calibre, undefined)
+    assert.deepEqual(dirty['personal.ini'], ['content'])
+})
+
+test('getStatusColor maps semantic statuses to canonical hex colors', () => {
+    assert.equal(getStatusColor('success'), STATUS_COLORS.success)
+    assert.equal(getStatusColor('failed'), STATUS_COLORS.failed)
+    assert.equal(getStatusColor('abandoned'), STATUS_COLORS.abandoned)
+    assert.equal(getStatusColor('waiting'), STATUS_COLORS.waiting)
+})
+
+test('buildTimelineBuckets creates 24 hourly buckets for 24h and 7 daily buckets for 7d', () => {
+    const now = Date.now()
+    const sampleDownloads = [
+        {
+            url: 'https://archiveofourown.org/works/1',
+            site: 'archiveofourown',
+            title: 'One',
+            calibre_id: '101',
+            status: 'success',
+            error_message: null,
+            started_at: new Date(now - 30 * 60 * 1000).toISOString(),
+            completed_at: new Date(now - 29 * 60 * 1000).toISOString(),
+        },
+    ]
+    const b24 = buildTimelineBuckets(sampleDownloads, '24h', now)
+    assert.equal(b24.length, 24)
+    assert.equal(b24.reduce((acc, p) => acc + p.success, 0), 1)
+
+    const b7 = buildTimelineBuckets(sampleDownloads, '7d', now)
+    assert.equal(b7.length, 7)
+    assert.equal(b7.reduce((acc, p) => acc + p.success, 0), 1)
+
+    const filtered24 = filterDownloadsByPeriod(sampleDownloads, '24h', now)
+    assert.equal(filtered24.length, 1)
+})
+
+test('scrubPiiFromLogText detects and redacts emails, tokens, cookies, paths, IPs, and optional story URLs', () => {
+    const raw = [
+        'UrlIngester: Authenticated as reader.jane@gmail.com from 192.168.1.44 (local 127.0.0.1)',
+        'Cookiejar: cf_clearance=secret_cf_cookie_998877; session_id:abc123xyz',
+        'Pushbullet token o.AbCdEfGhIjKlMnOpQrSt1234 loaded from /Users/jane/Library/Calibre',
+        'Story https://archiveofourown.org/works/999999 titled Secret Starlight',
+    ].join('\n')
+
+    const res = scrubPiiFromLogText(raw, { redactStoryUrls: true, storyTitle: 'Secret Starlight' })
+    assert.equal(res.redactionCount >= 7, true)
+    assert.equal(res.text.includes('reader.jane@gmail.com'), false)
+    assert.equal(res.text.includes('[REDACTED_EMAIL]'), true)
+    assert.equal(res.text.includes('192.168.1.44'), false)
+    assert.equal(res.text.includes('127.0.0.1'), true)
+    assert.equal(res.text.includes('secret_cf_cookie_998877'), false)
+    assert.equal(res.text.includes('cf_clearance=[REDACTED]'), true)
+    assert.equal(res.text.includes('o.[REDACTED_TOKEN]'), true)
+    assert.equal(res.text.includes('/Users/[REDACTED_USER]/Library/Calibre'), true)
+    assert.equal(res.text.includes('[REDACTED_STORY_URL]'), true)
+    assert.equal(res.text.includes('[REDACTED_STORY_TITLE]'), true)
+})
+
+test('buildGitHubIssueDraft includes startup logs and supports story redaction', () => {
+    const draft = buildGitHubIssueDraft({
+        block: {
+            id: 'attempt-1',
+            kind: 'story_attempt',
+            site: 'fanfiction',
+            url: 'https://www.fanfiction.net/s/13904512/1/',
+            title: 'The Winds of Time',
+            attemptNumber: 2,
+            status: 'failed',
+            isActive: true,
+            activeStage: 'waiting_retry',
+            startedAt: '2025-05-12 14:20:01',
+            endedAt: '2025-05-12 14:20:10',
+            lines: [
+                {
+                    timestamp: '2025-05-12 14:20:01',
+                    level: 'ERROR',
+                    message: '(fanfiction) Failed for user test.user@example.com with cf_clearance=my_secret_token',
+                },
+            ],
+            traceback: 'Traceback (most recent call last):\n  File "/home/alice/fanfic/worker.py", line 42\nHTTPError: 403',
+        },
+        startupLogs: [
+            { timestamp: '2025-05-12 14:00:01', level: 'info', message: 'Supervisor: Starting AutomatedFanfic process tree...' },
+        ],
+        scrubPii: true,
+    })
+
+    assert.equal(draft.title, '[Bug] (fanfiction) Download failure: The Winds of Time')
+    assert.equal(draft.detectedPiiCount, 3)
+    assert.equal(draft.body.includes('[REDACTED_EMAIL]'), true)
+    assert.equal(draft.body.includes('cf_clearance=[REDACTED]'), true)
+    assert.equal(draft.body.includes('/home/[REDACTED_USER]/fanfic/worker.py'), true)
+    assert.equal(draft.body.includes('### Startup Log & Environment Context'), true)
+    assert.equal(draft.body.includes('Supervisor: Starting AutomatedFanfic process tree...'), true)
+
+    const { url, isTruncated } = buildGitHubIssueUrl({
+        repo: 'AutomatedFanfic/AutomatedFanfic',
+        title: draft.title,
+        body: draft.body,
+        labels: ['bug'],
+    })
+    assert.equal(isTruncated, false)
+    assert.equal(url.startsWith('https://github.com/AutomatedFanfic/AutomatedFanfic/issues/new?'), true)
+    assert.equal(url.includes('labels=bug'), true)
+})
+
+test('diagnoseErrorSignature identifies Cloudflare, 404, Auth, and Calibre errors', () => {
+    const cf = diagnoseErrorSignature('HTTP 503: Cloudflare anti-bot challenge encountered')
+    assert.equal(cf?.category, 'Anti-Bot / Cloudflare Challenge')
+    assert.equal(cf?.configTab, 'personal.ini')
+
+    const nf = diagnoseErrorSignature('Story has been removed or restricted by author (HTTP 404 Not Found)')
+    assert.equal(nf?.category, 'Story Removed or Restricted (404)')
+
+    const cal = diagnoseErrorSignature('Calibre database is locked by another process')
+    assert.equal(cal?.category, 'Calibre Library Target Error')
+    assert.equal(cal?.configTab, 'calibre')
+})
+
+test('computeIniLineDiff and extractIniSections parse INI changes and headers', () => {
+    const sections = extractIniSections('[defaults]\nis_adult:true\n[epub]\ninclude_images:true')
+    assert.equal(sections.length, 2)
+    assert.equal(sections[0].name, 'defaults')
+    assert.equal(sections[1].name, 'epub')
+
+    const diff = computeIniLineDiff('[defaults]\nis_adult:false', '[defaults]\nis_adult:true')
+    assert.equal(diff.some((d) => d.type === 'remove' && d.text.includes('false')), true)
+    assert.equal(diff.some((d) => d.type === 'add' && d.text.includes('true')), true)
+})
