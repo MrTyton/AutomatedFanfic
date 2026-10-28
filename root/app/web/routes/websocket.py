@@ -6,7 +6,6 @@ recent history events) and pushes JSON to all connected clients every 1-2 s.
 
 import asyncio
 import json
-import os
 import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -176,12 +175,14 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
         dict(snapshot["processes"])
         if snapshot["processes"]
         else {
-            "WebServer": "running",
             "Coordinator": "paused" if is_coord_paused else "running",
             "EmailWatcher": "running",
             "FFWaiter": "running",
+            "WorkerPool": "running",
+            "WebServer": "running",
         }
     )
+    snapshot["processes"] = daemon_processes
 
     daemon_roles = {
         "WebServer": "FastAPI Web Dashboard & REST/WebSocket server",
@@ -301,10 +302,21 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
     )
     notable_sites = [s for s in catalog_sites if s.get("status") != "idle"]
 
-    max_threads = os.cpu_count() or 4
+    overhead = 4 + (
+        1 if getattr(getattr(state.config, "web", None), "enabled", False) else 0
+    )
+    config_workers = (
+        getattr(state.config, "max_workers", 20) if state.config is not None else 20
+    )
+    fallback_threads = max(1, config_workers - overhead)
+    actual_max_threads = (
+        len(state.worker_queues)
+        if state.worker_queues is not None and len(state.worker_queues) > 0
+        else fallback_threads
+    )
     snapshot["site_worker_stats"] = {
         "active_threads": len(active_urls_list),
-        "max_threads": max(max_threads, 4),
+        "max_threads": actual_max_threads,
         "notable_sites": notable_sites,
         "catalog_sites": catalog_sites,
     }

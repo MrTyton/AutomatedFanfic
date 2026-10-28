@@ -126,7 +126,8 @@ class TestWebSocketDashboard(unittest.TestCase):
             data = ws.receive_json()
             self.assertEqual(data["active_downloads"]["count"], 0)
             self.assertEqual(data["queues"], {})
-            self.assertEqual(data["processes"], {})
+            self.assertIn("Coordinator", data["processes"])
+            self.assertIn("WebServer", data["processes"])
             self.assertEqual(data["recent_downloads"], [])
             self.assertEqual(data["recent_activity"], [])
 

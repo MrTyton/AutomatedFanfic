@@ -20,6 +20,7 @@ import {
     Check,
     Trash2,
     ArrowUpToLine,
+    ArrowDownToLine,
     X,
     Layers,
     List,
@@ -217,6 +218,9 @@ export default function Logs() {
         })
     }, [entries, allowedLevels, siteFilter, search])
 
+    // In raw stream view, chronological order reads top-to-bottom (oldest at top, most recent at bottom).
+    const rawStreamLines = useMemo(() => [...filtered].reverse(), [filtered])
+
     // Build de-interleaved per-attempt blocks (already sorted: active first, then not active, each sorted by latest update)
     const filteredAttemptBlocks = useMemo(() => {
         const rawBlocks = getAttemptBlocksFromLogs(entries)
@@ -315,18 +319,58 @@ export default function Logs() {
         return () => clearTimeout(timer)
     }, [focusedBlockUrl, viewFormat, filteredAttemptBlocks.length])
 
+    const isAtBottomRef = useRef(true)
+
+    const handleScroll = () => {
+        const container = containerRef.current
+        if (!container) return
+        const threshold = 60
+        isAtBottomRef.current =
+            container.scrollHeight - container.scrollTop - container.clientHeight <= threshold
+    }
+
+    // Auto-scroll to bottom in raw stream view as new logs arrive
+    useEffect(() => {
+        if (viewFormat !== 'stream' || paused) return
+        if (isAtBottomRef.current) {
+            const container = containerRef.current
+            if (container) {
+                container.scrollTop = container.scrollHeight
+            }
+        }
+    }, [viewFormat, rawStreamLines.length, paused])
+
+    // Initial scroll to bottom when switching to stream view
+    useEffect(() => {
+        if (viewFormat === 'stream') {
+            const container = containerRef.current
+            if (container) {
+                container.scrollTop = container.scrollHeight
+            }
+        }
+    }, [viewFormat])
+
     const handleCopy = () => {
         const text =
             viewFormat === 'blocks' && mode === 'runtime'
                 ? filteredAttemptBlocks.map((b) => formatAttemptBlockAsText(b)).join('\n\n')
-                : filtered.map((e) => `${e.timestamp} [${e.level.toUpperCase()}] ${e.message}`).join('\n')
+                : rawStreamLines.map((e) => `${e.timestamp} [${e.level.toUpperCase()}] ${e.message}`).join('\n')
         navigator.clipboard?.writeText(text)
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
     }
 
     const handleScrollTop = () => {
+        isAtBottomRef.current = false
         containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    const handleScrollBottom = () => {
+        isAtBottomRef.current = true
+        const container = containerRef.current
+        if (container) {
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+        }
     }
 
     const clearActiveFilters = () => {
@@ -417,6 +461,11 @@ export default function Logs() {
                     <button type="button" className="secondary btn-sm" onClick={handleScrollTop} title="Scroll to top of log buffer">
                         <ArrowUpToLine size={14} /> Top
                     </button>
+                    {viewFormat === 'stream' && (
+                        <button type="button" className="secondary btn-sm" onClick={handleScrollBottom} title="Scroll to bottom (most recent) of log buffer">
+                            <ArrowDownToLine size={14} /> Bottom
+                        </button>
+                    )}
 
                     <button type="button" className="secondary btn-sm" onClick={handleCopy}>
                         {copied ? <Check size={14} /> : <Copy size={14} />}
@@ -592,6 +641,7 @@ export default function Logs() {
             {/* Log Viewer Container */}
             <div
                 ref={containerRef}
+                onScroll={handleScroll}
                 style={{
                     background: '#070a12',
                     border: '1px solid var(--border)',
@@ -825,7 +875,7 @@ export default function Logs() {
                     </div>
                 ) : (
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
-                        {filtered.map((entry, idx) => {
+                        {rawStreamLines.map((entry, idx) => {
                             const lvl = entry.level.toLowerCase()
                             const color = ansiToCssColor(entry.thread_color) || '#e2e8f0'
                             const isErr = lvl === 'error' || lvl === 'critical'
@@ -858,7 +908,7 @@ export default function Logs() {
                                 </div>
                             )
                         })}
-                        {filtered.length === 0 && (
+                        {rawStreamLines.length === 0 && (
                             <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                                 No log lines match your active filters.
                             </div>
@@ -873,7 +923,7 @@ export default function Logs() {
                     rawLogsText={
                         viewFormat === 'blocks' && mode === 'runtime'
                             ? filteredAttemptBlocks.map((b) => formatAttemptBlockAsText(b)).join('\n\n')
-                            : filtered.map((e) => `${e.timestamp} [${e.level.toUpperCase()}] ${e.message}`).join('\n')
+                            : rawStreamLines.map((e) => `${e.timestamp} [${e.level.toUpperCase()}] ${e.message}`).join('\n')
                     }
                     mode={mode}
                     onClose={() => setIssueModalTarget({ open: false, block: null })}

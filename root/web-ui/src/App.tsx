@@ -41,12 +41,23 @@ export default function App() {
     const waitingCount = data?.waiting_downloads?.count ?? 0
     const inFlightTotal = activeCount + queuedCount + waitingCount
 
-    const processes = data?.processes || {
-        UrlIngester: 'running',
-        Coordinator: 'running',
-        FFWaiter: 'running',
-        WebServer: 'running',
-    }
+    const processes =
+        data?.processes && Object.keys(data.processes).length > 0
+            ? data.processes
+            : data?.daemon_details && Object.keys(data.daemon_details).length > 0
+              ? Object.fromEntries(
+                    Object.entries(data.daemon_details).map(([k, v]) => [
+                        k,
+                        typeof v === 'object' && v && 'status' in v ? String((v as { status: unknown }).status) : 'running',
+                    ])
+                )
+              : {
+                    Coordinator: 'running',
+                    EmailWatcher: 'running',
+                    FFWaiter: 'running',
+                    WorkerPool: 'running',
+                    WebServer: 'running',
+                }
     const daemonDetails = data?.daemon_details || {}
     const coordinatorPaused = !!data?.coordinator_paused
     const processEntries = Object.entries(processes)
