@@ -202,6 +202,58 @@ function isStoryCandidateUrl(rawUrl?: string): boolean {
     return true
 }
 
+function isValidStoryTitle(title?: string | null): boolean {
+    if (!title || !title.trim()) return false
+    const lower = title.toLowerCase()
+    if (
+        lower.includes('/tmp') ||
+        lower.includes('\\tmp') ||
+        lower.startsWith('/var/') ||
+        lower.startsWith('c:\\') ||
+        lower.startsWith('/tmp/') ||
+        lower.includes('temp directory') ||
+        lower.endsWith('.epub') ||
+        lower.startsWith('http://') ||
+        lower.startsWith('https://')
+    ) {
+        return false
+    }
+    return true
+}
+
+function extractTitleFromLogMessage(message: string): string | null {
+    // Worker explicit title logs: "Extracted title: Foo" or "Extracted title from filename: Foo"
+    const extractedMatch = message.match(/Extracted title(?: from filename)?: (.+)$/i)
+    if (extractedMatch) {
+        const title = extractedMatch[1].trim()
+        if (isValidStoryTitle(title)) return title
+    }
+
+    // Apprise notification dispatched for 'Story Title'
+    const dispatchedMatch = message.match(/Apprise notification dispatched for '([^']+)'/i)
+    if (dispatchedMatch) {
+        const title = dispatchedMatch[1].trim()
+        if (isValidStoryTitle(title)) return title
+    }
+
+    // Apprise notification: "Apprise notification for '...': 'Story Title' ..."
+    const appriseMatch = message.match(/Apprise notification for '[^']+': '([^']+)'/i)
+    if (appriseMatch) {
+        const title = appriseMatch[1].trim()
+        if (isValidStoryTitle(title)) return title
+    }
+
+    // "Successfully processed Foo" or "Successfully processed 'Foo'"
+    const procMatch =
+        message.match(/Successfully processed '([^']+)'/i) || message.match(/Successfully processed (.+)$/i)
+    if (procMatch) {
+        const title = procMatch[1].trim()
+        if (isValidStoryTitle(title)) return title
+    }
+
+    return null
+}
+
 function isStartupMessage(msg: string): boolean {
     return (
         msg.startsWith('Starting all processes') ||
@@ -268,8 +320,10 @@ export function buildLogAttemptBlocks(
     }
 
     const blocks: LogAttemptBlock[] = []
+    const activeBlockByAttemptId = new Map<string, LogAttemptBlock>()
     const activeBlockBySite = new Map<string, LogAttemptBlock>()
     const activeBlockByUrl = new Map<string, LogAttemptBlock>()
+    const activeBlockByWorkerId = new Map<string, LogAttemptBlock>()
     const attemptCounterByUrl = new Map<string, number>()
     let currentSystemBlock: LogAttemptBlock | null = null
 
@@ -278,17 +332,51 @@ export function buildLogAttemptBlocks(
         const urlMatch = entry.message.match(URL_EXTRACT_RE)
         const isSystemBanner = isStartupMessage(entry.message)
         const candidateUrl = entry.story_url || (urlMatch ? urlMatch[1] : undefined)
-        const url = isSystemBanner ? undefined : (isStoryCandidateUrl(candidateUrl) ? candidateUrl : undefined)
+        const url = isSystemBanner ? undefined : isStoryCandidateUrl(candidateUrl) ? candidateUrl : undefined
         const msgLower = entry.message.toLowerCase()
 
         // Determine if this line starts or belongs to a story attempt
         let targetBlock: LogAttemptBlock | undefined
 
-        if (url) {
+        if (entry.attempt_id) {
+            targetBlock = activeBlockByAttemptId.get(entry.attempt_id)
+            if (!targetBlock) {
+                const prevCount = url ? attemptCounterByUrl.get(url) || 0 : 0
+                const nextAttempt = prevCount + 1
+                if (url) attemptCounterByUrl.set(url, nextAttempt)
+
+                const resolvedSite = site || (url ? siteByUrl.get(url) : '') || ''
+                const candidateTitle =
+                    entry.story_title && isValidStoryTitle(entry.story_title) ? entry.story_title : undefined
+                const resolvedTitle =
+                    candidateTitle || (url ? titleByUrl.get(url) || inferTitleFromUrl(url) : 'Unknown Story')
+
+                targetBlock = {
+                    id: entry.attempt_id,
+                    kind: 'story_attempt',
+                    url,
+                    title: resolvedTitle,
+                    site: resolvedSite || undefined,
+                    attemptNumber: (url && attemptByUrl.get(url)) || nextAttempt,
+                    status: 'processing',
+                    isActive: true,
+                    activeStage: 'processing',
+                    startedAt: entry.timestamp,
+                    endedAt: entry.timestamp,
+                    lines: [],
+                    traceback: (url && errorByUrl.get(url)) || null,
+                }
+                blocks.push(targetBlock)
+                activeBlockByAttemptId.set(entry.attempt_id, targetBlock)
+                if (url) activeBlockByUrl.set(url, targetBlock)
+                if (resolvedSite) activeBlockBySite.set(resolvedSite, targetBlock)
+                if (entry.worker_id) activeBlockByWorkerId.set(entry.worker_id, targetBlock)
+            }
+        } else if (url) {
             const existingForUrl = activeBlockByUrl.get(url)
             const isStartTrigger =
                 msgLower.includes('processing ') ||
-                msgLower.includes('queued ') && !msgLower.includes('queued retry') ||
+                (msgLower.includes('queued ') && !msgLower.includes('queued retry')) ||
                 msgLower.includes('immediate retry') ||
                 msgLower.includes('scratch redownload')
 
@@ -300,7 +388,9 @@ export function buildLogAttemptBlocks(
                 attemptCounterByUrl.set(url, nextAttempt)
 
                 const resolvedSite = site || siteByUrl.get(url) || ''
-                const resolvedTitle = titleByUrl.get(url) || inferTitleFromUrl(url)
+                const candidateTitle =
+                    entry.story_title && isValidStoryTitle(entry.story_title) ? entry.story_title : undefined
+                const resolvedTitle = candidateTitle || titleByUrl.get(url) || inferTitleFromUrl(url)
 
                 targetBlock = {
                     id: `attempt-${url}-${nextAttempt}-${entry.timestamp}`,
@@ -322,7 +412,12 @@ export function buildLogAttemptBlocks(
                 if (resolvedSite) {
                     activeBlockBySite.set(resolvedSite, targetBlock)
                 }
+                if (entry.worker_id) {
+                    activeBlockByWorkerId.set(entry.worker_id, targetBlock)
+                }
             }
+        } else if (entry.worker_id && activeBlockByWorkerId.has(entry.worker_id)) {
+            targetBlock = activeBlockByWorkerId.get(entry.worker_id)
         } else if (site && activeBlockBySite.has(site)) {
             targetBlock = activeBlockBySite.get(site)
         } else if (msgLower.includes('assigned site ')) {
@@ -343,6 +438,11 @@ export function buildLogAttemptBlocks(
                 targetBlock.site = site
                 activeBlockBySite.set(site, targetBlock)
             }
+            const resolvedEntryUrl = entry.story_url || url
+            if (!targetBlock.url && resolvedEntryUrl) {
+                targetBlock.url = resolvedEntryUrl
+                activeBlockByUrl.set(resolvedEntryUrl, targetBlock)
+            }
 
             // Check if log message mentions explicit retry number
             const retryMatch = entry.message.match(RETRY_NUM_RE)
@@ -353,33 +453,64 @@ export function buildLogAttemptBlocks(
                 }
             }
 
-            // Check if title appears in quotes (e.g. dispatched for 'The Stars Are Cold and Bright')
-            const quoteMatch = entry.message.match(/'([^']+)'/)
-            if (quoteMatch && targetBlock.title.startsWith('Work #')) {
-                targetBlock.title = quoteMatch[1]
+            // Update title if new valid title is discovered
+            if (entry.story_title && isValidStoryTitle(entry.story_title)) {
+                targetBlock.title = entry.story_title.trim()
+            } else if (
+                targetBlock.title.startsWith('Work #') ||
+                targetBlock.title === 'Unknown Story' ||
+                targetBlock.title === 'Story'
+            ) {
+                const parsedTitle = extractTitleFromLogMessage(entry.message)
+                if (parsedTitle) {
+                    targetBlock.title = parsedTitle
+                }
             }
 
             // Update block status based on line severity and keywords
             const lvl = entry.level.toLowerCase()
-            if (lvl === 'error' || lvl === 'critical' || msgLower.includes('failed ')) {
+            const isSuccess =
+                msgLower.includes('successfully updated') ||
+                msgLower.includes('successfully processed') ||
+                msgLower.includes('notification dispatched') ||
+                msgLower.includes('sent successfully to') ||
+                msgLower.includes('completed -> book id') ||
+                msgLower.includes('story is in calibre with story id') ||
+                msgLower.includes('added book ids:')
+
+            const isFailure =
+                lvl === 'error' ||
+                lvl === 'critical' ||
+                msgLower.includes('failed to download') ||
+                msgLower.includes('download failed') ||
+                msgLower.includes('failed to process') ||
+                msgLower.includes('failed to update') ||
+                msgLower.includes('queued retry') ||
+                msgLower.includes('moving to hail-mary') ||
+                msgLower.includes('giving up on') ||
+                msgLower.includes('retry exhausted')
+
+            if (isFailure) {
                 targetBlock.status = 'failed'
-            } else if (
-                targetBlock.status !== 'failed' &&
-                (msgLower.includes('successfully updated') ||
-                    msgLower.includes('notification dispatched') ||
-                    msgLower.includes('completed -> book id'))
-            ) {
+            } else if (isSuccess && targetBlock.status !== 'failed') {
                 targetBlock.status = 'success'
             }
 
-            // If this line closes out the attempt (notification dispatched or retry queued), release active site pointer
-            if (
-                msgLower.includes('notification dispatched') ||
-                msgLower.includes('successfully updated') ||
-                msgLower.includes('queued retry')
-            ) {
+            // If this line closes out the attempt, release active site/url/worker pointers
+            const isClosed =
+                isSuccess ||
+                msgLower.includes('queued retry') ||
+                msgLower.includes('moving to hail-mary') ||
+                msgLower.includes('giving up on') ||
+                msgLower.includes('retry exhausted') ||
+                msgLower.includes('finished site ') ||
+                msgLower.includes('worker idle for site') ||
+                msgLower.includes('signaling worker')
+
+            if (isClosed) {
                 if (targetBlock.url) activeBlockByUrl.delete(targetBlock.url)
                 if (targetBlock.site) activeBlockBySite.delete(targetBlock.site)
+                if (entry.worker_id) activeBlockByWorkerId.delete(entry.worker_id)
             }
         } else {
             // System / Supervisor / IMAP IDLE event block

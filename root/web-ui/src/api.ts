@@ -116,6 +116,9 @@ export interface LogEntry {
     thread_color?: string
     thread_site?: string
     story_url?: string
+    story_title?: string
+    worker_id?: string
+    attempt_id?: string
 }
 
 export interface SiteStats {

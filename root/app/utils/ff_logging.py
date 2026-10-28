@@ -94,6 +94,14 @@ def _store_log_entry(
         entry["thread_color"] = _thread_local.color
     if hasattr(_thread_local, "site") and _thread_local.site is not None:
         entry["thread_site"] = _thread_local.site
+    if hasattr(_thread_local, "story_url") and _thread_local.story_url is not None:
+        entry["story_url"] = _thread_local.story_url
+    if hasattr(_thread_local, "story_title") and _thread_local.story_title is not None:
+        entry["story_title"] = _thread_local.story_title
+    if hasattr(_thread_local, "worker_id") and _thread_local.worker_id is not None:
+        entry["worker_id"] = _thread_local.worker_id
+    if hasattr(_thread_local, "attempt_id") and _thread_local.attempt_id is not None:
+        entry["attempt_id"] = _thread_local.attempt_id
 
     _append_log_entry(entry)
 
@@ -294,6 +302,40 @@ def set_thread_site(site: str | None) -> None:
               ``None`` to clear the tag (e.g. when a worker goes idle).
     """
     _thread_local.site = site
+    if site is None:
+        _thread_local.story_url = None
+        _thread_local.story_title = None
+        _thread_local.worker_id = None
+        _thread_local.attempt_id = None
+
+
+def set_thread_task(
+    site: str | None,
+    story_url: str | None = None,
+    story_title: str | None = None,
+    worker_id: str | None = None,
+    attempt_id: str | None = None,
+) -> None:
+    """Sets the execution task context for the current worker thread's log output."""
+    _thread_local.site = site
+    _thread_local.story_url = story_url
+    _thread_local.story_title = story_title
+    _thread_local.worker_id = worker_id
+    _thread_local.attempt_id = attempt_id
+
+
+def set_thread_story_title(title: str | None) -> None:
+    """Updates the story title for the current worker thread."""
+    _thread_local.story_title = title
+
+
+def clear_thread_task() -> None:
+    """Clears all task context for the current worker thread."""
+    _thread_local.site = None
+    _thread_local.story_url = None
+    _thread_local.story_title = None
+    _thread_local.worker_id = None
+    _thread_local.attempt_id = None
 
 
 def get_color_for_worker(index: int) -> str:

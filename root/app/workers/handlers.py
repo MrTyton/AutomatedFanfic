@@ -197,6 +197,8 @@ def process_fanfic_addition(
 
         if success:
             fanfic.retry_decision = None
+            if fanfic.title:
+                ff_logging.set_thread_story_title(fanfic.title)
             if fanfic.calibre_id:
                 ff_logging.log(f"\t({site}) Story ID: {fanfic.calibre_id}")
 

@@ -174,6 +174,69 @@ test('buildLogAttemptBlocks groups startup messages with non-story URLs into sin
     assert.equal(systemBlocks[0].isActive, false)
 })
 
+test('buildLogAttemptBlocks groups worker attempt lines with attempt_id and avoids temp dir titles', () => {
+    const attemptId = 'worker_0-https://www.royalroad.com/fiction/12345-1719283921000'
+    const workerLogs = [
+        {
+            timestamp: '2026-10-28 12:00:00',
+            level: 'info',
+            message: '(royalroad) Processing https://www.royalroad.com/fiction/12345',
+            thread_site: 'royalroad',
+            story_url: 'https://www.royalroad.com/fiction/12345',
+            worker_id: 'worker_0',
+            attempt_id: attemptId,
+        },
+        {
+            timestamp: '2026-10-28 12:00:01',
+            level: 'info',
+            message: "(royalroad) Using temp directory: '/tmp/tmpcan0oqrg'",
+            thread_site: 'royalroad',
+            story_url: 'https://www.royalroad.com/fiction/12345',
+            worker_id: 'worker_0',
+            attempt_id: attemptId,
+        },
+        {
+            timestamp: '2026-10-28 12:00:02',
+            level: 'debug',
+            message: "Executing FanFicFare directly: /tmp/tmpcan0oqrg/The Bee Dungeon.epub",
+            worker_id: 'worker_0',
+            story_url: 'https://www.royalroad.com/fiction/12345',
+            attempt_id: attemptId,
+        },
+        {
+            timestamp: '2026-10-28 12:00:05',
+            level: 'info',
+            message: "(royalroad) Successfully processed The Bee Dungeon",
+            thread_site: 'royalroad',
+            story_url: 'https://www.royalroad.com/fiction/12345',
+            story_title: 'The Bee Dungeon',
+            worker_id: 'worker_0',
+            attempt_id: attemptId,
+        },
+        {
+            timestamp: '2026-10-28 12:00:06',
+            level: 'info',
+            message: "Apprise notification for 'New Fanfiction Download': 'The Bee Dungeon' sent successfully to 1 target",
+            thread_site: 'royalroad',
+            story_url: 'https://www.royalroad.com/fiction/12345',
+            story_title: 'The Bee Dungeon',
+            worker_id: 'worker_0',
+            attempt_id: attemptId,
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(workerLogs)
+    assert.equal(blocks.length, 1)
+
+    const block = blocks[0]
+    assert.equal(block.kind, 'story_attempt')
+    assert.equal(block.title, 'The Bee Dungeon')
+    assert.notEqual(block.title, '/tmp/tmpcan0oqrg')
+    assert.equal(block.lines.length, 5)
+    assert.equal(block.status, 'success')
+    assert.equal(block.isActive, false)
+})
+
 test('computeDirtySections tracks unsaved changes across all config sections and personal.ini', () => {
     const initCfg = {
         email: { mailbox: 'INBOX', sleep_time: 60 },

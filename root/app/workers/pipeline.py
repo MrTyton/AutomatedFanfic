@@ -62,6 +62,7 @@ def _signal_worker_idle(
     else:
         ingress_queue.put(("WORKER_IDLE", worker_id, current_site))
     ff_logging.set_thread_site(None)
+    ff_logging.clear_thread_task()
 
 
 def _process_task(
@@ -100,6 +101,7 @@ def _process_task(
             extracted_title = common.extract_title_from_epub_path(path_or_url)
             if extracted_title != path_or_url:  # Only update if extraction succeeded
                 fanfic.title = extracted_title
+                ff_logging.set_thread_story_title(fanfic.title)
                 ff_logging.log_debug(
                     f"\t({site}) Extracted title from filename: {fanfic.title}"
                 )
@@ -360,7 +362,15 @@ def url_worker(
 
             # Track which site we're processing
             current_site = fanfic.site
-            ff_logging.set_thread_site(fanfic.site)
+            attempt_id = f"{worker_id}-{fanfic.url}-{int(time.time() * 1000)}"
+            story_title = getattr(fanfic, "title", None)
+            ff_logging.set_thread_task(
+                site=fanfic.site,
+                story_url=fanfic.url,
+                story_title=story_title if story_title else None,
+                worker_id=worker_id,
+                attempt_id=attempt_id,
+            )
 
             # Mark as actively being processed by this worker thread
             if active_urls is not None:
@@ -413,6 +423,7 @@ def url_worker(
                         ff_logging.log_failure(
                             f"Worker {worker_id} failed to update active_urls: {e}"
                         )
+                ff_logging.clear_thread_task()
                 last_active_time = time.monotonic()
 
         except KeyboardInterrupt:
