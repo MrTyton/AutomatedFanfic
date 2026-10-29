@@ -19,6 +19,7 @@ import {
     ensureExternalUrl,
     normalizeStoryUrl,
     formatAttemptBlockAsText,
+    buildCalibreBookUrl,
 } from './dashboardLogic.ts'
 import { STATUS_COLORS } from '../statusColors.ts'
 
@@ -569,4 +570,54 @@ test('buildLogAttemptBlocks guarantees lines read top-to-bottom (chronological) 
     assert.ok(singleIdx !== -1 && procIdx !== -1 && execIdx !== -1)
     assert.ok(singleIdx < procIdx)
     assert.ok(procIdx < execIdx)
+})
+
+test('buildCalibreBookUrl generates correct Calibre Content Server book detail URLs', () => {
+    // 1. User standard format: host + #LibraryName
+    assert.equal(
+        buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction', 13996),
+        'http://192.168.1.161:8195/#book_id=13996&library_id=Fanfiction&panel=book_details'
+    )
+
+    // 2. ID passed with '#' prefix
+    assert.equal(
+        buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction', '#13996'),
+        'http://192.168.1.161:8195/#book_id=13996&library_id=Fanfiction&panel=book_details'
+    )
+
+    // 3. Previously malformed URL with appended book_id fixed cleanly
+    assert.equal(
+        buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction&book_id=13993', '13996'),
+        'http://192.168.1.161:8195/#book_id=13996&library_id=Fanfiction&panel=book_details'
+    )
+
+    // 4. URL already having library_id in hash params
+    assert.equal(
+        buildCalibreBookUrl('http://192.168.1.161:8195/#library_id=Fanfiction&panel=book_list', 13996),
+        'http://192.168.1.161:8195/#book_id=13996&library_id=Fanfiction&panel=book_details'
+    )
+
+    // 5. URL with subpath prefix
+    assert.equal(
+        buildCalibreBookUrl('http://192.168.1.161:8195/calibre/#Fanfiction', 13996),
+        'http://192.168.1.161:8195/calibre/#book_id=13996&library_id=Fanfiction&panel=book_details'
+    )
+
+    // 6. Base server URL without library hash
+    assert.equal(
+        buildCalibreBookUrl('http://192.168.1.161:8195', 13996),
+        'http://192.168.1.161:8195/#book_id=13996&panel=book_details'
+    )
+    assert.equal(
+        buildCalibreBookUrl('http://192.168.1.161:8195/', 13996),
+        'http://192.168.1.161:8195/#book_id=13996&panel=book_details'
+    )
+
+    // 7. Null/undefined/empty cases
+    assert.equal(buildCalibreBookUrl(null, 13996), '')
+    assert.equal(buildCalibreBookUrl(undefined, 13996), '')
+    assert.equal(buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction', null), '')
+    assert.equal(buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction', undefined), '')
+    assert.equal(buildCalibreBookUrl('', 13996), '')
+    assert.equal(buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction', ''), '')
 })

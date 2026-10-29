@@ -22,6 +22,7 @@ import {
     filterRemainingInputAfterSubmit,
     aggregateRecentErrors,
     ensureExternalUrl,
+    buildCalibreBookUrl,
     AggregatedErrorRecord,
 } from '../utils/dashboardLogic'
 import {
@@ -102,7 +103,7 @@ function StoryUrlLink({ url }: { url: string }) {
     )
 }
 
-function CalibreIdBadge({
+export function CalibreIdBadge({
     calibreId,
     serverUrl,
 }: {
@@ -112,9 +113,8 @@ function CalibreIdBadge({
     if (!calibreId) {
         return <span style={{ color: 'var(--text-faint)' }}>—</span>
     }
-    if (serverUrl) {
-        const base = serverUrl.replace(/\/$/, '')
-        const href = base.includes('#') ? `${base}&book_id=${calibreId}` : `${base}/#book_id=${calibreId}`
+    const href = buildCalibreBookUrl(serverUrl, calibreId)
+    if (href) {
         return (
             <a
                 href={href}
@@ -144,6 +144,7 @@ function CalibreIdBadge({
                 color: 'var(--success)',
                 fontWeight: 600,
             }}
+            title={`Calibre Book #${calibreId}`}
         >
             #{calibreId}
         </span>
@@ -1839,9 +1840,16 @@ export default function Dashboard({ data }: Props) {
                                 }}
                             >
                                 <SiteBadge site={dl.site} />
-                                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                                    {dl.calibre_id ? `#${dl.calibre_id}` : 'No ID'} ·{' '}
-                                    {formatRelativeAndDate(dl.completed_at || dl.timestamp, now)}
+                                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    {dl.calibre_id ? (
+                                        <CalibreIdBadge
+                                            calibreId={dl.calibre_id}
+                                            serverUrl={data?.calibre_server_url}
+                                        />
+                                    ) : (
+                                        'No ID'
+                                    )}{' '}
+                                    · {formatRelativeAndDate(dl.completed_at || dl.timestamp, now)}
                                 </span>
                             </div>
                             <div className="mobile-data-card-actions">

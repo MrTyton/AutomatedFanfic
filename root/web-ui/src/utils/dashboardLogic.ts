@@ -201,6 +201,83 @@ export function normalizeStoryUrl(raw?: string | null): string {
     return `https://${trimmed}`
 }
 
+export function buildCalibreBookUrl(
+    serverUrl?: string | null,
+    calibreId?: string | number | null
+): string {
+    if (!serverUrl || calibreId === undefined || calibreId === null) return ''
+    const idStr = String(calibreId).replace(/^#/, '').trim()
+    if (!idStr) return ''
+
+    const trimmedUrl = serverUrl.trim()
+    if (!trimmedUrl) return ''
+
+    try {
+        const parsed = new URL(trimmedUrl)
+        let libraryId = ''
+        const rawHash = parsed.hash.replace(/^#/, '').trim()
+
+        if (rawHash) {
+            if (rawHash.includes('&') || rawHash.includes('=')) {
+                const searchParams = new URLSearchParams(rawHash)
+                libraryId = searchParams.get('library_id') || ''
+                if (!libraryId) {
+                    const firstPart = rawHash.split('&')[0]
+                    if (!firstPart.includes('=')) {
+                        libraryId = firstPart.replace(/^\/+/, '')
+                    }
+                }
+            } else {
+                libraryId = rawHash.replace(/^\/+/, '')
+            }
+        }
+
+        let pathname = parsed.pathname
+        if (!pathname.endsWith('/')) {
+            pathname += '/'
+        }
+
+        const params: string[] = [`book_id=${encodeURIComponent(idStr)}`]
+        if (libraryId) {
+            params.push(`library_id=${encodeURIComponent(libraryId)}`)
+        }
+        params.push('panel=book_details')
+
+        return `${parsed.origin}${pathname}${parsed.search}#${params.join('&')}`
+    } catch {
+        // Fallback for non-standard or malformed URLs
+        const hashIdx = trimmedUrl.indexOf('#')
+        let base = hashIdx >= 0 ? trimmedUrl.slice(0, hashIdx) : trimmedUrl
+        const rawHash = hashIdx >= 0 ? trimmedUrl.slice(hashIdx + 1).trim() : ''
+
+        let libraryId = ''
+        if (rawHash) {
+            if (rawHash.includes('&') || rawHash.includes('=')) {
+                const match = rawHash.match(/(?:^|&)library_id=([^&]+)/)
+                if (match) {
+                    libraryId = decodeURIComponent(match[1])
+                } else {
+                    const firstPart = rawHash.split('&')[0]
+                    if (!firstPart.includes('=')) {
+                        libraryId = firstPart.replace(/^\/+/, '')
+                    }
+                }
+            } else {
+                libraryId = rawHash.replace(/^\/+/, '')
+            }
+        }
+
+        base = base.replace(/\/+$/, '') + '/'
+        const params: string[] = [`book_id=${encodeURIComponent(idStr)}`]
+        if (libraryId) {
+            params.push(`library_id=${encodeURIComponent(libraryId)}`)
+        }
+        params.push('panel=book_details')
+
+        return `${base}#${params.join('&')}`
+    }
+}
+
 export function isStoryCandidateUrl(rawUrl?: string): boolean {
     if (!rawUrl) return false
     const trimmed = rawUrl.trim()

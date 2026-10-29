@@ -20,6 +20,7 @@ import {
 import { statusBadgeClass, getSiteBadgeInfo } from '../statusColors'
 import AttemptBlockCard from '../components/AttemptBlockCard'
 import { ensureExternalUrl } from '../utils/dashboardLogic'
+import { CalibreIdBadge } from './Dashboard'
 import {
     Search,
     RefreshCw,
@@ -748,22 +749,10 @@ export default function History({ data }: HistoryProps = {}) {
                                                         )}
                                                     </td>
                                                     <td>
-                                                        {r.calibre_id ? (
-                                                            <span
-                                                                className="tabular-nums"
-                                                                style={{
-                                                                    fontFamily: 'var(--font-mono)',
-                                                                    color: 'var(--success)',
-                                                                    fontWeight: 600,
-                                                                }}
-                                                            >
-                                                                #{r.calibre_id}
-                                                            </span>
-                                                        ) : (
-                                                            <span style={{ color: 'var(--text-faint)' }}>
-                                                                —
-                                                            </span>
-                                                        )}
+                                                        <CalibreIdBadge
+                                                            calibreId={r.calibre_id}
+                                                            serverUrl={data?.calibre_server_url}
+                                                        />
                                                     </td>
                                                     <td
                                                         className="tabular-nums"
@@ -912,10 +901,16 @@ export default function History({ data }: HistoryProps = {}) {
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
                                                     whiteSpace: 'nowrap',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.25rem',
                                                 }}
                                             >
-                                                {r.calibre_id ? `#${r.calibre_id}` : '—'} ·{' '}
-                                                {formatDateTime(r.started_at)} ({formatDuration(r.started_at, r.completed_at)})
+                                                <CalibreIdBadge
+                                                    calibreId={r.calibre_id}
+                                                    serverUrl={data?.calibre_server_url}
+                                                />{' '}
+                                                · {formatDateTime(r.started_at)} ({formatDuration(r.started_at, r.completed_at)})
                                             </span>
                                         </div>
                                         <div className="mobile-data-card-actions">
