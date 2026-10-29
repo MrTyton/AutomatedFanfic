@@ -70,6 +70,19 @@ class TestHealthRoutes(unittest.TestCase):
         resp = self.client.get("/api/status")
         data = resp.json()
         self.assertIn("supervisor", data["processes"])
+        self.assertIn("version", data)
+
+    def test_version_endpoint(self):
+        """GET /api/version returns structured runtime component versions."""
+        resp = self.client.get("/api/version")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("automatedfanfic", data)
+        self.assertIn("python", data)
+        self.assertIn("platform", data)
+        self.assertIn("calibre", data)
+        self.assertIn("fanficfare", data)
+        self.assertIn("apprise", data)
 
 
 class TestHistoryRoutes(unittest.TestCase):

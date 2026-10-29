@@ -142,6 +142,14 @@ def log_configuration_details(
     )
     ff_logging.log(f"Using configuration file: {args.config}")
 
+    # Log environment & runtime versions
+    env_info = system_utils.get_system_environment_summary()
+    env_label = "Docker container" if env_info["is_docker"] else "Host system"
+    ff_logging.log(
+        f"Python version: {env_info['python']} ({env_info['python_implementation']})"
+    )
+    ff_logging.log(f"OS / Platform: {env_info['platform']} [{env_label}]")
+
     # Log external tool versions
     if calibre_factory.is_http_location(getattr(config.calibre, "path", "")):
 
@@ -155,8 +163,10 @@ def log_configuration_details(
     else:
         calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
     fanficfare_version = url_worker.command.get_fanficfare_version()
+    apprise_version = system_utils.get_installed_package_version("apprise")
     ff_logging.log(f"Calibre version: {calibre_version}")
     ff_logging.log(f"FanFicFare version: {fanficfare_version}")
+    ff_logging.log(f"Apprise version: {apprise_version}")
 
     ff_logging.log("--- Configuration Details ---")
     try:

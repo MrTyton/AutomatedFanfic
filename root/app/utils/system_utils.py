@@ -44,13 +44,15 @@ Thread Safety:
 
 from contextlib import contextmanager
 import functools
+import gc
+import importlib.metadata
 import os
 from pathlib import Path
+import platform
 import shutil
 from tempfile import mkdtemp
 lazy import ctypes
 lazy import fanficfare
-import gc
 
 # Removed top-level import to avoid circular dependency with models.config_models
 # from calibre_integration import calibre_info
@@ -234,3 +236,36 @@ def reclaim_memory() -> None:
         libc.malloc_trim(0)
     except Exception:
         pass
+
+
+def is_docker_environment() -> bool:
+    """Return True if executing inside a Docker container environment."""
+    if os.path.exists("/.dockerenv") or os.environ.get("DOCKER_CONTAINER") == "true":
+        return True
+    cgroup = Path("/proc/1/cgroup")
+    if cgroup.is_file():
+        try:
+            return "docker" in cgroup.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            pass
+    return False
+
+
+def get_installed_package_version(package_name: str) -> str:
+    """Return installed package version via importlib.metadata or 'unknown'."""
+    try:
+        return importlib.metadata.version(package_name)
+    except Exception:
+        return "unknown"
+
+
+def get_system_environment_summary() -> dict[str, str | bool]:
+    """Return structured system, OS, and Python environment metadata."""
+    return {
+        "python": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "platform": platform.platform(),
+        "os": platform.system(),
+        "arch": platform.machine(),
+        "is_docker": is_docker_environment(),
+    }

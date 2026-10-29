@@ -15,6 +15,7 @@ import {
     diagnoseErrorSignature,
     computeIniLineDiff,
     extractIniSections,
+    extractSystemVersionsFromLogs,
 } from './dashboardLogic.ts'
 import { STATUS_COLORS } from '../statusColors.ts'
 
@@ -377,4 +378,48 @@ test('computeIniLineDiff and extractIniSections parse INI changes and headers', 
     const diff = computeIniLineDiff('[defaults]\nis_adult:false', '[defaults]\nis_adult:true')
     assert.equal(diff.some((d) => d.type === 'remove' && d.text.includes('false')), true)
     assert.equal(diff.some((d) => d.type === 'add' && d.text.includes('true')), true)
+})
+
+test('extractSystemVersionsFromLogs and buildGitHubIssueDraft include environment & component versions', () => {
+    const startupLogs = [
+        { timestamp: '2026-10-28 10:00:00', level: 'info', message: 'Starting AutomatedFanfic v6.14.0' },
+        { timestamp: '2026-10-28 10:00:01', level: 'info', message: 'Python version: 3.13.2 (CPython)' },
+        { timestamp: '2026-10-28 10:00:01', level: 'info', message: 'OS / Platform: Linux-6.6.137-aarch64 [Docker container]' },
+        { timestamp: '2026-10-28 10:00:02', level: 'info', message: 'Calibre version: 7.26.0' },
+        { timestamp: '2026-10-28 10:00:02', level: 'info', message: 'FanFicFare version: 4.44.0' },
+        { timestamp: '2026-10-28 10:00:03', level: 'info', message: 'Apprise version: 1.9.0' },
+    ]
+
+    const versions = extractSystemVersionsFromLogs(startupLogs)
+    assert.equal(versions.automatedfanfic, '6.14.0')
+    assert.equal(versions.python, '3.13.2 (CPython)')
+    assert.equal(versions.platform, 'Linux-6.6.137-aarch64 [Docker container]')
+    assert.equal(versions.calibre, '7.26.0')
+    assert.equal(versions.fanficfare, '4.44.0')
+    assert.equal(versions.apprise, '1.9.0')
+
+    const draft = buildGitHubIssueDraft({
+        startupLogs,
+        block: {
+            id: 'err-1',
+            kind: 'story_attempt',
+            site: 'royalroad',
+            url: 'https://royalroad.com/fiction/12345',
+            title: 'Test Story',
+            attemptNumber: 1,
+            status: 'failed',
+            isActive: false,
+            startedAt: '2026-10-28 10:05:00',
+            endedAt: '2026-10-28 10:05:05',
+            lines: [{ timestamp: '2026-10-28 10:05:02', level: 'error', message: 'Download failed' }],
+            traceback: 'Traceback: something failed in worker',
+        },
+    })
+
+    assert.ok(draft.body.includes('### Environment & Component Versions'))
+    assert.ok(draft.body.includes('- **AutomatedFanfic**: `v6.14.0`'))
+    assert.ok(draft.body.includes('- **Python**: `3.13.2 (CPython)`'))
+    assert.ok(draft.body.includes('- **FanFicFare**: `4.44.0`'))
+    assert.ok(draft.body.includes('- **Calibre**: `7.26.0`'))
+    assert.ok(draft.body.includes('- **Apprise**: `1.9.0`'))
 })

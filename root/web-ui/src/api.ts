@@ -465,6 +465,23 @@ export function getStartupLogs(limit = 500) {
     return apiFetch<{ items: LogEntry[]; count: number }>(`/api/logs/startup?limit=${limit}`)
 }
 
+export interface SystemVersionInfo {
+    automatedfanfic: string
+    python: string
+    python_implementation?: string
+    platform: string
+    os?: string
+    arch?: string
+    is_docker?: boolean
+    calibre: string
+    fanficfare: string
+    apprise: string
+}
+
+export function getSystemVersion() {
+    return apiFetch<SystemVersionInfo>('/api/version')
+}
+
 export function getAttemptBlocksFromLogs(
     entries?: LogEntry[],
     downloads?: DownloadRow[],

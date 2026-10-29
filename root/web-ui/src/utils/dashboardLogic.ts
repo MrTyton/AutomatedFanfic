@@ -6,6 +6,7 @@ import type {
     SiteStats,
     StatusPoint,
     LogEntry,
+    SystemVersionInfo,
 } from '../api'
 import { STATUS_COLORS } from '../statusColors.ts'
 
@@ -802,10 +803,49 @@ export interface GitHubIssueDraft {
     detectedPiiTypes: string[]
 }
 
+/**
+ * Algorithmically extracts component and environment versions from log entries or text.
+ */
+export function extractSystemVersionsFromLogs(
+    logs: (LogEntry | string)[]
+): Partial<SystemVersionInfo> {
+    const result: Partial<SystemVersionInfo> = {}
+    for (const item of logs) {
+        const msg = typeof item === 'string' ? item : item.message || ''
+
+        const afMatch = msg.match(/Starting AutomatedFanfic v([0-9a-zA-Z.-]+)/i)
+        if (afMatch && !result.automatedfanfic) {
+            result.automatedfanfic = afMatch[1]
+        }
+        const pyMatch = msg.match(/Python version:\s*([^\n\r]+)/i)
+        if (pyMatch && !result.python) {
+            result.python = pyMatch[1].trim()
+        }
+        const osMatch = msg.match(/OS \/ Platform:\s*([^\n\r]+)/i)
+        if (osMatch && !result.platform) {
+            result.platform = osMatch[1].trim()
+        }
+        const calMatch = msg.match(/Calibre version:\s*([^\n\r]+)/i)
+        if (calMatch && !result.calibre) {
+            result.calibre = calMatch[1].trim()
+        }
+        const fffMatch = msg.match(/FanFicFare version:\s*([^\n\r]+)/i)
+        if (fffMatch && !result.fanficfare) {
+            result.fanficfare = fffMatch[1].trim()
+        }
+        const appMatch = msg.match(/Apprise version:\s*([^\n\r]+)/i)
+        if (appMatch && !result.apprise) {
+            result.apprise = appMatch[1].trim()
+        }
+    }
+    return result
+}
+
 export function buildGitHubIssueDraft(options: {
     block?: LogAttemptBlock | null
     rawLogsText?: string
     startupLogs?: LogEntry[]
+    systemVersions?: Partial<SystemVersionInfo> | null
     mode?: 'runtime' | 'startup'
     scrubPii?: boolean
     redactStoryUrls?: boolean
@@ -814,6 +854,7 @@ export function buildGitHubIssueDraft(options: {
         block,
         rawLogsText,
         startupLogs = [],
+        systemVersions = null,
         mode = 'runtime',
         scrubPii = false,
         redactStoryUrls = false,
@@ -829,6 +870,39 @@ export function buildGitHubIssueDraft(options: {
                   .join('\n')
             : ''
 
+    // Algorithmically merge detected versions across startup logs, block lines, raw text, and passed system info
+    const detectedVersions: Partial<SystemVersionInfo> = {
+        ...extractSystemVersionsFromLogs(startupLogs),
+        ...extractSystemVersionsFromLogs(block?.lines || []),
+        ...extractSystemVersionsFromLogs(rawLogsText ? rawLogsText.split('\n') : []),
+        ...(systemVersions || {}),
+    }
+
+    const versionEntries: string[] = []
+    if (detectedVersions.automatedfanfic) {
+        versionEntries.push(`- **AutomatedFanfic**: \`v${detectedVersions.automatedfanfic.replace(/^v/i, '')}\``)
+    }
+    if (detectedVersions.python) {
+        versionEntries.push(`- **Python**: \`${detectedVersions.python}\``)
+    }
+    if (detectedVersions.platform) {
+        versionEntries.push(`- **Platform / OS**: \`${detectedVersions.platform}\``)
+    }
+    if (detectedVersions.fanficfare) {
+        versionEntries.push(`- **FanFicFare**: \`${detectedVersions.fanficfare}\``)
+    }
+    if (detectedVersions.calibre) {
+        versionEntries.push(`- **Calibre**: \`${detectedVersions.calibre}\``)
+    }
+    if (detectedVersions.apprise) {
+        versionEntries.push(`- **Apprise**: \`${detectedVersions.apprise}\``)
+    }
+
+    const versionMarkdown =
+        versionEntries.length > 0
+            ? ['', '### Environment & Component Versions', ...versionEntries]
+            : []
+
     if (block) {
         const siteLabel = block.site || 'system'
         const statusLabel = block.status === 'failed' ? 'Download failure' : `Log report (${block.status})`
@@ -841,6 +915,7 @@ export function buildGitHubIssueDraft(options: {
         const sections: string[] = [
             '### Summary',
             '<!-- Briefly describe what went wrong or what behavior you expected -->',
+            ...versionMarkdown,
             '',
             '### Attempt Diagnostic Context',
             `- **Worker / Site**: \`${siteLabel}\``,
@@ -887,6 +962,7 @@ export function buildGitHubIssueDraft(options: {
         const sections: string[] = [
             '### Summary',
             '<!-- Briefly describe what went wrong or what behavior you expected -->',
+            ...versionMarkdown,
             '',
             '### Environment & Log Context',
             `- **Log Buffer**: \`${mode.toUpperCase()}\``,

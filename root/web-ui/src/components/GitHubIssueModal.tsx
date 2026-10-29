@@ -5,7 +5,7 @@ import {
     scrubPiiFromLogText,
     type LogAttemptBlock,
 } from '../utils/dashboardLogic'
-import { getStartupLogs, type LogEntry } from '../api'
+import { getStartupLogs, getSystemVersion, type LogEntry, type SystemVersionInfo } from '../api'
 import {
     AlertTriangle,
     ShieldAlert,
@@ -44,10 +44,14 @@ export default function GitHubIssueModal({
     const [autoScrub, setAutoScrub] = useState<boolean>(true)
     const [redactStoryUrls, setRedactStoryUrls] = useState<boolean>(false)
     const [startupLogs, setStartupLogs] = useState<LogEntry[]>([])
+    const [systemVersions, setSystemVersions] = useState<SystemVersionInfo | null>(null)
 
     useEffect(() => {
         getStartupLogs(100)
             .then((res) => setStartupLogs(res.items || []))
+            .catch(() => {})
+        getSystemVersion()
+            .then((v) => setSystemVersions(v))
             .catch(() => {})
     }, [])
 
@@ -57,11 +61,12 @@ export default function GitHubIssueModal({
                 block,
                 rawLogsText,
                 startupLogs,
+                systemVersions,
                 mode,
                 scrubPii: autoScrub,
                 redactStoryUrls,
             }),
-        [block, rawLogsText, startupLogs, mode, autoScrub, redactStoryUrls]
+        [block, rawLogsText, startupLogs, systemVersions, mode, autoScrub, redactStoryUrls]
     )
 
     const [title, setTitle] = useState(initialDraft.title)
@@ -312,6 +317,47 @@ export default function GitHubIssueModal({
                             </span>
                         </div>
                     </div>
+
+                    {/* Component Versions Badge Bar */}
+                    {systemVersions && (
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.45rem',
+                                flexWrap: 'wrap',
+                                padding: '0.4rem 0.65rem',
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: 'var(--radius-sm)',
+                                border: '1px solid var(--border)',
+                                fontSize: '0.74rem',
+                            }}
+                        >
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Detected Versions:</span>
+                            <span style={{ fontFamily: 'var(--font-mono)', background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', padding: '0.1rem 0.4rem', borderRadius: 4 }}>
+                                AF v{systemVersions.automatedfanfic}
+                            </span>
+                            <span style={{ fontFamily: 'var(--font-mono)', background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', padding: '0.1rem 0.4rem', borderRadius: 4 }}>
+                                Python {systemVersions.python}
+                            </span>
+                            <span style={{ fontFamily: 'var(--font-mono)', background: 'rgba(6, 182, 212, 0.15)', color: '#67e8f9', padding: '0.1rem 0.4rem', borderRadius: 4 }}>
+                                FFF {systemVersions.fanficfare}
+                            </span>
+                            <span style={{ fontFamily: 'var(--font-mono)', background: 'rgba(245, 158, 11, 0.15)', color: '#fcd34d', padding: '0.1rem 0.4rem', borderRadius: 4 }}>
+                                Calibre {systemVersions.calibre}
+                            </span>
+                            {systemVersions.apprise && systemVersions.apprise !== 'unknown' && (
+                                <span style={{ fontFamily: 'var(--font-mono)', background: 'rgba(168, 85, 247, 0.15)', color: '#d8b4fe', padding: '0.1rem 0.4rem', borderRadius: 4 }}>
+                                    Apprise {systemVersions.apprise}
+                                </span>
+                            )}
+                            {systemVersions.is_docker && (
+                                <span style={{ fontFamily: 'var(--font-mono)', background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', padding: '0.1rem 0.4rem', borderRadius: 4 }}>
+                                    Docker
+                                </span>
+                            )}
+                        </div>
+                    )}
 
                     {/* Repository & Issue Title Inputs */}
                     <div

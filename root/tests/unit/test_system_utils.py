@@ -7,7 +7,10 @@ from parameterized import parameterized
 
 from utils.system_utils import (
     get_files,
+    get_installed_package_version,
     get_packaged_defaults_ini_path,
+    get_system_environment_summary,
+    is_docker_environment,
     temporary_directory,
 )
 
@@ -94,6 +97,22 @@ class TestSystemUtils(unittest.TestCase):
                 self.assertEqual(get_packaged_defaults_ini_path(), "")
         finally:
             get_packaged_defaults_ini_path.cache_clear()
+
+    def test_environment_and_version_helpers(self):
+        """Test Docker detection, package version retrieval, and environment summary."""
+        summary = get_system_environment_summary()
+        self.assertIn("python", summary)
+        self.assertIn("platform", summary)
+        self.assertIn("is_docker", summary)
+        self.assertIsInstance(summary["is_docker"], bool)
+
+        # Nonexistent package should return unknown without error
+        self.assertEqual(
+            get_installed_package_version("nonexistent_package_xyz_123"), "unknown"
+        )
+
+        with patch("os.path.exists", return_value=True):
+            self.assertTrue(is_docker_environment())
 
 
 if __name__ == "__main__":
