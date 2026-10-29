@@ -46,8 +46,32 @@ class TestHistoryApiUpdates(unittest.TestCase):
         data = resp.json()
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(data["total"], 15)
-        self.mock_db.get_notifications.assert_awaited_once_with(limit=10, offset=0)
-        self.mock_db.get_notifications_count.assert_awaited_once()
+        self.mock_db.get_notifications.assert_awaited_once_with(
+            limit=10, offset=0, site=None, search=None
+        )
+        self.mock_db.get_notifications_count.assert_awaited_once_with(
+            site=None, search=None
+        )
+
+    def test_list_notifications_with_site_and_search_filters(self) -> None:
+        self.mock_db.get_notifications = AsyncMock(
+            return_value=[{"id": 1, "title": "Alert", "body": "Success", "site": "ao3"}]
+        )
+        self.mock_db.get_notifications_count = AsyncMock(return_value=1)
+
+        resp = self.client.get(
+            "/api/history/notifications?limit=10&offset=0&site=ao3&search=alert"
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(data["total"], 1)
+        self.mock_db.get_notifications.assert_awaited_once_with(
+            limit=10, offset=0, site="ao3", search="alert"
+        )
+        self.mock_db.get_notifications_count.assert_awaited_once_with(
+            site="ao3", search="alert"
+        )
 
     def test_list_retries_with_site_and_search_filters(self) -> None:
         self.mock_db.get_retries = AsyncMock(

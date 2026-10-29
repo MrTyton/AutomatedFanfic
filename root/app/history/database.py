@@ -20,6 +20,7 @@ from history.models import (
     NotificationEvent,
     RetryEvent,
 )
+from utils import ff_logging
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS download_events (
@@ -130,6 +131,26 @@ class SyncHistoryDB:
         except sqlite3.OperationalError:
             pass  # Column already exists
         self._conn.commit()
+        self.prune_email_events(max_records=5000)
+
+    def prune_email_events(self, max_records: int = 5000) -> int:
+        """Keep only the most recent max_records email checks in rotating storage."""
+        if not self._conn:
+            return 0
+        try:
+            cur = self._conn.execute(
+                """DELETE FROM email_events
+                   WHERE id NOT IN (
+                       SELECT id FROM email_events
+                       ORDER BY id DESC LIMIT ?
+                   )""",
+                (max_records,),
+            )
+            self._conn.commit()
+            return cur.rowcount
+        except Exception as e:
+            ff_logging.log_failure(f"SyncHistoryDB: error pruning email_events: {e}")
+            return 0
 
     def close(self) -> None:
         if self._conn:
@@ -316,7 +337,11 @@ class SyncHistoryDB:
                 event.trigger,
             ),
         )
-        if commit:
+        self._email_check_count = getattr(self, "_email_check_count", 0) + 1
+        if self._email_check_count >= 100:
+            self._email_check_count = 0
+            self.prune_email_events(max_records=5000)
+        elif commit:
             self._conn.commit()
         return cur.lastrowid or 0
 
@@ -435,6 +460,24 @@ class AsyncHistoryDB:
             except Exception:
                 pass  # Column already exists
             await conn.commit()
+            try:
+                await self.prune_email_events(max_records=5000)
+            except Exception:
+                pass
+
+    async def prune_email_events(self, max_records: int = 5000) -> int:
+        """Keep only the most recent max_records email checks in rotating storage."""
+        async with self._connection() as conn:
+            cur = await conn.execute(
+                """DELETE FROM email_events
+                   WHERE id NOT IN (
+                       SELECT id FROM email_events
+                       ORDER BY id DESC LIMIT ?
+                   )""",
+                (max_records,),
+            )
+            await conn.commit()
+            return cur.rowcount
 
     async def close(self) -> None:
         """Close the persistent connection if open."""
@@ -455,7 +498,7 @@ class AsyncHistoryDB:
             conditions = []
             params: list = []
             if site:
-                conditions.append("site = ?")
+                conditions.append("LOWER(site) = LOWER(?)")
                 params.append(site)
             if status:
                 conditions.append("status = ?")
@@ -484,7 +527,7 @@ class AsyncHistoryDB:
             conditions = []
             params: list = []
             if site:
-                conditions.append("site = ?")
+                conditions.append("LOWER(site) = LOWER(?)")
                 params.append(site)
             if status:
                 conditions.append("status = ?")
@@ -613,21 +656,72 @@ class AsyncHistoryDB:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
-    async def get_notifications(self, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def get_notifications(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        site: str | None = None,
+        search: str | None = None,
+    ) -> list[dict]:
         async with self._connection() as conn:
-            cursor = await conn.execute(
-                """SELECT * FROM notification_events
-                   ORDER BY sent_at DESC LIMIT ? OFFSET ?""",
-                (limit, offset),
-            )
+            conditions: list[str] = []
+            params: list[object] = []
+
+            if site:
+                conditions.append("LOWER(site) = LOWER(?)")
+                params.append(site)
+            if search:
+                pattern = f"%{search.lower()}%"
+                conditions.append(
+                    "(LOWER(title) LIKE ? OR LOWER(body) LIKE ? OR LOWER(COALESCE(site, '')) LIKE ? OR LOWER(COALESCE(provider, '')) LIKE ?)"
+                )
+                params.extend([pattern, pattern, pattern, pattern])
+
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            query = f"""SELECT * FROM notification_events
+                       {where}
+                       ORDER BY sent_at DESC LIMIT ? OFFSET ?"""
+            params.extend([limit, offset])
+            cursor = await conn.execute(query, tuple(params))
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def get_notifications_count(self) -> int:
+    async def get_notifications_count(
+        self, site: str | None = None, search: str | None = None
+    ) -> int:
         async with self._connection() as conn:
-            cursor = await conn.execute("SELECT COUNT(*) FROM notification_events")
+            conditions: list[str] = []
+            params: list[object] = []
+
+            if site:
+                conditions.append("LOWER(site) = LOWER(?)")
+                params.append(site)
+            if search:
+                pattern = f"%{search.lower()}%"
+                conditions.append(
+                    "(LOWER(title) LIKE ? OR LOWER(body) LIKE ? OR LOWER(COALESCE(site, '')) LIKE ? OR LOWER(COALESCE(provider, '')) LIKE ?)"
+                )
+                params.extend([pattern, pattern, pattern, pattern])
+
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            cursor = await conn.execute(
+                f"SELECT COUNT(*) FROM notification_events {where}", tuple(params)
+            )
             row = await cursor.fetchone()
             return row[0] if row else 0
+
+    async def get_distinct_sites(self) -> list[str]:
+        """Return list of distinct, non-empty site identifiers across history records."""
+        async with self._connection() as conn:
+            cursor = await conn.execute("""SELECT DISTINCT site FROM (
+                       SELECT site FROM download_events WHERE site IS NOT NULL AND site != ''
+                       UNION
+                       SELECT site FROM retry_events WHERE site IS NOT NULL AND site != ''
+                       UNION
+                       SELECT site FROM notification_events WHERE site IS NOT NULL AND site != ''
+                   ) ORDER BY site ASC""")
+            rows = await cursor.fetchall()
+            return [str(r[0]) for r in rows if r[0]]
 
     async def get_recent_events(self, limit: int = 10) -> list[dict]:
         """Get the most recent events across all tables for dashboard feed."""
@@ -851,36 +945,52 @@ class AsyncHistoryDB:
                     total_downloads = total_success = total_failed = 0
                     period_downloads = period_success = period_failed = 0
 
-                # Single query for retry_events scalar totals
+                # Query for retry_events scalar totals in period
                 cursor = await conn.execute(
-                    "SELECT COUNT(DISTINCT download_event_id), COUNT(*) FROM retry_events"
+                    """SELECT
+                           COUNT(DISTINCT CASE WHEN scheduled_at >= ? THEN download_event_id ELSE NULL END),
+                           COALESCE(SUM(CASE WHEN scheduled_at >= ? THEN 1 ELSE 0 END), 0)
+                       FROM retry_events""",
+                    (cutoff, cutoff),
                 )
                 retry_row = await cursor.fetchone()
                 downloads_with_retries = int(retry_row[0] or 0) if retry_row else 0
                 total_retries = int(retry_row[1] or 0) if retry_row else 0
 
-                # Average retries to success
-                cursor = await conn.execute("""SELECT AVG(cnt) FROM (
+                # Average retries per retried story in period
+                cursor = await conn.execute(
+                    """SELECT AVG(cnt) FROM (
                            SELECT COUNT(*) as cnt
                            FROM retry_events r
-                           JOIN download_events d ON r.download_event_id = d.id
-                           WHERE d.status = 'success'
+                           WHERE r.scheduled_at >= ?
                            GROUP BY r.download_event_id
-                       )""")
+                       )""",
+                    (cutoff,),
+                )
                 row = await cursor.fetchone()
                 avg_retries_to_success = (
-                    round(row[0], 2) if row and row[0] is not None else 0.0
+                    round(row[0], 2)
+                    if row and row[0] is not None
+                    else (
+                        round(total_retries / downloads_with_retries, 2)
+                        if downloads_with_retries > 0
+                        else 0.0
+                    )
                 )
 
-                # Downloads by site (all-time, top 20)
-                cursor = await conn.execute("""SELECT site,
+                # Downloads by site (period, top 20)
+                cursor = await conn.execute(
+                    """SELECT site,
                               COUNT(*) as total,
                               SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
                               SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
                        FROM download_events
+                       WHERE started_at >= ?
                        GROUP BY site
                        ORDER BY total DESC
-                       LIMIT 20""")
+                       LIMIT 20""",
+                    (cutoff,),
+                )
                 downloads_by_site = [dict(r) for r in await cursor.fetchall()]
 
                 # Downloads over time (daily buckets within period)
@@ -928,18 +1038,26 @@ class AsyncHistoryDB:
                 )
                 monthly_distribution = [dict(r) for r in await cursor.fetchall()]
 
-                # Retry distribution by attempt number
-                cursor = await conn.execute("""SELECT attempt_number, COUNT(*) as count
+                # Retry distribution by attempt number in period
+                cursor = await conn.execute(
+                    """SELECT attempt_number, COUNT(*) as count
                        FROM retry_events
+                       WHERE scheduled_at >= ?
                        GROUP BY attempt_number
-                       ORDER BY attempt_number""")
+                       ORDER BY attempt_number""",
+                    (cutoff,),
+                )
                 retry_distribution = [dict(r) for r in await cursor.fetchall()]
 
-                # Status breakdown (all-time)
-                cursor = await conn.execute("""SELECT status, COUNT(*) as count
+                # Status breakdown in period
+                cursor = await conn.execute(
+                    """SELECT status, COUNT(*) as count
                        FROM download_events
+                       WHERE started_at >= ?
                        GROUP BY status
-                       ORDER BY count DESC""")
+                       ORDER BY count DESC""",
+                    (cutoff,),
+                )
                 status_breakdown = [dict(r) for r in await cursor.fetchall()]
 
                 return {

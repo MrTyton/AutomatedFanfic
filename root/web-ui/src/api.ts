@@ -310,9 +310,21 @@ export function getEmails(page = 1, size = 25) {
     return apiFetch<{ items: EmailRow[]; total: number }>(`/api/history/emails?limit=${size}&offset=${offset}`)
 }
 
-export function getNotifications(page = 1, size = 25) {
+export function getHistorySites() {
+    return apiFetch<{ sites: string[] }>('/api/history/sites')
+}
+
+export function getNotifications(
+    page = 1,
+    size = 25,
+    search = '',
+    siteFilter = ''
+) {
     const offset = (page - 1) * size
-    return apiFetch<{ items: NotificationRow[]; total: number }>(`/api/history/notifications?limit=${size}&offset=${offset}`)
+    const params = new URLSearchParams({ limit: String(size), offset: String(offset) })
+    if (search) params.set('search', search)
+    if (siteFilter) params.set('site', siteFilter)
+    return apiFetch<{ items: NotificationRow[]; total: number }>(`/api/history/notifications?${params}`)
 }
 
 export function getRetries(page = 1, size = 25, search = '', siteFilter = '') {

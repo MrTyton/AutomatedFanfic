@@ -105,9 +105,21 @@ async def list_email_checks(
     return {"items": items, "total": total}
 
 
+@router.get("/sites")
+async def list_sites(request: Request):
+    """Return distinct site identifiers found in history records."""
+    db = request.app.state.web_state.history_db
+    if db is None:
+        return {"sites": []}
+    sites = await db.get_distinct_sites()
+    return {"sites": sites}
+
+
 @router.get("/notifications")
 async def list_notifications(
     request: Request,
+    site: str | None = None,
+    search: str | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -116,9 +128,11 @@ async def list_notifications(
     if db is None:
         return {"items": [], "total": 0}
 
-    items = await db.get_notifications(limit=limit, offset=offset)
+    items = await db.get_notifications(
+        limit=limit, offset=offset, site=site, search=search
+    )
     total = (
-        await db.get_notifications_count()
+        await db.get_notifications_count(site=site, search=search)
         if hasattr(db, "get_notifications_count")
         else len(items)
     )

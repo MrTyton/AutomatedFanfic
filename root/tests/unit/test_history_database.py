@@ -592,3 +592,55 @@ class TestAsyncHistoryDB(unittest.TestCase):
         self.assertEqual(stats["period_downloads"], 2)
         self.assertEqual(stats["period_success"], 1)
         self.assertEqual(stats["period_failed"], 1)
+
+    def test_get_downloads_case_insensitive_site(self):
+        self.sync_db.insert_download(DownloadEvent(url="u1", site="RoyalRoad"))
+        self.sync_db.insert_download(DownloadEvent(url="u2", site="spacebattles"))
+
+        results = self._run(self.async_db.get_downloads(site="royalroad"))
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["url"], "u1")
+
+    def test_get_distinct_sites(self):
+        self.sync_db.insert_download(DownloadEvent(url="u1", site="RoyalRoad"))
+        self.sync_db.insert_download(DownloadEvent(url="u2", site="spacebattles"))
+        self.sync_db.insert_notification(
+            NotificationEvent(title="T", body="B", site="ao3")
+        )
+
+        sites = self._run(self.async_db.get_distinct_sites())
+        self.assertIn("RoyalRoad", sites)
+        self.assertIn("spacebattles", sites)
+        self.assertIn("ao3", sites)
+
+    def test_prune_email_events_caps_table(self):
+        for i in range(15):
+            self.sync_db.insert_email_check(
+                EmailCheckEvent(urls_found=i, urls_new=i, trigger="idle"),
+                commit=True,
+            )
+        count_before = self._run(self.async_db.get_email_checks_count())
+        self.assertEqual(count_before, 15)
+
+        deleted = self.sync_db.prune_email_events(max_records=5)
+        self.assertEqual(deleted, 10)
+        count_after = self._run(self.async_db.get_email_checks_count())
+        self.assertEqual(count_after, 5)
+
+    def test_get_notifications_with_site_and_search_filter(self):
+        self.sync_db.insert_notification(
+            NotificationEvent(
+                title="Chapter 1", body="Update available", site="RoyalRoad"
+            )
+        )
+        self.sync_db.insert_notification(
+            NotificationEvent(title="Chapter 2", body="Error downloading", site="AO3")
+        )
+
+        res_site = self._run(self.async_db.get_notifications(site="royalroad"))
+        self.assertEqual(len(res_site), 1)
+        self.assertEqual(res_site[0]["site"], "RoyalRoad")
+
+        res_search = self._run(self.async_db.get_notifications(search="error"))
+        self.assertEqual(len(res_search), 1)
+        self.assertEqual(res_search[0]["site"], "AO3")

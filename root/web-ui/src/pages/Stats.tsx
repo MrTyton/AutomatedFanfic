@@ -202,6 +202,8 @@ export default function Stats() {
                                 allowDecimals={false}
                             />
                             <Tooltip
+                                isAnimationActive={false}
+                                wrapperStyle={{ pointerEvents: 'none', transition: 'none' }}
                                 contentStyle={{
                                     background: '#111827',
                                     border: '1px solid rgba(255,255,255,0.1)',
@@ -252,6 +254,8 @@ export default function Stats() {
                                     width={100}
                                 />
                                 <Tooltip
+                                    isAnimationActive={false}
+                                    wrapperStyle={{ pointerEvents: 'none', transition: 'none' }}
                                     contentStyle={{
                                         background: '#111827',
                                         border: '1px solid rgba(255,255,255,0.1)',
@@ -336,6 +340,8 @@ export default function Stats() {
                                     ))}
                                 </Pie>
                                 <Tooltip
+                                    isAnimationActive={false}
+                                    wrapperStyle={{ pointerEvents: 'none', transition: 'none' }}
                                     contentStyle={{
                                         background: '#111827',
                                         border: '1px solid rgba(255,255,255,0.1)',
@@ -386,7 +392,11 @@ export default function Stats() {
                                         tickFormatter={(h) => `${h}:00`}
                                     />
                                     <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} allowDecimals={false} />
-                                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                    <Tooltip
+                                        isAnimationActive={false}
+                                        wrapperStyle={{ pointerEvents: 'none', transition: 'none' }}
+                                        contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }}
+                                    />
                                     <Bar dataKey="count" fill="var(--accent)" name="Downloads" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             ) : distView === 'weekly' ? (
@@ -399,7 +409,11 @@ export default function Stats() {
                                         tickFormatter={(d) => DAY_NAMES[d] ?? String(d)}
                                     />
                                     <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} allowDecimals={false} />
-                                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                    <Tooltip
+                                        isAnimationActive={false}
+                                        wrapperStyle={{ pointerEvents: 'none', transition: 'none' }}
+                                        contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }}
+                                    />
                                     <Bar dataKey="count" fill="var(--accent)" name="Downloads" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             ) : (
@@ -407,7 +421,11 @@ export default function Stats() {
                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
                                     <XAxis dataKey="day_of_month" stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
                                     <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} allowDecimals={false} />
-                                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                    <Tooltip
+                                        isAnimationActive={false}
+                                        wrapperStyle={{ pointerEvents: 'none', transition: 'none' }}
+                                        contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }}
+                                    />
                                     <Bar dataKey="count" fill="var(--accent)" name="Downloads" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             )}
@@ -435,7 +453,11 @@ export default function Stats() {
                                     label={{ value: 'Attempt #', fill: 'var(--text-muted)', position: 'insideBottom', offset: -4 }}
                                 />
                                 <YAxis stroke="var(--text-faint)" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} allowDecimals={false} />
-                                <Tooltip contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }} />
+                                <Tooltip
+                                    isAnimationActive={false}
+                                    wrapperStyle={{ pointerEvents: 'none', transition: 'none' }}
+                                    contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8 }}
+                                />
                                 <Line
                                     type="monotone"
                                     dataKey="count"

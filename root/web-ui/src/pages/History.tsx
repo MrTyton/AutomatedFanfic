@@ -5,6 +5,7 @@ import {
     getRetries,
     getEmails,
     getNotifications,
+    getHistorySites,
     addUrls,
     retryNow,
     cancelRetry,
@@ -180,20 +181,70 @@ export default function History({ data }: HistoryProps = {}) {
         setSelectedUrls(new Set())
     }, [tab, search, statusFilter, siteFilter])
 
+    const [availableSites, setAvailableSites] = useState<string[]>([])
+    const [tabCounts, setTabCounts] = useState<{
+        downloads: number
+        retries: number
+        emails: number
+        notifications: number
+    }>({
+        downloads: 0,
+        retries: 0,
+        emails: 0,
+        notifications: 0,
+    })
+
+    useEffect(() => {
+        getHistorySites()
+            .then((res) => {
+                if (res?.sites) setAvailableSites(res.sites)
+            })
+            .catch(() => {})
+    }, [])
+
+    const updateUrlParams = (changes: {
+        tab?: Tab
+        site?: string
+        status?: StatusFilter
+        search?: string
+    }) => {
+        const next = new URLSearchParams()
+        const t = changes.tab !== undefined ? changes.tab : tab
+        const s = changes.site !== undefined ? changes.site : siteFilter
+        const st = changes.status !== undefined ? changes.status : statusFilter
+        const q = changes.search !== undefined ? changes.search : search
+
+        if (t !== 'downloads') next.set('tab', t)
+        if (s) next.set('site', s)
+        if (st) next.set('status', st)
+        if (q) next.set('search', q)
+        setSearchParams(next, { replace: true })
+    }
+
     const loadCurrentTab = () => {
         setLoading(true)
         const p =
             tab === 'downloads'
-                ? getDownloads(page, pageSize, search, statusFilter, siteFilter).then(setDownloads)
+                ? getDownloads(page, pageSize, search, statusFilter, siteFilter).then((r) => {
+                      setDownloads(r)
+                      setTabCounts((c) => ({ ...c, downloads: r.total }))
+                  })
                 : tab === 'retries'
-                  ? getRetries(page, pageSize, search, siteFilter).then(setRetries)
+                  ? getRetries(page, pageSize, search, siteFilter).then((r) => {
+                        setRetries(r)
+                        setTabCounts((c) => ({ ...c, retries: r.total }))
+                    })
                   : tab === 'emails'
-                    ? getEmails(page, pageSize).then((r) =>
-                          setEmails({ items: r.items, total: r.total ?? r.items.length })
-                      )
-                    : getNotifications(page, pageSize).then((r) =>
-                          setNotifications({ items: r.items, total: r.total ?? r.items.length })
-                      )
+                    ? getEmails(page, pageSize).then((r) => {
+                          const tot = r.total ?? r.items.length
+                          setEmails({ items: r.items, total: tot })
+                          setTabCounts((c) => ({ ...c, emails: tot }))
+                      })
+                    : getNotifications(page, pageSize, search, siteFilter).then((r) => {
+                          const tot = r.total ?? r.items.length
+                          setNotifications({ items: r.items, total: tot })
+                          setTabCounts((c) => ({ ...c, notifications: tot }))
+                      })
 
         p.catch(() => {}).finally(() => setLoading(false))
     }
@@ -202,16 +253,12 @@ export default function History({ data }: HistoryProps = {}) {
         loadCurrentTab()
     }, [tab, page, search, statusFilter, siteFilter])
 
-    // Also pre-load counts for tabs on initial mount
+    // Pre-load total counts for other tabs on initial mount without overriding items
     useEffect(() => {
-        getDownloads(1, pageSize).then(setDownloads).catch(() => {})
-        getRetries(1, pageSize).then(setRetries).catch(() => {})
-        getEmails(1, pageSize)
-            .then((r) => setEmails({ items: r.items, total: r.total ?? r.items.length }))
-            .catch(() => {})
-        getNotifications(1, pageSize)
-            .then((r) => setNotifications({ items: r.items, total: r.total ?? r.items.length }))
-            .catch(() => {})
+        getDownloads(1, 1).then((r) => setTabCounts((c) => ({ ...c, downloads: r.total }))).catch(() => {})
+        getRetries(1, 1).then((r) => setTabCounts((c) => ({ ...c, retries: r.total }))).catch(() => {})
+        getEmails(1, 1).then((r) => setTabCounts((c) => ({ ...c, emails: r.total ?? r.items.length }))).catch(() => {})
+        getNotifications(1, 1).then((r) => setTabCounts((c) => ({ ...c, notifications: r.total ?? r.items.length }))).catch(() => {})
     }, [])
 
     const handleUpdate = async (url: string) => {
@@ -319,6 +366,12 @@ export default function History({ data }: HistoryProps = {}) {
                 : notifications.total
     const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize))
 
+    const displaySiteOptions = useMemo(() => {
+        const set = new Set(availableSites)
+        if (siteFilter) set.add(siteFilter)
+        return Array.from(set).sort()
+    }, [availableSites, siteFilter])
+
     return (
         <div>
             <div
@@ -356,30 +409,42 @@ export default function History({ data }: HistoryProps = {}) {
                     <button
                         type="button"
                         className={tab === 'downloads' ? '' : 'secondary'}
-                        onClick={() => setTab('downloads')}
+                        onClick={() => {
+                            setTab('downloads')
+                            updateUrlParams({ tab: 'downloads' })
+                        }}
                     >
-                        <Download size={15} /> Downloads ({downloads.total})
+                        <Download size={15} /> Downloads ({tabCounts.downloads || downloads.total})
                     </button>
                     <button
                         type="button"
                         className={tab === 'retries' ? '' : 'secondary'}
-                        onClick={() => setTab('retries')}
+                        onClick={() => {
+                            setTab('retries')
+                            updateUrlParams({ tab: 'retries' })
+                        }}
                     >
-                        <RotateCcw size={15} /> Retries ({retries.total})
+                        <RotateCcw size={15} /> Retries ({tabCounts.retries || retries.total})
                     </button>
                     <button
                         type="button"
                         className={tab === 'emails' ? '' : 'secondary'}
-                        onClick={() => setTab('emails')}
+                        onClick={() => {
+                            setTab('emails')
+                            updateUrlParams({ tab: 'emails' })
+                        }}
                     >
-                        <Mail size={15} /> Email Checks ({emails.total})
+                        <Mail size={15} /> Email Checks ({tabCounts.emails || emails.total})
                     </button>
                     <button
                         type="button"
                         className={tab === 'notifications' ? '' : 'secondary'}
-                        onClick={() => setTab('notifications')}
+                        onClick={() => {
+                            setTab('notifications')
+                            updateUrlParams({ tab: 'notifications' })
+                        }}
                     >
-                        <Bell size={15} /> Notifications ({notifications.total})
+                        <Bell size={15} /> Notifications ({tabCounts.notifications || notifications.total})
                     </button>
                 </div>
 
@@ -397,7 +462,10 @@ export default function History({ data }: HistoryProps = {}) {
                                 key={opt.label}
                                 type="button"
                                 className={`segmented-btn ${statusFilter === opt.value ? 'active' : ''}`}
-                                onClick={() => setStatusFilter(opt.value)}
+                                onClick={() => {
+                                    setStatusFilter(opt.value)
+                                    updateUrlParams({ status: opt.value })
+                                }}
                             >
                                 {opt.label}
                             </button>
@@ -406,8 +474,8 @@ export default function History({ data }: HistoryProps = {}) {
                 )}
             </div>
 
-            {/* Search & Site Filter Row (for both Downloads and Retries) */}
-            {(tab === 'downloads' || tab === 'retries') && (
+            {/* Search & Site Filter Row (for Downloads, Retries, and Notifications) */}
+            {(tab === 'downloads' || tab === 'retries' || tab === 'notifications') && (
                 <div
                     style={{
                         display: 'flex',
@@ -434,25 +502,33 @@ export default function History({ data }: HistoryProps = {}) {
                             placeholder={
                                 tab === 'downloads'
                                     ? 'Search story title, URL, error, or Calibre ID…'
-                                    : 'Search retry story title, URL, or error reason…'
+                                    : tab === 'retries'
+                                      ? 'Search retry story title, URL, or error reason…'
+                                      : 'Search notifications by title, body, or provider…'
                             }
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={(e) => {
+                                setSearch(e.target.value)
+                                updateUrlParams({ search: e.target.value })
+                            }}
                             style={{ paddingLeft: '2.35rem', background: 'var(--surface)' }}
                         />
                     </div>
                     <select
                         value={siteFilter}
-                        onChange={(e) => setSiteFilter(e.target.value)}
+                        onChange={(e) => {
+                            setSiteFilter(e.target.value)
+                            updateUrlParams({ site: e.target.value })
+                        }}
                         style={{ flex: '1 1 160px', background: 'var(--surface)' }}
                         aria-label="Filter by source site"
                     >
                         <option value="">All Sites</option>
-                        <option value="archiveofourown">Archive of Our Own</option>
-                        <option value="royalroad">RoyalRoad</option>
-                        <option value="fanfiction">FanFiction.net</option>
-                        <option value="spacebattles">SpaceBattles</option>
-                        <option value="wattpad">Wattpad</option>
+                        {displaySiteOptions.map((s) => (
+                            <option key={s} value={s}>
+                                {getSiteBadgeInfo(s).name}
+                            </option>
+                        ))}
                     </select>
                 </div>
             )}
@@ -533,7 +609,7 @@ export default function History({ data }: HistoryProps = {}) {
                                             setSiteFilter('')
                                             setStatusFilter('')
                                             setSearch('')
-                                            setSearchParams({})
+                                            setSearchParams(tab === 'downloads' ? {} : { tab }, { replace: true })
                                         }}
                                         style={{ padding: '0.18rem 0.55rem', minHeight: 26, fontSize: '0.74rem' }}
                                     >
