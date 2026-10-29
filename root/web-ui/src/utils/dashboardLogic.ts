@@ -365,19 +365,43 @@ export function buildLogAttemptBlocks(
     if (entries.length === 0) return []
 
     // Normalize to chronological order (oldest -> newest):
-    // If incoming entries are newest-first (as returned by GET /api/logs), reverse them first.
-    const isNewestFirst =
-        entries.length >= 2 &&
-        (entries[0].seq !== undefined && entries[entries.length - 1].seq !== undefined
-            ? (entries[0].seq ?? 0) > (entries[entries.length - 1].seq ?? 0)
-            : entries[0].timestamp.localeCompare(entries[entries.length - 1].timestamp) > 0)
+    // By API contract, GET /api/logs and /api/logs/startup return newest-first.
+    // Determine whether incoming entries are newest-first so we can reverse them.
+    const isNewestFirst = (() => {
+        if (entries.length < 2) return false
+        // 1. Check seq if present on any entries
+        for (let i = 0; i < entries.length - 1; i++) {
+            const aSeq = entries[i].seq
+            const bSeq = entries[i + 1].seq
+            if (aSeq !== undefined && bSeq !== undefined && aSeq !== bSeq) {
+                return aSeq > bSeq
+            }
+        }
+        // 2. Check timestamps if they differ anywhere in the list
+        for (let i = 0; i < entries.length - 1; i++) {
+            const tA = new Date(entries[i].timestamp).getTime()
+            const tB = new Date(entries[i + 1].timestamp).getTime()
+            if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+                return tA > tB
+            }
+        }
+        // 3. Fallback: by contract, GET /api/logs returns newest first.
+        // If all timestamps are identical (burst during a single second) and no differing seq is found,
+        // it came from the API newest-first!
+        return true
+    })()
 
     const baseList = isNewestFirst ? [...entries].reverse() : [...entries]
     const chronological = baseList.sort((a, b) => {
         if (a.seq !== undefined && b.seq !== undefined) {
             return a.seq - b.seq
         }
-        return a.timestamp.localeCompare(b.timestamp)
+        const tA = new Date(a.timestamp).getTime()
+        const tB = new Date(b.timestamp).getTime()
+        if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+            return tA - tB
+        }
+        return 0
     })
 
     const titleByUrl = new Map<string, string>()
@@ -469,7 +493,11 @@ export function buildLogAttemptBlocks(
                 msgLower.includes('immediate retry') ||
                 msgLower.includes('scratch redownload')
 
-            if (existingForUrl && (!isStartTrigger || existingForUrl.lines.length <= 1)) {
+            const hasProcessingStarted =
+                existingForUrl &&
+                existingForUrl.lines.some((l) => l.message.toLowerCase().includes('processing '))
+
+            if (existingForUrl && (!isStartTrigger || !hasProcessingStarted)) {
                 targetBlock = existingForUrl
             } else {
                 const prevCount = attemptCounterByUrl.get(url) || 0
@@ -699,6 +727,19 @@ export function buildLogAttemptBlocks(
     }
 
     for (const b of blocks) {
+        if (b.lines.length > 1) {
+            b.lines.sort((a, b) => {
+                if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
+                    return a.seq - b.seq
+                }
+                const tA = new Date(a.timestamp).getTime()
+                const tB = new Date(b.timestamp).getTime()
+                if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+                    return tA - tB
+                }
+                return 0
+            })
+        }
         if (b.kind === 'system') {
             b.isActive = false
             b.activeStage = undefined

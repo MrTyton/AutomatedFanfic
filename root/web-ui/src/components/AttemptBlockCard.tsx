@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
     formatAttemptBlockAsText,
@@ -110,9 +110,34 @@ export default function AttemptBlockCard({
     }, [forceExpanded])
 
     const siteInfo = block.site ? getSiteBadgeInfo(block.site) : null
+    const displayLines = useMemo(() => {
+        if (!block.lines || block.lines.length <= 1) return block.lines || []
+        const first = block.lines[0]
+        const last = block.lines[block.lines.length - 1]
+        const isReversed =
+            (first.seq !== undefined && last.seq !== undefined && first.seq > last.seq) ||
+            (() => {
+                const t1 = new Date(first.timestamp).getTime()
+                const t2 = new Date(last.timestamp).getTime()
+                return !isNaN(t1) && !isNaN(t2) && t1 > t2
+            })()
+        const base = isReversed ? [...block.lines].reverse() : [...block.lines]
+        return base.sort((a, b) => {
+            if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
+                return a.seq - b.seq
+            }
+            const tA = new Date(a.timestamp).getTime()
+            const tB = new Date(b.timestamp).getTime()
+            if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+                return tA - tB
+            }
+            return 0
+        })
+    }, [block.lines])
+
     const errorContextText =
         block.traceback ||
-        block.lines.find((l) => l.level.toLowerCase() === 'error' || l.level.toLowerCase() === 'critical')?.message ||
+        displayLines.find((l) => l.level.toLowerCase() === 'error' || l.level.toLowerCase() === 'critical')?.message ||
         null
     const diagnosticHint = block.status === 'failed' ? diagnoseErrorSignature(errorContextText) : null
 
@@ -415,7 +440,7 @@ export default function AttemptBlockCard({
                             fontSize: '0.77rem',
                         }}
                     >
-                        {block.lines.map((line, idx) => {
+                        {displayLines.map((line, idx) => {
                             const lvl = line.level.toLowerCase()
                             const isErr = lvl === 'error' || lvl === 'critical'
                             return (

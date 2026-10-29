@@ -18,6 +18,7 @@ import {
     extractSystemVersionsFromLogs,
     ensureExternalUrl,
     normalizeStoryUrl,
+    formatAttemptBlockAsText,
 } from './dashboardLogic.ts'
 import { STATUS_COLORS } from '../statusColors.ts'
 
@@ -499,4 +500,73 @@ test('extractSystemVersionsFromLogs and buildGitHubIssueDraft include environmen
     assert.ok(draft.body.includes('- **FanFicFare**: `4.44.0`'))
     assert.ok(draft.body.includes('- **Calibre**: `7.26.0`'))
     assert.ok(draft.body.includes('- **Apprise**: `1.9.0`'))
+})
+
+test('buildLogAttemptBlocks guarantees lines read top-to-bottom (chronological) for burst logs in identical second', () => {
+    // API returns logs newest-first (as returned by GET /api/logs)
+    const burstLogsNewestFirst = [
+        {
+            seq: 20,
+            timestamp: '2026-10-28 07:32:03 PM',
+            level: 'info',
+            message: 'Executing FanFicFare directly: /tmp/tmpcherhunw/Summoned A Hundred Years Too L - Hippo__13959.epub',
+            story_url: 'https://royalroad.com/fiction/164248',
+            worker_id: 'worker_0',
+        },
+        {
+            seq: 19,
+            timestamp: '2026-10-28 07:32:03 PM',
+            level: 'info',
+            message: '(royalroad) Updating /tmp/tmpcherhunw/Summoned A Hundred Years Too L - Hippo__13959.epub',
+            story_url: 'https://royalroad.com/fiction/164248',
+            worker_id: 'worker_0',
+        },
+        {
+            seq: 18,
+            timestamp: '2026-10-28 07:32:03 PM',
+            level: 'info',
+            message: '(royalroad) Processing royalroad.com/fiction/164248',
+            story_url: 'https://royalroad.com/fiction/164248',
+            worker_id: 'worker_0',
+        },
+        {
+            seq: 17,
+            timestamp: '2026-10-28 07:32:03 PM',
+            level: 'debug',
+            message: '(royalroad) Using temp directory: /tmp/tmpcherhunw',
+            story_url: 'https://royalroad.com/fiction/164248',
+            worker_id: 'worker_0',
+        },
+        {
+            seq: 16,
+            timestamp: '2026-10-28 07:32:03 PM',
+            level: 'debug',
+            message: 'Single story URL detected: https://royalroad.com/fiction/164248',
+            story_url: 'https://royalroad.com/fiction/164248',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(burstLogsNewestFirst)
+    assert.equal(blocks.length, 1)
+
+    const block = blocks[0]
+    assert.equal(block.kind, 'story_attempt')
+    assert.equal(block.url, 'https://royalroad.com/fiction/164248')
+    assert.equal(block.lines.length, 5)
+
+    // Lines must be ordered top-to-bottom: earliest step first, latest step last
+    assert.ok(block.lines[0].message.includes('Single story URL detected'))
+    assert.ok(block.lines[1].message.includes('Using temp directory'))
+    assert.ok(block.lines[2].message.includes('Processing royalroad.com/fiction/164248'))
+    assert.ok(block.lines[3].message.includes('Updating /tmp/tmpcherhunw'))
+    assert.ok(block.lines[4].message.includes('Executing FanFicFare directly'))
+
+    // Formatted text must also read top-to-bottom
+    const text = formatAttemptBlockAsText(block)
+    const singleIdx = text.indexOf('Single story URL detected')
+    const procIdx = text.indexOf('Processing royalroad.com/fiction/164248')
+    const execIdx = text.indexOf('Executing FanFicFare directly')
+    assert.ok(singleIdx !== -1 && procIdx !== -1 && execIdx !== -1)
+    assert.ok(singleIdx < procIdx)
+    assert.ok(procIdx < execIdx)
 })

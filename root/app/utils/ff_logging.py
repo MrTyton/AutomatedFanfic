@@ -163,10 +163,13 @@ _log_forward_queue: LogQueue | None = None
 
 def _append_log_entry(entry: dict) -> None:
     """Append an entry to runtime/startup buffers and write to disk if enabled."""
-    global _startup_capture_enabled
+    global _startup_capture_enabled, _log_seq_counter
     message = str(entry.get("message", ""))
 
     with _log_buffer_lock:
+        with _log_seq_lock:
+            _log_seq_counter += 1
+            entry["seq"] = _log_seq_counter
         if _startup_capture_enabled:
             entry["is_startup"] = True
             _startup_log_buffer.append(entry)
@@ -188,13 +191,7 @@ def _store_log_entry(
     timestamp: str, level: str, message: str, *, forward: bool
 ) -> None:
     """Store a log entry in memory and optionally forward it cross-process."""
-    global _log_seq_counter
-    with _log_seq_lock:
-        _log_seq_counter += 1
-        seq = _log_seq_counter
-
     entry: dict[str, object] = {
-        "seq": seq,
         "timestamp": timestamp,
         "level": level,
         "message": message,
