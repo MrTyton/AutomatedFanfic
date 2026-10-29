@@ -240,10 +240,10 @@ export default function Dashboard({ data }: Props) {
         return () => clearInterval(id)
     }, [])
 
-    const activeItems = data?.active_downloads?.items || []
-    const queuedItems = data?.queued_downloads?.items || []
-    const waitingItems = data?.waiting_downloads?.items || []
-    const disabledSites = data?.disabled_sites || []
+    const activeItems = useMemo(() => data?.active_downloads?.items || [], [data?.active_downloads?.items])
+    const queuedItems = useMemo(() => data?.queued_downloads?.items || [], [data?.queued_downloads?.items])
+    const waitingItems = useMemo(() => data?.waiting_downloads?.items || [], [data?.waiting_downloads?.items])
+    const disabledSites = useMemo(() => data?.disabled_sites || [], [data?.disabled_sites])
 
     const inFlightUrlSet = useMemo(() => {
         const s = new Set<string>()

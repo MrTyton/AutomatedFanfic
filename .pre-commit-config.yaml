@@ -28,7 +28,7 @@ repos:
       - id: check-docstring-first
       - id: debug-statements
 
-  # Pyright: Static type checking matching CI
+  # Pyright & Web UI checks matching CI
   - repo: local
     hooks:
       - id: pyright
@@ -37,3 +37,10 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      - id: web-ui-lint
+        name: web-ui-lint (React Hooks & ESLint)
+        entry: npm --prefix root/web-ui run lint
+        language: system
+        pass_filenames: false
+        files: ^root/web-ui/src/

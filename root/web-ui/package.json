@@ -5,7 +5,9 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc -b && vite build",
+        "build": "tsc -b && eslint src && vite build",
+        "lint": "eslint src",
+        "test": "node --experimental-strip-types --test src/utils/*.test.ts",
         "preview": "vite preview"
     },
     "dependencies": {
@@ -18,7 +20,11 @@
     "devDependencies": {
         "@types/react": "^19.1.0",
         "@types/react-dom": "^19.1.0",
+        "@typescript-eslint/eslint-plugin": "^8.72.1",
+        "@typescript-eslint/parser": "^8.72.1",
         "@vitejs/plugin-react": "^6.0.3",
+        "eslint": "^10.13.0",
+        "eslint-plugin-react-hooks": "^7.1.1",
         "typescript": "~5.8.3",
         "vite": "^8.3.4"
     }

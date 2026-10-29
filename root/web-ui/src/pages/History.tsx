@@ -169,7 +169,7 @@ export default function History({ data }: HistoryProps = {}) {
             for (const w of data.waiting_downloads?.items || []) set.add(w.url)
         }
         return set
-    }, [data, requeuedKey])
+    }, [data])
 
     const maxNormalRetries = useMemo(() => {
         return data?.max_normal_retries ?? 11
@@ -252,6 +252,7 @@ export default function History({ data }: HistoryProps = {}) {
 
     useEffect(() => {
         loadCurrentTab()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab, page, search, statusFilter, siteFilter])
 
     // Pre-load total counts for other tabs on initial mount without overriding items
