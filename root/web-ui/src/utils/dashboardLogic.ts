@@ -362,7 +362,7 @@ export function buildLogAttemptBlocks(
     }[] = [],
     activeItems: { url: string; stage: 'downloading' | 'queued' | 'waiting_retry' }[] = []
 ): LogAttemptBlock[] {
-    if (entries.length === 0 && knownDownloads.length === 0) return []
+    if (entries.length === 0) return []
 
     // Normalize to chronological order (oldest -> newest):
     // If incoming entries are newest-first (as returned by GET /api/logs), reverse them first.
@@ -716,48 +716,6 @@ export function buildLogAttemptBlocks(
             b.isActive = false
             b.activeStage = undefined
         }
-    }
-
-    // Include completed or failed stories from knownDownloads (history.db) that don't already have live log blocks
-    for (const d of knownDownloads) {
-        if (!d.url) continue
-        const normUrl = normalizeStoryUrl(d.url)
-        // If an attempt block already exists for this URL, skip
-        if (blocks.some((b) => b.url === normUrl || b.url === d.url)) continue
-
-        const isFailed = d.status === 'failed' || d.status === 'abandoned'
-        const candidateTitle = d.title && isValidStoryTitle(d.title) ? d.title : undefined
-        const resolvedTitle = candidateTitle || inferTitleFromUrl(normUrl)
-
-        const histBlock: LogAttemptBlock = {
-            id: `hist-${normUrl}-${d.completed_at || d.started_at || blocks.length}`,
-            kind: 'story_attempt',
-            url: normUrl,
-            title: resolvedTitle,
-            site: d.site,
-            attemptNumber: 1,
-            status: isFailed ? 'failed' : 'success',
-            isActive: false,
-            startedAt: d.started_at || d.completed_at || '',
-            endedAt: d.completed_at || d.started_at || '',
-            lines: d.error_message
-                ? [
-                      {
-                          timestamp: d.completed_at || d.started_at || '',
-                          level: 'error',
-                          message: d.error_message,
-                      },
-                  ]
-                : [
-                      {
-                          timestamp: d.completed_at || d.started_at || '',
-                          level: 'info',
-                          message: `Download completed with status: ${d.status}`,
-                      },
-                  ],
-            traceback: d.error_message || null,
-        }
-        blocks.push(histBlock)
     }
 
     // Sort active blocks first, then non-active blocks; within each group sort by latest update (endedAt descending)

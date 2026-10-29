@@ -315,40 +315,6 @@ test('buildLogAttemptBlocks handles newest-first logs with identical timestamps 
     assert.equal(blocks[0].lines[5].message, 'WebServer: Starting on 0.0.0.0:8080')
 })
 
-test('buildLogAttemptBlocks populates historical story attempts from knownDownloads (history.db)', () => {
-    const historicalDownloads = [
-        {
-            url: 'https://archiveofourown.org/works/99887766',
-            title: 'Chronicles of the Multiverse',
-            site: 'archiveofourown',
-            status: 'success',
-            completed_at: '2026-10-28 14:00:00',
-        },
-        {
-            url: 'https://www.fanfiction.net/s/11223344/1/',
-            title: 'Shadows in the Mist',
-            site: 'fanfiction',
-            status: 'failed',
-            error_message: 'HTTP 404: Story Not Found',
-            completed_at: '2026-10-28 14:30:00',
-        },
-    ]
-
-    const blocks = buildLogAttemptBlocks([], historicalDownloads)
-    assert.equal(blocks.length, 2)
-    const ao3 = blocks.find((b) => b.url === 'https://archiveofourown.org/works/99887766')
-    assert.ok(ao3)
-    assert.equal(ao3?.title, 'Chronicles of the Multiverse')
-    assert.equal(ao3?.status, 'success')
-    assert.equal(ao3?.isActive, false)
-
-    const ffn = blocks.find((b) => b.url === 'https://www.fanfiction.net/s/11223344/1/')
-    assert.ok(ffn)
-    assert.equal(ffn?.title, 'Shadows in the Mist')
-    assert.equal(ffn?.status, 'failed')
-    assert.equal(ffn?.traceback, 'HTTP 404: Story Not Found')
-})
-
 test('computeDirtySections tracks unsaved changes across all config sections and personal.ini', () => {
     const initCfg = {
         email: { mailbox: 'INBOX', sleep_time: 60 },

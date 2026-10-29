@@ -3,12 +3,10 @@ import { useSearchParams } from 'react-router-dom'
 import {
     getLogs,
     getStartupLogs,
-    getDownloads,
     clearLogs,
     getAttemptBlocksFromLogs,
     getHistoricalStoryDetails,
     type LogEntry,
-    type DownloadRow,
     type HistoricalStoryDetails,
 } from '../api'
 import { formatAttemptBlockAsText, ensureExternalUrl, type LogAttemptBlock } from '../utils/dashboardLogic'
@@ -144,7 +142,6 @@ export default function Logs() {
         searchParams.get('view') === 'stream' ? 'stream' : 'blocks'
     )
     const [entries, setEntries] = useState<LogEntry[]>([])
-    const [recentDownloads, setRecentDownloads] = useState<DownloadRow[]>([])
     const [levelFilter, setLevelFilter] = useState('error')
     const [siteFilter, setSiteFilter] = useState(() => searchParams.get('site') || '')
     const [search, setSearch] = useState(() => searchParams.get('search') || '')
@@ -183,11 +180,6 @@ export default function Logs() {
         fn(500)
             .then((res) => setEntries(res.items))
             .catch(() => {})
-        if (mode === 'runtime') {
-            getDownloads(1, 50)
-                .then((res) => setRecentDownloads(res.items || []))
-                .catch(() => {})
-        }
     }, [mode])
 
     useEffect(() => {
@@ -231,7 +223,7 @@ export default function Logs() {
 
     // Build de-interleaved per-attempt blocks (already sorted: active first, then not active, each sorted by latest update)
     const filteredAttemptBlocks = useMemo(() => {
-        const rawBlocks = getAttemptBlocksFromLogs(entries, recentDownloads)
+        const rawBlocks = getAttemptBlocksFromLogs(entries)
         const q = search.toLowerCase()
 
         return rawBlocks
@@ -264,7 +256,7 @@ export default function Logs() {
                 }
                 return true
             })
-    }, [entries, recentDownloads, allowedLevels, siteFilter, blockStatusFilter, search])
+    }, [entries, allowedLevels, siteFilter, blockStatusFilter, search])
 
     // Separate into Active/In-Flight blocks vs Completed/Historical blocks, each sorted by latest update (endedAt descending)
     const activeAttemptBlocks = useMemo(
