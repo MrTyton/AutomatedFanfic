@@ -62,12 +62,10 @@ jobs:
           install-dev-tools: "true"
           requirements-file: "requirements-dev.txt"
 
-      - name: Cache pre-commit and npm environments
+      - name: Cache pre-commit environment
         uses: actions/cache@v6
         with:
-          path: |
-            ~/.cache/pre-commit
-            ~/.npm
+          path: ~/.cache/pre-commit
           key: ${{ runner.os }}-lint-tools-${{ hashFiles('.pre-commit-config.yaml', 'pyrightconfig.json') }}
           restore-keys: |
             ${{ runner.os }}-lint-tools-
@@ -76,6 +74,11 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "root/web-ui/package-lock.json"
+
+      - name: Install web-ui dependencies
+        run: npm --prefix root/web-ui ci
 
       - name: Run pre-commit hooks
         run: |
@@ -85,6 +88,9 @@ jobs:
 
       - name: Run Pyright
         run: npx --yes pyright
+
+      - name: Run web-ui unit tests
+        run: npm --prefix root/web-ui test
 
   test:
     runs-on: ubuntu-latest
