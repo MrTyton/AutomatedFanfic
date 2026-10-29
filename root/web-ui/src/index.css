@@ -947,6 +947,38 @@ button.btn-sm,
     display: inline;
 }
 
+/* Floating Scroll to Top Button */
+.floating-scroll-top-btn {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 90;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border-light);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.floating-scroll-top-btn:hover {
+    background: var(--surface3);
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+}
+
+.floating-scroll-top-btn:active {
+    transform: translateY(0);
+}
+
 /* Mobile Breakpoints */
 @media (max-width: 960px) {
     .grid-4 {
@@ -1121,5 +1153,10 @@ button.btn-sm,
         justify-content: space-between;
         gap: 0.5rem;
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    }
+
+    .floating-scroll-top-btn {
+        bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+        right: 1.25rem;
     }
 }

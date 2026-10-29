@@ -27,6 +27,7 @@ import {
     PlugZap,
     Plus,
     X,
+    ArrowUp,
 } from 'lucide-react'
 
 const SECTION_META: Record<string, { label: string; description: string; testable?: boolean }> = {
@@ -147,6 +148,22 @@ export default function Config() {
     const [error, setError] = useState<string | null>(null)
     const [revealed, setRevealed] = useState<Record<string, boolean>>({})
     const [arrayDrafts, setArrayDrafts] = useState<Record<string, string>>({})
+    const [showScrollTop, setShowScrollTop] = useState(false)
+
+    useEffect(() => {
+        const handleScroll = () => {
+            const currentScroll = window.scrollY || document.documentElement.scrollTop
+            setShowScrollTop(currentScroll > 250)
+        }
+        window.addEventListener('scroll', handleScroll, { passive: true })
+        handleScroll()
+        return () => window.removeEventListener('scroll', handleScroll)
+    }, [])
+
+    const handleScrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        document.documentElement.scrollTo({ top: 0, behavior: 'smooth' })
+    }
 
     useEffect(() => {
         const paramTab = searchParams.get('tab')
@@ -1034,6 +1051,19 @@ export default function Config() {
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* Floating Scroll to Top Button */}
+            {showScrollTop && (
+                <button
+                    type="button"
+                    className="floating-scroll-top-btn"
+                    onClick={handleScrollToTop}
+                    aria-label="Scroll to top"
+                    title="Scroll to top"
+                >
+                    <ArrowUp size={18} />
+                </button>
             )}
         </div>
     )
