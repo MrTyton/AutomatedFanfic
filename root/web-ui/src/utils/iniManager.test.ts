@@ -7,6 +7,9 @@ import {
     removeSectionField,
     detectFlareSolverr,
     setFlareSolverrConfig,
+    setSiteFlareSolverrConfig,
+    getSectionFlareSolverr,
+    getAllFlareSolverrSites,
     addIniSection,
     removeIniSection,
     updateSectionContent,
@@ -123,6 +126,48 @@ test('setFlareSolverrConfig adds, enables, disables, and removes FlareSolverr pr
     const status3 = detectFlareSolverr(removedIni)
     assert.equal(status3.isConfigured, false)
     assert.equal(status3.isEnabled, false)
+})
+
+test('setSiteFlareSolverrConfig injects proxy on per-site basis without touching [defaults]', () => {
+    // Inject FlareSolverr specifically on www.fanfiction.net
+    const siteConfigured = setSiteFlareSolverrConfig(
+        SAMPLE_INI,
+        'www.fanfiction.net',
+        true,
+        'http://127.0.0.1:8191/v1'
+    )
+
+    const doc = parseIniDocument(siteConfigured)
+    const defaultsSec = doc.sections.find((s) => s.name === 'defaults')
+    const ffnSec = doc.sections.find((s) => s.name === 'www.fanfiction.net')
+
+    assert.ok(defaultsSec)
+    assert.ok(ffnSec)
+
+    // Verify [defaults] does NOT contain use_flaresolverr_proxy
+    const defaultsFlare = getSectionFlareSolverr(defaultsSec.lines, 'defaults')
+    assert.equal(defaultsFlare.isConfigured, false)
+    assert.equal(defaultsFlare.isEnabled, false)
+
+    // Verify [www.fanfiction.net] DOES contain use_flaresolverr_proxy
+    const ffnFlare = getSectionFlareSolverr(ffnSec.lines, 'www.fanfiction.net')
+    assert.equal(ffnFlare.isConfigured, true)
+    assert.equal(ffnFlare.isEnabled, true)
+    assert.equal(ffnFlare.address, 'http://127.0.0.1:8191/v1')
+
+    // Verify getAllFlareSolverrSites finds the configured site
+    const allSites = getAllFlareSolverrSites(siteConfigured)
+    assert.equal(allSites.length, 1)
+    assert.equal(allSites[0].section, 'www.fanfiction.net')
+
+    // Disable on site
+    const disabledSite = setSiteFlareSolverrConfig(siteConfigured, 'www.fanfiction.net', false)
+    const disabledDoc = parseIniDocument(disabledSite)
+    const disabledFfn = disabledDoc.sections.find((s) => s.name === 'www.fanfiction.net')
+    assert.ok(disabledFfn)
+    const disabledFlare = getSectionFlareSolverr(disabledFfn.lines, 'www.fanfiction.net')
+    assert.equal(disabledFlare.isEnabled, false)
+    assert.equal(disabledFlare.isConfigured, true)
 })
 
 test('addIniSection and removeIniSection modify section list safely', () => {

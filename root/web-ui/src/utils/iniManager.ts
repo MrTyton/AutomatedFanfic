@@ -203,101 +203,140 @@ export function removeSectionField(sectionLines: string[], key: string): string[
 }
 
 /**
- * Detects whether FlareSolverr proxy is configured and enabled in an INI string.
+ * Checks FlareSolverr status for a specific section's lines.
  */
-export function detectFlareSolverr(iniContent: string): FlareSolverrInfo {
+export function getSectionFlareSolverr(
+    lines: string[],
+    sectionName: string
+): FlareSolverrInfo {
     const defaultAddress = 'http://localhost:8191/v1'
     let isConfigured = false
     let isEnabled = false
     let address = defaultAddress
-    let sectionName = 'defaults'
-
-    const lines = iniContent.split('\n')
-    let currentSec = 'defaults'
 
     for (const line of lines) {
-        const sec = isSectionHeader(line)
-        if (sec) {
-            currentSec = sec
-            continue
-        }
-
         const trimmed = line.trim()
-
-        // Check proxy flag
         const proxyMatch = trimmed.match(/^use_flaresolverr_proxy\s*[:=]\s*(true|false)/i)
         if (proxyMatch) {
             isConfigured = true
-            sectionName = currentSec
             if (proxyMatch[1].toLowerCase() === 'true') {
                 isEnabled = true
             }
         }
-
-        // Check proxy address
         const addrMatch = trimmed.match(/^flaresolverr_proxy_address\s*[:=]\s*(\S+)/i)
         if (addrMatch) {
             isConfigured = true
             address = addrMatch[1].trim()
-            sectionName = currentSec
         }
     }
 
     return {
+        section: sectionName,
         isConfigured,
         isEnabled,
         address,
-        section: sectionName,
     }
 }
 
 /**
- * Toggles or updates FlareSolverr proxy configuration in an INI document.
- * If enable is true: ensures use_flaresolverr_proxy:true and flaresolverr_proxy_address are in [defaults].
- * If enable is false: sets use_flaresolverr_proxy:false (or removes directives if removeCompletely=true).
+ * Returns all sections in the INI document that have FlareSolverr configured.
+ */
+export function getAllFlareSolverrSites(iniContent: string): FlareSolverrInfo[] {
+    const doc = parseIniDocument(iniContent)
+    const results: FlareSolverrInfo[] = []
+    for (const sec of doc.sections) {
+        const status = getSectionFlareSolverr(sec.lines, sec.name)
+        if (status.isConfigured) {
+            results.push(status)
+        }
+    }
+    return results
+}
+
+/**
+ * Detects whether FlareSolverr proxy is configured in an INI string.
+ */
+export function detectFlareSolverr(iniContent: string): FlareSolverrInfo {
+    const sites = getAllFlareSolverrSites(iniContent)
+    // Return first active site, or first configured site, or unconfigured defaults
+    const active = sites.find((s) => s.isEnabled)
+    if (active) return active
+    if (sites.length > 0) return sites[0]
+
+    return {
+        isConfigured: false,
+        isEnabled: false,
+        address: 'http://localhost:8191/v1',
+        section: 'defaults',
+    }
+}
+
+/**
+ * Toggles or updates FlareSolverr proxy configuration for a specific site section.
+ * If sectionName is specified, operates on THAT site section, NOT [defaults].
+ */
+export function setSiteFlareSolverrConfig(
+    iniContent: string,
+    sectionName: string,
+    enable: boolean,
+    proxyAddress = 'http://localhost:8191/v1',
+    removeCompletely = false
+): string {
+    const cleanName = sectionName.replace(/[\[\]]/g, '').trim()
+    if (!cleanName) return iniContent
+
+    const doc = parseIniDocument(iniContent)
+    let targetSec = doc.sections.find((s) => s.name.toLowerCase() === cleanName.toLowerCase())
+
+    if (!targetSec) {
+        targetSec = {
+            id: `sec-${cleanName.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`,
+            name: cleanName,
+            lines: [],
+            fields: [],
+            customDirectives: '',
+            lineStart: 0,
+        }
+        doc.sections.push(targetSec)
+    }
+
+    if (enable) {
+        targetSec.lines = updateSectionField(targetSec.lines, 'use_flaresolverr_proxy', 'true')
+        targetSec.lines = updateSectionField(
+            targetSec.lines,
+            'flaresolverr_proxy_address',
+            proxyAddress || 'http://localhost:8191/v1'
+        )
+    } else if (removeCompletely) {
+        targetSec.lines = removeSectionField(targetSec.lines, 'use_flaresolverr_proxy')
+        targetSec.lines = removeSectionField(targetSec.lines, 'flaresolverr_proxy_address')
+    } else {
+        targetSec.lines = updateSectionField(targetSec.lines, 'use_flaresolverr_proxy', 'false')
+        if (proxyAddress) {
+            targetSec.lines = updateSectionField(targetSec.lines, 'flaresolverr_proxy_address', proxyAddress)
+        }
+    }
+
+    return serializeIniDocument(doc)
+}
+
+/**
+ * Legacy proxy configuration wrapper; delegates to setSiteFlareSolverrConfig.
  */
 export function setFlareSolverrConfig(
     iniContent: string,
     enable: boolean,
     proxyAddress = 'http://localhost:8191/v1',
-    removeCompletely = false
+    removeCompletely = false,
+    sectionName = 'defaults'
 ): string {
-    const doc = parseIniDocument(iniContent)
-    let defaultsSec = doc.sections.find((s) => s.name.toLowerCase() === 'defaults')
-
-    if (!defaultsSec) {
-        // Create [defaults] section if it doesn't exist
-        defaultsSec = {
-            id: 'sec-defaults',
-            name: 'defaults',
-            lines: [],
-            fields: [],
-            customDirectives: '',
-            lineStart: 1,
-        }
-        doc.sections.unshift(defaultsSec)
-    }
-
-    if (enable) {
-        // Set use_flaresolverr_proxy:true
-        defaultsSec.lines = updateSectionField(defaultsSec.lines, 'use_flaresolverr_proxy', 'true')
-        defaultsSec.lines = updateSectionField(
-            defaultsSec.lines,
-            'flaresolverr_proxy_address',
-            proxyAddress || 'http://localhost:8191/v1'
-        )
-    } else if (removeCompletely) {
-        defaultsSec.lines = removeSectionField(defaultsSec.lines, 'use_flaresolverr_proxy')
-        defaultsSec.lines = removeSectionField(defaultsSec.lines, 'flaresolverr_proxy_address')
-    } else {
-        // Toggle to false while preserving address
-        defaultsSec.lines = updateSectionField(defaultsSec.lines, 'use_flaresolverr_proxy', 'false')
-        if (proxyAddress) {
-            defaultsSec.lines = updateSectionField(defaultsSec.lines, 'flaresolverr_proxy_address', proxyAddress)
-        }
-    }
-
-    return serializeIniDocument(doc)
+    return setSiteFlareSolverrConfig(
+        iniContent,
+        sectionName,
+        enable,
+        proxyAddress,
+        removeCompletely
+    )
 }
 
 /**

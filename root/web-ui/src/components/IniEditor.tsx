@@ -4,8 +4,9 @@ import {
     serializeIniDocument,
     updateSectionField,
     removeSectionField,
-    detectFlareSolverr,
-    setFlareSolverrConfig,
+    getSectionFlareSolverr,
+    getAllFlareSolverrSites,
+    setSiteFlareSolverrConfig,
     addIniSection,
     removeIniSection,
     updateSectionContent,
@@ -66,13 +67,15 @@ export const IniEditor: React.FC<IniEditorProps> = ({
     const [newSettingKey, setNewSettingKey] = useState('')
     const [newSettingValue, setNewSettingValue] = useState('')
     const [showFlareModal, setShowFlareModal] = useState(false)
+    const [targetFlareSection, setTargetFlareSection] = useState<string>('')
     const [customFlareAddress, setCustomFlareAddress] = useState('http://localhost:8191/v1')
 
     const rawTextareaRef = useRef<HTMLTextAreaElement>(null)
 
     // Parse INI structure
     const parsedDoc = useMemo(() => parseIniDocument(iniText), [iniText])
-    const flareInfo = useMemo(() => detectFlareSolverr(iniText), [iniText])
+    const allFlareSites = useMemo(() => getAllFlareSolverrSites(iniText), [iniText])
+    const activeFlareSites = useMemo(() => allFlareSites.filter((s) => s.isEnabled), [allFlareSites])
 
     // Algorithmically extract available sections and key comments from referenceIni (e.g. defaults.ini)
     const discoveredSections = useMemo(() => {
@@ -105,30 +108,39 @@ export const IniEditor: React.FC<IniEditorProps> = ({
         })
     }, [parsedDoc.sections, searchQuery])
 
-    // Toggle 1-click FlareSolverr
-    const handleQuickToggleFlareSolverr = () => {
+    // Per-site FlareSolverr handlers
+    const handleToggleSiteFlare = (secName: string, enable: boolean) => {
         if (readOnly) return
-        if (flareInfo.isEnabled) {
-            // Turn off FlareSolverr
-            const updated = setFlareSolverrConfig(iniText, false)
-            onChange(updated)
-        } else {
-            // Turn on FlareSolverr with current address
-            const updated = setFlareSolverrConfig(iniText, true, customFlareAddress || 'http://localhost:8191/v1')
-            onChange(updated)
-        }
+        const updated = setSiteFlareSolverrConfig(
+            iniText,
+            secName,
+            enable,
+            customFlareAddress || 'http://localhost:8191/v1'
+        )
+        onChange(updated)
     }
 
     const handleSaveFlareSolverrAddress = () => {
-        if (readOnly) return
-        const updated = setFlareSolverrConfig(iniText, true, customFlareAddress || 'http://localhost:8191/v1')
+        if (readOnly || !targetFlareSection) return
+        const updated = setSiteFlareSolverrConfig(
+            iniText,
+            targetFlareSection,
+            true,
+            customFlareAddress || 'http://localhost:8191/v1'
+        )
         onChange(updated)
         setShowFlareModal(false)
     }
 
     const handleRemoveFlareSolverrCompletely = () => {
-        if (readOnly) return
-        const updated = setFlareSolverrConfig(iniText, false, undefined, true)
+        if (readOnly || !targetFlareSection) return
+        const updated = setSiteFlareSolverrConfig(
+            iniText,
+            targetFlareSection,
+            false,
+            undefined,
+            true
+        )
         onChange(updated)
         setShowFlareModal(false)
     }
@@ -235,104 +247,55 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                     borderBottom: '1px solid var(--border)',
                 }}
             >
-                {/* Left: 1-Click FlareSolverr Proxy Control */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {flareInfo.isEnabled ? (
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.45rem',
-                                padding: '0.25rem 0.65rem',
-                                borderRadius: 'var(--radius-md)',
-                                background: 'rgba(16, 185, 129, 0.12)',
-                                border: '1px solid rgba(16, 185, 129, 0.35)',
-                                color: '#10b981',
-                                fontSize: '0.78rem',
-                                fontWeight: 600,
-                            }}
-                        >
-                            <Zap size={14} className="fill-current" />
-                            <span>FlareSolverr: Active</span>
-                            <span
-                                style={{
-                                    fontSize: '0.72rem',
-                                    color: 'var(--text-muted)',
-                                    fontFamily: 'var(--font-mono)',
-                                }}
-                            >
-                                ({flareInfo.address})
-                            </span>
-                            {!readOnly && (
-                                <button
-                                    type="button"
-                                    className="secondary btn-sm"
-                                    onClick={() => {
-                                        setCustomFlareAddress(flareInfo.address)
-                                        setShowFlareModal(true)
-                                    }}
-                                    style={{
-                                        padding: '0.1rem 0.4rem',
-                                        minHeight: 22,
-                                        fontSize: '0.7rem',
-                                        marginLeft: '0.2rem',
-                                    }}
-                                    title="Configure FlareSolverr Endpoint"
-                                >
-                                    Config
-                                </button>
-                            )}
-                            {!readOnly && (
-                                <button
-                                    type="button"
-                                    className="secondary btn-sm"
-                                    onClick={handleQuickToggleFlareSolverr}
-                                    style={{
-                                        padding: '0.1rem 0.45rem',
-                                        minHeight: 22,
-                                        fontSize: '0.7rem',
-                                        color: 'var(--error)',
-                                    }}
-                                    title="Disable FlareSolverr proxy"
-                                >
-                                    Disable
-                                </button>
-                            )}
-                        </div>
-                    ) : (
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                {/* Left: Per-Site FlareSolverr Overview */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                    <span
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.76rem',
+                            color: 'var(--text-muted)',
+                            fontWeight: 600,
+                        }}
+                    >
+                        <Zap size={13} style={{ color: '#f59e0b' }} />
+                        <span>Per-Site FlareSolverr:</span>
+                    </span>
+
+                    {activeFlareSites.length > 0 ? (
+                        activeFlareSites.map((site) => (
                             <button
+                                key={site.section}
                                 type="button"
                                 className="secondary btn-sm"
-                                onClick={handleQuickToggleFlareSolverr}
-                                disabled={readOnly}
+                                onClick={() => {
+                                    const id = `ini-sec-${site.section.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`
+                                    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+                                }}
                                 style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
-                                    gap: '0.4rem',
-                                    borderColor: 'rgba(245, 158, 11, 0.35)',
-                                    color: '#f59e0b',
+                                    gap: '0.3rem',
+                                    padding: '0.12rem 0.45rem',
+                                    minHeight: 22,
+                                    fontSize: '0.72rem',
+                                    borderRadius: 6,
+                                    background: 'rgba(16, 185, 129, 0.12)',
+                                    borderColor: 'rgba(16, 185, 129, 0.35)',
+                                    color: '#10b981',
+                                    fontFamily: 'var(--font-mono)',
                                 }}
-                                title="Add FlareSolverr proxy settings to [defaults] in 1 click"
+                                title={`Jump to [${site.section}] (${site.address})`}
                             >
-                                <Zap size={13} />
-                                <span>+ Enable FlareSolverr Proxy</span>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+                                <span>[{site.section}]</span>
                             </button>
-                            {!readOnly && (
-                                <button
-                                    type="button"
-                                    className="secondary btn-sm"
-                                    onClick={() => {
-                                        setCustomFlareAddress(flareInfo.address || 'http://localhost:8191/v1')
-                                        setShowFlareModal(true)
-                                    }}
-                                    style={{ padding: '0.15rem 0.45rem', minHeight: 24, fontSize: '0.72rem' }}
-                                    title="Set custom FlareSolverr address before enabling"
-                                >
-                                    ⚙️
-                                </button>
-                            )}
-                        </div>
+                        ))
+                    ) : (
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            (Not enabled on any site yet — click "+ FlareSolverr" on any site card below)
+                        </span>
                     )}
                 </div>
 
@@ -416,7 +379,7 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                 >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 600, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <Zap size={15} style={{ color: '#f59e0b' }} /> FlareSolverr Cloudflare Bypass Proxy
+                            <Zap size={15} style={{ color: '#f59e0b' }} /> FlareSolverr Proxy for [{targetFlareSection}]
                         </span>
                         <button
                             type="button"
@@ -428,7 +391,7 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                         </button>
                     </div>
                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        FanFicFare routes protected story requests through this FlareSolverr v1 endpoint to solve Cloudflare anti-bot captchas automatically.
+                        FanFicFare routes requests for stories from <code>[{targetFlareSection}]</code> through this FlareSolverr v1 endpoint to solve Cloudflare anti-bot captchas automatically.
                     </p>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                         <label htmlFor="flaresolverr-url" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
@@ -447,19 +410,17 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                             className="btn-sm"
                             onClick={handleSaveFlareSolverrAddress}
                         >
-                            Save & Enable
+                            Save for [{targetFlareSection}]
                         </button>
-                        {flareInfo.isConfigured && (
-                            <button
-                                type="button"
-                                className="secondary btn-sm"
-                                onClick={handleRemoveFlareSolverrCompletely}
-                                style={{ color: 'var(--error)' }}
-                                title="Delete FlareSolverr directives from INI"
-                            >
-                                Remove
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            className="secondary btn-sm"
+                            onClick={handleRemoveFlareSolverrCompletely}
+                            style={{ color: 'var(--error)' }}
+                            title={`Delete FlareSolverr directives from [${targetFlareSection}]`}
+                        >
+                            Remove
+                        </button>
                     </div>
                 </div>
             )}
@@ -704,6 +665,75 @@ export const IniEditor: React.FC<IniEditorProps> = ({
 
                                     {/* Bubble Actions */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                        {/* Per-Site FlareSolverr Toggle Button */}
+                                        {(() => {
+                                            const secFlare = getSectionFlareSolverr(sec.lines, sec.name)
+                                            return secFlare.isEnabled ? (
+                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                    <span
+                                                        style={{
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: '0.25rem',
+                                                            fontSize: '0.7rem',
+                                                            padding: '0.12rem 0.45rem',
+                                                            borderRadius: 6,
+                                                            background: 'rgba(16, 185, 129, 0.15)',
+                                                            border: '1px solid rgba(16, 185, 129, 0.35)',
+                                                            color: '#10b981',
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        <Zap size={11} className="fill-current" /> FlareSolverr
+                                                    </span>
+                                                    {!readOnly && (
+                                                        <button
+                                                            type="button"
+                                                            className="secondary btn-sm"
+                                                            onClick={() => {
+                                                                setTargetFlareSection(sec.name)
+                                                                setCustomFlareAddress(secFlare.address)
+                                                                setShowFlareModal(true)
+                                                            }}
+                                                            style={{ minHeight: 22, padding: '0.08rem 0.35rem', fontSize: '0.68rem' }}
+                                                            title={`Configure FlareSolverr endpoint for [${sec.name}]`}
+                                                        >
+                                                            ⚙️
+                                                        </button>
+                                                    )}
+                                                    {!readOnly && (
+                                                        <button
+                                                            type="button"
+                                                            className="secondary btn-sm"
+                                                            onClick={() => handleToggleSiteFlare(sec.name, false)}
+                                                            style={{ minHeight: 22, padding: '0.08rem 0.4rem', fontSize: '0.68rem', color: 'var(--error)' }}
+                                                            title={`Disable FlareSolverr on [${sec.name}]`}
+                                                        >
+                                                            Disable
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                !readOnly && (
+                                                    <button
+                                                        type="button"
+                                                        className="secondary btn-sm"
+                                                        onClick={() => handleToggleSiteFlare(sec.name, true)}
+                                                        style={{
+                                                            minHeight: 24,
+                                                            fontSize: '0.7rem',
+                                                            padding: '0.12rem 0.45rem',
+                                                            color: '#f59e0b',
+                                                            borderColor: 'rgba(245, 158, 11, 0.3)',
+                                                        }}
+                                                        title={`Enable FlareSolverr proxy for [${sec.name}] in 1 click`}
+                                                    >
+                                                        <Zap size={11} /> + FlareSolverr
+                                                    </button>
+                                                )
+                                            )
+                                        })()}
+
                                         {/* Toggle Form / Scoped Code Mode */}
                                         <button
                                             type="button"
