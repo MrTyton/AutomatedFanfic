@@ -17,6 +17,8 @@ import {
     isSectionHeader,
     extractReferenceSections,
     extractReferenceKeyComments,
+    extractReferenceKeyDefinitions,
+    getSettingSuggestions,
 } from './iniManager.ts'
 
 const SAMPLE_INI = `## Global preamble comments
@@ -221,4 +223,47 @@ slow_down_sleep_time:2
     const comments = extractReferenceKeyComments(reference)
     assert.ok(comments['is_adult'].includes('Confirm adult content'))
     assert.ok(comments['include_images'].includes('Enable images in epub'))
+})
+
+test('extractReferenceKeyDefinitions and getSettingSuggestions provide accurate autocomplete options', () => {
+    const reference = `[defaults]
+## Confirm adult content
+is_adult:false
+## Seconds between downloads
+slow_down_sleep_time:20
+#username:
+#password:
+
+[www.fanfiction.net]
+## Enable Cloudflare bypass proxy
+#use_flaresolverr_proxy:true
+#flaresolverr_proxy_address:localhost
+`
+    const defs = extractReferenceKeyDefinitions(reference)
+    assert.equal(defs.length, 6)
+
+    const adultDef = defs.find((d) => d.key === 'is_adult')
+    assert.ok(adultDef)
+    assert.equal(adultDef.defaultValue, 'false')
+    assert.ok(adultDef.description?.includes('Confirm adult content'))
+
+    const flareDef = defs.find((d) => d.key === 'use_flaresolverr_proxy')
+    assert.ok(flareDef)
+    assert.equal(flareDef.section, 'www.fanfiction.net')
+    assert.equal(flareDef.defaultValue, 'true')
+
+    // Suggestions for www.fanfiction.net when is_adult is already present
+    const existing = new Set(['is_adult'])
+    const suggestions = getSettingSuggestions(defs, 'www.fanfiction.net', existing, '')
+    // is_adult must be excluded
+    assert.ok(!suggestions.some((s) => s.key === 'is_adult'))
+    // www.fanfiction.net section keys must come first
+    assert.equal(suggestions[0].section, 'www.fanfiction.net')
+    assert.ok(suggestions.some((s) => s.key === 'use_flaresolverr_proxy'))
+
+    // Query filter
+    const querySuggestions = getSettingSuggestions(defs, 'defaults', new Set(), 'sleep')
+    assert.equal(querySuggestions.length, 1)
+    assert.equal(querySuggestions[0].key, 'slow_down_sleep_time')
+    assert.equal(querySuggestions[0].defaultValue, '20')
 })

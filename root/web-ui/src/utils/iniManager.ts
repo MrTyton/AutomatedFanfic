@@ -438,6 +438,155 @@ export function extractReferenceSections(referenceIni: string): string[] {
 }
 
 /**
+ * Represents a configuration directive discovered in defaults.ini.
+ */
+export interface ReferenceKeyDefinition {
+    key: string
+    defaultValue?: string
+    description?: string
+    section: string
+}
+
+/**
+ * Algorithmically extracts all known configuration directives, default values, and
+ * descriptions from defaults.ini across all sections.
+ */
+export function extractReferenceKeyDefinitions(referenceIni: string): ReferenceKeyDefinition[] {
+    const list: ReferenceKeyDefinition[] = []
+    const seen = new Set<string>()
+    if (!referenceIni.trim()) return list
+
+    const lines = referenceIni.split('\n')
+    let currentSection = 'defaults'
+    let commentBuffer: string[] = []
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim()
+
+        if (line.startsWith('[') && line.endsWith(']')) {
+            currentSection = line.slice(1, -1).trim()
+            commentBuffer = []
+            continue
+        }
+
+        if (line.startsWith('#') || line.startsWith(';')) {
+            const clean = line.replace(/^[#;]+\s*/, '').trim()
+            const kvMatch = clean.match(/^([a-zA-Z0-9_.-]+)\s*[:=]\s*(.*)$/)
+            if (kvMatch && !kvMatch[1].startsWith('http') && !kvMatch[1].includes(' ')) {
+                const key = kvMatch[1].trim()
+                const val = kvMatch[2].trim()
+                const dedupeKey = `${currentSection.toLowerCase()}:${key.toLowerCase()}`
+                if (!seen.has(dedupeKey)) {
+                    seen.add(dedupeKey)
+                    list.push({
+                        key,
+                        defaultValue: val,
+                        description: commentBuffer.length > 0 ? commentBuffer.slice(-3).join(' ') : undefined,
+                        section: currentSection,
+                    })
+                }
+                commentBuffer = []
+            } else if (clean) {
+                commentBuffer.push(clean)
+            }
+        } else if (line.length === 0) {
+            commentBuffer = []
+        } else {
+            const kvMatch = line.match(/^([a-zA-Z0-9_.-]+)\s*[:=]\s*(.*)$/)
+            if (kvMatch && !kvMatch[1].startsWith('http') && !kvMatch[1].includes(' ')) {
+                const key = kvMatch[1].trim()
+                const val = kvMatch[2].trim()
+                const dedupeKey = `${currentSection.toLowerCase()}:${key.toLowerCase()}`
+                if (!seen.has(dedupeKey)) {
+                    seen.add(dedupeKey)
+                    list.push({
+                        key,
+                        defaultValue: val,
+                        description: commentBuffer.length > 0 ? commentBuffer.slice(-3).join(' ') : undefined,
+                        section: currentSection,
+                    })
+                }
+            }
+            commentBuffer = []
+        }
+    }
+
+    return list
+}
+
+/**
+ * Returns prioritized and filtered setting key suggestions for a specific section and user query.
+ */
+export function getSettingSuggestions(
+    allDefinitions: ReferenceKeyDefinition[],
+    sectionName: string,
+    existingKeys: Set<string>,
+    query: string = '',
+    limit: number = 20
+): ReferenceKeyDefinition[] {
+    const q = query.trim().toLowerCase()
+    const secNormalized = sectionName.toLowerCase().replace(/^[\[\]]+|[\[\]]+$/g, '')
+
+    // Filter out keys already present in this section
+    const available = allDefinitions.filter(
+        (def) => !existingKeys.has(def.key.toLowerCase())
+    )
+
+    // Match against query
+    const matched = available.filter((def) => {
+        if (!q) return true
+        return (
+            def.key.toLowerCase().includes(q) ||
+            (def.description && def.description.toLowerCase().includes(q))
+        )
+    })
+
+    // Sort:
+    // 1. Exact match on key
+    // 2. Starts with query on key
+    // 3. Belonging to this specific section in defaults.ini
+    // 4. Belonging to [defaults] section
+    // 5. Alphabetical by key
+    matched.sort((a, b) => {
+        const aKey = a.key.toLowerCase()
+        const bKey = b.key.toLowerCase()
+        if (q) {
+            const aExact = aKey === q
+            const bExact = bKey === q
+            if (aExact !== bExact) return aExact ? -1 : 1
+
+            const aStarts = aKey.startsWith(q)
+            const bStarts = bKey.startsWith(q)
+            if (aStarts !== bStarts) return aStarts ? -1 : 1
+        }
+
+        const aSecMatch = a.section.toLowerCase() === secNormalized
+        const bSecMatch = b.section.toLowerCase() === secNormalized
+        if (aSecMatch !== bSecMatch) return aSecMatch ? -1 : 1
+
+        const aIsDefaults = a.section.toLowerCase() === 'defaults'
+        const bIsDefaults = b.section.toLowerCase() === 'defaults'
+        if (aIsDefaults !== bIsDefaults) return aIsDefaults ? -1 : 1
+
+        return aKey.localeCompare(bKey)
+    })
+
+    // Deduplicate by key if the same key appears across multiple sections in defaults.ini
+    const unique: ReferenceKeyDefinition[] = []
+    const seenKeys = new Set<string>()
+    for (const item of matched) {
+        const lower = item.key.toLowerCase()
+        if (!seenKeys.has(lower)) {
+            seenKeys.add(lower)
+            unique.push(item)
+            if (unique.length >= limit) break
+        }
+    }
+
+    return unique
+}
+
+/**
  * Algorithmically extracts setting descriptions from documentation comments immediately preceding
  * key-value pairs in a reference INI file (such as defaults.ini).
  */

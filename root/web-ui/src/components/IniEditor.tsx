@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import {
     parseIniDocument,
     serializeIniDocument,
@@ -13,6 +13,9 @@ import {
     categorizeIniSection,
     extractReferenceSections,
     extractReferenceKeyComments,
+    extractReferenceKeyDefinitions,
+    getSettingSuggestions,
+    type ReferenceKeyDefinition,
 } from '../utils/iniManager.ts'
 import { computeIniLineDiff } from '../utils/dashboardLogic.ts'
 import {
@@ -66,11 +69,16 @@ export const IniEditor: React.FC<IniEditorProps> = ({
     const [activeAddSettingSection, setActiveAddSettingSection] = useState<string | null>(null)
     const [newSettingKey, setNewSettingKey] = useState('')
     const [newSettingValue, setNewSettingValue] = useState('')
+    const [showKeyDropdown, setShowKeyDropdown] = useState(false)
+    const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1)
     const [showFlareModal, setShowFlareModal] = useState(false)
     const [targetFlareSection, setTargetFlareSection] = useState<string>('')
     const [customFlareAddress, setCustomFlareAddress] = useState('http://localhost:8191/v1')
 
     const rawTextareaRef = useRef<HTMLTextAreaElement>(null)
+    const keyInputRef = useRef<HTMLInputElement>(null)
+    const valueInputRef = useRef<HTMLInputElement>(null)
+    const dropdownRef = useRef<HTMLDivElement>(null)
 
     // Parse INI structure
     const parsedDoc = useMemo(() => parseIniDocument(iniText), [iniText])
@@ -97,6 +105,56 @@ export const IniEditor: React.FC<IniEditorProps> = ({
         () => extractReferenceKeyComments(referenceIni || ''),
         [referenceIni]
     )
+
+    const referenceKeyDefinitions = useMemo(
+        () => extractReferenceKeyDefinitions(referenceIni || ''),
+        [referenceIni]
+    )
+
+    const existingKeysForActiveSec = useMemo(() => {
+        if (!activeAddSettingSection) return new Set<string>()
+        const target = parsedDoc.sections.find((s) => s.name === activeAddSettingSection)
+        if (!target) return new Set<string>()
+        return new Set(target.fields.map((f) => f.key.toLowerCase()))
+    }, [parsedDoc.sections, activeAddSettingSection])
+
+    const keySuggestions = useMemo(() => {
+        if (!activeAddSettingSection) return []
+        return getSettingSuggestions(
+            referenceKeyDefinitions,
+            activeAddSettingSection,
+            existingKeysForActiveSec,
+            newSettingKey,
+            25
+        )
+    }, [referenceKeyDefinitions, activeAddSettingSection, existingKeysForActiveSec, newSettingKey])
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                dropdownRef.current &&
+                !dropdownRef.current.contains(e.target as Node) &&
+                keyInputRef.current &&
+                !keyInputRef.current.contains(e.target as Node)
+            ) {
+                setShowKeyDropdown(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const handleSelectSuggestion = (suggestion: ReferenceKeyDefinition) => {
+        setNewSettingKey(suggestion.key)
+        if (suggestion.defaultValue && !newSettingValue) {
+            setNewSettingValue(suggestion.defaultValue)
+        }
+        setShowKeyDropdown(false)
+        setSelectedSuggestionIndex(-1)
+        setTimeout(() => {
+            valueInputRef.current?.focus()
+        }, 50)
+    }
 
     // Filter sections based on search query
     const filteredSections = useMemo(() => {
@@ -191,6 +249,8 @@ export const IniEditor: React.FC<IniEditorProps> = ({
         handleFieldChange(secName, newSettingKey.trim(), newSettingValue.trim())
         setNewSettingKey('')
         setNewSettingValue('')
+        setShowKeyDropdown(false)
+        setSelectedSuggestionIndex(-1)
         setActiveAddSettingSection(null)
     }
 
@@ -950,19 +1010,198 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                                                             flexWrap: 'wrap',
                                                         }}
                                                     >
+                                                        {/* Autocomplete Key Input Container */}
+                                                        <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
+                                                            <input
+                                                                ref={keyInputRef}
+                                                                type="text"
+                                                                placeholder="Key (e.g. is_adult or username)"
+                                                                value={newSettingKey}
+                                                                onFocus={() => setShowKeyDropdown(true)}
+                                                                onChange={(e) => {
+                                                                    setNewSettingKey(e.target.value)
+                                                                    setShowKeyDropdown(true)
+                                                                    setSelectedSuggestionIndex(-1)
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'ArrowDown') {
+                                                                        e.preventDefault()
+                                                                        setShowKeyDropdown(true)
+                                                                        setSelectedSuggestionIndex((prev) =>
+                                                                            Math.min(prev + 1, keySuggestions.length - 1)
+                                                                        )
+                                                                    } else if (e.key === 'ArrowUp') {
+                                                                        e.preventDefault()
+                                                                        setSelectedSuggestionIndex((prev) => Math.max(prev - 1, -1))
+                                                                    } else if (e.key === 'Enter') {
+                                                                        if (
+                                                                            showKeyDropdown &&
+                                                                            selectedSuggestionIndex >= 0 &&
+                                                                            keySuggestions[selectedSuggestionIndex]
+                                                                        ) {
+                                                                            e.preventDefault()
+                                                                            handleSelectSuggestion(keySuggestions[selectedSuggestionIndex])
+                                                                        } else if (newSettingKey.trim()) {
+                                                                            e.preventDefault()
+                                                                            valueInputRef.current?.focus()
+                                                                        }
+                                                                    } else if (e.key === 'Escape') {
+                                                                        setShowKeyDropdown(false)
+                                                                    }
+                                                                }}
+                                                                style={{
+                                                                    fontFamily: 'var(--font-mono)',
+                                                                    fontSize: '0.8rem',
+                                                                    minHeight: 28,
+                                                                    width: '100%',
+                                                                }}
+                                                            />
+
+                                                            {/* Dropdown Suggestions */}
+                                                            {showKeyDropdown && keySuggestions.length > 0 && (
+                                                                <div
+                                                                    ref={dropdownRef}
+                                                                    style={{
+                                                                        position: 'absolute',
+                                                                        top: 'calc(100% + 4px)',
+                                                                        left: 0,
+                                                                        minWidth: '100%',
+                                                                        width: 'max-content',
+                                                                        maxWidth: 400,
+                                                                        background: '#0a0e17',
+                                                                        border: '1px solid var(--border)',
+                                                                        borderRadius: 'var(--radius-sm)',
+                                                                        boxShadow: '0 12px 28px rgba(0, 0, 0, 0.7)',
+                                                                        maxHeight: 220,
+                                                                        overflowY: 'auto',
+                                                                        zIndex: 100,
+                                                                    }}
+                                                                >
+                                                                    <div
+                                                                        style={{
+                                                                            padding: '0.3rem 0.55rem',
+                                                                            fontSize: '0.66rem',
+                                                                            fontWeight: 700,
+                                                                            textTransform: 'uppercase',
+                                                                            color: 'var(--text-faint)',
+                                                                            borderBottom: '1px solid var(--border-subtle)',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'space-between',
+                                                                        }}
+                                                                    >
+                                                                        <span>Directives from defaults.ini</span>
+                                                                        <span>{keySuggestions.length} choices</span>
+                                                                    </div>
+                                                                    {keySuggestions.map((item, idx) => {
+                                                                        const isSelected = idx === selectedSuggestionIndex
+                                                                        const isSecSpecific =
+                                                                            item.section.toLowerCase() ===
+                                                                            sec.name.toLowerCase().replace(/^[\[\]]+|[\[\]]+$/g, '')
+                                                                        return (
+                                                                            <div
+                                                                                key={`${item.section}-${item.key}`}
+                                                                                onMouseDown={(e) => {
+                                                                                    e.preventDefault()
+                                                                                    handleSelectSuggestion(item)
+                                                                                }}
+                                                                                onMouseEnter={() => setSelectedSuggestionIndex(idx)}
+                                                                                style={{
+                                                                                    padding: '0.35rem 0.6rem',
+                                                                                    cursor: 'pointer',
+                                                                                    background: isSelected
+                                                                                        ? 'rgba(99, 102, 241, 0.22)'
+                                                                                        : 'transparent',
+                                                                                    borderLeft: isSelected
+                                                                                        ? '3px solid #6366f1'
+                                                                                        : '3px solid transparent',
+                                                                                    borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                                                                                }}
+                                                                            >
+                                                                                <div
+                                                                                    style={{
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'space-between',
+                                                                                        gap: '0.35rem',
+                                                                                    }}
+                                                                                >
+                                                                                    <span
+                                                                                        style={{
+                                                                                            fontFamily: 'var(--font-mono)',
+                                                                                            fontWeight: 700,
+                                                                                            fontSize: '0.78rem',
+                                                                                            color: isSelected ? '#a5b4fc' : '#818cf8',
+                                                                                        }}
+                                                                                    >
+                                                                                        {item.key}
+                                                                                    </span>
+                                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                                                        {isSecSpecific && (
+                                                                                            <span
+                                                                                                style={{
+                                                                                                    fontSize: '0.62rem',
+                                                                                                    padding: '0.05rem 0.3rem',
+                                                                                                    borderRadius: 4,
+                                                                                                    background: 'rgba(245, 158, 11, 0.18)',
+                                                                                                    color: '#f59e0b',
+                                                                                                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                                                                                                    fontWeight: 600,
+                                                                                                }}
+                                                                                            >
+                                                                                                [{item.section}]
+                                                                                            </span>
+                                                                                        )}
+                                                                                        {item.defaultValue && (
+                                                                                            <span
+                                                                                                style={{
+                                                                                                    fontSize: '0.67rem',
+                                                                                                    fontFamily: 'var(--font-mono)',
+                                                                                                    color: 'var(--text-muted)',
+                                                                                                }}
+                                                                                            >
+                                                                                                default:{' '}
+                                                                                                <code
+                                                                                                    style={{
+                                                                                                        color: '#10b981',
+                                                                                                        background: 'rgba(16, 185, 129, 0.1)',
+                                                                                                        padding: '0.05rem 0.2rem',
+                                                                                                        borderRadius: 3,
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {item.defaultValue.length > 20
+                                                                                                        ? item.defaultValue.slice(0, 18) + '…'
+                                                                                                        : item.defaultValue}
+                                                                                                </code>
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                                {item.description && (
+                                                                                    <div
+                                                                                        style={{
+                                                                                            fontSize: '0.68rem',
+                                                                                            color: 'var(--text-faint)',
+                                                                                            marginTop: '0.12rem',
+                                                                                            overflow: 'hidden',
+                                                                                            textOverflow: 'ellipsis',
+                                                                                            whiteSpace: 'nowrap',
+                                                                                        }}
+                                                                                        title={item.description}
+                                                                                    >
+                                                                                        {item.description}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        )
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Value Input */}
                                                         <input
-                                                            type="text"
-                                                            placeholder="Key (e.g. is_adult or username)"
-                                                            value={newSettingKey}
-                                                            onChange={(e) => setNewSettingKey(e.target.value)}
-                                                            style={{
-                                                                fontFamily: 'var(--font-mono)',
-                                                                fontSize: '0.8rem',
-                                                                minHeight: 28,
-                                                                flex: '1 1 140px',
-                                                            }}
-                                                        />
-                                                        <input
+                                                            ref={valueInputRef}
                                                             type="text"
                                                             placeholder="Value"
                                                             value={newSettingValue}
@@ -995,6 +1234,8 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                                                                 setActiveAddSettingSection(null)
                                                                 setNewSettingKey('')
                                                                 setNewSettingValue('')
+                                                                setShowKeyDropdown(false)
+                                                                setSelectedSuggestionIndex(-1)
                                                             }}
                                                             style={{ minHeight: 28, fontSize: '0.75rem' }}
                                                         >
@@ -1005,7 +1246,14 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                                                     <button
                                                         type="button"
                                                         className="secondary btn-sm"
-                                                        onClick={() => setActiveAddSettingSection(sec.name)}
+                                                        onClick={() => {
+                                                            setActiveAddSettingSection(sec.name)
+                                                            setNewSettingKey('')
+                                                            setNewSettingValue('')
+                                                            setShowKeyDropdown(true)
+                                                            setSelectedSuggestionIndex(-1)
+                                                            setTimeout(() => keyInputRef.current?.focus(), 50)
+                                                        }}
                                                         style={{
                                                             fontSize: '0.74rem',
                                                             padding: '0.2rem 0.55rem',
