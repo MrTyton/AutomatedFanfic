@@ -16,6 +16,8 @@ import {
     computeIniLineDiff,
     extractIniSections,
     extractSystemVersionsFromLogs,
+    ensureExternalUrl,
+    normalizeStoryUrl,
 } from './dashboardLogic.ts'
 import { STATUS_COLORS } from '../statusColors.ts'
 
@@ -152,16 +154,31 @@ test('buildLogAttemptBlocks de-interleaves concurrent site worker logs into self
 
 test('buildLogAttemptBlocks groups startup messages with non-story URLs into single lifecycle block', () => {
     const startupLogs = [
+        { timestamp: '2026-10-28 11:07:11', level: 'info', message: 'Starting AutomatedFanfic v6.15.0' },
         { timestamp: '2026-10-28 11:07:12', level: 'info', message: 'For issues and updates, please go to https://github.com/MrTyton/AutomatedFanfic' },
-        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Calibre Path: http://192.168.1.161:8195/#Fanfiction' },
-        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'FanFicFare version: 4.62.18' },
+        { timestamp: '2026-10-28 11:07:12', level: 'info', message: 'Using configuration file: /config/config.toml' },
+        { timestamp: '2026-10-28 11:07:12', level: 'info', message: 'Python version: 3.15.2 (CPython)' },
+        { timestamp: '2026-10-28 11:07:12', level: 'info', message: 'OS / Platform: Linux-6.1.106-Unraid-x86_64-with-glibc2.41 [Docker container]' },
         { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Calibre version: 9.17.0' },
-        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'WebServer: History database connection established' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'FanFicFare version: 4.62.18' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Apprise version: 2.0.1' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: '--- Configuration Details ---' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Email Server: imap.gmail.com' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Calibre Path: http://192.168.1.161:8195/#Fanfiction' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Generating URL parsers from FanFicFare adapters...' },
+        { timestamp: '2026-10-28 11:07:13', level: 'info', message: 'Generated 111 URL parsers for site recognition' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Spawning 1 Worker Pool Process with 15 threads to match max_workers=20' },
         { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Configuration loaded successfully from /config/config.toml' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Apprise enabled with 1 notification target(s).' },
         { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'WebServer: Starting on 0.0.0.0:8080' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Web dashboard enabled on 0.0.0.0:8080' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'HistoryWriter: started' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Starting all processes...' },
         { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Supervisor: Starting helper services...' },
         { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Worker worker_0 started' },
         { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'All processes started successfully' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'Processes running. Press Ctrl+C to stop gracefully.' },
+        { timestamp: '2026-10-28 11:07:14', level: 'info', message: 'WebServer: History database connection established' },
     ]
 
     const blocks = buildLogAttemptBlocks(startupLogs)
@@ -171,8 +188,47 @@ test('buildLogAttemptBlocks groups startup messages with non-story URLs into sin
     const systemBlocks = blocks.filter((b) => b.kind === 'system')
     assert.equal(systemBlocks.length, 1)
     assert.equal(systemBlocks[0].title, 'Application Startup & Lifecycle')
-    assert.equal(systemBlocks[0].lines.length, 10)
+    assert.equal(systemBlocks[0].lines.length, 25)
     assert.equal(systemBlocks[0].isActive, false)
+})
+
+test('ensureExternalUrl and normalizeStoryUrl convert scheme-less URLs into absolute HTTPS URLs', () => {
+    assert.equal(
+        ensureExternalUrl('forums.sufficientvelocity.com/threads/scientia-weaponizes-the-future.82203'),
+        'https://forums.sufficientvelocity.com/threads/scientia-weaponizes-the-future.82203'
+    )
+    assert.equal(
+        ensureExternalUrl('https://archiveofourown.org/works/123'),
+        'https://archiveofourown.org/works/123'
+    )
+    assert.equal(
+        ensureExternalUrl('http://192.168.1.161:8195/#Fanfiction'),
+        'http://192.168.1.161:8195/#Fanfiction'
+    )
+    assert.equal(ensureExternalUrl(''), '#')
+    assert.equal(ensureExternalUrl(undefined), '#')
+
+    const storyAttemptLogs = [
+        {
+            timestamp: '2026-10-28 05:59:43',
+            level: 'info',
+            message: '(sufficientvelocity) Processing forums.sufficientvelocity.com/threads/scientia-weaponizes-the-future.82203',
+            story_url: 'forums.sufficientvelocity.com/threads/scientia-weaponizes-the-future.82203',
+            thread_site: 'sufficientvelocity',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(storyAttemptLogs)
+    assert.equal(blocks.length, 1)
+    assert.equal(blocks[0].kind, 'story_attempt')
+    assert.equal(
+        blocks[0].url,
+        'https://forums.sufficientvelocity.com/threads/scientia-weaponizes-the-future.82203'
+    )
+    assert.equal(
+        ensureExternalUrl(blocks[0].url),
+        'https://forums.sufficientvelocity.com/threads/scientia-weaponizes-the-future.82203'
+    )
 })
 
 test('buildLogAttemptBlocks groups worker attempt lines with attempt_id and avoids temp dir titles', () => {

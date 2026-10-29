@@ -19,6 +19,7 @@ import {
 } from '../api'
 import { statusBadgeClass, getSiteBadgeInfo } from '../statusColors'
 import AttemptBlockCard from '../components/AttemptBlockCard'
+import { ensureExternalUrl } from '../utils/dashboardLogic'
 import {
     Search,
     RefreshCw,
@@ -84,7 +85,7 @@ function summarizeError(err?: string | null): string {
 function StoryUrlLink({ url }: { url: string }) {
     return (
         <a
-            href={url}
+            href={ensureExternalUrl(url)}
             target="_blank"
             rel="noopener noreferrer"
             className="story-url-link"
@@ -669,7 +670,7 @@ export default function History({ data }: HistoryProps = {}) {
                                                     <td>
                                                         <div style={{ fontWeight: 600 }}>
                                                             <a
-                                                                href={r.url}
+                                                                href={ensureExternalUrl(r.url)}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 style={{ color: 'var(--text)' }}
@@ -1006,7 +1007,7 @@ export default function History({ data }: HistoryProps = {}) {
                                                     <td>
                                                         <div style={{ fontWeight: 600 }}>
                                                             <a
-                                                                href={r.url}
+                                                                href={ensureExternalUrl(r.url)}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 style={{ color: 'var(--text)' }}
@@ -1139,7 +1140,7 @@ export default function History({ data }: HistoryProps = {}) {
                                                 <div style={{ minWidth: 0, flex: 1 }}>
                                                     <div style={{ fontWeight: 600 }}>
                                                         <a
-                                                            href={r.url}
+                                                            href={ensureExternalUrl(r.url)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             style={{ color: 'var(--text)' }}
@@ -1267,7 +1268,7 @@ export default function History({ data }: HistoryProps = {}) {
                                                                 >
                                                                     <SiteBadge site={u.site} />
                                                                     <a
-                                                                        href={u.url}
+                                                                        href={ensureExternalUrl(u.url)}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         style={{ fontWeight: 600, color: 'var(--text)' }}
@@ -1326,7 +1327,7 @@ export default function History({ data }: HistoryProps = {}) {
                                                 {e.extracted_urls.map((u, i) => (
                                                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap', fontSize: '0.74rem' }}>
                                                         <SiteBadge site={u.site} />
-                                                        <a href={u.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text)', fontWeight: 600 }}>
+                                                        <a href={ensureExternalUrl(u.url)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text)', fontWeight: 600 }}>
                                                             {u.title || u.url}
                                                         </a>
                                                     </div>

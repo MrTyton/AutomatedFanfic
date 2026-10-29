@@ -21,6 +21,7 @@ import {
     parseAndValidateUrlLines,
     filterRemainingInputAfterSubmit,
     aggregateRecentErrors,
+    ensureExternalUrl,
     AggregatedErrorRecord,
 } from '../utils/dashboardLogic'
 import {
@@ -89,7 +90,7 @@ function SiteBadge({ site }: { site?: string }) {
 function StoryUrlLink({ url }: { url: string }) {
     return (
         <a
-            href={url}
+            href={ensureExternalUrl(url)}
             target="_blank"
             rel="noopener noreferrer"
             className="story-url-link"
@@ -1086,7 +1087,7 @@ export default function Dashboard({ data }: Props) {
                                                 <td>
                                                     <div style={{ fontWeight: 600 }}>
                                                         <a
-                                                            href={item.url}
+                                                            href={ensureExternalUrl(item.url)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             style={{ color: 'var(--text)' }}
@@ -1371,7 +1372,7 @@ export default function Dashboard({ data }: Props) {
                                         <div style={{ minWidth: 0, flex: 1 }}>
                                             <div style={{ fontWeight: 600 }}>
                                                 <a
-                                                    href={item.url}
+                                                    href={ensureExternalUrl(item.url)}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     style={{ color: 'var(--text)' }}
@@ -1606,7 +1607,7 @@ export default function Dashboard({ data }: Props) {
                                         <td style={{ maxWidth: 320 }}>
                                             <div style={{ fontWeight: 600 }}>
                                                 <a
-                                                    href={dl.url}
+                                                    href={ensureExternalUrl(dl.url)}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     style={{ color: 'var(--text)' }}
@@ -1797,7 +1798,7 @@ export default function Dashboard({ data }: Props) {
                                 <div style={{ minWidth: 0, flex: 1 }}>
                                     <div style={{ fontWeight: 600 }}>
                                         <a
-                                            href={dl.url}
+                                            href={ensureExternalUrl(dl.url)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             style={{ color: 'var(--text)' }}
@@ -1967,7 +1968,7 @@ export default function Dashboard({ data }: Props) {
                                         <div style={{ minWidth: 0, flex: 1 }}>
                                             <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
                                                 <a
-                                                    href={errItem.url}
+                                                    href={ensureExternalUrl(errItem.url)}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     style={{ color: 'var(--text)' }}

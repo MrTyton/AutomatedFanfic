@@ -9,7 +9,7 @@ import {
     type LogEntry,
     type HistoricalStoryDetails,
 } from '../api'
-import { formatAttemptBlockAsText, type LogAttemptBlock } from '../utils/dashboardLogic'
+import { formatAttemptBlockAsText, ensureExternalUrl, type LogAttemptBlock } from '../utils/dashboardLogic'
 import AttemptBlockCard from '../components/AttemptBlockCard'
 import GitHubIssueModal from '../components/GitHubIssueModal'
 import {
@@ -111,7 +111,7 @@ function renderMessageWithLinks(message: string) {
             return (
                 <a
                     key={i}
-                    href={part}
+                    href={ensureExternalUrl(part)}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
@@ -694,7 +694,7 @@ export default function Logs() {
                                                 <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginTop: '0.35rem', marginBottom: '0.2rem' }}>
                                                     {historicalFallback.download.title || focusedBlockUrl}
                                                 </h3>
-                                                <a href={focusedBlockUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', wordBreak: 'break-all', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                                <a href={ensureExternalUrl(focusedBlockUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.78rem', color: 'var(--text-muted)', wordBreak: 'break-all', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
                                                     <span>{focusedBlockUrl}</span>
                                                     <ExternalLink size={10} />
                                                 </a>

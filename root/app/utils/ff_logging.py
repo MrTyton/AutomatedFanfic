@@ -63,6 +63,7 @@ _startup_capture_enabled = True
 _STARTUP_COMPLETE_MARKERS = (
     "All processes started successfully",
     "Processes running. Press Ctrl+C to stop gracefully.",
+    "WebServer: History database connection established",
 )
 
 # ── Persistent disk logging ─────────────────────────────────────
@@ -160,11 +161,12 @@ def _append_log_entry(entry: dict) -> None:
     message = str(entry.get("message", ""))
 
     with _log_buffer_lock:
-        _log_buffer.append(entry)
         if _startup_capture_enabled:
+            entry["is_startup"] = True
             _startup_log_buffer.append(entry)
             if any(marker in message for marker in _STARTUP_COMPLETE_MARKERS):
                 _startup_capture_enabled = False
+        _log_buffer.append(entry)
 
     if _persistent_handler is not None:
         with _persistent_log_lock:

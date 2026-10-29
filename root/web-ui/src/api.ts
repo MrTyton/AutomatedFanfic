@@ -119,6 +119,7 @@ export interface LogEntry {
     story_title?: string
     worker_id?: string
     attempt_id?: string
+    is_startup?: boolean
 }
 
 export interface SiteStats {

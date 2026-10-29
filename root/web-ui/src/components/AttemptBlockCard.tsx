@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import {
     formatAttemptBlockAsText,
     diagnoseErrorSignature,
+    ensureExternalUrl,
     type LogAttemptBlock,
 } from '../utils/dashboardLogic'
 import { getSiteBadgeInfo, statusBadgeClass } from '../statusColors'
 import GitHubIssueModal from './GitHubIssueModal'
-import { Copy, Check, ChevronDown, ChevronRight, AlertTriangle, Bug, Wrench, Settings } from 'lucide-react'
+import { Copy, Check, ChevronDown, ChevronRight, AlertTriangle, Bug, Wrench, Settings, ExternalLink } from 'lucide-react'
 
 interface AttemptBlockCardProps {
     block: LogAttemptBlock
@@ -54,7 +55,7 @@ function renderMessageWithLinks(message: string, searchQuery?: string) {
         i % 2 === 1 ? (
             <a
                 key={i}
-                href={part}
+                href={ensureExternalUrl(part)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={e => e.stopPropagation()}
@@ -290,7 +291,7 @@ export default function AttemptBlockCard({
                     >
                         {block.url ? (
                             <a
-                                href={block.url}
+                                href={ensureExternalUrl(block.url)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={e => e.stopPropagation()}
@@ -299,7 +300,7 @@ export default function AttemptBlockCard({
                                     fontSize: '0.86rem',
                                     color: 'var(--text)',
                                 }}
-                                title={block.url}
+                                title={`Open ${block.url} in new tab`}
                             >
                                 {block.title}
                             </a>
@@ -380,9 +381,25 @@ export default function AttemptBlockCard({
                                 color: 'var(--text-muted)',
                             }}
                         >
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {block.url}
-                            </span>
+                            <a
+                                href={ensureExternalUrl(block.url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    color: '#818cf8',
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.3rem',
+                                }}
+                                title={`Open ${block.url} in new tab`}
+                            >
+                                <span>{block.url}</span>
+                                <ExternalLink size={11} style={{ flexShrink: 0 }} />
+                            </a>
                             <span className="tabular-nums" style={{ color: 'var(--text-faint)', flexShrink: 0 }}>
                                 Latest update: {block.endedAt}
                             </span>
