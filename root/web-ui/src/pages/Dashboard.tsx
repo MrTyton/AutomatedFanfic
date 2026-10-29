@@ -258,13 +258,13 @@ export default function Dashboard({ data }: Props) {
         [urlInput, disabledSites, inFlightUrlSet]
     )
 
-    if (!data) {
-        return (
-            <div className="card">
-                <h2>Loading dashboard…</h2>
-            </div>
-        )
-    }
+    const dismissedErrorUrls = useMemo(() => {
+        const combined = new Set(data?.dismissed_error_urls || [])
+        for (const u of localDismissedUrls) {
+            combined.add(u)
+        }
+        return combined
+    }, [data?.dismissed_error_urls, localDismissedUrls])
 
     const showBriefNotice = (msg: string) => {
         setActionNotice(msg)
@@ -422,7 +422,7 @@ export default function Dashboard({ data }: Props) {
         })),
     ]
 
-    const recentDownloads = (data.recent_downloads || []) as RecentDownloadItem[]
+    const recentDownloads = (data?.recent_downloads || []) as RecentDownloadItem[]
     const cutoff24h = now - 24 * 60 * 60 * 1000
 
     const isWithin24h = (iso?: string | null) => {
@@ -434,14 +434,6 @@ export default function Dashboard({ data }: Props) {
     const recentSuccessCount = recentDownloads.filter(
         (d) => d.status === 'success' && isWithin24h(d.completed_at || d.timestamp)
     ).length
-
-    const dismissedErrorUrls = useMemo(() => {
-        const combined = new Set(data.dismissed_error_urls || [])
-        for (const u of localDismissedUrls) {
-            combined.add(u)
-        }
-        return combined
-    }, [data.dismissed_error_urls, localDismissedUrls])
 
     const uniqueErrors = aggregateRecentErrors(waitingItems, recentDownloads, now).filter(
         (e) => !dismissedErrorUrls.has(e.url)
@@ -475,20 +467,28 @@ export default function Dashboard({ data }: Props) {
         clearErrors(url)
     }
 
-    const siteQueues = data.queues?.sites || {}
+    const siteQueues = data?.queues?.sites || {}
     const siteQueueEntries = Object.entries(siteQueues).filter(([, c]) => c > 0)
-    const lastEmail = data.last_email_check
-    const maxNormalRetries = data.max_normal_retries ?? 11
-    const latestLogByUrl = data.latest_log_by_url || {}
-    const activeThreads = data.site_worker_stats?.active_threads ?? activeItems.length
-    const maxThreads = data.site_worker_stats?.max_threads ?? 16
-    const notableSites = data.site_worker_stats?.notable_sites || []
-    const catalogSites = data.site_worker_stats?.catalog_sites || []
+    const lastEmail = data?.last_email_check
+    const maxNormalRetries = data?.max_normal_retries ?? 11
+    const latestLogByUrl = data?.latest_log_by_url || {}
+    const activeThreads = data?.site_worker_stats?.active_threads ?? activeItems.length
+    const maxThreads = data?.site_worker_stats?.max_threads ?? 16
+    const notableSites = data?.site_worker_stats?.notable_sites || []
+    const catalogSites = data?.site_worker_stats?.catalog_sites || []
     const warningPreviewCount = parsedPreviews.filter(
         (p) => !p.isValid || p.isDisabledSite || p.isDuplicateInFlight
     ).length
 
     const nextScheduledWaiting = waitingItems.find((w) => w.scheduled_at)
+
+    if (!data) {
+        return (
+            <div className="card">
+                <h2>Loading dashboard…</h2>
+            </div>
+        )
+    }
 
     return (
         <div>
