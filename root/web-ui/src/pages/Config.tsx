@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
     getConfig,
@@ -13,9 +13,8 @@ import {
 } from '../api'
 import {
     computeDirtySections,
-    computeIniLineDiff,
-    extractIniSections,
 } from '../utils/dashboardLogic'
+import { IniEditor } from '../components/IniEditor'
 import {
     Settings,
     Save,
@@ -145,11 +144,9 @@ export default function Config() {
     const [testResult, setTestResult] = useState<ConfigTestResult | null>(null)
     const [result, setResult] = useState<ConfigUpdateResult | null>(null)
     const [iniSaved, setIniSaved] = useState(false)
-    const [showIniDiff, setShowIniDiff] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [revealed, setRevealed] = useState<Record<string, boolean>>({})
     const [arrayDrafts, setArrayDrafts] = useState<Record<string, string>>({})
-    const iniTextareaRef = useRef<HTMLTextAreaElement | null>(null)
 
     useEffect(() => {
         const paramTab = searchParams.get('tab')
@@ -956,171 +953,58 @@ export default function Config() {
                             </div>
                         </>
                     ) : (
-                        <>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                             <div
                                 style={{
+                                    borderBottom: '1px solid var(--border)',
+                                    paddingBottom: '0.85rem',
                                     display: 'flex',
                                     justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    flexWrap: 'wrap',
-                                    gap: '0.75rem',
-                                    marginBottom: '1rem',
+                                    alignItems: 'flex-start',
+                                    gap: '0.5rem',
                                 }}
                             >
-                                <div>
-                                    <h2>{activeTab}</h2>
-                                    <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                                <div style={{ minWidth: 0 }}>
+                                    <h2 style={{ fontSize: '1.05rem' }}>{activeTab}</h2>
+                                    <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
                                         {activeTab === 'personal.ini'
                                             ? 'Custom FanFicFare rules, metadata replacements, and site overrides'
                                             : 'Built-in FanFicFare defaults (read-only reference)'}
                                     </p>
                                 </div>
-                                {activeTab === 'personal.ini' && (
-                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                        {dirtyBySection['personal.ini'] && (
-                                            <button
-                                                type="button"
-                                                className={showIniDiff ? '' : 'secondary'}
-                                                onClick={() => setShowIniDiff((prev) => !prev)}
-                                            >
-                                                {showIniDiff ? 'Edit INI' : 'View Diff'}
-                                            </button>
-                                        )}
-                                        {dirtyBySection['personal.ini'] && (
-                                            <button
-                                                type="button"
-                                                className="secondary"
-                                                onClick={() => {
-                                                    setPersonalIni(initialPersonalIni)
-                                                    setIniSaved(false)
-                                                    setShowIniDiff(false)
-                                                }}
-                                            >
-                                                <RotateCcw size={15} /> Discard
-                                            </button>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={handleSavePersonalIni}
-                                            disabled={saving || !dirtyBySection['personal.ini']}
-                                        >
-                                            <Save size={15} />{' '}
-                                            {iniSaved
-                                                ? 'Saved!'
-                                                : dirtyBySection['personal.ini']
-                                                  ? 'Save personal.ini'
-                                                  : 'Saved'}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* INI Section Jump Bar */}
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.4rem',
-                                    flexWrap: 'wrap',
-                                    marginBottom: '0.65rem',
-                                }}
-                            >
-                                <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                                    Sections:
-                                </span>
-                                {extractIniSections(activeTab === 'personal.ini' ? personalIni : defaultsIni).map((sec) => (
-                                    <button
-                                        key={`${sec.name}-${sec.line}`}
-                                        type="button"
-                                        className="secondary btn-sm"
-                                        onClick={() => {
-                                            setShowIniDiff(false)
-                                            const el = iniTextareaRef.current
-                                            if (el) {
-                                                const lines = el.value.split('\n')
-                                                const charOffset = lines
-                                                    .slice(0, sec.line - 1)
-                                                    .reduce((acc, l) => acc + l.length + 1, 0)
-                                                el.focus()
-                                                el.setSelectionRange(charOffset, charOffset + sec.name.length + 2)
-                                            }
-                                        }}
-                                        style={{
-                                            padding: '0.14rem 0.45rem',
-                                            minHeight: 22,
-                                            fontSize: '0.72rem',
-                                            fontFamily: 'var(--font-mono)',
-                                        }}
-                                        title={`Jump to [${sec.name}] (line ${sec.line})`}
-                                    >
-                                        [{sec.name}] :L{sec.line}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {activeTab === 'personal.ini' && showIniDiff && dirtyBySection['personal.ini'] ? (
-                                <div
-                                    style={{
-                                        background: '#05070c',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: 'var(--radius-md)',
-                                        padding: '0.75rem',
-                                        fontFamily: 'var(--font-mono)',
-                                        fontSize: '0.78rem',
-                                        lineHeight: 1.55,
-                                        maxHeight: 'calc(100vh - 260px)',
-                                        overflowY: 'auto',
-                                    }}
-                                >
-                                    {computeIniLineDiff(initialPersonalIni, personalIni).map((d, idx) => (
-                                        <div
-                                            key={idx}
-                                            style={{
-                                                padding: '0.1rem 0.45rem',
-                                                background:
-                                                    d.type === 'add'
-                                                        ? 'rgba(16, 185, 129, 0.14)'
-                                                        : d.type === 'remove'
-                                                          ? 'rgba(239, 68, 68, 0.14)'
-                                                          : 'transparent',
-                                                color:
-                                                    d.type === 'add'
-                                                        ? '#6ee7b7'
-                                                        : d.type === 'remove'
-                                                          ? '#fca5a5'
-                                                          : 'var(--text-muted)',
-                                                whiteSpace: 'pre-wrap',
-                                            }}
-                                        >
-                                            <span style={{ display: 'inline-block', width: 22, userSelect: 'none' }}>
-                                                {d.type === 'add' ? '+' : d.type === 'remove' ? '-' : ' '}
-                                            </span>
-                                            {d.text}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <textarea
-                                    ref={iniTextareaRef}
-                                    rows={34}
-                                    readOnly={activeTab === 'defaults.ini'}
-                                    value={activeTab === 'personal.ini' ? personalIni : defaultsIni}
-                                    onChange={(e) => {
-                                        if (activeTab === 'personal.ini') {
-                                            setPersonalIni(e.target.value)
-                                            setIniSaved(false)
-                                        }
-                                    }}
+                                <span
                                     style={{
                                         fontFamily: 'monospace',
-                                        fontSize: '0.84rem',
-                                        lineHeight: 1.65,
-                                        minHeight: 'calc(100vh - 230px)',
-                                        resize: 'vertical',
+                                        fontSize: '0.78rem',
+                                        color: 'var(--text-muted)',
+                                        flexShrink: 0,
                                     }}
-                                />
-                            )}
-                        </>
+                                >
+                                    [{activeTab}]
+                                </span>
+                            </div>
+
+                            <IniEditor
+                                iniText={activeTab === 'personal.ini' ? personalIni : defaultsIni}
+                                onChange={(newVal) => {
+                                    if (activeTab === 'personal.ini') {
+                                        setPersonalIni(newVal)
+                                        setIniSaved(false)
+                                    }
+                                }}
+                                initialIniText={activeTab === 'personal.ini' ? initialPersonalIni : defaultsIni}
+                                referenceIni={defaultsIni}
+                                readOnly={activeTab === 'defaults.ini'}
+                                onDiscard={() => {
+                                    setPersonalIni(initialPersonalIni)
+                                    setIniSaved(false)
+                                }}
+                                onSave={handleSavePersonalIni}
+                                saving={saving}
+                                saved={iniSaved}
+                                isDirty={!!dirtyBySection['personal.ini']}
+                            />
+                        </div>
                     )}
                 </div>
             </div>
