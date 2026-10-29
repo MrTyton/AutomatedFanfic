@@ -723,6 +723,27 @@ class AsyncHistoryDB:
             rows = await cursor.fetchall()
             return [str(r[0]) for r in rows if r[0]]
 
+    async def get_site_statistics(self) -> dict[str, dict[str, int]]:
+        """Return download counts (total, failed) grouped by site."""
+        stats: dict[str, dict[str, int]] = {}
+        try:
+            async with self._connection() as conn:
+                cursor = await conn.execute("""SELECT site,
+                              COUNT(*) as total,
+                              SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
+                       FROM download_events
+                       WHERE site IS NOT NULL AND site != ''
+                       GROUP BY site""")
+                rows = await cursor.fetchall()
+                for row in rows:
+                    stats[str(row[0]).lower()] = {
+                        "total": int(row[1] or 0),
+                        "failed": int(row[2] or 0),
+                    }
+        except Exception:
+            pass
+        return stats
+
     async def get_recent_events(self, limit: int = 10) -> list[dict]:
         """Get the most recent events across all tables for dashboard feed."""
         async with self._connection() as conn:

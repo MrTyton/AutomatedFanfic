@@ -12,6 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from models import active_urls as active_urls_utils
+from parsers import auto_url_parsers
 from web.dependencies import WebState
 
 router = APIRouter()
@@ -32,6 +33,8 @@ _HISTORY_CACHE_TTL: float = 10.0
 _history_cache: dict[str, object] = {
     "recent_downloads": [],
     "recent_activity": [],
+    "site_statistics": {},
+    "distinct_sites": [],
     "expires_at": 0.0,
 }
 
@@ -212,48 +215,112 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
         }
     snapshot["daemon_details"] = daemon_details
 
-    # ── Site worker stats ───────────────────────────────────────
-    known_adapters = [
-        "archiveofourown.org",
-        "fanfiction.net",
-        "royalroad.com",
-        "wattpad.com",
-        "spacebattles.com",
-        "sufficientvelocity.com",
-        "questionablequesting.com",
-        "fictionpress.com",
-    ]
-    seen_sites = set(known_adapters)
-    for a in active_urls_list:
-        s = a.get("site")
-        if s:
-            seen_sites.add(str(s).lower())
-    for q in queued_urls:
-        s = q.get("site")
-        if s:
-            seen_sites.add(str(s).lower())
-    for w in waiting_urls:
-        s = w.get("site")
-        if s:
-            seen_sites.add(str(s).lower())
-    for ds_site in disabled_sites:
-        if ds_site:
-            seen_sites.add(ds_site.lower())
+    # ── Recent history events & statistics (TTL-cached) ────────
+    if state.history_db is not None:
+        expires_at = _history_cache.get("expires_at", 0.0)
+        if isinstance(expires_at, (int, float)) and now_ts >= expires_at:
+            try:
+                _history_cache["recent_downloads"] = (
+                    await state.history_db.get_recent_downloads(limit=20)
+                )
+            except Exception:
+                _history_cache["recent_downloads"] = []
+            try:
+                _history_cache["recent_activity"] = (
+                    await state.history_db.get_recent_activity(limit=20)
+                )
+            except Exception:
+                _history_cache["recent_activity"] = []
+            try:
+                checks = await state.history_db.get_email_checks(limit=1)
+                _history_cache["last_email_check"] = checks[0] if checks else None
+            except Exception:
+                _history_cache["last_email_check"] = None
+            try:
+                _history_cache["site_statistics"] = (
+                    await state.history_db.get_site_statistics()
+                )
+            except Exception:
+                _history_cache["site_statistics"] = {}
+            try:
+                _history_cache["distinct_sites"] = (
+                    await state.history_db.get_distinct_sites()
+                )
+            except Exception:
+                _history_cache["distinct_sites"] = []
+            _history_cache["expires_at"] = now_ts + _HISTORY_CACHE_TTL
+        snapshot["recent_downloads"] = _history_cache["recent_downloads"]
+        snapshot["recent_activity"] = _history_cache["recent_activity"]
+        snapshot["last_email_check"] = _history_cache.get("last_email_check")
+    else:
+        snapshot["recent_downloads"] = []
+        snapshot["recent_activity"] = []
+        snapshot["last_email_check"] = None
 
-    disabled_set = {ds_site.lower() for ds_site in disabled_sites}
+    # ── Site worker stats (determined algorithmically) ───────────
+    # Dynamically extract all supported site adapters from FanFicFare
+    adapter_catalog = auto_url_parsers.get_supported_sites_catalog()
+    seen_sites: dict[str, dict[str, str]] = dict(adapter_catalog)
+
+    def _register_dynamic_site(raw_site: str | None) -> None:
+        if not raw_site:
+            return
+        s_norm = str(raw_site).lower().strip()
+        site_id = auto_url_parsers._generate_site_identifier(s_norm, s_norm)
+        if site_id not in seen_sites and s_norm not in seen_sites:
+            domain = s_norm if "." in s_norm else f"{s_norm}.com"
+            display_name = auto_url_parsers.clean_display_name_from_domain(domain)
+            seen_sites[site_id] = {
+                "site": site_id,
+                "domain": domain,
+                "display_name": display_name,
+            }
+
+    for a in active_urls_list:
+        _register_dynamic_site(a.get("site"))
+    for q in queued_urls:
+        _register_dynamic_site(q.get("site"))
+    for w in waiting_urls:
+        _register_dynamic_site(w.get("site"))
+    for ds_site in disabled_sites:
+        _register_dynamic_site(ds_site)
+
+    history_sites = _history_cache.get("distinct_sites", [])
+    if isinstance(history_sites, list):
+        for hs in history_sites:
+            _register_dynamic_site(str(hs))
+
+    disabled_set = {ds.lower() for ds in disabled_sites} | {
+        auto_url_parsers._generate_site_identifier(ds.lower(), ds.lower())
+        for ds in disabled_sites
+    }
+
+    site_stats: dict[str, dict[str, int]] = {}
+    raw_stats = _history_cache.get("site_statistics")
+    if isinstance(raw_stats, dict):
+        site_stats = raw_stats
+
     catalog_sites: list[dict[str, object]] = []
-    for site in sorted(seen_sites):
+    for site_key, site_info in seen_sites.items():
+        domain_lower = site_info["domain"].lower()
+
         active_for_site = [
-            a for a in active_urls_list if str(a.get("site", "")).lower() == site
+            a
+            for a in active_urls_list
+            if str(a.get("site", "")).lower() in (site_key, domain_lower)
         ]
         queued_for_site = [
-            q for q in queued_urls if str(q.get("site", "")).lower() == site
+            q
+            for q in queued_urls
+            if str(q.get("site", "")).lower() in (site_key, domain_lower)
         ]
         waiting_for_site = [
-            w for w in waiting_urls if str(w.get("site", "")).lower() == site
+            w
+            for w in waiting_urls
+            if str(w.get("site", "")).lower() in (site_key, domain_lower)
         ]
 
-        if site in disabled_set:
+        if site_key in disabled_set or domain_lower in disabled_set:
             status_str = "disabled"
         elif active_for_site:
             status_str = "downloading"
@@ -271,11 +338,19 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
         )
         waiting_fic = waiting_for_site[0] if waiting_for_site else None
 
+        counts = site_stats.get(site_key, {}) or site_stats.get(domain_lower, {})
+        total_dl = counts.get("total", 0)
+        failed_dl = counts.get("failed", 0)
+
         catalog_sites.append(
             {
-                "site": site,
+                "site": site_info["domain"],
+                "site_id": site_key,
+                "display_name": site_info["display_name"],
                 "status": status_str,
                 "queued_count": len(queued_for_site) + len(active_for_site),
+                "total_downloads": total_dl,
+                "failed_downloads": failed_dl,
                 "active_url": (active_fic.get("url") if active_fic else None)
                 or (waiting_fic.get("url") if waiting_fic else None),
                 "active_title": (active_fic.get("title") if active_fic else None)
@@ -297,7 +372,7 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
     catalog_sites.sort(
         key=lambda x: (
             status_weights.get(str(x.get("status", "idle")), 4),
-            str(x.get("site", "")),
+            str(x.get("display_name", "")).lower(),
         )
     )
     notable_sites = [s for s in catalog_sites if s.get("status") != "idle"]
@@ -320,40 +395,6 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
         "notable_sites": notable_sites,
         "catalog_sites": catalog_sites,
     }
-
-    # ── Recent history events (separate feeds, TTL-cached) ─────
-    # get_recent_downloads and get_recent_activity return historical records that
-    # rarely change more than once every few seconds. Cache them for
-    # _HISTORY_CACHE_TTL seconds to avoid hammering SQLite every snapshot cycle.
-    # get_waiting_urls() is NOT cached – it reflects live retry-backoff state.
-    if state.history_db is not None:
-        expires_at = _history_cache.get("expires_at", 0.0)
-        if isinstance(expires_at, (int, float)) and now_ts >= expires_at:
-            try:
-                _history_cache["recent_downloads"] = (
-                    await state.history_db.get_recent_downloads(limit=20)
-                )
-            except Exception:
-                _history_cache["recent_downloads"] = []
-            try:
-                _history_cache["recent_activity"] = (
-                    await state.history_db.get_recent_activity(limit=20)
-                )
-            except Exception:
-                _history_cache["recent_activity"] = []
-            try:
-                checks = await state.history_db.get_email_checks(limit=1)
-                _history_cache["last_email_check"] = checks[0] if checks else None
-            except Exception:
-                _history_cache["last_email_check"] = None
-            _history_cache["expires_at"] = now_ts + _HISTORY_CACHE_TTL
-        snapshot["recent_downloads"] = _history_cache["recent_downloads"]
-        snapshot["recent_activity"] = _history_cache["recent_activity"]
-        snapshot["last_email_check"] = _history_cache.get("last_email_check")
-    else:
-        snapshot["recent_downloads"] = []
-        snapshot["recent_activity"] = []
-        snapshot["last_email_check"] = None
 
     return snapshot
 

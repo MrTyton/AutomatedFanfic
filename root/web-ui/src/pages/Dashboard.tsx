@@ -2271,7 +2271,7 @@ export default function Dashboard({ data }: Props) {
                                 />
                                 <input
                                     type="text"
-                                    placeholder="Search site queue or domain (e.g. archiveofourown, fanfiction, royalroad, spacebattles)…"
+                                    placeholder="Search site queue or domain…"
                                     value={workerSearch}
                                     onChange={(e) => setWorkerSearch(e.target.value)}
                                     style={{ paddingLeft: '2.35rem', background: 'var(--surface2)' }}
@@ -2291,11 +2291,16 @@ export default function Dashboard({ data }: Props) {
                                     .filter((sw) => {
                                         if (!workerSearch.trim()) return true
                                         const q = workerSearch.toLowerCase()
-                                        const info = getSiteBadgeInfo(sw.site)
-                                        return sw.site.toLowerCase().includes(q) || info.name.toLowerCase().includes(q)
+                                        const info = getSiteBadgeInfo(sw.display_name || sw.site)
+                                        return (
+                                            sw.site.toLowerCase().includes(q) ||
+                                            (sw.display_name && sw.display_name.toLowerCase().includes(q)) ||
+                                            info.name.toLowerCase().includes(q)
+                                        )
                                     })
                                     .map((sw) => {
-                                        const info = getSiteBadgeInfo(sw.site)
+                                        const info = getSiteBadgeInfo(sw.display_name || sw.site)
+                                        const displayName = sw.display_name || info.name
                                         const isDisabled = sw.status === 'disabled'
                                         return (
                                             <div
@@ -2314,7 +2319,7 @@ export default function Dashboard({ data }: Props) {
                                             >
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
                                                     <span className="site-dot" style={{ background: info.color }} />
-                                                    <span style={{ fontWeight: 700, fontSize: '0.84rem' }}>{info.name}</span>
+                                                    <span style={{ fontWeight: 700, fontSize: '0.84rem' }}>{displayName}</span>
                                                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                                                         ({sw.site})
                                                     </span>

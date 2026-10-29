@@ -216,6 +216,9 @@ export interface DaemonDetail {
 
 export interface SiteWorkerEntry {
     site: string
+    site_id?: string
+    domain?: string
+    display_name?: string
     status: 'downloading' | 'queued' | 'backoff' | 'disabled' | 'idle'
     queued_count: number
     active_url?: string

@@ -21,7 +21,7 @@ import {
     formatAttemptBlockAsText,
     buildCalibreBookUrl,
 } from './dashboardLogic.ts'
-import { STATUS_COLORS } from '../statusColors.ts'
+import { STATUS_COLORS, getSiteBadgeInfo } from '../statusColors.ts'
 
 test('parseAndValidateUrlLines parses full and scheme-less URLs and detects disabled or duplicate sites', () => {
     const input = [
@@ -620,4 +620,41 @@ test('buildCalibreBookUrl generates correct Calibre Content Server book detail U
     assert.equal(buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction', undefined), '')
     assert.equal(buildCalibreBookUrl('', 13996), '')
     assert.equal(buildCalibreBookUrl('http://192.168.1.161:8195/#Fanfiction', ''), '')
+})
+
+test('getSiteBadgeInfo algorithmically generates display name, key, and distinct colors without hardcoded limits', () => {
+    const ao3 = getSiteBadgeInfo('archiveofourown.org')
+    assert.equal(ao3.name, 'AO3')
+    assert.equal(ao3.key, 'archiveofourown')
+    assert.ok(ao3.color.startsWith('hsl('))
+
+    const ffnet = getSiteBadgeInfo('fanfiction.net')
+    assert.equal(ffnet.name, 'FF.net')
+    assert.equal(ffnet.key, 'fanfiction')
+
+    const qq = getSiteBadgeInfo('forum.questionablequesting.com')
+    assert.equal(qq.name, 'Questionable Questing')
+    assert.equal(qq.key, 'questionablequesting')
+    assert.ok(qq.color.startsWith('hsl('))
+
+    const sv = getSiteBadgeInfo('forums.sufficientvelocity.com')
+    assert.equal(sv.name, 'Sufficient Velocity')
+    assert.equal(sv.key, 'sufficientvelocity')
+
+    const fp = getSiteBadgeInfo('fictionpress.com')
+    assert.equal(fp.name, 'Fiction Press')
+    assert.equal(fp.key, 'fictionpress')
+
+    const custom = getSiteBadgeInfo('my-custom-archive.org')
+    assert.equal(custom.name, 'My Custom Archive')
+    assert.equal(custom.key, 'mycustomarchive')
+
+    // Different sites get algorithmically distinct colors
+    assert.notEqual(qq.color, sv.color)
+    assert.notEqual(fp.color, custom.color)
+
+    // Empty/falsy fallback
+    const fallback = getSiteBadgeInfo('')
+    assert.equal(fallback.name, 'Web')
+    assert.equal(fallback.key, 'web')
 })

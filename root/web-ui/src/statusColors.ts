@@ -47,60 +47,69 @@ export const PIE_COLORS = [
 
 /**
  * Site identity metadata.
- * Decoupled from semantic status badges so AO3 never looks like a red "failed" alert badge.
+ * Algorithmically determines human-friendly display name, key, and distinct high-contrast color.
  */
 export function getSiteBadgeInfo(siteName?: string): { name: string; key: string; color: string; bg: string; border: string } {
-    const s = (siteName || '').toLowerCase()
-    if (s.includes('archive') || s.includes('ao3')) {
+    const raw = (siteName || '').trim()
+    if (!raw) {
         return {
-            name: 'AO3',
-            key: 'archiveofourown',
-            color: '#f472b6',
-            bg: 'rgba(244, 114, 182, 0.1)',
-            border: 'rgba(244, 114, 182, 0.24)',
+            name: 'Web',
+            key: 'web',
+            color: '#94a3b8',
+            bg: 'rgba(148, 163, 184, 0.1)',
+            border: 'rgba(148, 163, 184, 0.24)',
         }
     }
-    if (s.includes('royal')) {
-        return {
-            name: 'RoyalRoad',
-            key: 'royalroad',
-            color: '#fbbf24',
-            bg: 'rgba(245, 158, 11, 0.1)',
-            border: 'rgba(245, 158, 11, 0.24)',
-        }
+    const s = raw.toLowerCase()
+
+    // Algorithmic key extraction: strip protocol, www/forum/forums/archive prefixes, and common domain extensions
+    let clean = s.replace(/^[a-zA-Z]+:\/\//, '')
+    clean = clean.replace(/^(www\.|forums?\.|forum\.|archive\.)+/i, '')
+    const baseKey = clean.replace(/\.(com|org|net|de|fr|co\.uk|me|live|tv|io|info)$/i, '')
+    const key = baseKey.replace(/[-_.]/g, '') || s
+
+    // Algorithmic display name resolution
+    let name = raw
+    if (key === 'archiveofourown' || key === 'ao3') {
+        name = 'AO3'
+    } else if (key === 'fanfiction' || key === 'ffnet') {
+        name = 'FF.net'
+    } else {
+        // Insert word boundaries for compound words and camelCase
+        const spaced = baseKey
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/(questionable)(questing)/i, '$1 $2')
+            .replace(/(sufficient)(velocity)/i, '$1 $2')
+            .replace(/(space)(battles)/i, '$1 $2')
+            .replace(/(royal)(road)/i, '$1 $2')
+            .replace(/(fiction)(press)/i, '$1 $2')
+            .replace(/(scribble)(hub)/i, '$1 $2')
+            .replace(/(fim)(fiction)/i, '$1 $2')
+            .replace(/(alt)(history)/i, '$1 $2')
+            .replace(/(alternate)(history)/i, '$1 $2')
+
+        const words = spaced
+            .split(/[-_.\s]+/)
+            .filter(Boolean)
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        name = words.join(' ') || raw
     }
-    if (s.includes('fanfiction') || s.includes('ffnet')) {
-        return {
-            name: 'FF.net',
-            key: 'fanfiction',
-            color: '#60a5fa',
-            bg: 'rgba(59, 130, 246, 0.1)',
-            border: 'rgba(59, 130, 246, 0.24)',
-        }
+
+    // Deterministic, algorithmic color calculation via string hashing (HSL)
+    let hash = 0
+    for (let i = 0; i < key.length; i++) {
+        hash = key.charCodeAt(i) + ((hash << 5) - hash)
     }
-    if (s.includes('wattpad')) {
-        return {
-            name: 'Wattpad',
-            key: 'wattpad',
-            color: '#fb923c',
-            bg: 'rgba(249, 115, 22, 0.1)',
-            border: 'rgba(249, 115, 22, 0.24)',
-        }
-    }
-    if (s.includes('spacebattles')) {
-        return {
-            name: 'SpaceBattles',
-            key: 'spacebattles',
-            color: '#38bdf8',
-            bg: 'rgba(14, 165, 233, 0.1)',
-            border: 'rgba(14, 165, 233, 0.24)',
-        }
-    }
+    const hue = Math.abs(hash) % 360
+    const color = `hsl(${hue}, 80%, 65%)`
+    const bg = `hsla(${hue}, 80%, 65%, 0.12)`
+    const border = `hsla(${hue}, 80%, 65%, 0.28)`
+
     return {
-        name: siteName || 'Web',
-        key: s || 'web',
-        color: '#a78bfa',
-        bg: 'rgba(139, 92, 246, 0.1)',
-        border: 'rgba(139, 92, 246, 0.24)',
+        name,
+        key,
+        color,
+        bg,
+        border,
     }
 }
