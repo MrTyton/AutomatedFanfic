@@ -4,6 +4,7 @@ import {
     formatAttemptBlockAsText,
     diagnoseErrorSignature,
     ensureExternalUrl,
+    formatBlockTimeRange,
     type LogAttemptBlock,
 } from '../utils/dashboardLogic'
 import { getSiteBadgeInfo, statusBadgeClass } from '../statusColors'
@@ -174,12 +175,7 @@ export default function AttemptBlockCard({
         }
     }
 
-    const startShort = block.startedAt.includes(' ')
-        ? block.startedAt.split(' ')[1]
-        : block.startedAt
-    const endShort = block.endedAt.includes(' ')
-        ? block.endedAt.split(' ')[1]
-        : block.endedAt
+    const timeRangeLabel = formatBlockTimeRange(block.startedAt, block.endedAt)
 
     return (
         <div
@@ -354,7 +350,7 @@ export default function AttemptBlockCard({
                         }}
                         title={`Started ${block.startedAt} • Latest update ${block.endedAt}`}
                     >
-                        {startShort === endShort ? `Updated ${endShort}` : `${startShort} → ${endShort}`}
+                        {timeRangeLabel}
                     </span>
                     <span
                         className="tabular-nums"

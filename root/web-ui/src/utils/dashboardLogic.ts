@@ -181,6 +181,75 @@ const URL_EXTRACT_RE = /(https?:\/\/[^\s<>"')]+?)(?=[.,;:]?(?:\s|$))/
 const SITE_PREFIX_RE = /^\(([\w.-]+)\)/
 const RETRY_NUM_RE = /retry #(\d+)/i
 
+export function parseLogTimestamp(ts?: string | null): number {
+    if (!ts) return 0
+    const trimmed = ts.trim()
+    if (!trimmed) return 0
+
+    // Match 12-hour or 24-hour timestamp: "YYYY-MM-DD hh:mm:ss [AM|PM]"
+    const match = trimmed.match(
+        /^(\d{4})-(\d{2})-(\d{2})[T\s]+(\d{1,2}):(\d{2}):(\d{2})(?:\.\d+)?(?:\s*([ap]m))?$/i
+    )
+    if (match) {
+        const year = parseInt(match[1], 10)
+        const month = parseInt(match[2], 10) - 1
+        const day = parseInt(match[3], 10)
+        let hours = parseInt(match[4], 10)
+        const minutes = parseInt(match[5], 10)
+        const seconds = parseInt(match[6], 10)
+        const ampm = match[7] ? match[7].toLowerCase() : null
+
+        if (ampm === 'pm' && hours < 12) {
+            hours += 12
+        } else if (ampm === 'am' && hours === 12) {
+            hours = 0
+        }
+        return new Date(year, month, day, hours, minutes, seconds).getTime()
+    }
+
+    const direct = new Date(trimmed).getTime()
+    return isNaN(direct) ? 0 : direct
+}
+
+export function formatLogTimeShort(ts: string): string {
+    if (!ts) return ''
+    const trimmed = ts.trim()
+    const m = trimmed.match(/(\d{1,2}:\d{2}:\d{2}(?:\s*[ap]m)?)/i)
+    return m ? m[1].toUpperCase() : trimmed
+}
+
+export function formatBlockTimeRange(startedAt?: string | null, endedAt?: string | null): string {
+    if (!startedAt && !endedAt) return ''
+    if (startedAt && !endedAt) return formatLogTimeShort(startedAt)
+    if (!startedAt && endedAt) return `Updated ${formatLogTimeShort(endedAt)}`
+
+    const tStart = parseLogTimestamp(startedAt)
+    const tEnd = parseLogTimestamp(endedAt)
+
+    const shortStart = formatLogTimeShort(startedAt!)
+    const shortEnd = formatLogTimeShort(endedAt!)
+
+    if (shortStart === shortEnd) {
+        return `Updated ${shortEnd}`
+    }
+
+    if (tStart > 0 && tEnd > 0) {
+        const dStart = new Date(tStart)
+        const dEnd = new Date(tEnd)
+        if (
+            dStart.getFullYear() !== dEnd.getFullYear() ||
+            dStart.getMonth() !== dEnd.getMonth() ||
+            dStart.getDate() !== dEnd.getDate()
+        ) {
+            const dateFmt = (d: Date) =>
+                d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+            return `${dateFmt(dStart)} ${shortStart} → ${dateFmt(dEnd)} ${shortEnd}`
+        }
+    }
+
+    return `${shortStart} → ${shortEnd}`
+}
+
 export function ensureExternalUrl(raw?: string | null): string {
     if (!raw) return '#'
     const trimmed = raw.trim()
@@ -405,6 +474,98 @@ export function isStartupMessage(msg: string): boolean {
     )
 }
 
+export interface SystemLogCategory {
+    category: 'startup' | 'shutdown' | 'email' | 'webserver' | 'supervisor' | 'coordinator' | 'general'
+    title: string
+}
+
+export function categorizeSystemLog(entry: LogEntry, inStartupWindow: boolean): SystemLogCategory {
+    const msg = entry.message.trim()
+    const lower = msg.toLowerCase()
+
+    // 1. Shutdown / Teardown
+    if (
+        lower.includes('received signal sigterm') ||
+        lower.includes('received signal sigint') ||
+        lower.includes('initiating graceful shutdown') ||
+        lower.includes('coordinator received shutdown signal') ||
+        lower.includes('supervisor: waiting for threads to stop') ||
+        lower.includes('historywriter: stopped') ||
+        lower.includes('history database connection closed') ||
+        lower.includes('stopped gracefully') ||
+        lower.includes('shutting down gracefully')
+    ) {
+        return { category: 'shutdown', title: 'System Shutdown & Teardown' }
+    }
+
+    // 2. Email Watcher & IMAP (IMAP errors, inbox checks, unread counts)
+    if (
+        lower.startsWith('emailwatcher:') ||
+        lower.startsWith('urlingester:') ||
+        lower.includes('imap idle') ||
+        lower.includes('imap error') ||
+        lower.includes('imap connection') ||
+        lower.includes('unread fanfiction email') ||
+        lower.includes('checking imap') ||
+        lower.includes('found unread email')
+    ) {
+        return { category: 'email', title: 'Email Watcher & IMAP' }
+    }
+
+    // 3. Application Startup
+    const isReboot = lower.startsWith('starting automatedfanfic')
+    if (
+        Boolean(entry.is_startup) ||
+        isReboot ||
+        (inStartupWindow && isStartupMessage(msg)) ||
+        (!inStartupWindow && (
+            lower.startsWith('for issues and updates') ||
+            lower.startsWith('using configuration file') ||
+            lower.startsWith('python version:') ||
+            lower.startsWith('os / platform:') ||
+            lower.startsWith('generating url parsers') ||
+            lower.startsWith('spawning ') ||
+            isStartupMessage(msg)
+        ))
+    ) {
+        return { category: 'startup', title: 'Application Startup & Lifecycle' }
+    }
+
+    // 4. Web Server & Configuration Management
+    if (
+        lower.startsWith('webserver:') ||
+        lower.startsWith('configstore:') ||
+        lower.includes('configuration loaded') ||
+        lower.includes('web dashboard enabled') ||
+        lower.includes('saving configuration')
+    ) {
+        return { category: 'webserver', title: 'Web Server & Configuration' }
+    }
+
+    // 5. Supervisor & Worker Management
+    if (
+        lower.startsWith('supervisor:') ||
+        lower.startsWith('processmanager:') ||
+        lower.startsWith('scalemanager:') ||
+        (lower.startsWith('worker ') && lower.includes('started'))
+    ) {
+        return { category: 'supervisor', title: 'Process Supervisor Lifecycle' }
+    }
+
+    // 6. Coordinator & Ingestion Queue
+    if (
+        lower.startsWith('coordinator:') ||
+        lower.includes('to the ingestion queue') ||
+        lower.includes('worker idle for site') ||
+        lower.includes('assigned site ')
+    ) {
+        return { category: 'coordinator', title: 'Coordinator Activity' }
+    }
+
+    // 7. General System Activity
+    return { category: 'general', title: 'System Activity' }
+}
+
 function extractEntrySite(entry: LogEntry): string {
     if (entry.thread_site) return entry.thread_site
     const m = entry.message.match(SITE_PREFIX_RE)
@@ -446,7 +607,15 @@ export function buildLogAttemptBlocks(
     // Determine whether incoming entries are newest-first so we can reverse them.
     const isNewestFirst = (() => {
         if (entries.length < 2) return false
-        // 1. Check seq if present on any entries
+        // 1. Check timestamps if they differ anywhere in the list
+        for (let i = 0; i < entries.length - 1; i++) {
+            const tA = parseLogTimestamp(entries[i].timestamp)
+            const tB = parseLogTimestamp(entries[i + 1].timestamp)
+            if (tA > 0 && tB > 0 && tA !== tB) {
+                return tA > tB
+            }
+        }
+        // 2. Check seq if timestamps are identical
         for (let i = 0; i < entries.length - 1; i++) {
             const aSeq = entries[i].seq
             const bSeq = entries[i + 1].seq
@@ -454,29 +623,19 @@ export function buildLogAttemptBlocks(
                 return aSeq > bSeq
             }
         }
-        // 2. Check timestamps if they differ anywhere in the list
-        for (let i = 0; i < entries.length - 1; i++) {
-            const tA = new Date(entries[i].timestamp).getTime()
-            const tB = new Date(entries[i + 1].timestamp).getTime()
-            if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
-                return tA > tB
-            }
-        }
         // 3. Fallback: by contract, GET /api/logs returns newest first.
-        // If all timestamps are identical (burst during a single second) and no differing seq is found,
-        // it came from the API newest-first!
         return true
     })()
 
     const baseList = isNewestFirst ? [...entries].reverse() : [...entries]
     const chronological = baseList.sort((a, b) => {
-        if (a.seq !== undefined && b.seq !== undefined) {
-            return a.seq - b.seq
-        }
-        const tA = new Date(a.timestamp).getTime()
-        const tB = new Date(b.timestamp).getTime()
-        if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
+        const tA = parseLogTimestamp(a.timestamp)
+        const tB = parseLogTimestamp(b.timestamp)
+        if (tA > 0 && tB > 0 && tA !== tB) {
             return tA - tB
+        }
+        if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
+            return a.seq - b.seq
         }
         return 0
     })
@@ -708,14 +867,24 @@ export function buildLogAttemptBlocks(
                 if (entry.worker_id) activeBlockByWorkerId.delete(entry.worker_id)
             }
         } else {
-            const isExplicitStartup = Boolean(entry.is_startup) || isStartupMessage(entry.message)
             const isRebootMarker = msgLower.startsWith('starting automatedfanfic')
-            const inStartupPhase = (activeStartupBlock !== null && !startupCompleteSeen) || isExplicitStartup
+            if (isRebootMarker) {
+                activeStartupBlock = null
+                currentSystemBlock = null
+                startupCompleteSeen = false
+            }
 
-            if (inStartupPhase) {
-                // Only start a brand new startup block if no startup block is currently active,
-                // OR if a genuine reboot marker arrived AFTER the previous startup was already marked complete.
-                if (!activeStartupBlock || (isRebootMarker && startupCompleteSeen)) {
+            const inStartupWindow = (activeStartupBlock !== null && !startupCompleteSeen)
+            const sysCat = categorizeSystemLog(entry, inStartupWindow)
+
+            let targetSystemBlock: LogAttemptBlock | null = null
+
+            if (sysCat.category === 'startup') {
+                const timeDiffSec = activeStartupBlock
+                    ? Math.abs(parseLogTimestamp(entry.timestamp) - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
+                    : 999999
+
+                if (!activeStartupBlock || timeDiffSec > 120) {
                     activeStartupBlock = {
                         id: `startup-${entry.timestamp}-${blocks.length}`,
                         kind: 'system',
@@ -733,47 +902,26 @@ export function buildLogAttemptBlocks(
                 } else {
                     activeStartupBlock.lines.push(entry)
                     activeStartupBlock.endedAt = entry.timestamp
-                    if (entry.level.toLowerCase() === 'error' || entry.level.toLowerCase() === 'critical') {
-                        activeStartupBlock.status = 'failed'
-                    }
                 }
-
-                if (
-                    msgLower.includes('all processes started successfully') ||
-                    msgLower.includes('processes running. press ctrl+c')
-                ) {
-                    startupCompleteSeen = true
-                }
+                targetSystemBlock = activeStartupBlock
             } else {
                 activeStartupBlock = null
-                const targetTitle = entry.message.startsWith('UrlIngester:')
-                    ? 'IMAP Inbox Watcher Check'
-                    : entry.message.startsWith('Supervisor:') || entry.message.startsWith('ProcessManager:')
-                      ? 'Process Supervisor Lifecycle'
-                      : 'System & Coordinator Activity'
 
-                const timeDiffSec = currentSystemBlock
-                    ? (() => {
-                          const d1 = new Date(entry.timestamp.replace(' ', 'T')).getTime()
-                          const d2 = new Date(currentSystemBlock.endedAt.replace(' ', 'T')).getTime()
-                          return isNaN(d1) || isNaN(d2) ? 0 : Math.abs(d1 - d2) / 1000
-                      })()
+                const timeDiffSec = currentSystemBlock && currentSystemBlock.title === sysCat.title
+                    ? Math.abs(parseLogTimestamp(entry.timestamp) - parseLogTimestamp(currentSystemBlock.endedAt)) / 1000
                     : 999999
 
                 if (
                     !currentSystemBlock ||
-                    currentSystemBlock.title !== targetTitle ||
-                    timeDiffSec > 300
+                    currentSystemBlock.title !== sysCat.title ||
+                    timeDiffSec > 180
                 ) {
                     currentSystemBlock = {
                         id: `sys-${entry.timestamp}-${blocks.length}`,
                         kind: 'system',
-                        title: targetTitle,
+                        title: sysCat.title,
                         attemptNumber: 1,
-                        status:
-                            entry.level.toLowerCase() === 'error' || entry.level.toLowerCase() === 'critical'
-                                ? 'failed'
-                                : 'system',
+                        status: 'system',
                         isActive: false,
                         startedAt: entry.timestamp,
                         endedAt: entry.timestamp,
@@ -783,9 +931,14 @@ export function buildLogAttemptBlocks(
                 } else {
                     currentSystemBlock.lines.push(entry)
                     currentSystemBlock.endedAt = entry.timestamp
-                    if (entry.level.toLowerCase() === 'error' || entry.level.toLowerCase() === 'critical') {
-                        currentSystemBlock.status = 'failed'
-                    }
+                }
+                targetSystemBlock = currentSystemBlock
+            }
+
+            if (targetSystemBlock) {
+                const lvl = entry.level.toLowerCase()
+                if (lvl === 'error' || lvl === 'critical') {
+                    targetSystemBlock.status = 'failed'
                 }
             }
         }
@@ -797,7 +950,9 @@ export function buildLogAttemptBlocks(
     for (const b of blocks) {
         if (b.url) {
             const prev = latestBlockByUrl.get(b.url)
-            if (!prev || b.endedAt.localeCompare(prev.endedAt) >= 0) {
+            const tPrev = prev ? parseLogTimestamp(prev.endedAt) : 0
+            const tCurr = parseLogTimestamp(b.endedAt)
+            if (!prev || tCurr >= tPrev) {
                 latestBlockByUrl.set(b.url, b)
             }
         }
@@ -806,16 +961,18 @@ export function buildLogAttemptBlocks(
     for (const b of blocks) {
         if (b.lines.length > 1) {
             b.lines.sort((a, b) => {
+                const tA = parseLogTimestamp(a.timestamp)
+                const tB = parseLogTimestamp(b.timestamp)
+                if (tA > 0 && tB > 0 && tA !== tB) {
+                    return tA - tB
+                }
                 if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
                     return a.seq - b.seq
                 }
-                const tA = new Date(a.timestamp).getTime()
-                const tB = new Date(b.timestamp).getTime()
-                if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
-                    return tA - tB
-                }
                 return 0
             })
+            b.startedAt = b.lines[0].timestamp
+            b.endedAt = b.lines[b.lines.length - 1].timestamp
         }
         if (b.kind === 'system') {
             b.isActive = false
@@ -841,7 +998,12 @@ export function buildLogAttemptBlocks(
         if (a.isActive !== b.isActive) {
             return a.isActive ? -1 : 1
         }
-        return b.endedAt.localeCompare(a.endedAt)
+        const tA = parseLogTimestamp(a.endedAt)
+        const tB = parseLogTimestamp(b.endedAt)
+        if (tA > 0 && tB > 0 && tA !== tB) {
+            return tB - tA
+        }
+        return 0
     })
 }
 

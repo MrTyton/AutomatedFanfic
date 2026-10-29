@@ -20,6 +20,9 @@ import {
     normalizeStoryUrl,
     formatAttemptBlockAsText,
     buildCalibreBookUrl,
+    parseLogTimestamp,
+    formatBlockTimeRange,
+    categorizeSystemLog,
 } from './dashboardLogic.ts'
 import { STATUS_COLORS, getSiteBadgeInfo } from '../statusColors.ts'
 
@@ -657,4 +660,87 @@ test('getSiteBadgeInfo algorithmically generates display name, key, and distinct
     const fallback = getSiteBadgeInfo('')
     assert.equal(fallback.name, 'Web')
     assert.equal(fallback.key, 'web')
+})
+
+test('parseLogTimestamp accurately parses 12-hour AM/PM, 24-hour, and ISO formats', () => {
+    const tAm = parseLogTimestamp('2026-10-29 01:05:22 AM')
+    const tPm = parseLogTimestamp('2026-10-29 01:05:22 PM')
+    assert.equal(tPm - tAm, 12 * 3600 * 1000)
+
+    const midnight = parseLogTimestamp('2026-10-29 12:00:00 AM')
+    const noon = parseLogTimestamp('2026-10-29 12:00:00 PM')
+    assert.equal(noon - midnight, 12 * 3600 * 1000)
+
+    const iso = parseLogTimestamp('2026-10-29T12:00:00Z')
+    assert.ok(iso > 0)
+    assert.equal(parseLogTimestamp(''), 0)
+    assert.equal(parseLogTimestamp(null), 0)
+})
+
+test('formatBlockTimeRange formats times with AM/PM and multi-day date prefixes without losing context', () => {
+    // Same day range
+    assert.equal(
+        formatBlockTimeRange('2026-10-29 01:02:26 AM', '2026-10-29 01:03:35 AM'),
+        '01:02:26 AM → 01:03:35 AM'
+    )
+
+    // Identical start and end
+    assert.equal(
+        formatBlockTimeRange('2026-10-29 01:02:26 AM', '2026-10-29 01:02:26 AM'),
+        'Updated 01:02:26 AM'
+    )
+
+    // Multi-day range (spanning midnight / days)
+    const multiDay = formatBlockTimeRange('2026-10-28 11:44:29 PM', '2026-10-29 07:51:24 AM')
+    assert.ok(multiDay.includes('11:44:29 PM'))
+    assert.ok(multiDay.includes('07:51:24 AM'))
+    assert.ok(multiDay.includes('→'))
+})
+
+test('buildLogAttemptBlocks separates IMAP errors, shutdowns, and multiple startups into isolated blocks', () => {
+    const mixedLogs = [
+        // Shutdown from previous run
+        { seq: 100, timestamp: '2026-10-29 01:01:22 AM', level: 'info', message: 'WebServer: History database connection closed' },
+        { seq: 101, timestamp: '2026-10-29 01:05:22 AM', level: 'warning', message: 'Received signal SIGTERM, initiating graceful shutdown...' },
+        { seq: 102, timestamp: '2026-10-29 01:05:22 AM', level: 'warning', message: 'Coordinator received shutdown signal' },
+
+        // Startup of run 1
+        { seq: 1, timestamp: '2026-10-29 01:02:26 AM', level: 'info', message: 'Starting AutomatedFanfic v6.15.6' },
+        { seq: 2, timestamp: '2026-10-29 01:02:26 AM', level: 'info', message: 'Configuration loaded successfully from /config/config.toml' },
+        { seq: 3, timestamp: '2026-10-29 01:02:26 AM', level: 'info', message: 'Generated 111 URL parsers for site recognition' },
+        { seq: 4, timestamp: '2026-10-29 01:02:27 AM', level: 'info', message: 'All processes started successfully' },
+        { seq: 5, timestamp: '2026-10-29 01:02:27 AM', level: 'info', message: 'Processes running. Press Ctrl+C to stop gracefully.' },
+
+        // Startup of run 2 (after version bump)
+        { seq: 10, timestamp: '2026-10-29 01:03:35 AM', level: 'info', message: 'Starting AutomatedFanfic v6.15.7' },
+        { seq: 11, timestamp: '2026-10-29 01:03:36 AM', level: 'info', message: 'All processes started successfully' },
+
+        // IMAP error 1.5 hours later
+        { seq: 50, timestamp: '2026-10-29 02:33:17 AM', level: 'error', message: 'EmailWatcher: IMAP IDLE error (EOF occurred in violation of protocol (_ssl.c:875)), falling back to immediate check' },
+        { seq: 51, timestamp: '2026-10-29 02:58:42 AM', level: 'error', message: 'EmailWatcher: IMAP IDLE error (EOF occurred in violation of protocol (_ssl.c:875)), falling back to immediate check' },
+    ]
+
+    const blocks = buildLogAttemptBlocks(mixedLogs)
+
+    // Startup blocks must NOT contain the IMAP errors or shutdown signals
+    const startupBlocks = blocks.filter((b) => b.title === 'Application Startup & Lifecycle')
+    assert.equal(startupBlocks.length, 2)
+    for (const sb of startupBlocks) {
+        assert.equal(sb.status, 'system')
+        assert.ok(!sb.lines.some((l) => l.message.includes('IMAP IDLE error')))
+        assert.ok(!sb.lines.some((l) => l.message.includes('SIGTERM')))
+    }
+
+    // Shutdown must have its own block
+    const shutdownBlock = blocks.find((b) => b.title === 'System Shutdown & Teardown')
+    assert.ok(shutdownBlock)
+    assert.ok(shutdownBlock.lines.some((l) => l.message.includes('SIGTERM')))
+
+    // Email Watcher errors must have their own failed blocks
+    const emailBlocks = blocks.filter((b) => b.title === 'Email Watcher & IMAP')
+    assert.equal(emailBlocks.length, 2)
+    for (const eb of emailBlocks) {
+        assert.equal(eb.status, 'failed')
+        assert.ok(eb.lines.every((l) => l.message.includes('IMAP IDLE error')))
+    }
 })
