@@ -904,49 +904,51 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flex: '1 1 55%', minWidth: 160 }}>
                                                         {isBool ? (
                                                             /* Boolean Pill Toggle */
-                                                            <div
-                                                                style={{
-                                                                    display: 'inline-flex',
-                                                                    background: 'var(--surface2)',
-                                                                    borderRadius: 'var(--radius-sm)',
-                                                                    padding: '2px',
-                                                                    border: '1px solid var(--border)',
-                                                                }}
-                                                            >
-                                                                <button
-                                                                    type="button"
-                                                                    className={`segmented-btn ${field.value.toLowerCase() === 'true' ? 'active' : ''}`}
-                                                                    onClick={() => handleFieldChange(sec.name, field.key, 'true')}
-                                                                    disabled={readOnly}
+                                                            <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                                                                <div
                                                                     style={{
-                                                                        minHeight: 24,
-                                                                        fontSize: '0.72rem',
-                                                                        padding: '0.1rem 0.55rem',
-                                                                        background: field.value.toLowerCase() === 'true' ? 'var(--success)' : 'transparent',
-                                                                        color: '#fff',
+                                                                        display: 'inline-flex',
+                                                                        background: 'var(--surface2)',
+                                                                        borderRadius: 'var(--radius-sm)',
+                                                                        padding: '2px',
+                                                                        border: '1px solid var(--border)',
                                                                     }}
                                                                 >
-                                                                    true
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    className={`segmented-btn ${field.value.toLowerCase() === 'false' ? 'active' : ''}`}
-                                                                    onClick={() => handleFieldChange(sec.name, field.key, 'false')}
-                                                                    disabled={readOnly}
-                                                                    style={{
-                                                                        minHeight: 24,
-                                                                        fontSize: '0.72rem',
-                                                                        padding: '0.1rem 0.55rem',
-                                                                        background: field.value.toLowerCase() === 'false' ? 'rgba(239, 68, 68, 0.4)' : 'transparent',
-                                                                        color: '#fff',
-                                                                    }}
-                                                                >
-                                                                    false
-                                                                </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className={`segmented-btn ${field.value.toLowerCase() === 'true' ? 'active' : ''}`}
+                                                                        onClick={() => handleFieldChange(sec.name, field.key, 'true')}
+                                                                        disabled={readOnly}
+                                                                        style={{
+                                                                            minHeight: 24,
+                                                                            fontSize: '0.72rem',
+                                                                            padding: '0.1rem 0.55rem',
+                                                                            background: field.value.toLowerCase() === 'true' ? 'var(--success)' : 'transparent',
+                                                                            color: '#fff',
+                                                                        }}
+                                                                    >
+                                                                        true
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className={`segmented-btn ${field.value.toLowerCase() === 'false' ? 'active' : ''}`}
+                                                                        onClick={() => handleFieldChange(sec.name, field.key, 'false')}
+                                                                        disabled={readOnly}
+                                                                        style={{
+                                                                            minHeight: 24,
+                                                                            fontSize: '0.72rem',
+                                                                            padding: '0.1rem 0.55rem',
+                                                                            background: field.value.toLowerCase() === 'false' ? 'rgba(239, 68, 68, 0.4)' : 'transparent',
+                                                                            color: '#fff',
+                                                                        }}
+                                                                    >
+                                                                        false
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         ) : (
                                                             /* Text / Password Input */
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', width: '100%' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flex: 1, minWidth: 0 }}>
                                                                 <input
                                                                     type={isSecret && !isRevealed ? 'password' : 'text'}
                                                                     value={field.value}
@@ -958,6 +960,7 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                                                                         minHeight: 30,
                                                                         padding: '0.25rem 0.5rem',
                                                                         flex: 1,
+                                                                        minWidth: 0,
                                                                     }}
                                                                 />
                                                                 {isSecret && (
@@ -965,7 +968,7 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                                                                         type="button"
                                                                         className="secondary btn-sm"
                                                                         onClick={() => toggleSecret(field.id)}
-                                                                        style={{ minHeight: 26, padding: '0.15rem 0.35rem' }}
+                                                                        style={{ minHeight: 26, padding: '0.15rem 0.35rem', flexShrink: 0 }}
                                                                         title={isRevealed ? 'Hide secret' : 'Show secret'}
                                                                     >
                                                                         {isRevealed ? <EyeOff size={13} /> : <Eye size={13} />}
@@ -984,6 +987,8 @@ export const IniEditor: React.FC<IniEditorProps> = ({
                                                                     minHeight: 26,
                                                                     padding: '0.15rem 0.35rem',
                                                                     color: 'var(--text-muted)',
+                                                                    marginLeft: 'auto',
+                                                                    flexShrink: 0,
                                                                 }}
                                                                 title={`Remove ${field.key}`}
                                                             >
