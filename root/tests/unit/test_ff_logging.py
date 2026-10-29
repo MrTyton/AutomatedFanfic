@@ -307,6 +307,42 @@ class TestPersistentLogging(unittest.TestCase):
         self.assertEqual(recent[1]["message"], "msg 1")
         self.assertEqual(recent[1]["story_url"], "http://example.com/1")
 
+    def test_rehydration_filters_out_system_logs(self):
+        entries = [
+            {
+                "timestamp": "2026-10-28 09:00:00 AM",
+                "level": "info",
+                "message": "Starting AutomatedFanfic v2.1.0...",
+            },
+            {
+                "timestamp": "2026-10-28 09:01:00 AM",
+                "level": "info",
+                "message": "Supervisor: All processes started successfully",
+            },
+            {
+                "timestamp": "2026-10-28 09:02:00 AM",
+                "level": "info",
+                "message": "(archiveofourown.org) Processing https://archiveofourown.org/works/12345",
+            },
+            {
+                "timestamp": "2026-10-28 09:05:00 AM",
+                "level": "info",
+                "message": "Shutting down AutomatedFanfic...",
+            },
+        ]
+        with open(self.log_path, "w", encoding="utf-8") as f:
+            for e in entries:
+                f.write(json.dumps(e) + "\n")
+
+        ff_logging.init_persistent_logging(self.log_path)
+        recent = ff_logging.get_recent_logs(limit=10)
+        # Only the story processing line should be rehydrated
+        self.assertEqual(len(recent), 1)
+        self.assertEqual(
+            recent[0]["message"],
+            "(archiveofourown.org) Processing https://archiveofourown.org/works/12345",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

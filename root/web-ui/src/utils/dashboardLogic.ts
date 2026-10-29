@@ -993,8 +993,26 @@ export function buildLogAttemptBlocks(
         }
     }
 
+    // Filter out system blocks from before the current application startup.
+    // Persistent log hydration is strictly intended for story events/processing.
+    // Past system lifecycle logs (old shutdowns, past startups, prior health checks)
+    // from earlier sessions must never be shown on the live attempts dashboard.
+    let latestStartupTs = 0
+    for (const entry of chronological) {
+        if (entry.message.toLowerCase().startsWith('starting automatedfanfic')) {
+            const t = parseLogTimestamp(entry.timestamp)
+            if (t > latestStartupTs) {
+                latestStartupTs = t
+            }
+        }
+    }
+
+    const visibleBlocks = latestStartupTs > 0
+        ? blocks.filter((b) => b.kind !== 'system' || parseLogTimestamp(b.endedAt) >= latestStartupTs)
+        : blocks
+
     // Sort active blocks first, then non-active blocks; within each group sort by latest update (endedAt descending)
-    return blocks.sort((a, b) => {
+    return visibleBlocks.sort((a, b) => {
         if (a.isActive !== b.isActive) {
             return a.isActive ? -1 : 1
         }

@@ -697,46 +697,48 @@ test('formatBlockTimeRange formats times with AM/PM and multi-day date prefixes 
     assert.ok(multiDay.includes('→'))
 })
 
-test('buildLogAttemptBlocks separates IMAP errors, shutdowns, and multiple startups into isolated blocks', () => {
+test('buildLogAttemptBlocks preserves past story attempts while omitting obsolete system logs from before current startup', () => {
     const mixedLogs = [
-        // Shutdown from previous run
-        { seq: 100, timestamp: '2026-10-29 01:01:22 AM', level: 'info', message: 'WebServer: History database connection closed' },
-        { seq: 101, timestamp: '2026-10-29 01:05:22 AM', level: 'warning', message: 'Received signal SIGTERM, initiating graceful shutdown...' },
-        { seq: 102, timestamp: '2026-10-29 01:05:22 AM', level: 'warning', message: 'Coordinator received shutdown signal' },
+        // Story attempt from before the current startup (MUST be preserved)
+        { seq: 90, timestamp: '2026-10-29 01:00:00 AM', level: 'info', story_url: 'https://archiveofourown.org/works/12345', message: 'Successfully processed https://archiveofourown.org/works/12345' },
 
-        // Startup of run 1
+        // Shutdown from previous run (must be omitted)
+        { seq: 100, timestamp: '2026-10-29 01:01:22 AM', level: 'info', message: 'WebServer: History database connection closed' },
+        { seq: 101, timestamp: '2026-10-29 01:01:25 AM', level: 'warning', message: 'Received signal SIGTERM, initiating graceful shutdown...' },
+
+        // Startup of run 1 (obsolete run, must be omitted)
         { seq: 1, timestamp: '2026-10-29 01:02:26 AM', level: 'info', message: 'Starting AutomatedFanfic v6.15.6' },
         { seq: 2, timestamp: '2026-10-29 01:02:26 AM', level: 'info', message: 'Configuration loaded successfully from /config/config.toml' },
         { seq: 3, timestamp: '2026-10-29 01:02:26 AM', level: 'info', message: 'Generated 111 URL parsers for site recognition' },
-        { seq: 4, timestamp: '2026-10-29 01:02:27 AM', level: 'info', message: 'All processes started successfully' },
-        { seq: 5, timestamp: '2026-10-29 01:02:27 AM', level: 'info', message: 'Processes running. Press Ctrl+C to stop gracefully.' },
 
-        // Startup of run 2 (after version bump)
+        // Startup of run 2 (CURRENT active startup, must be kept)
         { seq: 10, timestamp: '2026-10-29 01:03:35 AM', level: 'info', message: 'Starting AutomatedFanfic v6.15.7' },
         { seq: 11, timestamp: '2026-10-29 01:03:36 AM', level: 'info', message: 'All processes started successfully' },
 
-        // IMAP error 1.5 hours later
+        // IMAP errors during current run (must be kept in isolated email watcher block)
         { seq: 50, timestamp: '2026-10-29 02:33:17 AM', level: 'error', message: 'EmailWatcher: IMAP IDLE error (EOF occurred in violation of protocol (_ssl.c:875)), falling back to immediate check' },
         { seq: 51, timestamp: '2026-10-29 02:58:42 AM', level: 'error', message: 'EmailWatcher: IMAP IDLE error (EOF occurred in violation of protocol (_ssl.c:875)), falling back to immediate check' },
     ]
 
     const blocks = buildLogAttemptBlocks(mixedLogs)
 
-    // Startup blocks must NOT contain the IMAP errors or shutdown signals
+    // 1. Story attempt from before the reboot is preserved
+    const storyBlock = blocks.find((b) => b.kind === 'story_attempt')
+    assert.ok(storyBlock)
+    assert.equal(storyBlock.url, 'https://archiveofourown.org/works/12345')
+
+    // 2. Only the CURRENT startup block is present (obsolete startup from run 1 is omitted)
     const startupBlocks = blocks.filter((b) => b.title === 'Application Startup & Lifecycle')
-    assert.equal(startupBlocks.length, 2)
-    for (const sb of startupBlocks) {
-        assert.equal(sb.status, 'system')
-        assert.ok(!sb.lines.some((l) => l.message.includes('IMAP IDLE error')))
-        assert.ok(!sb.lines.some((l) => l.message.includes('SIGTERM')))
-    }
+    assert.equal(startupBlocks.length, 1)
+    assert.equal(startupBlocks[0].status, 'system')
+    assert.ok(startupBlocks[0].lines.some((l) => l.message.includes('v6.15.7')))
+    assert.ok(!startupBlocks[0].lines.some((l) => l.message.includes('v6.15.6')))
 
-    // Shutdown must have its own block
+    // 3. Old shutdown from before current startup is omitted
     const shutdownBlock = blocks.find((b) => b.title === 'System Shutdown & Teardown')
-    assert.ok(shutdownBlock)
-    assert.ok(shutdownBlock.lines.some((l) => l.message.includes('SIGTERM')))
+    assert.equal(shutdownBlock, undefined)
 
-    // Email Watcher errors must have their own failed blocks
+    // 4. Current run Email Watcher errors have their own failed blocks
     const emailBlocks = blocks.filter((b) => b.title === 'Email Watcher & IMAP')
     assert.equal(emailBlocks.length, 2)
     for (const eb of emailBlocks) {

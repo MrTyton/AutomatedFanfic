@@ -77,6 +77,72 @@ _log_seq_lock = threading.Lock()
 _log_seq_counter = 0
 
 
+def _is_story_event(entry: dict) -> bool:
+    """Return True if a log entry is related to story downloading or processing.
+
+    Only story events are rehydrated into the live in-memory buffer on startup.
+    System lifecycle, startup banners, shutdown signals, and background infrastructure
+    logs from prior runs are omitted from live rehydration.
+    """
+    if not isinstance(entry, dict):
+        return False
+    if (
+        entry.get("story_url")
+        or entry.get("attempt_id")
+        or entry.get("story_title")
+        or entry.get("thread_site")
+    ):
+        return True
+
+    msg = str(entry.get("message", "")).strip()
+    msg_lower = msg.lower()
+
+    # Explicitly exclude system startup/shutdown/infrastructure messages
+    if (
+        entry.get("is_startup")
+        or msg_lower.startswith("starting automatedfanfic")
+        or msg_lower.startswith("for issues and updates")
+        or msg_lower.startswith("using configuration file")
+        or msg_lower.startswith("python version:")
+        or msg_lower.startswith("os / platform:")
+        or msg_lower.startswith("calibre version:")
+        or msg_lower.startswith("fanficfare version:")
+        or msg_lower.startswith("apprise version:")
+        or "configuration details" in msg_lower
+        or msg_lower.startswith("generating url parsers")
+        or msg_lower.startswith("spawning ")
+        or msg_lower.startswith("all processes started")
+        or msg_lower.startswith("processes running")
+        or msg_lower.startswith("received signal sig")
+        or msg_lower.startswith("coordinator received shutdown signal")
+        or msg_lower.startswith("webserver:")
+        or msg_lower.startswith("historywriter:")
+        or msg_lower.startswith("supervisor: waiting for threads")
+        or msg_lower.startswith("supervisor: starting helper services")
+    ):
+        return False
+
+    # Check for story processing indicators
+    if (
+        "processing http" in msg_lower
+        or "processing (" in msg_lower
+        or "extracted title" in msg_lower
+        or "updating /tmp/" in msg_lower
+        or "executing fanficfare" in msg_lower
+        or "story is in calibre" in msg_lower
+        or "added book ids:" in msg_lower
+        or "successfully processed" in msg_lower
+        or "failed to download" in msg_lower
+        or "failed to process" in msg_lower
+        or "notification dispatched" in msg_lower
+        or "notification for 'new fanfiction download'" in msg_lower
+        or ("adding " in msg_lower and "to the ingestion queue" in msg_lower)
+    ):
+        return True
+
+    return False
+
+
 def init_persistent_logging(
     log_path: str | None,
     max_bytes: int = 5_000_000,
@@ -95,7 +161,7 @@ def init_persistent_logging(
     except Exception:
         pass
 
-    # Rehydrate existing entries from disk if file exists
+    # Rehydrate existing entries from disk if file exists (story events only)
     if path_obj.exists():
         try:
             with open(path_obj, "r", encoding="utf-8", errors="replace") as f:
@@ -108,16 +174,17 @@ def init_persistent_logging(
                 try:
                     data = json.loads(line)
                     if isinstance(data, dict) and "message" in data:
-                        parsed.append(data)
+                        if isinstance(data.get("seq"), int):
+                            with _log_seq_lock:
+                                if data["seq"] > _log_seq_counter:
+                                    _log_seq_counter = data["seq"]
+                        if _is_story_event(data):
+                            parsed.append(data)
                 except Exception:
                     continue
             with _log_buffer_lock:
                 for entry in parsed:
                     _log_buffer.append(entry)
-                    if isinstance(entry.get("seq"), int):
-                        with _log_seq_lock:
-                            if entry["seq"] > _log_seq_counter:
-                                _log_seq_counter = entry["seq"]
         except Exception:
             pass
 
