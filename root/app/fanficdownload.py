@@ -33,6 +33,7 @@ Repository: https://github.com/MrTyton/AutomatedFanfic
 import argparse
 import multiprocessing as mp
 from multiprocessing.managers import SyncManager
+from pathlib import Path
 import sys
 
 if sys.version_info < (3, 15):
@@ -305,6 +306,18 @@ def register_processes(
     if not config.web.enabled:
         log_file_path = getattr(config.web, "log_file_path", None)
         if isinstance(log_file_path, str) and log_file_path.strip():
+            # If log_file_path is default /data/... but history_db_path is configured in a custom mount (e.g. /config/history.db)
+            # or executing inside Docker with /config mounted, co-locate automatedfanfic.log alongside history.db
+            if log_file_path == "/data/automatedfanfic.log" and (
+                (history_db_path and not str(history_db_path).startswith("/data/"))
+                or (system_utils.is_docker_environment() and Path("/config").exists())
+            ):
+                target_dir = (
+                    Path(history_db_path).parent
+                    if history_db_path and not str(history_db_path).startswith("/data/")
+                    else Path("/config")
+                )
+                log_file_path = str(target_dir / "automatedfanfic.log")
             ff_logging.init_persistent_logging(log_file_path)
     history_writer = HistoryWriter(
         history_queue,

@@ -343,15 +343,42 @@ function inferTitleFromUrl(url: string): string {
 }
 
 export function buildLogAttemptBlocks(
-    entries: LogEntry[],
-    knownDownloads: { url: string; title?: string | null; site?: string; status?: string; error_message?: string | null }[] = [],
-    knownRetries: { url: string; title?: string | null; site?: string; attempt_number?: number; error_message?: string | null }[] = [],
+    entries: LogEntry[] = [],
+    knownDownloads: {
+        url: string
+        title?: string | null
+        site?: string
+        status?: string
+        error_message?: string | null
+        started_at?: string | null
+        completed_at?: string | null
+    }[] = [],
+    knownRetries: {
+        url: string
+        title?: string | null
+        site?: string
+        attempt_number?: number
+        error_message?: string | null
+    }[] = [],
     activeItems: { url: string; stage: 'downloading' | 'queued' | 'waiting_retry' }[] = []
 ): LogAttemptBlock[] {
-    if (entries.length === 0) return []
+    if (entries.length === 0 && knownDownloads.length === 0) return []
 
-    // Sort oldest -> newest so we trace each attempt's lifecycle in execution order
-    const chronological = [...entries].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    // Normalize to chronological order (oldest -> newest):
+    // If incoming entries are newest-first (as returned by GET /api/logs), reverse them first.
+    const isNewestFirst =
+        entries.length >= 2 &&
+        (entries[0].seq !== undefined && entries[entries.length - 1].seq !== undefined
+            ? (entries[0].seq ?? 0) > (entries[entries.length - 1].seq ?? 0)
+            : entries[0].timestamp.localeCompare(entries[entries.length - 1].timestamp) > 0)
+
+    const baseList = isNewestFirst ? [...entries].reverse() : [...entries]
+    const chronological = baseList.sort((a, b) => {
+        if (a.seq !== undefined && b.seq !== undefined) {
+            return a.seq - b.seq
+        }
+        return a.timestamp.localeCompare(b.timestamp)
+    })
 
     const titleByUrl = new Map<string, string>()
     const errorByUrl = new Map<string, string>()
@@ -581,7 +608,9 @@ export function buildLogAttemptBlocks(
             const inStartupPhase = (activeStartupBlock !== null && !startupCompleteSeen) || isExplicitStartup
 
             if (inStartupPhase) {
-                if (!activeStartupBlock || isRebootMarker) {
+                // Only start a brand new startup block if no startup block is currently active,
+                // OR if a genuine reboot marker arrived AFTER the previous startup was already marked complete.
+                if (!activeStartupBlock || (isRebootMarker && startupCompleteSeen)) {
                     activeStartupBlock = {
                         id: `startup-${entry.timestamp}-${blocks.length}`,
                         kind: 'system',
@@ -606,8 +635,7 @@ export function buildLogAttemptBlocks(
 
                 if (
                     msgLower.includes('all processes started successfully') ||
-                    msgLower.includes('processes running. press ctrl+c') ||
-                    msgLower.includes('webserver: history database connection established')
+                    msgLower.includes('processes running. press ctrl+c')
                 ) {
                     startupCompleteSeen = true
                 }
@@ -688,6 +716,48 @@ export function buildLogAttemptBlocks(
             b.isActive = false
             b.activeStage = undefined
         }
+    }
+
+    // Include completed or failed stories from knownDownloads (history.db) that don't already have live log blocks
+    for (const d of knownDownloads) {
+        if (!d.url) continue
+        const normUrl = normalizeStoryUrl(d.url)
+        // If an attempt block already exists for this URL, skip
+        if (blocks.some((b) => b.url === normUrl || b.url === d.url)) continue
+
+        const isFailed = d.status === 'failed' || d.status === 'abandoned'
+        const candidateTitle = d.title && isValidStoryTitle(d.title) ? d.title : undefined
+        const resolvedTitle = candidateTitle || inferTitleFromUrl(normUrl)
+
+        const histBlock: LogAttemptBlock = {
+            id: `hist-${normUrl}-${d.completed_at || d.started_at || blocks.length}`,
+            kind: 'story_attempt',
+            url: normUrl,
+            title: resolvedTitle,
+            site: d.site,
+            attemptNumber: 1,
+            status: isFailed ? 'failed' : 'success',
+            isActive: false,
+            startedAt: d.started_at || d.completed_at || '',
+            endedAt: d.completed_at || d.started_at || '',
+            lines: d.error_message
+                ? [
+                      {
+                          timestamp: d.completed_at || d.started_at || '',
+                          level: 'error',
+                          message: d.error_message,
+                      },
+                  ]
+                : [
+                      {
+                          timestamp: d.completed_at || d.started_at || '',
+                          level: 'info',
+                          message: `Download completed with status: ${d.status}`,
+                      },
+                  ],
+            traceback: d.error_message || null,
+        }
+        blocks.push(histBlock)
     }
 
     // Sort active blocks first, then non-active blocks; within each group sort by latest update (endedAt descending)

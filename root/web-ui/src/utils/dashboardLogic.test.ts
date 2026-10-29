@@ -294,6 +294,61 @@ test('buildLogAttemptBlocks groups worker attempt lines with attempt_id and avoi
     assert.equal(block.isActive, false)
 })
 
+test('buildLogAttemptBlocks handles newest-first logs with identical timestamps without splitting startup block', () => {
+    // Reverse chronological logs (newest first, identical second), with sequence numbers
+    const newestFirstLogs = [
+        { seq: 6, timestamp: '2026-10-28 06:45:29 PM', level: 'info', message: 'WebServer: Starting on 0.0.0.0:8080' },
+        { seq: 5, timestamp: '2026-10-28 06:45:29 PM', level: 'info', message: 'All processes started successfully' },
+        { seq: 4, timestamp: '2026-10-28 06:45:29 PM', level: 'info', message: 'Worker worker_0 started' },
+        { seq: 3, timestamp: '2026-10-28 06:45:29 PM', level: 'info', message: '------------------------------' },
+        { seq: 2, timestamp: '2026-10-28 06:45:29 PM', level: 'info', message: '--- Configuration Details ---' },
+        { seq: 1, timestamp: '2026-10-28 06:45:29 PM', level: 'info', message: 'Starting AutomatedFanfic v6.15.1' },
+    ]
+
+    const blocks = buildLogAttemptBlocks(newestFirstLogs)
+    assert.equal(blocks.length, 1)
+    assert.equal(blocks[0].kind, 'system')
+    assert.equal(blocks[0].title, 'Application Startup & Lifecycle')
+    assert.equal(blocks[0].lines.length, 6)
+    // Order inside the block must be chronological (seq 1 first, seq 6 last)
+    assert.equal(blocks[0].lines[0].message, 'Starting AutomatedFanfic v6.15.1')
+    assert.equal(blocks[0].lines[5].message, 'WebServer: Starting on 0.0.0.0:8080')
+})
+
+test('buildLogAttemptBlocks populates historical story attempts from knownDownloads (history.db)', () => {
+    const historicalDownloads = [
+        {
+            url: 'https://archiveofourown.org/works/99887766',
+            title: 'Chronicles of the Multiverse',
+            site: 'archiveofourown',
+            status: 'success',
+            completed_at: '2026-10-28 14:00:00',
+        },
+        {
+            url: 'https://www.fanfiction.net/s/11223344/1/',
+            title: 'Shadows in the Mist',
+            site: 'fanfiction',
+            status: 'failed',
+            error_message: 'HTTP 404: Story Not Found',
+            completed_at: '2026-10-28 14:30:00',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks([], historicalDownloads)
+    assert.equal(blocks.length, 2)
+    const ao3 = blocks.find((b) => b.url === 'https://archiveofourown.org/works/99887766')
+    assert.ok(ao3)
+    assert.equal(ao3?.title, 'Chronicles of the Multiverse')
+    assert.equal(ao3?.status, 'success')
+    assert.equal(ao3?.isActive, false)
+
+    const ffn = blocks.find((b) => b.url === 'https://www.fanfiction.net/s/11223344/1/')
+    assert.ok(ffn)
+    assert.equal(ffn?.title, 'Shadows in the Mist')
+    assert.equal(ffn?.status, 'failed')
+    assert.equal(ffn?.traceback, 'HTTP 404: Story Not Found')
+})
+
 test('computeDirtySections tracks unsaved changes across all config sections and personal.ini', () => {
     const initCfg = {
         email: { mailbox: 'INBOX', sleep_time: 60 },

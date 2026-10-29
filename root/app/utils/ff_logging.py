@@ -73,6 +73,8 @@ _persistent_logger.propagate = False
 _persistent_handler: logging.handlers.RotatingFileHandler | None = None
 _persistent_log_lock = threading.Lock()
 _persistent_log_path: str | None = None
+_log_seq_lock = threading.Lock()
+_log_seq_counter = 0
 
 
 def init_persistent_logging(
@@ -81,7 +83,7 @@ def init_persistent_logging(
     backup_count: int = 3,
 ) -> None:
     """Initialize persistent rotating JSONL log file and rehydrate in-memory ring buffer."""
-    global _persistent_handler, _persistent_log_path
+    global _persistent_handler, _persistent_log_path, _log_seq_counter
     if not isinstance(log_path, str) or not log_path.strip():
         return
 
@@ -112,6 +114,10 @@ def init_persistent_logging(
             with _log_buffer_lock:
                 for entry in parsed:
                     _log_buffer.append(entry)
+                    if isinstance(entry.get("seq"), int):
+                        with _log_seq_lock:
+                            if entry["seq"] > _log_seq_counter:
+                                _log_seq_counter = entry["seq"]
         except Exception:
             pass
 
@@ -135,7 +141,7 @@ def init_persistent_logging(
 
 def close_persistent_logging() -> None:
     """Close and flush the persistent log handler."""
-    global _persistent_handler, _persistent_log_path
+    global _persistent_handler, _persistent_log_path, _log_seq_counter
     with _persistent_log_lock:
         if _persistent_handler is not None:
             try:
@@ -182,7 +188,13 @@ def _store_log_entry(
     timestamp: str, level: str, message: str, *, forward: bool
 ) -> None:
     """Store a log entry in memory and optionally forward it cross-process."""
+    global _log_seq_counter
+    with _log_seq_lock:
+        _log_seq_counter += 1
+        seq = _log_seq_counter
+
     entry: dict[str, object] = {
+        "seq": seq,
         "timestamp": timestamp,
         "level": level,
         "message": message,

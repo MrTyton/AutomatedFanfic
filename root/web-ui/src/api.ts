@@ -110,6 +110,7 @@ export interface IniUpdateResult {
 }
 
 export interface LogEntry {
+    seq?: number
     timestamp: string
     level: string
     message: string
