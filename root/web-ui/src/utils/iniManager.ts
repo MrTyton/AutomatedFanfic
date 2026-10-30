@@ -30,6 +30,8 @@ export interface FlareSolverrInfo {
     isEnabled: boolean
     address: string
     section: string
+    useSession?: boolean
+    sessionName?: string
 }
 
 /**
@@ -213,6 +215,8 @@ export function getSectionFlareSolverr(
     let isConfigured = false
     let isEnabled = false
     let address = defaultAddress
+    let useSession = false
+    let sessionName = ''
 
     for (const line of lines) {
         const trimmed = line.trim()
@@ -228,6 +232,18 @@ export function getSectionFlareSolverr(
             isConfigured = true
             address = addrMatch[1].trim()
         }
+        const sessionMatch = trimmed.match(/^use_flaresolverr_session\s*[:=]\s*(true|false)/i)
+        if (sessionMatch) {
+            isConfigured = true
+            if (sessionMatch[1].toLowerCase() === 'true') {
+                useSession = true
+            }
+        }
+        const sessionNameMatch = trimmed.match(/^flaresolverr_session\s*[:=]\s*(\S+)/i)
+        if (sessionNameMatch) {
+            isConfigured = true
+            sessionName = sessionNameMatch[1].trim()
+        }
     }
 
     return {
@@ -235,6 +251,8 @@ export function getSectionFlareSolverr(
         isConfigured,
         isEnabled,
         address,
+        useSession,
+        sessionName,
     }
 }
 
@@ -280,7 +298,8 @@ export function setSiteFlareSolverrConfig(
     sectionName: string,
     enable: boolean,
     proxyAddress = 'http://localhost:8191/v1',
-    removeCompletely = false
+    removeCompletely = false,
+    sessionName?: string
 ): string {
     const cleanName = sectionName.replace(/[\[\]]/g, '').trim()
     if (!cleanName) return iniContent
@@ -300,6 +319,10 @@ export function setSiteFlareSolverrConfig(
         doc.sections.push(targetSec)
     }
 
+    const uniqueSession =
+        sessionName ||
+        `FanFicFareSession_${cleanName.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+
     if (enable) {
         targetSec.lines = updateSectionField(targetSec.lines, 'use_flaresolverr_proxy', 'true')
         targetSec.lines = updateSectionField(
@@ -307,9 +330,13 @@ export function setSiteFlareSolverrConfig(
             'flaresolverr_proxy_address',
             proxyAddress || 'http://localhost:8191/v1'
         )
+        targetSec.lines = updateSectionField(targetSec.lines, 'use_flaresolverr_session', 'true')
+        targetSec.lines = updateSectionField(targetSec.lines, 'flaresolverr_session', uniqueSession)
     } else if (removeCompletely) {
         targetSec.lines = removeSectionField(targetSec.lines, 'use_flaresolverr_proxy')
         targetSec.lines = removeSectionField(targetSec.lines, 'flaresolverr_proxy_address')
+        targetSec.lines = removeSectionField(targetSec.lines, 'use_flaresolverr_session')
+        targetSec.lines = removeSectionField(targetSec.lines, 'flaresolverr_session')
     } else {
         targetSec.lines = updateSectionField(targetSec.lines, 'use_flaresolverr_proxy', 'false')
         if (proxyAddress) {

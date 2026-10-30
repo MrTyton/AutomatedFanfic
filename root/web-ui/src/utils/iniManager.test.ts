@@ -151,11 +151,13 @@ test('setSiteFlareSolverrConfig injects proxy on per-site basis without touching
     assert.equal(defaultsFlare.isConfigured, false)
     assert.equal(defaultsFlare.isEnabled, false)
 
-    // Verify [www.fanfiction.net] DOES contain use_flaresolverr_proxy
+    // Verify [www.fanfiction.net] DOES contain use_flaresolverr_proxy and unique session
     const ffnFlare = getSectionFlareSolverr(ffnSec.lines, 'www.fanfiction.net')
     assert.equal(ffnFlare.isConfigured, true)
     assert.equal(ffnFlare.isEnabled, true)
     assert.equal(ffnFlare.address, 'http://127.0.0.1:8191/v1')
+    assert.ok(ffnSec.lines.some((l) => l.includes('use_flaresolverr_session: true') || l.includes('use_flaresolverr_session:true')))
+    assert.ok(ffnSec.lines.some((l) => l.includes('flaresolverr_session: FanFicFareSession_www_fanfiction_net') || l.includes('flaresolverr_session:FanFicFareSession_www_fanfiction_net')))
 
     // Verify getAllFlareSolverrSites finds the configured site
     const allSites = getAllFlareSolverrSites(siteConfigured)
@@ -170,6 +172,16 @@ test('setSiteFlareSolverrConfig injects proxy on per-site basis without touching
     const disabledFlare = getSectionFlareSolverr(disabledFfn.lines, 'www.fanfiction.net')
     assert.equal(disabledFlare.isEnabled, false)
     assert.equal(disabledFlare.isConfigured, true)
+
+    // Remove completely from site
+    const removedSite = setSiteFlareSolverrConfig(siteConfigured, 'www.fanfiction.net', false, undefined, true)
+    const removedDoc = parseIniDocument(removedSite)
+    const removedFfn = removedDoc.sections.find((s) => s.name === 'www.fanfiction.net')
+    assert.ok(removedFfn)
+    assert.ok(!removedFfn.lines.some((l) => l.includes('use_flaresolverr_proxy')))
+    assert.ok(!removedFfn.lines.some((l) => l.includes('flaresolverr_proxy_address')))
+    assert.ok(!removedFfn.lines.some((l) => l.includes('use_flaresolverr_session')))
+    assert.ok(!removedFfn.lines.some((l) => l.includes('flaresolverr_session')))
 })
 
 test('addIniSection and removeIniSection modify section list safely', () => {
