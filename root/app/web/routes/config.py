@@ -1,6 +1,9 @@
 """Configuration API routes — view and edit config."""
 
+import imaplib
 from pathlib import Path
+import time
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -10,6 +13,8 @@ from config.toml_writer import TomlWriter
 from utils import ff_logging
 from utils.system_utils import resolve_ini_path
 
+lazy import apprise
+lazy from web.routes.debug import _get_calibre_client
 lazy from models.config_models import (
     AppConfig,
     AppriseConfig,
@@ -249,6 +254,206 @@ async def update_config_section(
         "results": results,
         "needs_service_restart": bool(results["service_restart"]),
         "needs_app_restart": bool(results["app_restart"]),
+    }
+
+
+class ConfigTestRequest(BaseModel):
+    """Request body for testing a config section."""
+
+    values: dict[str, Any] = {}
+
+
+@router.post("/{section}/test")
+async def test_config_section(section: str, request: Request, body: ConfigTestRequest):
+    """Test connectivity or validate configuration parameters for a specific section."""
+    state = request.app.state.web_state
+    norm_section = section.strip().lower()
+    t0 = time.perf_counter()
+
+    config_dict = state.config.model_dump() if state.config is not None else {}
+    current_sec = config_dict.get(norm_section, {})
+    values = _restore_masked_sensitive(current_sec, body.values)
+
+    if norm_section == "email":
+        server = values.get("server") or current_sec.get("server")
+        user = (
+            values.get("email")
+            or values.get("user")
+            or current_sec.get("email")
+            or current_sec.get("user")
+        )
+        password = values.get("password") or current_sec.get("password")
+        mailbox = values.get("mailbox") or current_sec.get("mailbox") or "INBOX"
+
+        if not server or not user or not password:
+            return {
+                "ok": False,
+                "message": "Email test requires server, email/username, and password",
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+
+        try:
+            client = imaplib.IMAP4_SSL(str(server), timeout=5)
+            client.login(str(user), str(password))
+            client.select(str(mailbox))
+            _status, msgs = client.search(None, "UNSEEN")
+            unread_count = len(msgs[0].split()) if msgs and msgs[0] else 0
+            client.logout()
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": True,
+                "message": f"Connected to IMAP server ({server}, mailbox '{mailbox}', {unread_count} unread)",
+                "latency_ms": latency,
+            }
+        except Exception as exc:
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": False,
+                "message": f"IMAP connection failed: {exc}",
+                "latency_ms": latency,
+            }
+
+    if norm_section == "calibre":
+        calibre_path = values.get("path") or current_sec.get("path") or ""
+        if not calibre_path:
+            return {
+                "ok": False,
+                "message": "Calibre path is required",
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+        try:
+            client = _get_calibre_client(request)
+            if client is not None:
+                version = (
+                    client.get_version()
+                    if hasattr(client, "get_version")
+                    else "connected"
+                )
+                latency = round((time.perf_counter() - t0) * 1000, 1)
+                return {
+                    "ok": True,
+                    "message": f"Calibre library connected ({version})",
+                    "latency_ms": latency,
+                }
+            # Fallback path check
+            cpath = Path(str(calibre_path))
+            if cpath.exists():
+                latency = round((time.perf_counter() - t0) * 1000, 1)
+                return {
+                    "ok": True,
+                    "message": f"Calibre path exists: {cpath}",
+                    "latency_ms": latency,
+                }
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": False,
+                "message": f"Calibre path does not exist: {cpath}",
+                "latency_ms": latency,
+            }
+        except Exception as exc:
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": False,
+                "message": f"Calibre test failed: {exc}",
+                "latency_ms": latency,
+            }
+
+    if norm_section == "apprise":
+        raw_urls = values.get("urls") or current_sec.get("urls") or []
+        urls = [raw_urls] if isinstance(raw_urls, str) else list(raw_urls)
+        if not urls:
+            return {
+                "ok": False,
+                "message": "No Apprise notification URLs configured",
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+        try:
+            ap = apprise.Apprise()
+            count = 0
+            for u in urls:
+                if u and ap.add(str(u)):
+                    count += 1
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            if count > 0:
+                return {
+                    "ok": True,
+                    "message": f"Successfully parsed {count} Apprise notification endpoint(s)",
+                    "latency_ms": latency,
+                }
+            return {
+                "ok": False,
+                "message": "None of the configured Apprise URLs could be parsed as valid endpoints",
+                "latency_ms": latency,
+            }
+        except Exception as exc:
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": False,
+                "message": f"Apprise validation error: {exc}",
+                "latency_ms": latency,
+            }
+
+    if norm_section == "pushbullet":
+        api_key = values.get("api_key") or current_sec.get("api_key")
+        if not api_key:
+            return {
+                "ok": False,
+                "message": "Pushbullet api_key is required",
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+        try:
+            ap = apprise.Apprise()
+            if ap.add(f"pbul://{api_key}"):
+                latency = round((time.perf_counter() - t0) * 1000, 1)
+                return {
+                    "ok": True,
+                    "message": "Pushbullet configuration valid",
+                    "latency_ms": latency,
+                }
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": False,
+                "message": "Pushbullet api_key format is invalid",
+                "latency_ms": latency,
+            }
+        except Exception as exc:
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": False,
+                "message": f"Pushbullet validation error: {exc}",
+                "latency_ms": latency,
+            }
+
+    # For general configuration sections (process, retry, web, etc.)
+    section_models = {
+        "process": ProcessConfig,
+        "retry": RetryConfig,
+        "web": WebConfig,
+    }
+    if norm_section in section_models:
+        try:
+            model_cls = section_models[norm_section]
+            merged_sec = {**current_sec, **values}
+            model_cls(**merged_sec)
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": True,
+                "message": f"[{norm_section}] configuration parameters are valid",
+                "latency_ms": latency,
+            }
+        except Exception as exc:
+            latency = round((time.perf_counter() - t0) * 1000, 1)
+            return {
+                "ok": False,
+                "message": f"[{norm_section}] validation error: {exc}",
+                "latency_ms": latency,
+            }
+
+    latency = round((time.perf_counter() - t0) * 1000, 1)
+    return {
+        "ok": True,
+        "message": f"Section [{norm_section}] validated successfully",
+        "latency_ms": latency,
     }
 
 

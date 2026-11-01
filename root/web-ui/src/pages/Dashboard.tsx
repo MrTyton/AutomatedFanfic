@@ -241,6 +241,20 @@ export default function Dashboard({ data }: Props) {
         return () => clearInterval(id)
     }, [])
 
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (selectedError) setSelectedError(null)
+                else if (showAllErrorsModal) setShowAllErrorsModal(false)
+                else if (showWorkerPoolModal) setShowWorkerPoolModal(false)
+                else if (confirmScratchUrl) setConfirmScratchUrl(null)
+                else if (confirmCancelAll) setConfirmCancelAll(false)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [selectedError, showAllErrorsModal, showWorkerPoolModal, confirmScratchUrl, confirmCancelAll])
+
     const activeItems = useMemo(() => data?.active_downloads?.items || [], [data?.active_downloads?.items])
     const queuedItems = useMemo(() => data?.queued_downloads?.items || [], [data?.queued_downloads?.items])
     const waitingItems = useMemo(() => data?.waiting_downloads?.items || [], [data?.waiting_downloads?.items])

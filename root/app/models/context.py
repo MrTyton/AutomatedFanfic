@@ -24,6 +24,7 @@ if TYPE_CHECKING:
         SupervisorRestartEvent,
         WaitingQueue,
         WorkerQueues,
+        WorkerRestartEvent,
     )
     from notifications import notification_wrapper
 
@@ -91,6 +92,7 @@ class SharedIPCContext:
     shutdown_event: ShutdownEvent
     check_emails_event: CheckEmailsEvent | None = None
     supervisor_restart_event: SupervisorRestartEvent | None = None
+    worker_restart_event: WorkerRestartEvent | None = None
     log_queue: LogQueue | None = None
     verbose: bool = False
     coordinator_status: MutableMapping[str, object] | None = None

@@ -361,7 +361,7 @@ export default function AttemptBlockCard({
                             fontFamily: 'var(--font-mono)',
                             color: 'var(--text-muted)',
                         }}
-                        title={`Started ${block.startedAt} • Latest update ${block.endedAt}`}
+                        title={`Started ${activeBlock.startedAt} • Latest update ${activeBlock.endedAt}`}
                     >
                         {timeRangeLabel}
                     </span>
@@ -373,7 +373,7 @@ export default function AttemptBlockCard({
                             color: 'var(--text-faint)',
                         }}
                     >
-                        {block.lines.length} {block.lines.length === 1 ? 'step' : 'steps'}
+                        {activeBlock.lines.length} {activeBlock.lines.length === 1 ? 'step' : 'steps'}
                     </span>
                     <button
                         type="button"
@@ -666,7 +666,7 @@ export default function AttemptBlockCard({
                                     overflowX: 'auto',
                                 }}
                             >
-                                {block.traceback}
+                                {activeBlock.traceback}
                             </pre>
                         </div>
                     )}
@@ -674,7 +674,7 @@ export default function AttemptBlockCard({
             )}
 
             {showIssueModal && (
-                <GitHubIssueModal block={block} onClose={() => setShowIssueModal(false)} />
+                <GitHubIssueModal block={activeBlock} onClose={() => setShowIssueModal(false)} />
             )}
         </div>
     )

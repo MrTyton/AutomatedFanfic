@@ -31,12 +31,14 @@ class AddUrlRequest(BaseModel):
 
     url: str
     force: bool = False
+    update_method: str | None = None
 
 
 class AddUrlsRequest(BaseModel):
     """Request body for adding multiple URLs."""
 
     urls: list[str]
+    update_method: str | None = None
 
 
 class AddUrlResponse(BaseModel):
@@ -278,12 +280,15 @@ def _ingest_single_url(
     url_parsers: dict,
     *,
     force: bool = False,
+    behavior_override: str | None = None,
     duplicate_prefix: str = "URL already in queue",
     added_suffix: str = " to processing queue",
 ) -> AddUrlResponse:
     """Normalize, parse, deduplicate, mark queued, and enqueue a single URL."""
     fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
-    if force:
+    if behavior_override:
+        fanfic.behavior = behavior_override
+    elif force:
         fanfic.behavior = "force"
 
     if active_urls_utils.is_url_active(state.active_urls, fanfic.url):
@@ -322,6 +327,7 @@ async def add_url(request: Request, body: AddUrlRequest):
         body.url,
         url_parsers,
         force=body.force,
+        behavior_override=body.update_method,
         duplicate_prefix="URL already in queue",
         added_suffix=" to processing queue",
     )
@@ -352,6 +358,7 @@ async def add_urls(request: Request, body: AddUrlsRequest):
                     state,
                     raw_url,
                     url_parsers,
+                    behavior_override=body.update_method,
                     duplicate_prefix="Already in queue",
                     added_suffix="",
                 )
@@ -765,5 +772,15 @@ async def restart_daemon(
                 ok=True, message=f"Supervisor restart triggered for {name}"
             )
         return ActionResponse(ok=False, message="Supervisor restart event unavailable")
+
+    if name_lower in ("workerpool", "worker_pool", "workers"):
+        worker_event = getattr(state, "worker_restart_event", None)
+        if worker_event is not None:
+            worker_event.set()
+            return ActionResponse(ok=True, message="Worker pool restart triggered")
+        sup_event = getattr(state, "supervisor_restart_event", None)
+        if sup_event is not None:
+            return ActionResponse(ok=True, message="Worker pool restart requested")
+        return ActionResponse(ok=False, message="Worker restart event unavailable")
 
     return ActionResponse(ok=False, message=f"Unknown daemon '{name}'")

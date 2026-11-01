@@ -19,6 +19,7 @@ from models.queue_types import (
     SupervisorRestartEvent,
     WaitingQueue,
     WorkerQueues,
+    WorkerRestartEvent,
 )
 
 
@@ -55,6 +56,9 @@ class WebState:
 
     # Supervisor process restart event (set by controls route to bounce supervisor)
     supervisor_restart_event: SupervisorRestartEvent | None = None
+
+    # Worker pool process restart event (set by controls route to bounce worker pool)
+    worker_restart_event: WorkerRestartEvent | None = None
 
     # Manual email check trigger event (set by controls route to wake EmailWatcher)
     check_emails_event: CheckEmailsEvent | None = None

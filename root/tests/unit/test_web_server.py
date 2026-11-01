@@ -421,6 +421,34 @@ class TestControlRoutes(unittest.TestCase):
         )
         mock_create_client.return_value.remove_story.assert_called_once_with(fanfic)
 
+    @patch("parsers.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
+    def test_add_url_with_update_method(self, mock_generate, mock_parsers):
+        mock_parsers.return_value = {}
+        mock_fic = FanficInfo(url="https://ao3.org/works/99", site="ao3")
+        mock_generate.return_value = mock_fic
+        self.state.ingress_queue = MagicMock()
+        self.state.active_urls = {}
+
+        resp = self.client.post(
+            "/api/controls/add-url",
+            json={"url": "https://ao3.org/works/99", "update_method": "force"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(mock_fic.behavior, "force")
+
+    def test_restart_daemon_worker_pool(self):
+        mock_event = MagicMock()
+        self.state.worker_restart_event = mock_event
+        resp = self.client.post(
+            "/api/controls/restart-daemon",
+            json={"name": "WorkerPool"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        mock_event.set.assert_called_once()
+
 
 class TestConfigRoutes(unittest.TestCase):
     """Tests for /api/config endpoints."""
@@ -663,6 +691,63 @@ class TestConfigRoutes(unittest.TestCase):
 
             with open(personal_path, encoding="utf-8") as fh:
                 self.assertEqual(fh.read(), new_content)
+
+    @patch("imaplib.IMAP4_SSL")
+    def test_test_config_section_email_success(self, mock_imap_cls):
+        mock_client = MagicMock()
+        mock_client.search.return_value = ("OK", [b"1 2 3"])
+        mock_imap_cls.return_value = mock_client
+        resp = self.client.post(
+            "/api/config/email/test",
+            json={
+                "values": {
+                    "server": "imap.mail.com",
+                    "email": "a@b.com",
+                    "password": "pass",
+                    "mailbox": "INBOX",
+                }
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertIn("3 unread", data["message"])
+        self.assertIn("latency_ms", data)
+
+    def test_test_config_section_email_missing_credentials(self):
+        resp = self.client.post(
+            "/api/config/email/test",
+            json={"values": {}},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["ok"])
+        self.assertIn("requires server", data["message"])
+
+    def test_test_config_section_process_valid(self):
+        resp = self.client.post(
+            "/api/config/process/test",
+            json={"values": {"max_restart_attempts": 3, "restart_delay": 5.0}},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertIn("parameters are valid", data["message"])
+
+    def test_test_config_section_pushbullet_no_key(self):
+        resp = self.client.post(
+            "/api/config/pushbullet/test",
+            json={"values": {}},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertFalse(data["ok"])
+        self.assertIn("api_key is required", data["message"])
+
+    def test_clear_logs(self):
+        resp = self.client.post("/api/logs/clear")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"ok": True})
 
 
 class TestWidgetRoute(unittest.TestCase):

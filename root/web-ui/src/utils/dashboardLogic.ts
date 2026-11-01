@@ -50,11 +50,18 @@ export function parseAndValidateUrlLines(
             isValid = false
         }
 
-        const parts = raw.split('/').filter(Boolean)
-        const lastPart = decodeURIComponent(parts[parts.length - 1] || 'Story').replace(/[-_]/g, ' ')
-        const inferredTitle = /^\d+$/.test(lastPart)
-            ? `Work #${lastPart}`
-            : lastPart.charAt(0).toUpperCase() + lastPart.slice(1)
+        const cleanRaw = raw.replace(/[.,;:)]+$/, '')
+        let inferredTitle = 'Story'
+        const ao3Match = withProto.match(/archiveofourown\.org\/works\/(\d+)/i)
+        if (ao3Match) {
+            inferredTitle = `Work #${ao3Match[1]}`
+        } else {
+            const parts = cleanRaw.split('/').filter(Boolean)
+            const lastPart = decodeURIComponent(parts[parts.length - 1] || 'Story').replace(/[-_]/g, ' ')
+            inferredTitle = /^\d+$/.test(lastPart)
+                ? `Work #${lastPart}`
+                : lastPart.charAt(0).toUpperCase() + lastPart.slice(1)
+        }
 
         return {
             raw,
@@ -574,7 +581,12 @@ function extractEntrySite(entry: LogEntry): string {
 }
 
 function inferTitleFromUrl(url: string): string {
-    const parts = url.split('/').filter(Boolean)
+    const ao3Match = url.match(/archiveofourown\.org\/works\/(\d+)/i)
+    if (ao3Match) {
+        return `Work #${ao3Match[1]}`
+    }
+    const cleanUrl = url.replace(/[.,;:)]+$/, '')
+    const parts = cleanUrl.split('/').filter(Boolean)
     const lastPart = decodeURIComponent(parts[parts.length - 1] || 'Story').replace(/[-_]/g, ' ')
     return /^\d+$/.test(lastPart)
         ? `Work #${lastPart}`
@@ -1164,11 +1176,23 @@ export function diagnoseErrorSignature(errorText?: string | null): ErrorDiagnosi
         }
     }
 
+    if (lower.includes('chapter count mismatch')) {
+        return {
+            category: 'Chapter Count Mismatch',
+            summary: 'The chapter count in Calibre does not match the online story chapters.',
+            hint: 'The story was likely re-indexed, or chapters were merged/deleted online. Use "From Scratch" (Force Overwrite) to re-download the story from Chapter 1.',
+        }
+    }
+
     if (
-        lower.includes('calibre') ||
         lower.includes('calibredb') ||
-        lower.includes('database is locked') ||
-        lower.includes('connection refused')
+        (lower.includes('calibre') &&
+            (lower.includes('locked') ||
+                lower.includes('connection') ||
+                lower.includes('error') ||
+                lower.includes('failed') ||
+                lower.includes('content server'))) ||
+        lower.includes('database is locked')
     ) {
         return {
             category: 'Calibre Library Target Error',

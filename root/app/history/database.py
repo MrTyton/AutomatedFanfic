@@ -844,21 +844,31 @@ class AsyncHistoryDB:
     async def get_waiting_urls(self) -> list[dict]:
         """Get URLs currently in 'waiting' status (retry backoff).
 
-        Only the latest waiting row per URL is shown, so older retry attempts do
-        not keep stale error messages visible after the story has since moved on.
+        Only the latest waiting row per URL is shown, joined with the latest
+        retry event so attempt_number, action, and scheduled_at persist across restarts.
         """
         async with self._connection() as conn:
             cursor = await conn.execute("""WITH ranked_downloads AS (
-                       SELECT url, site, title, calibre_id, status, updated_at, error_message,
+                       SELECT id, url, site, title, calibre_id, status, updated_at, error_message,
                               ROW_NUMBER() OVER (
                                   PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
                                   ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
                               ) as rn
                        FROM download_events
+                   ),
+                   latest_retries AS (
+                       SELECT download_event_id, url, attempt_number, action, delay_minutes, scheduled_at,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
+                                  ORDER BY id DESC
+                              ) as rn_re
+                       FROM retry_events
                    )
-                   SELECT url, site, title, calibre_id, updated_at, error_message
-                   FROM ranked_downloads
-                   WHERE rn = 1 AND status = 'waiting'""")
+                   SELECT d.url, d.site, d.title, d.calibre_id, d.updated_at, d.error_message,
+                          r.attempt_number, r.action, r.delay_minutes, r.scheduled_at
+                   FROM ranked_downloads d
+                   LEFT JOIN latest_retries r ON (r.download_event_id = d.id OR REPLACE(REPLACE(r.url, 'https://', ''), 'http://', '') = REPLACE(REPLACE(d.url, 'https://', ''), 'http://', '')) AND r.rn_re = 1
+                   WHERE d.rn = 1 AND d.status = 'waiting'""")
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
@@ -1032,15 +1042,20 @@ class AsyncHistoryDB:
                 )
                 downloads_by_site = [dict(r) for r in await cursor.fetchall()]
 
-                # Downloads over time (daily buckets within period)
+                # Downloads over time (hourly buckets for 24h or less, daily for longer)
+                time_group = (
+                    "strftime('%Y-%m-%d %H:00', started_at)"
+                    if period_hours <= 24
+                    else "DATE(started_at)"
+                )
                 cursor = await conn.execute(
-                    """SELECT DATE(started_at) as date,
+                    f"""SELECT {time_group} as date,
                               COUNT(*) as total,
                               SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
                               SUM(CASE WHEN status IN ('failed', 'abandoned') THEN 1 ELSE 0 END) as failed
                        FROM download_events
                        WHERE started_at >= ?
-                       GROUP BY DATE(started_at)
+                       GROUP BY {time_group}
                        ORDER BY date""",
                     (cutoff,),
                 )

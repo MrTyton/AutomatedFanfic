@@ -48,6 +48,7 @@ class ProcessManager:
         config_store: ConfigStore | None = None,
         web_restart_event: Event | None = None,
         supervisor_restart_event: Event | None = None,
+        worker_restart_event: Event | None = None,
     ) -> None:
         """
         Initialize the ProcessManager with configuration.
@@ -74,6 +75,7 @@ class ProcessManager:
         self._config_store: ConfigStore | None = config_store
         self._web_restart_event: Event | None = web_restart_event
         self._supervisor_restart_event: Event | None = supervisor_restart_event
+        self._worker_restart_event: Event | None = worker_restart_event
         self._worker_queues: MutableMapping[str, WorkerQueue] | None = None
         self._create_queue_fn: Callable[[], WorkerQueue] | None = None
         self._history_writer: HistoryWriter | None = None
@@ -105,6 +107,10 @@ class ProcessManager:
     def set_supervisor_restart_event(self, supervisor_restart_event: Event) -> None:
         """Inject supervisor_restart_event after ProcessManager construction."""
         self._supervisor_restart_event = supervisor_restart_event
+
+    def set_worker_restart_event(self, worker_restart_event: Event) -> None:
+        """Inject worker_restart_event after ProcessManager construction."""
+        self._worker_restart_event = worker_restart_event
 
     def set_system_overhead(self, overhead_count: int) -> None:
         """Set the number of non-worker OS processes in the max_workers budget.
@@ -528,6 +534,7 @@ class ProcessManager:
                 self._sync_process_config_from_store()
                 self._check_web_restart_event()
                 self._check_supervisor_restart_event()
+                self._check_worker_restart_event()
                 self._check_worker_scaling()
 
                 # Sleep until next monitoring cycle
@@ -585,6 +592,20 @@ class ProcessManager:
         # Reset restart_count so this user-driven restart isn't penalised
         self.processes["supervisor"].restart_count = 0
         self.restart_process("supervisor")
+
+    def _check_worker_restart_event(self) -> None:
+        """Restart the worker pool process if the worker_restart_event is set."""
+        if (
+            self._worker_restart_event is None
+            or not self._worker_restart_event.is_set()
+            or "worker_pool" not in self.processes
+        ):
+            return
+        ff_logging.log("ProcessManager: restart requested, restarting worker_pool")
+        self._worker_restart_event.clear()
+        # Reset restart_count so this user-driven restart isn't penalised
+        self.processes["worker_pool"].restart_count = 0
+        self.restart_process("worker_pool")
 
     def _check_worker_scaling(self) -> None:
         """Dynamically add or remove worker queues when max_workers changes in ConfigStore."""

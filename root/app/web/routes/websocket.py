@@ -5,6 +5,7 @@ recent history events) and pushes JSON to all connected clients every 1-2 s.
 """
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import time
 
@@ -84,10 +85,25 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
             continue  # being cleaned up by wait_processor; hide from UI immediately
         if u in waiting_url_map or meta.get("status") == "waiting":
             w_meta = waiting_url_map.get(u, {})
+            sched_at = w_meta.get("scheduled_at")
+            if not sched_at:
+                wu = meta.get("wait_until")
+                if isinstance(wu, (int, float)):
+                    sched_at = datetime.fromtimestamp(wu, tz=timezone.utc).isoformat()
+                elif isinstance(wu, str):
+                    sched_at = wu
+                else:
+                    sched_at = w_meta.get("updated_at", "")
+            att_num = meta.get("retry_count") or w_meta.get("attempt_number") or 1
+            action_val = meta.get("action") or w_meta.get("action") or "RETRY"
+
             waiting_urls.append(
                 {
                     "url": u,
                     "updated_at": w_meta.get("updated_at", ""),
+                    "scheduled_at": sched_at,
+                    "attempt_number": att_num,
+                    "action": action_val,
                     "site": meta.get("site") or w_meta.get("site"),
                     "title": meta.get("title") or w_meta.get("title"),
                     "calibre_id": meta.get("calibre_id") or w_meta.get("calibre_id"),
@@ -302,25 +318,42 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
 
     catalog_sites: list[dict[str, object]] = []
     for site_key, site_info in seen_sites.items():
+        if (
+            not site_info.get("domain")
+            or not site_key
+            or site_info.get("display_name") == "Web ()"
+        ):
+            continue
+
         domain_lower = site_info["domain"].lower()
+        clean_domain = domain_lower.removeprefix("www.")
+        clean_site_key = site_key.removeprefix("www.")
+        site_aliases = {site_key, domain_lower, clean_domain, clean_site_key}
 
         active_for_site = [
             a
             for a in active_urls_list
-            if str(a.get("site", "")).lower() in (site_key, domain_lower)
+            if str(a.get("site", "")).lower().removeprefix("www.") in site_aliases
+            or str(a.get("site", "")).lower() in site_aliases
         ]
         queued_for_site = [
             q
             for q in queued_urls
-            if str(q.get("site", "")).lower() in (site_key, domain_lower)
+            if str(q.get("site", "")).lower().removeprefix("www.") in site_aliases
+            or str(q.get("site", "")).lower() in site_aliases
         ]
         waiting_for_site = [
             w
             for w in waiting_urls
-            if str(w.get("site", "")).lower() in (site_key, domain_lower)
+            if str(w.get("site", "")).lower().removeprefix("www.") in site_aliases
+            or str(w.get("site", "")).lower() in site_aliases
         ]
 
-        if site_key in disabled_set or domain_lower in disabled_set:
+        if (
+            site_key in disabled_set
+            or domain_lower in disabled_set
+            or clean_domain in disabled_set
+        ):
             status_str = "disabled"
         elif active_for_site:
             status_str = "downloading"
@@ -338,9 +371,21 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
         )
         waiting_fic = waiting_for_site[0] if waiting_for_site else None
 
-        counts = site_stats.get(site_key, {}) or site_stats.get(domain_lower, {})
+        counts = (
+            site_stats.get(site_key, {})
+            or site_stats.get(domain_lower, {})
+            or site_stats.get(clean_domain, {})
+        )
         total_dl = counts.get("total", 0)
         failed_dl = counts.get("failed", 0)
+
+        backoff_iso = None
+        if waiting_fic:
+            wu = waiting_fic.get("wait_until") or waiting_fic.get("scheduled_at")
+            if isinstance(wu, (int, float)):
+                backoff_iso = datetime.fromtimestamp(wu, tz=timezone.utc).isoformat()
+            elif isinstance(wu, str):
+                backoff_iso = wu
 
         catalog_sites.append(
             {
@@ -355,9 +400,11 @@ async def _build_snapshot(state: WebState) -> dict[str, object]:
                 or (waiting_fic.get("url") if waiting_fic else None),
                 "active_title": (active_fic.get("title") if active_fic else None)
                 or (waiting_fic.get("title") if waiting_fic else None),
-                "backoff_until": waiting_fic.get("wait_until") if waiting_fic else None,
+                "backoff_until": backoff_iso,
                 "attempt_number": (
-                    waiting_fic.get("retry_count") if waiting_fic else None
+                    waiting_fic.get("attempt_number") or waiting_fic.get("retry_count")
+                    if waiting_fic
+                    else None
                 ),
             }
         )

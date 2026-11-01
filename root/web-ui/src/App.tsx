@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard,
@@ -35,6 +35,17 @@ export default function App() {
     const location = useLocation()
     const [showDaemonModal, setShowDaemonModal] = useState(false)
     const [daemonFeedback, setDaemonFeedback] = useState<string | null>(null)
+    const [daemonFeedbackIsError, setDaemonFeedbackIsError] = useState(false)
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setShowDaemonModal(false)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [])
 
     const activeCount = data?.active_downloads?.count ?? 0
     const queuedCount = data?.queued_downloads?.count ?? 0
@@ -79,15 +90,29 @@ export default function App() {
               : 'Connected (Sync)'
 
     const handleRestartDaemon = async (name: string) => {
-        const res = await restartDaemon(name)
-        setDaemonFeedback(res.message)
-        setTimeout(() => setDaemonFeedback(null), 3000)
+        try {
+            const res = await restartDaemon(name)
+            setDaemonFeedback(res.message)
+            setDaemonFeedbackIsError(!res.ok)
+            setTimeout(() => setDaemonFeedback(null), 3000)
+        } catch (e) {
+            setDaemonFeedback(e instanceof Error ? e.message : 'Restart request failed')
+            setDaemonFeedbackIsError(true)
+            setTimeout(() => setDaemonFeedback(null), 3000)
+        }
     }
 
     const handleToggleCoordinator = async () => {
-        const res = await toggleCoordinatorPause()
-        setDaemonFeedback(res.message)
-        setTimeout(() => setDaemonFeedback(null), 3000)
+        try {
+            const res = await toggleCoordinatorPause()
+            setDaemonFeedback(res.message)
+            setDaemonFeedbackIsError(!res.ok)
+            setTimeout(() => setDaemonFeedback(null), 3000)
+        } catch (e) {
+            setDaemonFeedback(e instanceof Error ? e.message : 'Failed to toggle Coordinator')
+            setDaemonFeedbackIsError(true)
+            setTimeout(() => setDaemonFeedback(null), 3000)
+        }
     }
 
     return (
@@ -274,9 +299,15 @@ export default function App() {
                                     style={{
                                         padding: '0.5rem 0.75rem',
                                         borderRadius: 'var(--radius-sm)',
-                                        background: 'rgba(16, 185, 129, 0.12)',
-                                        border: '1px solid rgba(16, 185, 129, 0.35)',
-                                        color: 'var(--success)',
+                                        background: daemonFeedbackIsError
+                                            ? 'rgba(239, 68, 68, 0.12)'
+                                            : 'rgba(16, 185, 129, 0.12)',
+                                        border: `1px solid ${
+                                            daemonFeedbackIsError
+                                                ? 'rgba(239, 68, 68, 0.35)'
+                                                : 'rgba(16, 185, 129, 0.35)'
+                                        }`,
+                                        color: daemonFeedbackIsError ? 'var(--error)' : 'var(--success)',
                                         fontSize: '0.8rem',
                                         fontWeight: 600,
                                     }}
@@ -321,7 +352,7 @@ export default function App() {
                                                         className="tabular-nums"
                                                         style={{ fontSize: '0.73rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}
                                                     >
-                                                        PID {detail.pid} · Uptime {formatUptime(detail.uptime_sec)}
+                                                        {detail.pid > 0 ? `PID ${detail.pid} · ` : ''}Uptime {formatUptime(detail.uptime_sec)}
                                                         {detail.restarts > 0 ? ` · ${detail.restarts} restart(s)` : ''}
                                                     </span>
                                                 )}

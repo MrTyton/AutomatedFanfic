@@ -47,6 +47,14 @@ export default function GitHubIssueModal({
     const [systemVersions, setSystemVersions] = useState<SystemVersionInfo | null>(null)
 
     useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose()
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [onClose])
+
+    useEffect(() => {
         getStartupLogs(100)
             .then((res) => setStartupLogs(res.items || []))
             .catch(() => {})

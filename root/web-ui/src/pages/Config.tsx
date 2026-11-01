@@ -80,10 +80,10 @@ const FIELD_DESCRIPTIONS: Record<string, Record<string, string>> = {
         password: 'Optional password for authenticating with a Calibre Content Server.',
         personal_ini: 'Path to your custom FanFicFare personal.ini configuration file.',
         update_method:
-            'FanFicFare mode: "update" (append new chapters), "update_always" (update metadata even if no new chapters), or "force" (overwrite from Chapter 1).',
+            'FanFicFare mode: "update" (append new chapters), "update_always" (update metadata even if no new chapters), "force" (overwrite from Chapter 1), or "update_no_force" (never force overwrite).',
         update_only: 'If enabled, only updates stories that already exist in your Calibre library and skips brand-new stories.',
         metadata_preservation_mode:
-            'How Calibre updates existing books: "remove_add" (re-imports updated EPUB while preserving custom columns/series) or "in_place".',
+            'How Calibre updates existing books: "remove_add" (re-import), "preserve_metadata" (export & restore custom columns), or "add_format" (replace EPUB file only, preserving all Calibre metadata).',
     },
     pushbullet: {
         enabled: 'Enable or disable sending push notifications through Pushbullet.',
@@ -120,12 +120,16 @@ const FIELD_DESCRIPTIONS: Record<string, Record<string, string>> = {
 }
 
 const ENUM_OPTIONS: Record<string, string[]> = {
-    'calibre.update_method': ['update', 'update_always', 'force'],
-    'calibre.metadata_preservation_mode': ['remove_add', 'in_place'],
+    'calibre.update_method': ['update', 'update_always', 'force', 'update_no_force'],
+    'calibre.metadata_preservation_mode': ['remove_add', 'preserve_metadata', 'add_format'],
 }
 
-function ReloadBadge({ tier }: { tier?: ReloadBehavior }) {
-    if (tier === 'app_restart') {
+function ReloadBadge({ tier }: { tier?: unknown }) {
+    const behavior =
+        typeof tier === 'object' && tier !== null && 'reload_behavior' in tier
+            ? (tier as { reload_behavior: string }).reload_behavior
+            : tier
+    if (behavior === 'app_restart') {
         return <span className="badge badge-app">Requires App Restart</span>
     }
     return null
@@ -206,6 +210,14 @@ export default function Config() {
 
     const totalUnsavedSectionsCount = Object.keys(dirtyBySection).length
 
+    const switchTab = (tab: string) => {
+        setActiveTab(tab)
+        setResult(null)
+        setTestResult(null)
+        setError(null)
+        setIniSaved(false)
+    }
+
     const handleFieldChange = (section: string, key: string, val: unknown) => {
         if (!config) return
         setConfig({
@@ -261,6 +273,10 @@ export default function Config() {
         try {
             const values = (config[activeTab] || {}) as Record<string, unknown>
             const res = await updateConfigSection(activeTab, values)
+            if (!res.applied) {
+                setError(res.error || 'Failed to save section')
+                return
+            }
             setResult(res)
             if (initialConfig) {
                 setInitialConfig({
@@ -510,11 +526,7 @@ export default function Config() {
                 <select
                     id="mobile-config-section-select"
                     value={activeTab}
-                    onChange={(e) => {
-                        setActiveTab(e.target.value)
-                        setResult(null)
-                        setTestResult(null)
-                    }}
+                    onChange={(e) => switchTab(e.target.value)}
                     style={{ background: 'var(--surface)', fontWeight: 600 }}
                 >
                     <optgroup label="config.toml Sections">
@@ -562,11 +574,7 @@ export default function Config() {
                                     type="button"
                                     className={activeTab === sec ? '' : 'secondary'}
                                     style={{ justifyContent: 'space-between', width: '100%' }}
-                                    onClick={() => {
-                                        setActiveTab(sec)
-                                        setResult(null)
-                                        setTestResult(null)
-                                    }}
+                                    onClick={() => switchTab(sec)}
                                 >
                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
                                         <Settings size={15} />
@@ -607,7 +615,7 @@ export default function Config() {
                             type="button"
                             className={activeTab === 'personal.ini' ? '' : 'secondary'}
                             style={{ justifyContent: 'space-between', width: '100%' }}
-                            onClick={() => setActiveTab('personal.ini')}
+                            onClick={() => switchTab('personal.ini')}
                         >
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
                                 <FileCode size={15} />
@@ -632,7 +640,7 @@ export default function Config() {
                             type="button"
                             className={activeTab === 'defaults.ini' ? '' : 'secondary'}
                             style={{ justifyContent: 'flex-start', width: '100%' }}
-                            onClick={() => setActiveTab('defaults.ini')}
+                            onClick={() => switchTab('defaults.ini')}
                         >
                             <FileCode size={15} />
                             <span>defaults.ini (Read-Only)</span>

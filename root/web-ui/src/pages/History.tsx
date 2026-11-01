@@ -649,7 +649,7 @@ export default function History({ data }: HistoryProps = {}) {
                                             <th>Calibre ID</th>
                                             <th>Started</th>
                                             <th>Duration</th>
-                                            <th style={{ textAlign: 'right' }}>Actions</th>
+                                            <th style={{ textAlign: 'right', minWidth: 260 }}>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -775,12 +775,13 @@ export default function History({ data }: HistoryProps = {}) {
                                                     >
                                                         {formatDuration(r.started_at, r.completed_at)}
                                                     </td>
-                                                    <td style={{ textAlign: 'right' }}>
+                                                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                                                         <div
                                                             style={{
                                                                 display: 'inline-flex',
                                                                 gap: '0.4rem',
                                                                 justifyContent: 'flex-end',
+                                                                flexWrap: 'nowrap',
                                                             }}
                                                         >
                                                             {isRowInFlight ? (
@@ -992,7 +993,7 @@ export default function History({ data }: HistoryProps = {}) {
                                             <th>Delay</th>
                                             <th>Scheduled / Status</th>
                                             <th>Error Reason</th>
-                                            <th style={{ textAlign: 'right' }}>Actions</th>
+                                            <th style={{ textAlign: 'right', minWidth: 260 }}>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1017,7 +1018,9 @@ export default function History({ data }: HistoryProps = {}) {
                                                         <SiteBadge site={r.site} />
                                                     </td>
                                                     <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                                                        #{r.attempt_number} / {maxNormalRetries}
+                                                        {r.attempt_number > maxNormalRetries || r.action.toLowerCase().includes('hail_mary')
+                                                            ? `Hail-Mary (#${r.attempt_number})`
+                                                            : `#${r.attempt_number} / ${maxNormalRetries}`}
                                                     </td>
                                                     <td>
                                                         <span className={statusBadgeClass(r.action)}>
@@ -1067,12 +1070,13 @@ export default function History({ data }: HistoryProps = {}) {
                                                             {summarizeError(r.error_message) || '—'}
                                                         </div>
                                                     </td>
-                                                    <td style={{ textAlign: 'right' }}>
+                                                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                                                         <div
                                                             style={{
                                                                 display: 'inline-flex',
                                                                 gap: '0.35rem',
                                                                 justifyContent: 'flex-end',
+                                                                flexWrap: 'nowrap',
                                                             }}
                                                         >
                                                             {r.error_message && (

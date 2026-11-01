@@ -22,3 +22,10 @@ async def get_startup_logs(limit: int = Query(default=500, ge=1, le=2000)):
     """Return startup/initialization log entries from app boot."""
     entries = ff_logging.get_startup_logs(limit=limit)
     return {"items": entries, "count": len(entries)}
+
+
+@router.post("/clear")
+async def clear_logs():
+    """Clear all in-memory application log buffers."""
+    ff_logging.clear_logs()
+    return {"ok": True}

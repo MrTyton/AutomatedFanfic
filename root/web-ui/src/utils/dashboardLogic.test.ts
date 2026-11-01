@@ -449,6 +449,9 @@ test('diagnoseErrorSignature identifies Cloudflare, 404, Auth, and Calibre error
     const cal = diagnoseErrorSignature('Calibre database is locked by another process')
     assert.equal(cal?.category, 'Calibre Library Target Error')
     assert.equal(cal?.configTab, 'calibre')
+
+    const ch = diagnoseErrorSignature('Failed: Chapter count mismatch between existing (20) and online (18)')
+    assert.equal(ch?.category, 'Chapter Count Mismatch')
 })
 
 test('computeIniLineDiff and extractIniSections parse INI changes and headers', () => {

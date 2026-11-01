@@ -683,3 +683,10 @@ def get_startup_logs(limit: int = 500) -> list[dict]:
         entries = list(_startup_log_buffer)
     entries.reverse()
     return entries[:limit]
+
+
+def clear_logs() -> None:
+    """Clear all in-memory runtime and startup log buffers."""
+    with _log_buffer_lock:
+        _log_buffer.clear()
+        _startup_log_buffer.clear()

@@ -417,7 +417,7 @@ export function checkEmails() {
 }
 
 export function clearLogs() {
-    return Promise.resolve({ ok: true })
+    return apiFetch<{ ok: boolean }>('/api/logs/clear', { method: 'POST' })
 }
 
 export function clearErrors(url?: string) {
