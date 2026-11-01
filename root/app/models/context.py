@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from calibre_integration import calibre_info
     from calibre_integration.client_interface import CalibreClient
-    from config.config_store import ConfigStore
+    from config.store import ConfigStore
     from history.recorder import HistoryRecorder
-    from models import config_models
+    import config as config_models
     from models.active_urls import ActiveUrlsDict
     from models.queue_types import (
         CheckEmailsEvent,

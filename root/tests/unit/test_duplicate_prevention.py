@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 from services.url_ingester import email_watcher, EmailInfo
 from workers.pipeline import url_worker
 from models.fanfic_info import FanficInfo
-from models.config_models import RetryConfig
+from config import RetryConfig
 from models.context import WorkerContext
 from models import retry_types
 

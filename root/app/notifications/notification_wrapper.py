@@ -29,9 +29,9 @@ Example:
 
 from . import notification_base
 from concurrent.futures import ThreadPoolExecutor
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from history.recorder import HistoryRecorder
-from models.config_models import AppConfig
+from config import AppConfig
 from .apprise_notification import AppriseNotification
 import ff_logging
 

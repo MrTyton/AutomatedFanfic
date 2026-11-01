@@ -10,11 +10,11 @@ import threading
 from queue import Empty
 
 
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from services.url_ingester import EmailInfo, email_watcher, _make_fff_get_configuration
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
-from models.config_models import (
+from config import (
     EmailConfig,
 )
 
@@ -511,7 +511,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_loads_both_ini_files_when_present(self):
         """Both ini paths configured in ConfigStore are read when both files exist."""
-        from config.config_store import ConfigStore
+        from config.store import ConfigStore
 
         store = ConfigStore({})
         store.update("calibre.default_ini", "/d/defaults.ini")
@@ -534,7 +534,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_skips_missing_ini_files(self):
         """config.read is never called when neither ini file exists on disk."""
-        from config.config_store import ConfigStore
+        from config.store import ConfigStore
 
         store = ConfigStore({})
         store.update("calibre.default_ini", "/missing/defaults.ini")
@@ -555,7 +555,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_loads_only_personal_ini_when_default_missing(self):
         """Only the personal.ini is loaded when the defaults file does not exist."""
-        from config.config_store import ConfigStore
+        from config.store import ConfigStore
 
         store = ConfigStore({})
         store.update("calibre.default_ini", "/missing/defaults.ini")
@@ -576,7 +576,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_handles_empty_config_store(self):
         """An empty ConfigStore skips config.read when no ini files exist."""
-        from config.config_store import ConfigStore
+        from config.store import ConfigStore
 
         store = ConfigStore({})
         with (

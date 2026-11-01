@@ -8,11 +8,11 @@ from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
 from multiprocessing.synchronize import Event
 
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from history.database import AsyncHistoryDB
 from history.recorder import HistoryRecorder
 from models.active_urls import ActiveUrlsDict
-from models.config_models import AppConfig
+from config import AppConfig
 from models.queue_types import (
     CheckEmailsEvent,
     IngressQueue,

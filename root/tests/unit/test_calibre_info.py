@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 
 from calibre_integration.calibre_info import CalibreInfo
-from models.config_models import (
+from config import (
     CalibreConfig,
     MetadataPreservationMode,
 )

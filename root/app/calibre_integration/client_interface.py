@@ -10,7 +10,7 @@ lazy import fanficfare.adapters as fff_adapters
 
 from calibre_integration import calibre_info
 from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from models.fanfic_info import FanficInfo
 import ff_logging
 from utils import system_utils

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import tomlkit
 from fastapi.testclient import TestClient
 
-from config.config_store import (
+from config.store import (
     ConfigStore,
     ReloadBehavior,
 )
@@ -114,7 +114,7 @@ class TestConfigStoreBasics(unittest.TestCase):
         self.assertNotIn("__version__", store.get_all())
 
     def test_read_ini_file_cached_invalidates_on_change(self):
-        from config.config_store import read_ini_file_cached
+        from config.store import read_ini_file_cached
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             ini_path = os.path.join(tmp_dir, "personal.ini")
@@ -442,7 +442,7 @@ class TestConfigRoutesUpdated(unittest.TestCase):
 
     def test_validate_config_with_real_config(self):
         """POST /api/config/validate merges and validates with Pydantic."""
-        from models.config_models import AppConfig, EmailConfig, CalibreConfig
+        from config import AppConfig, EmailConfig, CalibreConfig
 
         cfg = AppConfig(
             email=EmailConfig(email="a@b.com", password="p", server="imap.test"),

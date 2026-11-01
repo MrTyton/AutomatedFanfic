@@ -2,7 +2,7 @@ import threading
 import unittest
 from unittest.mock import MagicMock
 
-from models import config_models
+import config as config_models
 from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext
 from calibre_integration import calibredb_utils

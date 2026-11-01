@@ -23,7 +23,7 @@ from starlette.types import Receive, Scope, Send
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
-from models.config_models import AppConfig, ConfigManager
+from config import AppConfig, ConfigManager
 from history.database import AsyncHistoryDB
 from models.context import SharedIPCContext
 import ff_logging

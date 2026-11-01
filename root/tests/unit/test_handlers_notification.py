@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
 from workers import handlers
-from models import fanfic_info, config_models
+import config as config_models
+from models import fanfic_info
 from models.context import WorkerContext
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper

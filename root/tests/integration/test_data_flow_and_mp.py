@@ -22,10 +22,10 @@ from fanficfare.adapters.base_adapter import BaseSiteAdapter
 
 from calibre_integration.calibre_info import CalibreInfo
 from calibre_integration.calibredb_utils import CalibreDBClient
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from history.database import AsyncHistoryDB, SyncHistoryDB
 from history.recorder import HistoryRecorder, HistoryWriter
-from models import config_models
+import config as config_models
 from models.active_urls import ActiveUrlsDict
 from models.context import SharedIPCContext, WorkerContext
 from models.fanfic_info import FanficInfo

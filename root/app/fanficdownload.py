@@ -49,13 +49,13 @@ lazy from notifications import notification_wrapper
 lazy from services import url_ingester
 lazy from services import supervisor
 lazy from workers import pipeline as url_worker, pool_runner
-from models import config_models
-from models.config_models import ConfigError, ConfigValidationError
+import config as config_models
+from config import ConfigError, ConfigValidationError
 from models.context import SharedIPCContext
 from process_management import ProcessManager
 from history.recorder import HistoryRecorder, HistoryWriter
 from history.recovery import recover_uncompleted_downloads
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 lazy from web import server as web_server
 lazy from calibre_integration.http_client import CalibreHttpClient
 

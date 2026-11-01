@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 import pytest
 
-from models.config_models import AppConfig, AppriseConfig, CalibreConfig, EmailConfig
+from config import AppConfig, AppriseConfig, CalibreConfig, EmailConfig
 from models.fanfic_info import FanficInfo
 from web.dependencies import WebState
 from web.server import create_app

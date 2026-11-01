@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, Mock, patch
 from parameterized import parameterized
 
 # Add the app directory to the path so we can import our modules
-from models.config_models import (
+from config import (
     AppConfig,
     ProcessConfig,
     EmailConfig,

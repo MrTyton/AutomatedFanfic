@@ -70,7 +70,7 @@ import time
 import logging
 from contextlib import contextmanager
 lazy from fanficfare import geturls
-from config.config_store import ConfigStore, read_ini_file_cached
+from config.store import ConfigStore, read_ini_file_cached
 from history.recorder import HistoryRecorder
 lazy import imapclient
 import ff_logging
@@ -80,7 +80,7 @@ from parsers import regex_parsing
 from notifications import notification_wrapper
 from models import active_urls as active_urls_utils
 from models.active_urls import ActiveUrlsDict
-from models.config_models import EmailConfig
+from config import EmailConfig
 from models.queue_types import CheckEmailsEvent, IngressQueue, ShutdownEvent
 
 

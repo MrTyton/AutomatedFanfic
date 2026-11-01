@@ -22,7 +22,7 @@ import re
 from typing import Protocol, TypedDict
 
 lazy from fanficfare import adapters, configurable, exceptions, geturls
-lazy from config.config_store import ConfigStore
+lazy from config.store import ConfigStore
 from parsers.regex_parsing import normalize_url as _normalize_url
 import ff_logging
 

@@ -13,7 +13,7 @@ import signal
 import threading
 from unittest.mock import patch
 
-from models.config_models import (
+from config import (
     AppConfig,
     EmailConfig,
     CalibreConfig,

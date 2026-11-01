@@ -5,12 +5,22 @@ between all processes. Services read from this store each iteration instead
 of their local config copies.
 """
 
-import os
-from collections.abc import MutableMapping
-from enum import Enum
+from __future__ import annotations
 
-lazy from fanficfare import adapters, configurable
-lazy from utils.system_utils import resolve_ini_path
+from collections.abc import Callable, MutableMapping
+from enum import Enum
+from typing import TYPE_CHECKING
+
+lazy from fanficfare import configurable
+from config.ini_resolver import (
+    build_fff_configuration,
+    clear_ini_cache,
+    read_ini_file_cached,
+    resolve_ini_path,
+)
+
+if TYPE_CHECKING:
+    from config.schemas.app import AppConfig
 
 
 class ReloadBehavior(str, Enum):
@@ -51,6 +61,7 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
     "retry.max_normal_retries": ReloadBehavior.HOT,
     "retry.hail_mary_enabled": ReloadBehavior.HOT,
     "retry.hail_mary_wait_hours": ReloadBehavior.HOT,
+    "retry.resume_uncompleted_on_startup": ReloadBehavior.HOT,
     # Process monitor — ProcessManager reads these each tick
     "process.max_workers": ReloadBehavior.HOT,
     "process.shutdown_timeout": ReloadBehavior.HOT,
@@ -60,50 +71,27 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
     "web.enabled": ReloadBehavior.SERVICE_RESTART,
     "web.host": ReloadBehavior.SERVICE_RESTART,
     "web.port": ReloadBehavior.SERVICE_RESTART,
+    "web.history_db_path": ReloadBehavior.SERVICE_RESTART,
+    "web.log_file_path": ReloadBehavior.SERVICE_RESTART,
+    # ── Requires Application Restart ────────────────────────────
+    "process.restart_delay": ReloadBehavior.APP_RESTART,
+    "process.enable_monitoring": ReloadBehavior.APP_RESTART,
+    "process.worker_timeout": ReloadBehavior.APP_RESTART,
+    "process.signal_timeout": ReloadBehavior.APP_RESTART,
 }
 
 
-# Cache of (mtime_ns, size, text) keyed by absolute INI path
-_ini_text_cache: dict[str, tuple[int, int, str]] = {}
-
-
-def read_ini_file_cached(path: str | os.PathLike) -> str | None:
-    """Read an INI file from disk, caching its contents by (mtime_ns, size)."""
-    key = str(path)
-    try:
-        st = os.stat(key)
-        cached = _ini_text_cache.get(key)
-        if (
-            cached is not None
-            and cached[0] == st.st_mtime_ns
-            and cached[1] == st.st_size
-        ):
-            return cached[2]
-        with open(key, encoding="utf-8") as fh:
-            text = fh.read()
-        _ini_text_cache[key] = (st.st_mtime_ns, st.st_size, text)
-        return text
-    except OSError:
-        return None
-
-
 class ConfigStore:
-    """Cross-process shared configuration store for hot-reloadable fields.
+    """Thread-safe and process-safe configuration store backed by a Manager dict."""
 
-    Initialised from an AppConfig at startup and passed to every process/thread.
-    Services call ``store.get("email.sleep_time")`` on each loop iteration so
-    they pick up changes made via the web dashboard without restarting.
-    """
+    def __init__(self, shared_dict: MutableMapping[str, object] | None = None) -> None:
+        """Initialize the store with an optional shared dictionary."""
+        self._store: MutableMapping[str, object] = (
+            shared_dict if shared_dict is not None else {}
+        )
 
-    def __init__(self, shared_dict: MutableMapping[str, object]):
-        """Accepts an ``mp.Manager().dict()`` for production or a plain dict for tests."""
-        self._store = shared_dict
-
-    # ── Bootstrap ───────────────────────────────────────────────
-
-    def initialize_from_config(self, config) -> None:
+    def initialize_from_config(self, config: AppConfig) -> None:
         """Populate the store from an AppConfig object."""
-        # ── Email ──────────────────────────────────────────────
         self._store["email.sleep_time"] = config.email.sleep_time
         self._store["email.disabled_sites"] = list(config.email.disabled_sites)
         self._store["email.email"] = config.email.email
@@ -111,7 +99,7 @@ class ConfigStore:
         self._store["email.server"] = config.email.server
         self._store["email.mailbox"] = config.email.mailbox
         self._store["email.imap_idle"] = config.email.imap_idle
-        # ── Calibre ────────────────────────────────────────────
+
         self._store["calibre.update_method"] = config.calibre.update_method
         self._store["calibre.metadata_preservation_mode"] = (
             config.calibre.metadata_preservation_mode.value
@@ -124,16 +112,19 @@ class ConfigStore:
         self._store["calibre.password"] = config.calibre.password
         self._store["calibre.default_ini"] = config.calibre.default_ini
         self._store["calibre.personal_ini"] = config.calibre.personal_ini
-        # ── Notifications ──────────────────────────────────────
+
         self._store["pushbullet.enabled"] = config.pushbullet.enabled
         self._store["pushbullet.api_key"] = config.pushbullet.api_key
         self._store["pushbullet.device"] = config.pushbullet.device
         self._store["apprise.urls"] = list(config.apprise.urls)
-        # ── Retry ──────────────────────────────────────────────
+
         self._store["retry.max_normal_retries"] = config.retry.max_normal_retries
         self._store["retry.hail_mary_enabled"] = config.retry.hail_mary_enabled
         self._store["retry.hail_mary_wait_hours"] = config.retry.hail_mary_wait_hours
-        # ── Process monitor ────────────────────────────────────
+        self._store["retry.resume_uncompleted_on_startup"] = (
+            config.retry.resume_uncompleted_on_startup
+        )
+
         self._store["process.health_check_interval"] = (
             config.process.health_check_interval
         )
@@ -142,24 +133,52 @@ class ConfigStore:
             config.process.max_restart_attempts
         )
         self._store["process.max_workers"] = config.process.max_workers
-        curr_ver = self._store.get("__version__", 0)
-        self._store["__version__"] = (curr_ver if isinstance(curr_ver, int) else 0) + 1
+        self._store["__version__"] = 1
 
-    # ── Read ────────────────────────────────────────────────────
+    def update_from_config(self, config: AppConfig) -> None:
+        """Alias for initialize_from_config."""
+        self.initialize_from_config(config)
 
-    def get(self, key: str, default: object | None = None) -> object | None:
-        """Get a config value by its dotted key (e.g. ``email.sleep_time``)."""
+    def get(self, key: str, default: object = None) -> object:
+        """Retrieve a value by dotted key path."""
         try:
             return self._store.get(key, default)
         except Exception:
             return default
+
+    def set(self, key: str, value: object) -> None:
+        """Set a value by dotted key path."""
+        self.update(key, value)
+
+    def update(self, key: str, value: object) -> None:
+        """Update a single key and increment store version."""
+        self._store[key] = value
+        try:
+            curr_ver = self._store.get("__version__", 0)
+            self._store["__version__"] = (
+                curr_ver if isinstance(curr_ver, int) else 0
+            ) + 1
+        except Exception:
+            pass
+
+    def update_many(self, updates: dict[str, object]) -> None:
+        """Update multiple keys and increment store version."""
+        for key, value in updates.items():
+            self._store[key] = value
+        try:
+            curr_ver = self._store.get("__version__", 0)
+            self._store["__version__"] = (
+                curr_ver if isinstance(curr_ver, int) else 0
+            ) + 1
+        except Exception:
+            pass
 
     def get_version(self) -> int | None:
         """Return the current configuration version counter, if tracked."""
         val = self.get("__version__")
         return val if isinstance(val, int) else None
 
-    def get_all(self) -> dict:
+    def get_all(self) -> dict[str, object]:
         """Return a snapshot of all hot-reloadable values."""
         try:
             data = dict(self._store)
@@ -167,6 +186,10 @@ class ConfigStore:
             return data
         except Exception:
             return {}
+
+    def as_dict(self) -> dict[str, object]:
+        """Return a snapshot of the current store contents as a regular dict."""
+        return self.get_all()
 
     # ── FanFicFare INI & Configuration Helpers ───────────────────
 
@@ -177,7 +200,8 @@ class ConfigStore:
             or self.get("fanficfare.default_ini")
             or self.get("default_ini")
         )
-        return resolve_ini_path(raw if isinstance(raw, str) else None, "defaults.ini")
+        res = resolve_ini_path(raw if isinstance(raw, str) else None, "defaults.ini")
+        return res or ""
 
     def get_resolved_personal_ini(self) -> str:
         """Return the resolved path to personal.ini (or empty string if not configured)."""
@@ -190,68 +214,21 @@ class ConfigStore:
             resolve_ini_path(raw, "personal.ini")
             if isinstance(raw, str) and raw
             else ""
+        ) or ""
+
+    def get_fff_configuration(self, url: str) -> configurable.Configuration:
+        """Return a FanFicFare Configuration loaded with site sections and INI files."""
+        return build_fff_configuration(
+            url,
+            default_ini_path=self.get_resolved_default_ini(),
+            personal_ini_path=self.get_resolved_personal_ini(),
         )
 
-    def get_fff_configuration(self, url: str):
-        """Return a FanFicFare Configuration loaded with site sections and INI files."""
-        try:
-            sections = adapters.getConfigSectionsFor(url)
-        except Exception:
-            sections = ["test1.com"]
-
-        config = configurable.Configuration(sections, "EPUB")
-        ini_files = []
-
-        default_ini = self.get_resolved_default_ini()
-        if default_ini and os.path.isfile(default_ini):
-            ini_files.append(default_ini)
-
-        personal_ini = self.get_resolved_personal_ini()
-        if personal_ini and os.path.isfile(personal_ini):
-            ini_files.append(personal_ini)
-
-        if ini_files:
-            uncached_files = []
-            for ini_path in ini_files:
-                cached_text = read_ini_file_cached(ini_path)
-                if cached_text is not None:
-                    try:
-                        config.read_string(cached_text, source=ini_path)
-                    except Exception:
-                        uncached_files.append(ini_path)
-                else:
-                    uncached_files.append(ini_path)
-            if uncached_files:
-                config.read(uncached_files)
-
-        return config
-
-    def get_fff_get_configuration_callable(self):
+    def get_fff_get_configuration_callable(
+        self,
+    ) -> Callable[[str], configurable.Configuration]:
         """Return a callable(url: str) -> Configuration for use with fanficfare.geturls.GetURLs."""
         return self.get_fff_configuration
-
-    # ── Write ───────────────────────────────────────────────────
-
-    def update(self, key: str, value: object) -> None:
-        self._store[key] = value
-        try:
-            curr_ver = self._store.get("__version__", 0)
-            self._store["__version__"] = (
-                curr_ver if isinstance(curr_ver, int) else 0
-            ) + 1
-        except Exception:
-            pass
-
-    def update_many(self, updates: dict[str, object]) -> None:
-        for key, value in updates.items():
-            self._store[key] = value
-        try:
-            curr_ver = self._store.get("__version__", 0)
-            self._store["__version__"] = (
-                curr_ver if isinstance(curr_ver, int) else 0
-            ) + 1
-        except Exception:
-            pass
 
     # ── Classification helpers ──────────────────────────────────
 
@@ -278,3 +255,12 @@ class ConfigStore:
             behavior = ConfigStore.get_reload_behavior(section, field_name)
             classified[behavior][field_name] = value
         return classified
+
+
+__all__ = [
+    "ReloadBehavior",
+    "FIELD_RELOAD_MAP",
+    "ConfigStore",
+    "read_ini_file_cached",
+    "clear_ini_cache",
+]

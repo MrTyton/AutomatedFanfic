@@ -386,7 +386,7 @@ class TestEdgeCases:
 
     def test_get_series_configuration_loads_site_sections_and_ini_files(self, tmp_path):
         """get_series_configuration creates configuration with site sections and INI files via ConfigStore."""
-        from config.config_store import ConfigStore
+        from config.store import ConfigStore
 
         ini_file = tmp_path / "personal.ini"
         ini_file.write_text(

@@ -943,7 +943,7 @@ class TestWebConfig(unittest.TestCase):
     """Tests for the WebConfig model."""
 
     def test_web_config_defaults(self):
-        from models.config_models import WebConfig
+        from config import WebConfig
 
         wc = WebConfig()
         self.assertFalse(wc.enabled)
@@ -952,14 +952,14 @@ class TestWebConfig(unittest.TestCase):
         self.assertEqual(wc.history_db_path, "/data/history.db")
 
     def test_web_config_custom(self):
-        from models.config_models import WebConfig
+        from config import WebConfig
 
         wc = WebConfig(enabled=False, port=9090, host="127.0.0.1")
         self.assertFalse(wc.enabled)
         self.assertEqual(wc.port, 9090)
 
     def test_web_config_port_validation(self):
-        from models.config_models import WebConfig
+        from config import WebConfig
         from pydantic import ValidationError
 
         with self.assertRaises(ValidationError):
@@ -970,35 +970,35 @@ class TestWebConfig(unittest.TestCase):
 
     def test_history_db_path_directory_gets_filename_appended(self):
         """Directory path without extension gets history.db appended."""
-        from models.config_models import WebConfig
+        from config import WebConfig
 
         wc = WebConfig(history_db_path="/config")
         self.assertEqual(wc.history_db_path, "/config/history.db")
 
     def test_history_db_path_directory_with_trailing_slash(self):
         """Directory path with trailing slash gets history.db appended."""
-        from models.config_models import WebConfig
+        from config import WebConfig
 
         wc = WebConfig(history_db_path="/config/")
         self.assertEqual(wc.history_db_path, "/config/history.db")
 
     def test_history_db_path_explicit_file_unchanged(self):
         """Explicit file path with extension is left unchanged."""
-        from models.config_models import WebConfig
+        from config import WebConfig
 
         wc = WebConfig(history_db_path="/data/my.db")
         self.assertEqual(wc.history_db_path, "/data/my.db")
 
     def test_history_db_path_whitespace_stripped(self):
         """Whitespace in path is stripped."""
-        from models.config_models import WebConfig
+        from config import WebConfig
 
         wc = WebConfig(history_db_path="  /data/history.db  ")
         self.assertEqual(wc.history_db_path, "/data/history.db")
 
     def test_app_config_includes_web(self):
         """AppConfig has a web field with defaults."""
-        from models.config_models import WebConfig
+        from config import WebConfig
 
         # Just verify the model can be imported and has the field
         wc = WebConfig()
@@ -1199,8 +1199,8 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
         """PUT /api/config/{section} preserves '********' secrets and rejects invalid values before mutating state."""
         import os
         import tempfile
-        from config.config_store import ConfigStore
-        from models.config_models import ConfigManager
+        from config.store import ConfigStore
+        from config import ConfigManager
 
         toml_content = """
 [email]

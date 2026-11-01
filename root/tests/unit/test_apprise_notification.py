@@ -3,10 +3,10 @@ import multiprocessing as mp
 import unittest
 from unittest.mock import patch, MagicMock
 
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from notifications.apprise_notification import AppriseNotification
 from parameterized import parameterized
-from models.config_models import (
+from config import (
     AppConfig,
     AppriseConfig,
     PushbulletConfig,

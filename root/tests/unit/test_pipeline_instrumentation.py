@@ -9,7 +9,7 @@ import unittest
 from queue import Empty
 from unittest.mock import MagicMock, patch
 
-from models.config_models import (
+from config import (
     AppConfig,
     AppriseConfig,
     CalibreConfig,

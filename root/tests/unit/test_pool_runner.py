@@ -7,7 +7,7 @@ from queue import Empty
 from workers import pool_runner, pipeline
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
-from models import config_models
+import config as config_models
 from models.context import SharedIPCContext, WorkerContext
 
 

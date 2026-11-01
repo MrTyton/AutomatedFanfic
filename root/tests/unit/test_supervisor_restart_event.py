@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from multiprocessing.synchronize import Event as MpEvent
-from models.config_models import AppConfig, CalibreConfig, EmailConfig
+from config import AppConfig, CalibreConfig, EmailConfig
 from process_management.manager import ProcessManager
 from process_management.state import ProcessInfo, ProcessState
 

@@ -39,8 +39,8 @@ Example:
 
 import time
 from typing import Callable, Any
-from config.config_store import ConfigStore
-from models.config_models import AppConfig
+from config.store import ConfigStore
+from config import AppConfig
 
 # Base sleep time in seconds for retry delays between notification attempts
 kSleepTime = 10

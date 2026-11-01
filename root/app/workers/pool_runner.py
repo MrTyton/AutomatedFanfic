@@ -12,7 +12,7 @@ from queue import Empty
 
 import ff_logging
 from workers import pipeline
-from models import config_models
+import config as config_models
 from models.context import SharedIPCContext, WorkerContext
 from models.queue_types import WorkerQueue
 from calibre_integration.client_interface import CalibreClient

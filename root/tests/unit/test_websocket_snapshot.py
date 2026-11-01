@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 from models.active_urls import ActiveUrlsDict
-from models.config_models import AppConfig, CalibreConfig, EmailConfig, RetryConfig
+from config import AppConfig, CalibreConfig, EmailConfig, RetryConfig
 from web.dependencies import WebState
 from web.routes.websocket import _build_snapshot
 

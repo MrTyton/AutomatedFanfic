@@ -11,7 +11,7 @@ from calibre_integration.client_interface import (
     extract_story_base_url,
 )
 from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from helpers.log_capture import LogCapture
 from models.fanfic_info import FanficInfo
 import ff_logging

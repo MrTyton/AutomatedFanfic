@@ -27,7 +27,7 @@ from models import fanfic_info
 from calibre_integration import calibre_info
 from notifications import notification_wrapper
 from parsers import auto_url_parsers
-from models.config_models import (
+from config import (
     AppConfig,
     EmailConfig,
     CalibreConfig,

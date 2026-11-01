@@ -8,14 +8,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from config.config_store import ConfigStore, ReloadBehavior, FIELD_RELOAD_MAP
+from config.store import ConfigStore, ReloadBehavior, FIELD_RELOAD_MAP
 from config.toml_writer import TomlWriter
 import ff_logging
 from utils.system_utils import resolve_ini_path
 
 lazy import apprise
 lazy from web.routes.debug import _get_calibre_client
-lazy from models.config_models import (
+lazy from config import (
     AppConfig,
     AppriseConfig,
     CalibreConfig,

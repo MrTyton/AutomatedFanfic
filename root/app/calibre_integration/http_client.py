@@ -26,7 +26,7 @@ from calibre_integration.models import (
     CalibreOperationError,
     MetadataUpdateReport,
 )
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from models import fanfic_info
 from parsers import regex_parsing
 import ff_logging

@@ -6,7 +6,7 @@ from calibre_integration.calibredb_utils import CalibreDBClient
 from calibre_integration.factory import create_calibre_client
 from calibre_integration.http_client import CalibreHttpClient
 from calibre_integration.models import CalibreConfigurationError
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 
 
 def _mock_info(location: str) -> MagicMock:

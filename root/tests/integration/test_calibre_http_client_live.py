@@ -17,8 +17,8 @@ from calibre_integration.models import (
     CalibreAuthError,
     MetadataUpdateReport,
 )
-from config.config_store import ConfigStore
-from models.config_models import CalibreConfig
+from config.store import ConfigStore
+from config import CalibreConfig
 from models.fanfic_info import FanficInfo
 from fixtures.calibre_provisioner import ensure_calibre_binaries
 

@@ -17,7 +17,7 @@ from calibre_integration.models import (
     CalibreConnectionError,
     MetadataUpdateReport,
 )
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from models.fanfic_info import FanficInfo
 
 
@@ -75,7 +75,7 @@ def test_http_client_without_library_fragment() -> None:
 
 
 def test_http_client_is_picklable_for_multiprocessing() -> None:
-    from models.config_models import CalibreConfig
+    from config import CalibreConfig
 
     class _DummyManager:
         @staticmethod

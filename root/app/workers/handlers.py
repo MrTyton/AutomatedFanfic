@@ -2,7 +2,7 @@
 Failure and success handling logic for worker processes.
 """
 
-from models import config_models
+import config as config_models
 from models import retry_types
 from models import fanfic_info
 from models.context import WorkerContext

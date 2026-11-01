@@ -6,7 +6,7 @@ import multiprocessing as mp
 
 
 from workers import pipeline, handlers, command, common  # noqa: E402
-from models import config_models  # noqa: E402
+import config as config_models  # noqa: E402
 from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext  # noqa: E402
 from models.fanfic_info import FanficInfo  # noqa: E402

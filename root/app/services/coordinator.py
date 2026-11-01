@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 from queue import Empty
 from enum import Enum
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from history.recorder import HistoryRecorder
 import ff_logging
 from models import active_urls as active_urls_utils

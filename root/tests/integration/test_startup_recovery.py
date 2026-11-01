@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from fanficdownload import register_processes
 from history.database import SyncHistoryDB
 from history.models import DownloadEvent, DownloadStatus
-from models.config_models import (
+from config import (
     AppConfig,
     CalibreConfig,
     EmailConfig,

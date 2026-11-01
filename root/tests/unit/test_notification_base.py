@@ -7,7 +7,7 @@ from notifications.notification_base import (
     kSleepTime,
     kMaxAttempts,
 )
-from models.config_models import (
+from config import (
     AppConfig,
     EmailConfig,
     CalibreConfig,

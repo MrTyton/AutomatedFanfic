@@ -12,7 +12,7 @@ from parameterized import parameterized
 
 
 import fanficdownload  # noqa: E402
-from models.config_models import (
+from config import (
     AppConfig,
     ConfigError,
     ConfigValidationError,
@@ -109,7 +109,7 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ProcessManager")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("models.config_models.ConfigManager.load_config")
+    @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")
     @patch("fanficdownload.parse_arguments")
@@ -212,7 +212,7 @@ class TestFanficDownloadMain(unittest.TestCase):
 
     @patch("fanficdownload.url_ingester.EmailInfo")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("models.config_models.ConfigManager.load_config")
+    @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
@@ -257,7 +257,7 @@ class TestFanficDownloadMain(unittest.TestCase):
 
     @patch("fanficdownload.url_ingester.EmailInfo")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("models.config_models.ConfigManager.load_config")
+    @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
@@ -302,7 +302,7 @@ class TestFanficDownloadMain(unittest.TestCase):
 
     @patch("fanficdownload.url_ingester.EmailInfo")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("models.config_models.ConfigManager.load_config")
+    @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
@@ -351,7 +351,7 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ProcessManager")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("models.config_models.ConfigManager.load_config")
+    @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")
     @patch("fanficdownload.parse_arguments")
@@ -466,7 +466,7 @@ class TestFanficDownloadMain(unittest.TestCase):
     @patch("fanficdownload.ProcessManager")
     @patch("fanficdownload.notification_wrapper.NotificationWrapper")
     @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("models.config_models.ConfigManager.load_config")
+    @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_web_enabled")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")

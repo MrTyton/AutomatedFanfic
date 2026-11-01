@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from calibre_integration import calibredb_utils
-from models import config_models
+import config as config_models
 from models.context import WorkerContext
 from models.fanfic_info import FanficInfo
 from notifications import notification_wrapper

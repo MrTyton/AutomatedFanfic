@@ -23,7 +23,7 @@ from models.fanfic_info import FanficInfo
 import ff_logging
 lazy from utils import flaresolverr_utils
 from utils.system_utils import resolve_ini_path
-lazy from config.config_store import ConfigStore
+lazy from config.store import ConfigStore
 lazy from fanficfare import adapters as fff_adapters, configurable, geturls
 lazy from notifications.apprise_notification import AppriseNotification
 lazy from parsers import auto_url_parsers, regex_parsing
