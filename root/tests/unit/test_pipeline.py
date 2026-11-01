@@ -541,6 +541,41 @@ class TestUpdateOnlyMode(unittest.TestCase):
         mock_command.execute_fanficfare_direct.assert_called_once()
         self.history_recorder.record_download_abandoned.assert_not_called()
 
+    @patch("workers.pipeline.flaresolverr_utils")
+    def test_flaresolverr_tab_crash_recovered_and_retried_in_pipeline(
+        self,
+        mock_flaresolverr,
+        mock_command,
+        mock_handlers,
+        mock_common,
+        mock_sys,
+        mock_logging,
+    ):
+        mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
+        mock_common.get_path_or_url.return_value = self.fanfic.url
+        mock_command.FanFicFareResult = FanFicFareResult
+
+        failed_res = FanFicFareResult(
+            failure_messages=["Error solving the challenge. Message: tab crashed"],
+        )
+        success_res = FanFicFareResult()
+        mock_command.execute_fanficfare_direct.side_effect = [
+            failed_res,
+            success_res,
+        ]
+
+        mock_flaresolverr.is_flaresolverr_crash.return_value = True
+        mock_flaresolverr.recover_flaresolverr_crashes.return_value = 1
+
+        pipeline._process_task(self.fanfic, self.ctx)
+
+        self.assertEqual(mock_command.execute_fanficfare_direct.call_count, 2)
+        mock_flaresolverr.recover_flaresolverr_crashes.assert_called_once_with(
+            target_site=self.fanfic.site,
+            personal_ini_path=self.mock_client.cdb_info.personal_ini,
+        )
+        mock_handlers.process_fanfic_addition.assert_called_once()
+
     @patch("workers.pipeline.anubis_solver")
     def test_anubis_challenge_solved_and_retried_in_pipeline(
         self,

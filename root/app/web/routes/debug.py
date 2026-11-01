@@ -1,5 +1,6 @@
 """Debug REST API routes for queues, coordinator locks, and filtered logs."""
 
+import asyncio
 import configparser
 from http.cookiejar import LWPCookieJar, MozillaCookieJar
 import imaplib
@@ -20,6 +21,7 @@ lazy from calibre_integration import (
 )
 from models.fanfic_info import FanficInfo
 from utils import ff_logging
+lazy from utils import flaresolverr_utils
 from utils.system_utils import resolve_ini_path
 lazy from config.config_store import ConfigStore
 lazy from fanficfare import adapters as fff_adapters, configurable, geturls
@@ -616,6 +618,10 @@ async def get_antibot_status(request: Request) -> dict[str, object]:
             )
             if m:
                 flaresolverr_endpoint = m.group(1).strip()
+            else:
+                fs_cfgs = flaresolverr_utils.get_flaresolverr_configs(personal_path)
+                if fs_cfgs:
+                    flaresolverr_endpoint = fs_cfgs[0].endpoint
         except Exception:
             pass
 
@@ -864,12 +870,7 @@ async def run_diagnostics(request: Request, service: str) -> dict[str, object]:
     )
 
 
-@router.post("/dry-run")
-async def dry_run_fanfic(request: Request, body: DryRunRequest) -> dict[str, object]:
-    """Run FanFicFare metadata extraction without downloading chapters."""
-    state = request.app.state.web_state
-    url = body.url.strip()
-
+def _run_dry_run_extraction(state: Any, url: str) -> dict[str, object]:
     config_store = getattr(state, "config_store", None)
     if config_store is not None:
         fff_conf = config_store.get_fff_configuration(url)
@@ -880,7 +881,7 @@ async def dry_run_fanfic(request: Request, body: DryRunRequest) -> dict[str, obj
             sections = ["defaults"]
         fff_conf = configurable.Configuration(sections, "EPUB")
 
-    try:
+    def _extract():
         adapter = fff_adapters.getAdapter(fff_conf, url)
         story = (
             adapter.getStoryMetadataOnly()
@@ -922,12 +923,44 @@ async def dry_run_fanfic(request: Request, body: DryRunRequest) -> dict[str, obj
                 "site": site,
             },
         }
+
+    try:
+        return _extract()
     except Exception as exc:
+        if flaresolverr_utils.is_flaresolverr_crash(exc):
+            personal_path = ""
+            if getattr(state, "config", None) and getattr(
+                state.config, "calibre", None
+            ):
+                personal_path = state.config.calibre.personal_ini
+            elif getattr(state, "config_store", None):
+                personal_path = state.config_store.get_resolved_personal_ini()
+            recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+                target_site=url,
+                personal_ini_path=personal_path,
+            )
+            if recovered > 0:
+                try:
+                    return _extract()
+                except Exception as retry_exc:
+                    return {
+                        "url": url,
+                        "status": "error",
+                        "error": str(retry_exc),
+                    }
         return {
             "url": url,
             "status": "error",
             "error": str(exc),
         }
+
+
+@router.post("/dry-run")
+async def dry_run_fanfic(request: Request, body: DryRunRequest) -> dict[str, object]:
+    """Run FanFicFare metadata extraction without downloading chapters."""
+    state = request.app.state.web_state
+    url = body.url.strip()
+    return await asyncio.to_thread(_run_dry_run_extraction, state, url)
 
 
 @router.post("/simulate-email")

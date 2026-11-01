@@ -89,6 +89,9 @@ adult_check = re.compile(r".*Adult check required on non-interactive process.*")
 bad_request = re.compile(r".*400 Client Error: Bad Request for url:.*")
 forbidden_client = re.compile(r".*403 Client Error: Forbidden for url:.*")
 flaresolverr = re.compile(r".*Connection to flaresolverr proxy server failed.*")
+flaresolverr_crash = re.compile(
+    r".*(tab crashed|target window already detached|page crash).*", re.IGNORECASE
+)
 
 
 def extract_filename(filename: str) -> str:
@@ -151,6 +154,7 @@ def check_failure_from_message(msg: str) -> bool:
         bad_request,
         forbidden_client,
         flaresolverr,
+        flaresolverr_crash,
     ]
     return any(p.search(msg) for p in failure_patterns)
 

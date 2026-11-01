@@ -122,6 +122,33 @@ class TestUrlIngester(unittest.TestCase):
         self.assertEqual(result, set(expected_urls))
         mock_get_urls_class.return_value.get_urls_from_imap.assert_called_once()
 
+    @patch("utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=1)
+    @patch("services.url_ingester.geturls.GetURLs")
+    def test_email_info_get_urls_flaresolverr_tab_crash_recovery(
+        self, mock_get_urls_class, mock_recover
+    ):
+        mock_instance = MagicMock()
+        mock_get_urls_class.return_value = mock_instance
+        mock_instance.get_urls_from_imap.side_effect = [
+            RuntimeError(
+                "HTTP Error 500: Error solving the challenge. Message: tab crashed"
+            ),
+            ["https://www.royalroad.com/fiction/123/story"],
+        ]
+
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            mailbox="test_mailbox",
+        )
+        email_info = EmailInfo(email_config, ConfigStore({}))
+        urls = email_info.get_urls()
+
+        assert urls == {"https://www.royalroad.com/fiction/123/story"}
+        mock_recover.assert_called_once()
+        assert mock_instance.get_urls_from_imap.call_count == 2
+
     @patch("services.url_ingester.geturls.GetURLs")
     def test_email_info_get_urls_exception_handling(self, mock_get_urls_class):
         """Test that get_urls handles exceptions gracefully."""

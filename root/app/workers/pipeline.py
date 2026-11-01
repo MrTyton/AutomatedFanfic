@@ -23,7 +23,7 @@ from models import fanfic_info
 from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
 from models.queue_types import IngressQueue, WorkerQueue
-from utils import anubis_solver, ff_logging, system_utils
+from utils import anubis_solver, ff_logging, flaresolverr_utils, system_utils
 
 # Import from sibling modules
 from . import command, common, cookie_cache, handlers
@@ -181,6 +181,33 @@ def _process_task(
                     ff_logging.log(
                         f"({site}) FanFicFare retry succeeded after Anubis resolution."
                     )
+
+        # Reactive FlareSolverr crash check: if download failed due to FlareSolverr tab crash, destroy dead session and retry
+        if fff_result.has_failure:
+            err_candidate = (
+                str(fff_result.exception)
+                if fff_result.exception is not None
+                else "; ".join(fff_result.failure_messages)
+            )
+            if flaresolverr_utils.is_flaresolverr_crash(err_candidate):
+                ff_logging.log(
+                    f"({site}) Detected FlareSolverr tab crash during download. Attempting auto-recovery..."
+                )
+                recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+                    target_site=site,
+                    personal_ini_path=calibre_client.cdb_info.personal_ini,
+                )
+                if recovered > 0:
+                    ff_logging.log(
+                        f"({site}) FlareSolverr session recovered. Retrying FanFicFare download..."
+                    )
+                    fff_result = command.execute_fanficfare_direct(
+                        calibre_client.cdb_info, fanfic, path_or_url, temp_dir
+                    )
+                    if not fff_result.has_failure:
+                        ff_logging.log(
+                            f"({site}) FanFicFare download succeeded after FlareSolverr session recovery."
+                        )
 
         # 5. Evaluate result
         if fff_result.has_failure:

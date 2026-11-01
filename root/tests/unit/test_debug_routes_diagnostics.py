@@ -362,6 +362,45 @@ async def test_dry_run_endpoint():
 
 
 @pytest.mark.anyio
+async def test_dry_run_endpoint_flaresolverr_tab_crash_recovery():
+    state = WebState()
+    app = create_app(state)
+
+    mock_adapter = MagicMock()
+    mock_adapter.getSiteDomain.return_value = "www.royalroad.com"
+    mock_adapter.getMetadata.side_effect = lambda key: (
+        "Royal Road Story" if key == "title" else "Royal Author"
+    )
+    mock_adapter.num_chapters.return_value = 10
+    mock_adapter.getStoryMetadataOnly.side_effect = [
+        RuntimeError(
+            "HTTP Error 500: Error solving the challenge. Message: tab crashed"
+        ),
+        MagicMock(),
+    ]
+
+    with (
+        patch("fanficfare.adapters.getAdapter", return_value=mock_adapter),
+        patch(
+            "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=1
+        ) as mock_recover,
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/debug/dry-run",
+                json={"url": "https://www.royalroad.com/fiction/12345/story"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "ok"
+            assert data["title"] == "Royal Road Story"
+            assert data["author"] == "Royal Author"
+            mock_recover.assert_called_once()
+
+
+@pytest.mark.anyio
 async def test_simulate_email_endpoint():
     state = WebState()
     app = create_app(state)

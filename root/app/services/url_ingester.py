@@ -74,6 +74,7 @@ from config.config_store import ConfigStore, read_ini_file_cached
 from history.recorder import HistoryRecorder
 lazy import imapclient
 from utils import ff_logging
+lazy from utils import flaresolverr_utils
 lazy from utils import system_utils
 from parsers import regex_parsing
 from notifications import notification_wrapper
@@ -407,6 +408,27 @@ class EmailInfo:
                 )
             except Exception as e:
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
+                if flaresolverr_utils.is_flaresolverr_crash(e):
+                    ff_logging.log(
+                        "EmailWatcher: Detected FlareSolverr crash during email URL extraction; attempting auto-recovery..."
+                    )
+                    recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+                        personal_ini_path=self.personal_ini
+                    )
+                    if recovered > 0:
+                        ff_logging.log(
+                            f"EmailWatcher: Recovered {recovered} FlareSolverr session(s); retrying URL extraction..."
+                        )
+                        try:
+                            urls = set(
+                                self._geturls.get_urls_from_imap(
+                                    self.server, self.email, self.password, self.mailbox
+                                )
+                            )
+                        except Exception as retry_err:
+                            ff_logging.log_failure(
+                                f"EmailWatcher: Retry after FlareSolverr recovery failed: {retry_err}"
+                            )
 
         if urls:
             system_utils.reclaim_memory()

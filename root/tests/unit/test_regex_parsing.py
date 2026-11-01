@@ -283,6 +283,10 @@ class TestCheckFailureFromMessage(unittest.TestCase):
                 msg="Connection to flaresolverr proxy server failed",
                 expected=True,
             ),
+            Case(
+                msg="HTTP Error 500: Error solving the challenge. Message: tab crashed",
+                expected=True,
+            ),
             Case(msg="Download complete.", expected=False),
             Case(msg="", expected=False),
         ]
