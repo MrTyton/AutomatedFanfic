@@ -9,15 +9,35 @@ import pytest
 from mcp_server.base import _current_client, get_client, set_client
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
-from mcp_server.tools.antibot import inspect_cookiejar, test_antibot_status
+from mcp_server.tools.antibot import (
+    inspect_cookiejar,
+    recover_flaresolverr,
+    test_antibot_status,
+)
 from mcp_server.tools.calibre import inspect_calibre_book, test_calibre_connection
-from mcp_server.tools.config import resolve_config_for_url
-from mcp_server.tools.controls import cancel_download, inject_download, retry_now
+from mcp_server.tools.config import get_app_config, get_ini_file, resolve_config_for_url
+from mcp_server.tools.controls import (
+    cancel_download,
+    inject_download,
+    redownload_from_scratch,
+    restart_daemon,
+    retry_all_waiting,
+    retry_now,
+    toggle_site,
+    trigger_email_check,
+)
 from mcp_server.tools.diagnostics import (
     dry_run_fanfic_url,
     simulate_email_parse,
     test_email_connection,
     test_notification,
+)
+from mcp_server.tools.history import (
+    get_story_history,
+    query_download_history,
+    query_email_history,
+    query_notification_history,
+    query_retry_history,
 )
 from mcp_server.tools.logs import query_logs
 from mcp_server.tools.queues import inspect_queues
@@ -58,6 +78,33 @@ def mock_client() -> AsyncMock:
     client.dry_run.return_value = {"status": "ok", "title": "Test Fic"}
     client.add_url.return_value = {"accepted": True}
     client.cancel_url.return_value = {"ok": True}
+    client.get_system_status.return_value = {
+        "health": {"status": "ok"},
+        "version": {"automatedfanfic": "6.15.14"},
+        "status": {"queues": {}, "workers": {}},
+    }
+    client.get_story_history.return_value = {
+        "found": True,
+        "story": {"url": "https://archiveofourown.org/works/123"},
+    }
+    client.get_downloads.return_value = {"items": [], "total": 0}
+    client.get_retries.return_value = {"items": [], "total": 0}
+    client.get_email_history.return_value = {"items": [], "total": 0}
+    client.get_notification_history.return_value = {"items": [], "total": 0}
+    client.get_config.return_value = {"config": {"email": {}}}
+    client.get_ini_file.return_value = {"content": "[defaults]"}
+    client.trigger_email_check.return_value = {
+        "ok": True,
+        "message": "Email check triggered",
+    }
+    client.restart_daemon.return_value = {"ok": True, "message": "Restart triggered"}
+    client.retry_all_waiting.return_value = {"ok": True, "count": 2}
+    client.toggle_site.return_value = {"ok": True, "message": "Site toggled"}
+    client.redownload_scratch.return_value = {
+        "ok": True,
+        "message": "Redownload queued",
+    }
+    client.recover_flaresolverr.return_value = {"ok": True, "recovered": 1}
     client.retry_now.return_value = {"ok": True}
     return client
 
@@ -75,11 +122,19 @@ async def test_mcp_tools_registration(mock_client: AsyncMock):
         "inspect_queues",
         "query_logs",
         "get_story_diagnostics",
+        "get_story_history",
+        "query_download_history",
+        "query_retry_history",
+        "query_email_history",
+        "query_notification_history",
         "inspect_calibre_book",
         "test_calibre_connection",
         "test_antibot_status",
         "inspect_cookiejar",
+        "recover_flaresolverr",
         "resolve_config_for_url",
+        "get_app_config",
+        "get_ini_file",
         "test_email_connection",
         "test_notification",
         "simulate_email_parse",
@@ -87,10 +142,15 @@ async def test_mcp_tools_registration(mock_client: AsyncMock):
         "inject_download",
         "cancel_download",
         "retry_now",
+        "trigger_email_check",
+        "restart_daemon",
+        "retry_all_waiting",
+        "toggle_site",
+        "redownload_from_scratch",
     }
 
     assert expected_tools.issubset(tool_names)
-    assert len(tools) == 17
+    assert len(tools) == 30
 
     for tool in tools:
         assert tool.description, f"Tool {tool.name} missing docstring description"
@@ -103,8 +163,9 @@ async def test_system_tools_invocation(mock_client: AsyncMock):
 
     res = await server.call_tool("get_system_overview", {})
     payload = _tool_payload(res)
-    assert payload == {"status": "ok"}
-    mock_client.get_health.assert_awaited_once()
+    assert payload["health"] == {"status": "ok"}
+    assert payload["version"]["automatedfanfic"] == "6.15.14"
+    mock_client.get_system_status.assert_awaited_once()
 
     res_coord = await server.call_tool("inspect_coordinator_locks", {})
     payload_coord = _tool_payload(res_coord)
@@ -113,7 +174,7 @@ async def test_system_tools_invocation(mock_client: AsyncMock):
 
     # Direct function calls
     direct_overview = await get_system_overview()
-    assert direct_overview == {"status": "ok"}
+    assert direct_overview["health"] == {"status": "ok"}
     direct_locks = await inspect_coordinator_locks()
     assert "assignments" in direct_locks
 
@@ -324,3 +385,133 @@ async def test_client_not_configured_raises():
         RuntimeError, match="No AutomatedFanficClient configured for MCP tools"
     ):
         get_client()
+
+
+@pytest.mark.anyio
+async def test_history_tools(mock_client: AsyncMock):
+    """Verify persistent SQLite history inspection tools."""
+    server = create_mcp_server(mock_client)
+    url = "https://archiveofourown.org/works/123"
+
+    # get_story_history
+    res = await server.call_tool("get_story_history", {"url": url})
+    assert _tool_payload(res)["found"] is True
+    mock_client.get_story_history.assert_awaited_with(url=url)
+
+    # query_download_history
+    res_dl = await server.call_tool(
+        "query_download_history",
+        {
+            "search": "bard",
+            "site": "ffnet",
+            "status": "success",
+            "limit": 25,
+            "offset": 5,
+        },
+    )
+    assert "items" in _tool_payload(res_dl)
+    mock_client.get_downloads.assert_awaited_with(
+        search="bard", site="ffnet", status="success", limit=25, offset=5
+    )
+
+    # query_retry_history
+    res_ret = await server.call_tool(
+        "query_retry_history", {"search": "bard", "site": "ffnet", "limit": 10}
+    )
+    assert "items" in _tool_payload(res_ret)
+    mock_client.get_retries.assert_awaited_with(
+        search="bard", site="ffnet", limit=10, offset=0
+    )
+
+    # query_email_history
+    res_em = await server.call_tool("query_email_history", {"limit": 20, "offset": 10})
+    assert "items" in _tool_payload(res_em)
+    mock_client.get_email_history.assert_awaited_with(limit=20, offset=10)
+
+    # query_notification_history
+    res_notif = await server.call_tool(
+        "query_notification_history", {"search": "alert", "site": "ao3", "limit": 15}
+    )
+    assert "items" in _tool_payload(res_notif)
+    mock_client.get_notification_history.assert_awaited_with(
+        search="alert", site="ao3", limit=15, offset=0
+    )
+
+    # Direct invocations
+    assert (await get_story_history(url=url))["found"] is True
+    assert "items" in (await query_download_history())
+    assert "items" in (await query_retry_history())
+    assert "items" in (await query_email_history())
+    assert "items" in (await query_notification_history())
+
+
+@pytest.mark.anyio
+async def test_expanded_controls_tools(mock_client: AsyncMock):
+    """Verify expanded daemon, batch, and queue control tools."""
+    server = create_mcp_server(mock_client)
+    url = "https://archiveofourown.org/works/123"
+
+    # trigger_email_check
+    res = await server.call_tool("trigger_email_check", {})
+    assert _tool_payload(res)["ok"] is True
+    mock_client.trigger_email_check.assert_awaited_with()
+
+    # restart_daemon
+    res_rst = await server.call_tool("restart_daemon", {"name": "EmailWatcher"})
+    assert _tool_payload(res_rst)["ok"] is True
+    mock_client.restart_daemon.assert_awaited_with(name="EmailWatcher")
+
+    # retry_all_waiting
+    res_all = await server.call_tool("retry_all_waiting", {})
+    assert _tool_payload(res_all)["ok"] is True
+    mock_client.retry_all_waiting.assert_awaited_with()
+
+    # toggle_site
+    res_tog = await server.call_tool("toggle_site", {"site": "archiveofourown"})
+    assert _tool_payload(res_tog)["ok"] is True
+    mock_client.toggle_site.assert_awaited_with(site="archiveofourown")
+
+    # redownload_from_scratch
+    res_redl = await server.call_tool("redownload_from_scratch", {"url": url})
+    assert _tool_payload(res_redl)["ok"] is True
+    mock_client.redownload_scratch.assert_awaited_with(url=url)
+
+    # Direct invocations
+    assert (await trigger_email_check())["ok"] is True
+    assert (await restart_daemon(name="Coordinator"))["ok"] is True
+    assert (await retry_all_waiting())["ok"] is True
+    assert (await toggle_site(site="fanfiction"))["ok"] is True
+    assert (await redownload_from_scratch(url=url))["ok"] is True
+
+
+@pytest.mark.anyio
+async def test_config_inspection_tools(mock_client: AsyncMock):
+    """Verify config.toml and personal.ini inspection tools."""
+    server = create_mcp_server(mock_client)
+
+    # get_app_config
+    res = await server.call_tool("get_app_config", {"section": "email"})
+    assert "config" in _tool_payload(res)
+    mock_client.get_config.assert_awaited_with(section="email")
+
+    # get_ini_file
+    res_ini = await server.call_tool("get_ini_file", {"ini_type": "personal"})
+    assert _tool_payload(res_ini)["content"] == "[defaults]"
+    mock_client.get_ini_file.assert_awaited_with(ini_type="personal")
+
+    # Direct invocations
+    assert "config" in (await get_app_config())
+    assert (await get_ini_file())["content"] == "[defaults]"
+
+
+@pytest.mark.anyio
+async def test_antibot_recovery_tool(mock_client: AsyncMock):
+    """Verify recover_flaresolverr tool."""
+    server = create_mcp_server(mock_client)
+
+    res = await server.call_tool("recover_flaresolverr", {"target_site": "royalroad"})
+    assert _tool_payload(res)["recovered"] == 1
+    mock_client.recover_flaresolverr.assert_awaited_with(target_site="royalroad")
+
+    # Direct invocation
+    assert (await recover_flaresolverr())["recovered"] == 1

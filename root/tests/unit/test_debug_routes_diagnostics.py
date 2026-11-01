@@ -419,3 +419,52 @@ async def test_simulate_email_endpoint():
         data = resp.json()
         assert data["count"] >= 1
         assert any("98765432" in match["url"] for match in data["matches"])
+
+
+@pytest.mark.anyio
+async def test_recover_flaresolverr_sessions_endpoint():
+    state = WebState()
+    app = create_app(state)
+
+    with patch(
+        "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=2
+    ) as mock_recover:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/api/debug/flaresolverr/recover",
+                json={"target_site": "royalroad"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["ok"] is True
+            assert data["recovered"] == 2
+            assert data["target_site"] == "royalroad"
+            mock_recover.assert_called_once_with(
+                target_site="royalroad",
+                personal_ini_path="",
+            )
+
+
+@pytest.mark.anyio
+async def test_recover_flaresolverr_sessions_endpoint_default_empty_body():
+    state = WebState()
+    app = create_app(state)
+
+    with patch(
+        "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=0
+    ) as mock_recover:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post("/api/debug/flaresolverr/recover", json={})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["ok"] is True
+            assert data["recovered"] == 0
+            assert data["target_site"] is None
+            mock_recover.assert_called_once_with(
+                target_site=None,
+                personal_ini_path="",
+            )

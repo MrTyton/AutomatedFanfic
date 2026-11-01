@@ -28,16 +28,24 @@ port = 8080
 
 | Tool Name | Description | Key Arguments |
 |:---|:---|:---|
-| `get_system_overview` | System health, uptime, and process status | None |
+| `get_system_overview` | System health, component versions (Calibre, FanFicFare, OS), and runtime process status | None |
 | `inspect_coordinator_locks` | Coordinator worker domain locks and per-site backlogs | None |
 | `inspect_queues` | Partitions active downloads into queued, processing, and waiting | None |
 | `query_logs` | In-memory log buffer search and filtering | `level`, `component`, `search`, `limit` |
 | `get_story_diagnostics` | Autopsy diagnostics for a URL (active status, history, Calibre, logs) | `url` |
+| `get_story_history` | Persistent SQLite lifecycle history of all attempts and retries for a story URL | `url` |
+| `query_download_history` | Query historical download events from SQLite history database | `search`, `site`, `status`, `limit`, `offset` |
+| `query_retry_history` | Query persistent retry failure events from SQLite | `search`, `site`, `limit`, `offset` |
+| `query_email_history` | Query past IMAP check events and detected story URLs | `limit`, `offset` |
+| `query_notification_history` | Query sent notification events from SQLite | `search`, `site`, `limit`, `offset` |
 | `inspect_calibre_book` | Query Calibre library metadata by ID, URL, or title | `query` |
 | `test_calibre_connection` | Verify Calibre binary/library connection and CLI version | None |
 | `test_antibot_status` | Check FlareSolverr proxy connectivity and Anubis solver readiness | None |
 | `inspect_cookiejar` | Inspect loaded cookies for a site domain (masked tokens) | `domain` |
+| `recover_flaresolverr` | Recover from FlareSolverr Chromium tab crashes by destroying dead sessions | `target_site` |
 | `resolve_config_for_url` | Test FanFicFare configuration sections and strategy for URL | `url` |
+| `get_app_config` | Inspect active application configuration with sensitive fields masked | `section` |
+| `get_ini_file` | View contents of personal.ini or defaults.ini | `ini_type` |
 | `test_email_connection` | Test IMAP email connectivity and check unread count | None |
 | `test_notification` | Dispatch diagnostic test notification via Apprise | None |
 | `simulate_email_parse` | Test URL parsing against raw email subject and body text | `subject`, `body` |
@@ -45,6 +53,11 @@ port = 8080
 | `inject_download` | Queue fanfiction URL with optional force re-download | `url`, `force` |
 | `cancel_download` | Remove active or queued download | `url` |
 | `retry_now` | Immediately trigger retry for a waiting URL | `url` |
+| `trigger_email_check` | Trigger an immediate IMAP email polling check by waking EmailWatcher | None |
+| `restart_daemon` | Restart a daemon process or service (e.g. EmailWatcher, Coordinator, WebServer) | `name` |
+| `retry_all_waiting` | Requeue all downloads currently in waiting/backoff state for immediate retry | None |
+| `toggle_site` | Toggle site domain between enabled and disabled in email watcher configuration | `site` |
+| `redownload_from_scratch` | Redownload a story completely from scratch, removing existing EPUB and cached state | `url` |
 
 ---
 

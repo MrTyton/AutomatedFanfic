@@ -457,6 +457,12 @@ class SimulateEmailRequest(BaseModel):
     body: str
 
 
+class FlareSolverrRecoverRequest(BaseModel):
+    """Request body for recovering FlareSolverr sessions."""
+
+    target_site: str = ""
+
+
 def _mask_cookie_value(val: str | None) -> str:
     """Mask secret cookie value while preserving length cue."""
     if not val:
@@ -661,6 +667,30 @@ async def get_antibot_status(request: Request) -> dict[str, object]:
     return {
         "flaresolverr": flare_res,
         "anubis": anubis_res,
+    }
+
+
+@router.post("/flaresolverr/recover")
+async def recover_flaresolverr_sessions(
+    request: Request, body: FlareSolverrRecoverRequest | None = None
+) -> dict[str, object]:
+    """Recover from FlareSolverr tab crashes by destroying dead sessions."""
+    state = request.app.state.web_state
+    personal_path = ""
+    if getattr(state, "config", None) and getattr(state.config, "calibre", None):
+        personal_path = state.config.calibre.personal_ini
+    elif getattr(state, "config_store", None):
+        personal_path = state.config_store.get_resolved_personal_ini()
+
+    target_site = body.target_site.strip() if body and body.target_site else None
+    recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+        target_site=target_site,
+        personal_ini_path=personal_path,
+    )
+    return {
+        "ok": True,
+        "recovered": recovered,
+        "target_site": target_site,
     }
 
 
