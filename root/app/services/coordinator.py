@@ -26,7 +26,7 @@ from queue import Empty
 from enum import Enum
 from config.config_store import ConfigStore
 from history.recorder import HistoryRecorder
-from utils import ff_logging
+import ff_logging
 from models import active_urls as active_urls_utils
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo

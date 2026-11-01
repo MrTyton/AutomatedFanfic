@@ -19,7 +19,7 @@ from config.config_store import ConfigStore
 if TYPE_CHECKING:
     from history.recorder import HistoryWriter
 
-from utils import ff_logging
+import ff_logging
 from models.config_models import AppConfig, ProcessConfig
 from models.queue_types import WorkerQueue
 from .state import ProcessInfo, ProcessState

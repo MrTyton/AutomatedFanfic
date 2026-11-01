@@ -10,7 +10,7 @@ import threading
 import signal
 from queue import Empty
 
-from utils import ff_logging
+import ff_logging
 from workers import pipeline
 from models import config_models
 from models.context import SharedIPCContext, WorkerContext

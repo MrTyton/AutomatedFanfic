@@ -13,7 +13,7 @@ from models import active_urls as active_urls_utils
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from models.queue_types import IngressQueue
-from utils import ff_logging
+import ff_logging
 
 
 def recover_uncompleted_downloads(

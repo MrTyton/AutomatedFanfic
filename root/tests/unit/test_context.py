@@ -115,7 +115,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
     def test_init_process_logging_worker_and_supervisor_modes(self):
         """init_process_logging configures verbose, web_enabled, forward queue, and thread color for non-web processes."""
         from unittest.mock import patch
-        from utils import ff_logging
+        import ff_logging
 
         mock_log_q = MagicMock()
         mock_store = MagicMock()
@@ -160,7 +160,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
     def test_init_process_logging_web_server_mode(self):
         """init_process_logging clears forward queue and starts drain thread when is_web_server=True."""
         from unittest.mock import patch
-        from utils import ff_logging
+        import ff_logging
 
         mock_log_q = MagicMock()
         with (

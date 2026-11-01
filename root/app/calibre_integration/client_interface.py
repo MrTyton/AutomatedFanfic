@@ -12,7 +12,8 @@ from calibre_integration import calibre_info
 from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
 from config.config_store import ConfigStore
 from models.fanfic_info import FanficInfo
-from utils import ff_logging, system_utils
+import ff_logging
+from utils import system_utils
 
 # Calibre metadata is a dict with dynamic string keys from the Calibre JSON API.
 # Values may be scalars, lists, or nested dicts, so we use `object` as the value type.

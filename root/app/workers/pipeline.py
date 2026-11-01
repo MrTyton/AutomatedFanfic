@@ -23,7 +23,8 @@ from models import fanfic_info
 from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
 from models.queue_types import IngressQueue, WorkerQueue
-from utils import anubis_solver, ff_logging, flaresolverr_utils, system_utils
+import ff_logging
+from utils import anubis_solver, flaresolverr_utils, system_utils
 
 # Import from sibling modules
 from . import command, common, cookie_cache, handlers

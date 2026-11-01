@@ -40,7 +40,7 @@ from models import active_urls as active_urls_utils
 from models.active_urls import ActiveUrlsDict
 from models import fanfic_info
 from models.queue_types import IngressQueue, ShutdownEvent, WaitingQueue
-from utils import ff_logging
+import ff_logging
 from models import retry_types
 
 

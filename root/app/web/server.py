@@ -26,7 +26,8 @@ from mcp_server.server import create_mcp_server
 from models.config_models import AppConfig, ConfigManager
 from history.database import AsyncHistoryDB
 from models.context import SharedIPCContext
-from utils import ff_logging, system_utils
+import ff_logging
+from utils import system_utils
 from web.dependencies import WebState
 from web.routes import (
     config,

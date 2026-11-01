@@ -11,7 +11,7 @@ import pytest
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
 from models.fanfic_info import FanficInfo
-from utils import ff_logging
+import ff_logging
 from web.dependencies import WebState
 from web.server import create_app
 

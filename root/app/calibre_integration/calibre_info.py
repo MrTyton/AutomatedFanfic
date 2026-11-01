@@ -29,7 +29,7 @@ from typing import ContextManager, Protocol
 
 from config.config_store import ConfigStore
 from models.config_models import CalibreConfig
-from utils import ff_logging  # Custom logging module for failure logging
+import ff_logging
 from utils.system_utils import resolve_ini_path
 
 

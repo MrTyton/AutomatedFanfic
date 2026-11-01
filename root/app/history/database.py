@@ -20,7 +20,7 @@ from history.models import (
     NotificationEvent,
     RetryEvent,
 )
-from utils import ff_logging
+import ff_logging
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS download_events (

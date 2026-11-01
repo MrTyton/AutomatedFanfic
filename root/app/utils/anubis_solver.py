@@ -20,7 +20,7 @@ import requests
 import argon2.low_level
 from fanficfare.fetchers.base_fetcher import LWPCookieJar
 
-from utils import ff_logging
+import ff_logging
 from utils import url_utils
 
 DEFAULT_USER_AGENT = (

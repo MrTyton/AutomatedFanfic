@@ -24,7 +24,7 @@ from .client_interface import CalibreClient, CalibreMetadata, build_url_search_q
 from .models import AddedBook, BookExport, CalibreOperationError, MetadataUpdateReport
 from config.config_store import ConfigStore
 from models import fanfic_info
-from utils import ff_logging
+import ff_logging
 from parsers import regex_parsing
 
 

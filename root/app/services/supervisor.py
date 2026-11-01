@@ -12,7 +12,7 @@ import signal
 import time
 
 from notifications import notification_wrapper
-from utils import ff_logging
+import ff_logging
 from services import url_ingester, ff_waiter, coordinator
 from models.context import SharedIPCContext
 

@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_valid
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import tomllib
 from config.config_store import ConfigStore
-from utils import ff_logging
+import ff_logging
 import multiprocessing
 from enum import Enum
 

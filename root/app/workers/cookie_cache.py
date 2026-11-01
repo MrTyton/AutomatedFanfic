@@ -4,7 +4,7 @@ Per-site CookieJar session cache for worker pool threads.
 
 import threading
 
-from utils import ff_logging
+import ff_logging
 
 _site_cookiejars: dict[str, object] = {}
 _last_personal_ini_content: str | None = None

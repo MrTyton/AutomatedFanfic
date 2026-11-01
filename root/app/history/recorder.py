@@ -20,7 +20,7 @@ from history.models import (
     RetryEvent,
 )
 from models.queue_types import HistoryQueue
-from utils import ff_logging
+import ff_logging
 
 
 class HistoryRecorder:

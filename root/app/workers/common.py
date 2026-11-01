@@ -4,7 +4,7 @@ Common utility functions for worker modules.
 
 import zipfile
 from xml.etree import ElementTree as ET
-from utils import ff_logging
+import ff_logging
 from models import fanfic_info
 from calibre_integration.client_interface import CalibreClient
 from calibre_integration.models import BookExport

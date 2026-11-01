@@ -19,7 +19,7 @@ from config.config_store import read_ini_file_cached
 from models import fanfic_info
 from parsers import regex_parsing
 from utils import anubis_solver
-from utils import ff_logging
+import ff_logging
 from utils import thread_stdout
 from utils import url_utils
 from workers import cookie_cache

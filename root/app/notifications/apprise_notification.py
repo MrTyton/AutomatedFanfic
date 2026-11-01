@@ -29,7 +29,7 @@ Example:
 lazy import apprise
 from config.config_store import ConfigStore
 from models.config_models import AppConfig
-from utils import ff_logging
+import ff_logging
 from . import notification_base
 lazy import requests
 

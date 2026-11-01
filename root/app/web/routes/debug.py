@@ -20,7 +20,7 @@ lazy from calibre_integration import (
     factory as calibre_factory,
 )
 from models.fanfic_info import FanficInfo
-from utils import ff_logging
+import ff_logging
 lazy from utils import flaresolverr_utils
 from utils.system_utils import resolve_ini_path
 lazy from config.config_store import ConfigStore

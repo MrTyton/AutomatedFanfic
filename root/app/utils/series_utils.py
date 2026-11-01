@@ -24,7 +24,7 @@ from typing import Protocol, TypedDict
 lazy from fanficfare import adapters, configurable, exceptions, geturls
 lazy from config.config_store import ConfigStore
 from parsers.regex_parsing import normalize_url as _normalize_url
-from utils import ff_logging
+import ff_logging
 
 
 class SeriesExpansionResult(TypedDict):

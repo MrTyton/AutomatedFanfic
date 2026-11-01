@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from config.config_store import ConfigStore, ReloadBehavior, FIELD_RELOAD_MAP
 from config.toml_writer import TomlWriter
-from utils import ff_logging
+import ff_logging
 from utils.system_utils import resolve_ini_path
 
 lazy import apprise

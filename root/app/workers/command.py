@@ -2,7 +2,7 @@
 Backwards-compatible facade for FanFicFare runner and session cookie caching.
 """
 
-from utils import ff_logging
+import ff_logging
 from utils.thread_stdout import ThreadLocalStdout, ensure_tl_stdout
 from workers.cookie_cache import (
     clear_site_cookiejars,

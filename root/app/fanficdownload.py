@@ -38,7 +38,8 @@ import sys
 
 if sys.version_info < (3, 15):
     raise RuntimeError("AutomatedFanfic requires Python 3.15 or newer.")
-from utils import ff_logging, system_utils  # Custom logging and system utility modules
+import ff_logging
+from utils import system_utils
 
 lazy from parsers import auto_url_parsers
 from calibre_integration import calibre_info

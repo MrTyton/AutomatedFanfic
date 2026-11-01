@@ -33,7 +33,7 @@ from config.config_store import ConfigStore
 from history.recorder import HistoryRecorder
 from models.config_models import AppConfig
 from .apprise_notification import AppriseNotification
-from utils import ff_logging
+import ff_logging
 
 
 class NotificationWrapper:
@@ -149,7 +149,7 @@ class NotificationWrapper:
         ]
 
         # Capture current thread color to propagate to worker threads
-        current_color = getattr(ff_logging._thread_local, "color", None)
+        current_color = ff_logging.get_thread_color()
 
         def _send_with_color(worker, title, body, site, color):
             """Helper to propagate thread color context to worker thread."""

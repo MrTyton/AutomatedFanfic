@@ -41,7 +41,7 @@ except ImportError:  # pragma: no cover
     CURL_CFFI_AVAILABLE = False
 
 lazy from fanficfare.fetchers import fetcher_requests as fff_fetcher_requests
-from utils import ff_logging
+import ff_logging
 
 _ORIGINAL_MAKE_SESSION = fff_fetcher_requests.RequestsFetcher.make_sesssion
 _ORIGINAL_DO_MOUNTS = fff_fetcher_requests.RequestsFetcher.do_mounts

@@ -3,7 +3,7 @@
 Usage (pytest fixture style)::
 
     from helpers.log_capture import LogCapture
-    from utils import ff_logging
+    import ff_logging
 
     @pytest.fixture
     def log_capture():

@@ -17,7 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from utils import ff_logging
+import ff_logging
 from utils.system_utils import resolve_ini_path
 
 CRASH_INDICATORS: tuple[str, ...] = (

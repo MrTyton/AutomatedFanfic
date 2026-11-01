@@ -6,7 +6,7 @@ from models import config_models
 from models import retry_types
 from models import fanfic_info
 from models.context import WorkerContext
-from utils import ff_logging
+import ff_logging
 from calibre_integration import update_strategies
 
 

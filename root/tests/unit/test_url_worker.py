@@ -64,7 +64,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure(
         self,
         name,
@@ -185,7 +185,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure_update_no_force(
         self,
         name,
@@ -251,7 +251,7 @@ class TestUrlWorker(unittest.TestCase):
 
         mock_waiting_queue.put.assert_not_called()
 
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure_with_none_cdb(self, mock_log_failure):
         """Test handle_failure with cdb=None (should never send special notification)."""
         # Setup common mocks
@@ -326,7 +326,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure_edge_cases(
         self,
         name,
@@ -476,7 +476,7 @@ class TestUrlWorker(unittest.TestCase):
         "workers.handlers.update_strategies"
     )  # Patch strategies to avoid actual execution
     @patch(
-        "utils.ff_logging.log_failure"
+        "ff_logging.log_failure"
     )  # Keep patching log_failure for the specific log inside this function
     def test_process_fanfic_addition(
         self,
@@ -634,7 +634,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_get_path.return_value = "test_file.epub"
 
         # Mock logging failure to capture the specific error message
-        with patch("utils.ff_logging.log_failure") as mock_log_failure:
+        with patch("ff_logging.log_failure") as mock_log_failure:
             # Run worker - checks it exits cleanly after KeyboardInterrupt
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
@@ -680,7 +680,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_execute.return_value = fff_result
 
         # Mock logging failure to capture the specific error message
-        with patch("utils.ff_logging.log_failure") as mock_log_failure:
+        with patch("ff_logging.log_failure") as mock_log_failure:
             # Run worker - checks it exits cleanly after KeyboardInterrupt
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
@@ -723,7 +723,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         fff_result = command.FanFicFareResult(failure_messages=[error_text])
         mock_execute.return_value = fff_result
 
-        with patch("utils.ff_logging.log_failure"):
+        with patch("ff_logging.log_failure"):
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
                     self.mock_queue,
@@ -1054,9 +1054,9 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_debug")
-    @patch("utils.ff_logging.log_failure")
-    @patch("utils.ff_logging.verbose")
+    @patch("ff_logging.log_debug")
+    @patch("ff_logging.log_failure")
+    @patch("ff_logging.verbose")
     def test_fanfic_addition_verbose_error_output(
         self,
         name,
