@@ -746,3 +746,156 @@ test('buildLogAttemptBlocks preserves past story attempts while omitting obsolet
         assert.ok(eb.lines.every((l) => l.message.includes('IMAP IDLE error')))
     }
 })
+
+test('buildLogAttemptBlocks does not create phantom attempt #2 when story URL appears in email/coordinator before worker starts', () => {
+    const liveLogs = [
+        {
+            seq: 11909,
+            timestamp: '2026-11-01 06:33:09 AM',
+            level: 'info',
+            message: 'Adding www.fanfiction.net/s/14284945/1/ to the ingestion queue (Site: fanfiction)',
+        },
+        {
+            seq: 11910,
+            timestamp: '2026-11-01 06:33:09 AM',
+            level: 'debug',
+            message: 'Single story URL detected: https://www.fanfiction.net/s/14284945/1/',
+        },
+        {
+            seq: 11911,
+            timestamp: '2026-11-01 06:33:09 AM',
+            level: 'debug',
+            message: 'Coordinator: Added www.fanfiction.net/s/14284945/1/ to backlog (Site: fanfiction)',
+        },
+        {
+            seq: 11916,
+            timestamp: '2026-11-01 06:33:09 AM',
+            level: 'info',
+            message: '(fanfiction) Processing www.fanfiction.net/s/14284945/1/',
+            thread_site: 'fanfiction',
+            story_url: 'www.fanfiction.net/s/14284945/1/',
+            worker_id: 'worker_0',
+            attempt_id: 'worker_0-www.fanfiction.net/s/14284945/1/-1793543589033',
+        },
+        {
+            seq: 11917,
+            timestamp: '2026-11-01 06:33:09 AM',
+            level: 'debug',
+            message: "\t(fanfiction) Extracted title from filename: Remnant's Blonde Bard - Coeur Al'Aran_13955",
+            thread_site: 'fanfiction',
+            story_url: 'www.fanfiction.net/s/14284945/1/',
+            story_title: "Remnant's Blonde Bard - Coeur Al'Aran_13955",
+            worker_id: 'worker_0',
+            attempt_id: 'worker_0-www.fanfiction.net/s/14284945/1/-1793543589033',
+        },
+        {
+            seq: 11947,
+            timestamp: '2026-11-01 06:33:56 AM',
+            level: 'info',
+            message: "\t(fanfiction) Successfully processed Remnant's Blonde Bard",
+            thread_site: 'fanfiction',
+            story_url: 'www.fanfiction.net/s/14284945/1/',
+            story_title: "Remnant's Blonde Bard",
+            worker_id: 'worker_0',
+            attempt_id: 'worker_0-www.fanfiction.net/s/14284945/1/-1793543589033',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(liveLogs)
+    const storyBlocks = blocks.filter((b) => b.kind === 'story_attempt')
+
+    // Must be exactly 1 block, NOT 2 separate blocks!
+    assert.equal(storyBlocks.length, 1)
+
+    const block = storyBlocks[0]
+    assert.equal(block.title, "Remnant's Blonde Bard")
+    assert.equal(block.status, 'success')
+    // Crucially: attemptNumber must be 1, NOT 2 (Retry #1)!
+    assert.equal(block.attemptNumber, 1)
+    // All pre-worker detection and worker execution lines must be included in this single block
+    assert.ok(block.lines.some((l) => l.message.includes('Single story URL detected')))
+    assert.ok(block.lines.some((l) => l.message.includes('Successfully processed')))
+})
+
+test('buildLogAttemptBlocks ties multiple attempts for the same story URL together with an attempts array', () => {
+    const multiAttemptLogs = [
+        // Attempt 1: fails
+        {
+            seq: 1,
+            timestamp: '2026-11-01 07:00:00 AM',
+            level: 'info',
+            message: '(fanfiction) Processing https://www.fanfiction.net/s/99999/1/',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/99999/1/',
+            worker_id: 'worker_0',
+            attempt_id: 'worker_0-attempt-1',
+        },
+        {
+            seq: 2,
+            timestamp: '2026-11-01 07:00:05 AM',
+            level: 'error',
+            message: '(fanfiction) Failed to download https://www.fanfiction.net/s/99999/1/: Connection reset by peer',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/99999/1/',
+            worker_id: 'worker_0',
+            attempt_id: 'worker_0-attempt-1',
+        },
+        {
+            seq: 3,
+            timestamp: '2026-11-01 07:00:06 AM',
+            level: 'info',
+            message: 'Queued retry #1 for https://www.fanfiction.net/s/99999/1/ in 1 minute',
+        },
+        // Attempt 2 (Retry #1): succeeds
+        {
+            seq: 10,
+            timestamp: '2026-11-01 07:01:06 AM',
+            level: 'info',
+            message: '(fanfiction) Processing https://www.fanfiction.net/s/99999/1/',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/99999/1/',
+            worker_id: 'worker_1',
+            attempt_id: 'worker_1-attempt-2',
+        },
+        {
+            seq: 11,
+            timestamp: '2026-11-01 07:01:10 AM',
+            level: 'info',
+            message: '(fanfiction) Successfully processed Cool Story',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/99999/1/',
+            story_title: 'Cool Story',
+            worker_id: 'worker_1',
+            attempt_id: 'worker_1-attempt-2',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(multiAttemptLogs)
+    const storyBlocks = blocks.filter((b) => b.kind === 'story_attempt')
+
+    assert.equal(storyBlocks.length, 2)
+    const [att1, att2] = storyBlocks.sort((a, b) => a.attemptNumber - b.attemptNumber)
+
+    assert.equal(att1.attemptNumber, 1)
+    assert.equal(att1.status, 'failed')
+
+    assert.equal(att2.attemptNumber, 2)
+    assert.equal(att2.status, 'success')
+
+    // Both attempt blocks must be linked together through their attempts property!
+    assert.ok(att1.attempts)
+    assert.equal(att1.attempts.length, 2)
+    assert.equal(att1.attempts[0].id, att1.id)
+    assert.equal(att1.attempts[1].id, att2.id)
+
+    assert.ok(att2.attempts)
+    assert.equal(att2.attempts.length, 2)
+    assert.equal(att2.attempts[0].id, att1.id)
+    assert.equal(att2.attempts[1].id, att2.id)
+
+    // Formatted text for Attempt 2 must include the summary/trace of Attempt 1
+    const text = formatAttemptBlockAsText(att2)
+    assert.ok(text.includes('Attempt #2'))
+    assert.ok(text.includes('Attempt #1'))
+    assert.ok(text.includes('Connection reset by peer'))
+})

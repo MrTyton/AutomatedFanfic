@@ -544,13 +544,22 @@ class AsyncHistoryDB:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
-    async def get_retries_for_url(self, url: str) -> list[dict]:
+    async def get_retries_for_url(
+        self, url: str, download_event_id: int | None = None
+    ) -> list[dict]:
         async with self._connection() as conn:
-            cursor = await conn.execute(
-                """SELECT * FROM retry_events
-                   WHERE url = ? ORDER BY scheduled_at ASC""",
-                (url,),
-            )
+            if download_event_id is not None:
+                cursor = await conn.execute(
+                    """SELECT * FROM retry_events
+                       WHERE download_event_id = ? ORDER BY scheduled_at ASC""",
+                    (download_event_id,),
+                )
+            else:
+                cursor = await conn.execute(
+                    """SELECT * FROM retry_events
+                       WHERE url = ? ORDER BY scheduled_at ASC""",
+                    (url,),
+                )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
@@ -878,20 +887,29 @@ class AsyncHistoryDB:
 
         clean_url = url.removeprefix("https://").removeprefix("http://")
         url_candidates = (clean_url, f"https://{clean_url}", f"http://{clean_url}")
+        dl_id = download.get("id")
         async with self._connection() as conn:
-            cursor = await conn.execute(
-                """SELECT * FROM retry_events
-                   WHERE url = ? OR url = ? OR url = ?
-                   ORDER BY scheduled_at ASC""",
-                url_candidates,
-            )
+            if dl_id is not None:
+                cursor = await conn.execute(
+                    """SELECT * FROM retry_events
+                       WHERE download_event_id = ?
+                       ORDER BY scheduled_at ASC""",
+                    (dl_id,),
+                )
+            else:
+                cursor = await conn.execute(
+                    """SELECT * FROM retry_events
+                       WHERE url = ? OR url = ? OR url = ?
+                       ORDER BY scheduled_at ASC""",
+                    url_candidates,
+                )
             retries = [dict(r) for r in await cursor.fetchall()]
 
             cursor = await conn.execute(
                 """SELECT * FROM notification_events
                    WHERE download_event_id = ?
                    ORDER BY sent_at DESC""",
-                (download.get("id"),),
+                (dl_id,),
             )
             notifications = [dict(n) for n in await cursor.fetchall()]
 

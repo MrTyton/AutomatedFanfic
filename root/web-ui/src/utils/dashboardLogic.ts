@@ -175,6 +175,7 @@ export interface LogAttemptBlock {
     endedAt: string
     lines: LogEntry[]
     traceback?: string | null
+    attempts?: LogAttemptBlock[]
 }
 
 const URL_EXTRACT_RE = /(https?:\/\/[^\s<>"')]+?)(?=[.,;:]?(?:\s|$))/
@@ -690,36 +691,61 @@ export function buildLogAttemptBlocks(
         if (entry.attempt_id) {
             targetBlock = activeBlockByAttemptId.get(entry.attempt_id)
             if (!targetBlock) {
-                const prevCount = url ? attemptCounterByUrl.get(url) || 0 : 0
-                const nextAttempt = prevCount + 1
-                if (url) attemptCounterByUrl.set(url, nextAttempt)
+                // Check if an in-flight block for this URL was already created by pre-worker lines
+                // (e.g. "Single story URL detected" or ingestion queue) that does NOT yet have worker lines.
+                // If so, THIS is the same attempt being picked up by the worker — attach to it!
+                const existingForUrl = url ? activeBlockByUrl.get(url) : undefined
+                const isPreWorkerBlock =
+                    existingForUrl &&
+                    existingForUrl.isActive &&
+                    !existingForUrl.lines.some((l) => !!l.attempt_id)
 
-                const resolvedSite = site || (url ? siteByUrl.get(url) : '') || ''
-                const candidateTitle =
-                    entry.story_title && isValidStoryTitle(entry.story_title) ? entry.story_title : undefined
-                const resolvedTitle =
-                    candidateTitle || (url ? titleByUrl.get(url) || inferTitleFromUrl(url) : 'Unknown Story')
+                if (isPreWorkerBlock && existingForUrl) {
+                    targetBlock = existingForUrl
+                    targetBlock.id = entry.attempt_id
+                    activeBlockByAttemptId.set(entry.attempt_id, targetBlock)
+                    if (entry.worker_id) {
+                        activeBlockByWorkerId.set(entry.worker_id, targetBlock)
+                    }
+                    if (site && !targetBlock.site) {
+                        targetBlock.site = site
+                        activeBlockBySite.set(site, targetBlock)
+                    }
+                    if (entry.story_title && isValidStoryTitle(entry.story_title)) {
+                        targetBlock.title = entry.story_title.trim()
+                    }
+                } else {
+                    const prevCount = url ? attemptCounterByUrl.get(url) || 0 : 0
+                    const nextAttempt = prevCount + 1
+                    if (url) attemptCounterByUrl.set(url, nextAttempt)
 
-                targetBlock = {
-                    id: entry.attempt_id,
-                    kind: 'story_attempt',
-                    url,
-                    title: resolvedTitle,
-                    site: resolvedSite || undefined,
-                    attemptNumber: (url && attemptByUrl.get(url)) || nextAttempt,
-                    status: 'processing',
-                    isActive: true,
-                    activeStage: 'processing',
-                    startedAt: entry.timestamp,
-                    endedAt: entry.timestamp,
-                    lines: [],
-                    traceback: (url && errorByUrl.get(url)) || null,
+                    const resolvedSite = site || (url ? siteByUrl.get(url) : '') || ''
+                    const candidateTitle =
+                        entry.story_title && isValidStoryTitle(entry.story_title) ? entry.story_title : undefined
+                    const resolvedTitle =
+                        candidateTitle || (url ? titleByUrl.get(url) || inferTitleFromUrl(url) : 'Unknown Story')
+
+                    targetBlock = {
+                        id: entry.attempt_id,
+                        kind: 'story_attempt',
+                        url,
+                        title: resolvedTitle,
+                        site: resolvedSite || undefined,
+                        attemptNumber: (url && attemptByUrl.get(url)) || nextAttempt,
+                        status: 'processing',
+                        isActive: true,
+                        activeStage: 'processing',
+                        startedAt: entry.timestamp,
+                        endedAt: entry.timestamp,
+                        lines: [],
+                        traceback: (url && errorByUrl.get(url)) || null,
+                    }
+                    blocks.push(targetBlock)
+                    activeBlockByAttemptId.set(entry.attempt_id, targetBlock)
+                    if (url) activeBlockByUrl.set(url, targetBlock)
+                    if (resolvedSite) activeBlockBySite.set(resolvedSite, targetBlock)
+                    if (entry.worker_id) activeBlockByWorkerId.set(entry.worker_id, targetBlock)
                 }
-                blocks.push(targetBlock)
-                activeBlockByAttemptId.set(entry.attempt_id, targetBlock)
-                if (url) activeBlockByUrl.set(url, targetBlock)
-                if (resolvedSite) activeBlockBySite.set(resolvedSite, targetBlock)
-                if (entry.worker_id) activeBlockByWorkerId.set(entry.worker_id, targetBlock)
             }
         } else if (url) {
             const existingForUrl = activeBlockByUrl.get(url)
@@ -1007,6 +1033,24 @@ export function buildLogAttemptBlocks(
         }
     }
 
+    // Tie all attempts for the same story URL together
+    const attemptsByUrl = new Map<string, LogAttemptBlock[]>()
+    for (const b of blocks) {
+        if (b.kind === 'story_attempt' && b.url) {
+            const list = attemptsByUrl.get(b.url) || []
+            list.push(b)
+            attemptsByUrl.set(b.url, list)
+        }
+    }
+    for (const urlBlocks of attemptsByUrl.values()) {
+        if (urlBlocks.length > 1) {
+            urlBlocks.sort((a, b) => a.attemptNumber - b.attemptNumber)
+            for (const b of urlBlocks) {
+                b.attempts = urlBlocks
+            }
+        }
+    }
+
     const visibleBlocks = latestStartupTs > 0
         ? blocks.filter((b) => b.kind !== 'system' || parseLogTimestamp(b.endedAt) >= latestStartupTs)
         : blocks
@@ -1042,9 +1086,25 @@ export function formatAttemptBlockAsText(block: LogAttemptBlock): string {
     const windowLine = `Time: ${block.startedAt} -> ${block.endedAt}`
     const logLines = block.lines.map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`).join('\n')
     const tracePart = block.traceback ? `\n--- Stack Trace / Diagnostic Output ---\n${block.traceback}` : ''
-    return [header, urlLine, windowLine, '--- Execution Log ---', logLines, tracePart]
+
+    const mainBlockText = [header, urlLine, windowLine, '--- Execution Log ---', logLines, tracePart]
         .filter(Boolean)
         .join('\n')
+
+    if (block.attempts && block.attempts.length > 1) {
+        const otherAttempts = block.attempts.filter((a) => a.id !== block.id)
+        if (otherAttempts.length > 0) {
+            const historyParts = otherAttempts.map((other) => {
+                const subHeader = `--- Attempt #${other.attemptNumber} [${other.status.toUpperCase()}] (${other.startedAt} -> ${other.endedAt}) ---`
+                const subLogs = other.lines.map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`).join('\n')
+                const subTrace = other.traceback ? `\nStack Trace / Diagnostic Output:\n${other.traceback}` : ''
+                return [subHeader, subLogs, subTrace].filter(Boolean).join('\n')
+            })
+            return `${mainBlockText}\n\n=== Other Attempts for this Story (${block.attempts.length} total) ===\n${historyParts.join('\n\n')}`
+        }
+    }
+
+    return mainBlockText
 }
 
 export interface ErrorDiagnosis {
@@ -1559,35 +1619,32 @@ export function buildTimelineBuckets(
     nowMs = Date.now()
 ): TimePoint[] {
     if (period === '24h') {
-        const buckets: TimePoint[] = []
         const currentHour = new Date(nowMs)
         currentHour.setMinutes(0, 0, 0)
+        const currentHourMs = currentHour.getTime()
 
-        const hourMap = new Map<string, { total: number; success: number; failed: number }>()
+        const hourList: { date: string; total: number; success: number; failed: number }[] = []
         for (let i = 23; i >= 0; i--) {
-            const slot = new Date(currentHour.getTime() - i * 3600 * 1000)
+            const slot = new Date(currentHourMs - i * 3600 * 1000)
             const label = `${String(slot.getHours()).padStart(2, '0')}:00`
-            hourMap.set(label, { total: 0, success: 0, failed: 0 })
+            hourList.push({ date: label, total: 0, success: 0, failed: 0 })
         }
 
         const cutoff = nowMs - 24 * 3600 * 1000
         for (const d of downloads) {
             const t = new Date(d.started_at).getTime()
             if (isNaN(t) || t < cutoff) continue
-            const dt = new Date(t)
-            const label = `${String(dt.getHours()).padStart(2, '0')}:00`
-            const bucket = hourMap.get(label)
-            if (bucket) {
-                bucket.total += 1
-                if (d.status === 'success') bucket.success += 1
-                else bucket.failed += 1
+            const hoursAgo = Math.floor((currentHourMs + 3600 * 1000 - 1 - t) / (3600 * 1000))
+            const idx = 23 - hoursAgo
+            if (idx >= 0 && idx < 24) {
+                const b = hourList[idx]
+                b.total += 1
+                if (d.status === 'success') b.success += 1
+                else b.failed += 1
             }
         }
 
-        for (const [date, counts] of hourMap.entries()) {
-            buckets.push({ date, ...counts })
-        }
-        return buckets
+        return hourList
     }
 
     const days = period === '7d' ? 7 : 30

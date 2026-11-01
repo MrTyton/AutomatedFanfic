@@ -421,6 +421,48 @@ class TestAsyncHistoryDB(unittest.TestCase):
         results = self._run(self.async_db.get_retries_for_url("u1"))
         self.assertEqual(len(results), 2)
 
+    def test_get_story_history_scopes_retries_to_latest_download(self):
+        """get_story_history must only return retries for the latest download, not old past updates."""
+        # Old download with a retry
+        dl1_id = self.sync_db.insert_download(
+            DownloadEvent(
+                url="https://fanfiction.net/s/1",
+                site="ffnet",
+                title="Story",
+                status=DownloadStatus.SUCCESS,
+                completed_at=datetime(2026, 10, 1, 10, 0, tzinfo=timezone.utc),
+            )
+        )
+        self.sync_db.insert_retry(
+            RetryEvent(
+                url="https://fanfiction.net/s/1",
+                site="ffnet",
+                download_event_id=dl1_id,
+                attempt_number=1,
+                action=RetryAction.RETRY,
+            )
+        )
+
+        # Latest new download without any retries
+        dl2_id = self.sync_db.insert_download(
+            DownloadEvent(
+                url="https://fanfiction.net/s/1",
+                site="ffnet",
+                title="Story",
+                status=DownloadStatus.SUCCESS,
+                completed_at=datetime(2026, 11, 1, 10, 0, tzinfo=timezone.utc),
+            )
+        )
+
+        history = self._run(
+            self.async_db.get_story_history("https://fanfiction.net/s/1")
+        )
+        self.assertIsNotNone(history)
+        assert history is not None
+        self.assertEqual(history["download"]["id"], dl2_id)
+        # Must NOT include retries from dl1!
+        self.assertEqual(len(history["retries"]), 0)
+
     def test_get_retries_includes_title(self):
         self.sync_db.insert_download(
             DownloadEvent(url="u1", site="ao3", title="Story One")

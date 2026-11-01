@@ -302,7 +302,10 @@ async def get_story_diagnostics(
         except Exception:
             latest_download = None
         try:
-            retry_attempts = await state.history_db.get_retries_for_url(norm_url)
+            dl_id = latest_download.get("id") if latest_download else None
+            retry_attempts = await state.history_db.get_retries_for_url(
+                norm_url, download_event_id=dl_id
+            )
         except Exception:
             retry_attempts = []
 

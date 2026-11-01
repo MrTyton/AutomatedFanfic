@@ -103,6 +103,11 @@ export default function AttemptBlockCard({
     const [expanded, setExpanded] = useState(defaultExpanded)
     const [copied, setCopied] = useState(false)
     const [showIssueModal, setShowIssueModal] = useState(false)
+    const [selectedAttemptId, setSelectedAttemptId] = useState<string>(block.id)
+
+    useEffect(() => {
+        setSelectedAttemptId(block.id)
+    }, [block.id])
 
     useEffect(() => {
         if (forceExpanded !== null && forceExpanded !== undefined) {
@@ -110,11 +115,16 @@ export default function AttemptBlockCard({
         }
     }, [forceExpanded])
 
-    const siteInfo = block.site ? getSiteBadgeInfo(block.site) : null
+    const activeBlock = useMemo(() => {
+        if (!block.attempts || block.attempts.length <= 1) return block
+        return block.attempts.find((a) => a.id === selectedAttemptId) || block
+    }, [block, selectedAttemptId])
+
+    const siteInfo = activeBlock.site ? getSiteBadgeInfo(activeBlock.site) : null
     const displayLines = useMemo(() => {
-        if (!block.lines || block.lines.length <= 1) return block.lines || []
-        const first = block.lines[0]
-        const last = block.lines[block.lines.length - 1]
+        if (!activeBlock.lines || activeBlock.lines.length <= 1) return activeBlock.lines || []
+        const first = activeBlock.lines[0]
+        const last = activeBlock.lines[activeBlock.lines.length - 1]
         const isReversed =
             (first.seq !== undefined && last.seq !== undefined && first.seq > last.seq) ||
             (() => {
@@ -122,7 +132,7 @@ export default function AttemptBlockCard({
                 const t2 = new Date(last.timestamp).getTime()
                 return !isNaN(t1) && !isNaN(t2) && t1 > t2
             })()
-        const base = isReversed ? [...block.lines].reverse() : [...block.lines]
+        const base = isReversed ? [...activeBlock.lines].reverse() : [...activeBlock.lines]
         return base.sort((a, b) => {
             if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
                 return a.seq - b.seq
@@ -134,34 +144,34 @@ export default function AttemptBlockCard({
             }
             return 0
         })
-    }, [block.lines])
+    }, [activeBlock.lines])
 
     const errorContextText =
-        block.traceback ||
+        activeBlock.traceback ||
         displayLines.find((l) => l.level.toLowerCase() === 'error' || l.level.toLowerCase() === 'critical')?.message ||
         null
-    const diagnosticHint = block.status === 'failed' ? diagnoseErrorSignature(errorContextText) : null
+    const diagnosticHint = activeBlock.status === 'failed' ? diagnoseErrorSignature(errorContextText) : null
 
     const borderColor = isHighlighted
         ? 'var(--accent)'
-        : block.status === 'failed'
+        : activeBlock.status === 'failed'
           ? 'rgba(239, 68, 68, 0.38)'
-          : block.status === 'success'
+          : activeBlock.status === 'success'
             ? 'rgba(16, 185, 129, 0.28)'
-            : block.status === 'processing'
+            : activeBlock.status === 'processing'
               ? 'rgba(56, 189, 248, 0.35)'
               : 'var(--border)'
 
     const headerBg =
-        block.status === 'failed'
+        activeBlock.status === 'failed'
             ? 'rgba(239, 68, 68, 0.08)'
-            : block.status === 'success'
+            : activeBlock.status === 'success'
               ? 'rgba(16, 185, 129, 0.05)'
               : 'var(--surface2)'
 
     const handleCopy = (e: React.MouseEvent) => {
         e.stopPropagation()
-        navigator.clipboard?.writeText(formatAttemptBlockAsText(block))
+        navigator.clipboard?.writeText(formatAttemptBlockAsText(activeBlock))
         setCopied(true)
         setTimeout(() => setCopied(false), 1800)
     }
@@ -169,13 +179,13 @@ export default function AttemptBlockCard({
     const handleReportIssue = (e: React.MouseEvent) => {
         e.stopPropagation()
         if (onReportIssue) {
-            onReportIssue(block)
+            onReportIssue(activeBlock)
         } else {
             setShowIssueModal(true)
         }
     }
 
-    const timeRangeLabel = formatBlockTimeRange(block.startedAt, block.endedAt)
+    const timeRangeLabel = formatBlockTimeRange(activeBlock.startedAt, activeBlock.endedAt)
 
     return (
         <div
@@ -263,7 +273,7 @@ export default function AttemptBlockCard({
                         </span>
                     )}
 
-                    {block.kind === 'story_attempt' ? (
+                    {activeBlock.kind === 'story_attempt' ? (
                         <span
                             className="tabular-nums"
                             style={{
@@ -277,9 +287,12 @@ export default function AttemptBlockCard({
                                 border: '1px solid var(--border)',
                             }}
                         >
-                            {block.attemptNumber > 1
-                                ? `Attempt #${block.attemptNumber} (Retry #${block.attemptNumber - 1})`
+                            {activeBlock.attemptNumber > 1
+                                ? `Attempt #${activeBlock.attemptNumber} (Retry #${activeBlock.attemptNumber - 1})`
                                 : 'Attempt #1'}
+                            {block.attempts && block.attempts.length > 1
+                                ? ` (${block.attempts.length} attempts total)`
+                                : ''}
                         </span>
                     ) : (
                         <span
@@ -297,8 +310,8 @@ export default function AttemptBlockCard({
                         </span>
                     )}
 
-                    <span className={statusBadgeClass(block.status === 'system' ? 'queued' : block.status)}>
-                        {block.status}
+                    <span className={statusBadgeClass(activeBlock.status === 'system' ? 'queued' : activeBlock.status)}>
+                        {activeBlock.status}
                     </span>
 
                     <div
@@ -422,8 +435,80 @@ export default function AttemptBlockCard({
                                 <ExternalLink size={11} style={{ flexShrink: 0 }} />
                             </a>
                             <span className="tabular-nums" style={{ color: 'var(--text-faint)', flexShrink: 0 }}>
-                                Latest update: {block.endedAt}
+                                Latest update: {activeBlock.endedAt}
                             </span>
+                        </div>
+                    )}
+
+                    {/* Attempt Switcher when multiple attempts exist for this story */}
+                    {block.attempts && block.attempts.length > 1 && (
+                        <div
+                            style={{
+                                padding: '0.45rem 0.9rem',
+                                background: '#0a0f1d',
+                                borderBottom: '1px solid var(--border-subtle)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                flexWrap: 'wrap',
+                            }}
+                        >
+                            <span
+                                style={{
+                                    fontSize: '0.72rem',
+                                    color: 'var(--text-muted)',
+                                    fontWeight: 600,
+                                    marginRight: '0.2rem',
+                                }}
+                            >
+                                Story Attempts ({block.attempts.length}):
+                            </span>
+                            {block.attempts.map((att) => {
+                                const isCur = att.id === activeBlock.id
+                                const isSuccess = att.status === 'success'
+                                const isFailed = att.status === 'failed'
+                                const dotColor = isSuccess ? '#10b981' : isFailed ? '#ef4444' : '#38bdf8'
+                                return (
+                                    <button
+                                        key={att.id}
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            setSelectedAttemptId(att.id)
+                                        }}
+                                        style={{
+                                            padding: '0.2rem 0.55rem',
+                                            borderRadius: 6,
+                                            fontSize: '0.72rem',
+                                            fontFamily: 'var(--font-mono)',
+                                            fontWeight: isCur ? 700 : 500,
+                                            background: isCur ? 'rgba(99, 102, 241, 0.18)' : 'var(--surface2)',
+                                            border: `1px solid ${isCur ? 'var(--accent)' : 'var(--border)'}`,
+                                            color: isCur ? 'var(--text)' : 'var(--text-muted)',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.35rem',
+                                        }}
+                                        title={`Switch to Attempt #${att.attemptNumber} [${att.status.toUpperCase()}] (${att.startedAt})`}
+                                    >
+                                        <span
+                                            style={{
+                                                width: 6,
+                                                height: 6,
+                                                borderRadius: '50%',
+                                                background: dotColor,
+                                                flexShrink: 0,
+                                            }}
+                                        />
+                                        <span>
+                                            Attempt #{att.attemptNumber}
+                                            {att.attemptNumber > 1 ? ` (Retry #${att.attemptNumber - 1})` : ''}
+                                        </span>
+                                        <span style={{ fontSize: '0.67rem', opacity: 0.85 }}>[{att.status}]</span>
+                                    </button>
+                                )
+                            })}
                         </div>
                     )}
 
