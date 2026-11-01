@@ -9,9 +9,9 @@ FastMCP = MCPServer
 
 
 async def get_system_overview() -> dict[str, Any]:
-    """Fetch system health and status overview."""
+    """Fetch system health, component versions (Calibre, FanFicFare, OS), and runtime process status."""
     client = get_client()
-    return await client.get_health()
+    return await client.get_system_status()
 
 
 async def inspect_coordinator_locks() -> dict[str, Any]:

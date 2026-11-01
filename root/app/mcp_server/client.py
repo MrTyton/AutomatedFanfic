@@ -198,3 +198,122 @@ class AutomatedFanficClient:
     async def retry_now(self, url: str) -> dict[str, Any]:
         """Trigger immediate retry for waiting URL."""
         return await self._request("POST", "/api/controls/retry-now", json={"url": url})
+
+    async def get_system_status(self) -> dict[str, Any]:
+        """Fetch combined system health, version information, and runtime process status."""
+        health = await self._request("GET", "/api/health")
+        version = await self._request("GET", "/api/version")
+        status = await self._request("GET", "/api/status")
+        return {
+            "health": health,
+            "version": version,
+            "status": status,
+        }
+
+    async def get_story_history(self, url: str) -> dict[str, Any]:
+        """Retrieve full persistent download and retry history for a specific story URL."""
+        return await self._request("GET", "/api/history/story", params={"url": url})
+
+    async def get_downloads(
+        self,
+        search: str = "",
+        site: str = "",
+        status: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Query persistent download events from history database."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        if site:
+            params["site"] = site
+        if status:
+            params["status"] = status
+        return await self._request("GET", "/api/history/downloads", params=params)
+
+    async def get_retries(
+        self,
+        search: str = "",
+        site: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Query retry events across stories from history database."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        if site:
+            params["site"] = site
+        return await self._request("GET", "/api/history/retries", params=params)
+
+    async def get_email_history(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Query recent email check events from history database."""
+        return await self._request(
+            "GET", "/api/history/emails", params={"limit": limit, "offset": offset}
+        )
+
+    async def get_notification_history(
+        self,
+        search: str = "",
+        site: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Query sent notification events from history database."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if search:
+            params["search"] = search
+        if site:
+            params["site"] = site
+        return await self._request("GET", "/api/history/notifications", params=params)
+
+    async def get_config(self, section: str = "") -> dict[str, Any]:
+        """Fetch current application configuration with sensitive values masked."""
+        data = await self._request("GET", "/api/config")
+        if section and "config" in data and isinstance(data["config"], dict):
+            cfg_section = data["config"].get(section)
+            if cfg_section is not None:
+                return {"section": section, "values": cfg_section}
+        return data
+
+    async def get_ini_file(self, ini_type: str = "personal") -> dict[str, Any]:
+        """Fetch contents of personal.ini or defaults.ini."""
+        return await self._request("GET", f"/api/config/ini/{ini_type}")
+
+    async def trigger_email_check(self) -> dict[str, Any]:
+        """Trigger an immediate IMAP email polling check."""
+        return await self._request("POST", "/api/controls/check-emails")
+
+    async def restart_daemon(self, name: str) -> dict[str, Any]:
+        """Trigger restart of a daemon process or service."""
+        return await self._request(
+            "POST", "/api/controls/restart-daemon", json={"name": name}
+        )
+
+    async def retry_all_waiting(self) -> dict[str, Any]:
+        """Requeue all downloads currently in waiting/backoff state."""
+        return await self._request("POST", "/api/controls/retry-all")
+
+    async def toggle_site(self, site: str) -> dict[str, Any]:
+        """Toggle site between enabled and disabled."""
+        return await self._request(
+            "POST", "/api/controls/toggle-site", json={"site": site}
+        )
+
+    async def redownload_scratch(self, url: str) -> dict[str, Any]:
+        """Redownload a story completely fresh from scratch."""
+        return await self._request(
+            "POST", "/api/controls/redownload-scratch", json={"url": url}
+        )
+
+    async def recover_flaresolverr(self, target_site: str = "") -> dict[str, Any]:
+        """Recover from FlareSolverr tab crashes by destroying dead sessions."""
+        payload = {"target_site": target_site} if target_site else {}
+        return await self._request(
+            "POST", "/api/debug/flaresolverr/recover", json=payload
+        )

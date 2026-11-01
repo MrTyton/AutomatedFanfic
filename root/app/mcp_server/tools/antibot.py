@@ -1,4 +1,4 @@
-"""FastMCP anti-bot solver reachability and cookiejar inspection tools."""
+"""FastMCP anti-bot solver reachability, cookiejar inspection, and session recovery tools."""
 
 from typing import Any
 from mcp.server.mcpserver import MCPServer
@@ -23,7 +23,14 @@ async def inspect_cookiejar(domain: str) -> dict[str, Any]:
     return await client.get_cookiejar(domain=domain)
 
 
+async def recover_flaresolverr(target_site: str = "") -> dict[str, Any]:
+    """Recover from FlareSolverr Chromium tab crashes by destroying dead sessions."""
+    client = get_client()
+    return await client.recover_flaresolverr(target_site=target_site)
+
+
 def register_tools(server: FastMCP, client: AutomatedFanficClient) -> None:
     """Register anti-bot and cookiejar tools on the FastMCP server."""
     register_tool(server, client, test_antibot_status)
     register_tool(server, client, inspect_cookiejar)
+    register_tool(server, client, recover_flaresolverr)

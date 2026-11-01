@@ -26,8 +26,43 @@ async def retry_now(url: str) -> dict[str, Any]:
     return await client.retry_now(url=url)
 
 
+async def trigger_email_check() -> dict[str, Any]:
+    """Trigger an immediate IMAP email polling check by waking EmailWatcher."""
+    client = get_client()
+    return await client.trigger_email_check()
+
+
+async def restart_daemon(name: str) -> dict[str, Any]:
+    """Trigger restart of a daemon process or service (e.g. EmailWatcher, Coordinator, WebServer)."""
+    client = get_client()
+    return await client.restart_daemon(name=name)
+
+
+async def retry_all_waiting() -> dict[str, Any]:
+    """Requeue all downloads currently in waiting/backoff state for immediate retry."""
+    client = get_client()
+    return await client.retry_all_waiting()
+
+
+async def toggle_site(site: str) -> dict[str, Any]:
+    """Toggle site domain between enabled and disabled in email watcher configuration."""
+    client = get_client()
+    return await client.toggle_site(site=site)
+
+
+async def redownload_from_scratch(url: str) -> dict[str, Any]:
+    """Redownload a story completely from scratch, removing existing EPUB and cached state."""
+    client = get_client()
+    return await client.redownload_scratch(url=url)
+
+
 def register_tools(server: FastMCP, client: AutomatedFanficClient) -> None:
     """Register download control tools on the FastMCP server."""
     register_tool(server, client, inject_download)
     register_tool(server, client, cancel_download)
     register_tool(server, client, retry_now)
+    register_tool(server, client, trigger_email_check)
+    register_tool(server, client, restart_daemon)
+    register_tool(server, client, retry_all_waiting)
+    register_tool(server, client, toggle_site)
+    register_tool(server, client, redownload_from_scratch)

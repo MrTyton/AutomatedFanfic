@@ -90,7 +90,9 @@ async def test_mcp_e2e_full_tool_suite_integration():
     # Tool 2: get_system_overview
     res_system = await server.call_tool("get_system_overview", {})
     system_data = json.loads(_tool_text(res_system))
-    assert system_data["status"] == "ok"
+    assert system_data["health"]["status"] == "ok"
+    assert "version" in system_data
+    assert "status" in system_data
 
     # Tool 3: inspect_coordinator_locks
     res_coord = await server.call_tool("inspect_coordinator_locks", {})
@@ -156,3 +158,20 @@ async def test_mcp_e2e_full_tool_suite_integration():
     assert state.active_urls is not None
     assert "archiveofourown.org/works/12345" in state.active_urls
     assert state.active_urls["archiveofourown.org/works/12345"]["status"] == "queued"
+
+    # Tool 9: get_story_history
+    res_hist = await server.call_tool("get_story_history", {"url": sample_url})
+    hist_data = json.loads(_tool_text(res_hist))
+    assert "found" in hist_data
+
+    # Tool 10: get_app_config
+    res_cfg = await server.call_tool("get_app_config", {})
+    cfg_data = json.loads(_tool_text(res_cfg))
+    assert "config" in cfg_data
+
+    # Tool 11: recover_flaresolverr
+    with patch("utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=0):
+        res_fs = await server.call_tool("recover_flaresolverr", {})
+        fs_data = json.loads(_tool_text(res_fs))
+        assert fs_data["ok"] is True
+        assert fs_data["recovered"] == 0

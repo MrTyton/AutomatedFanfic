@@ -260,3 +260,144 @@ async def test_create_mcp_server():
     tools = await server.list_tools()
     assert isinstance(tools, list)
     await client.close()
+
+
+@pytest.mark.anyio
+async def test_mcp_client_expanded_endpoints():
+    client = AutomatedFanficClient.from_url()
+
+    # 1. get_system_status
+    with patch.object(client, "_request") as mock_req:
+        mock_req.side_effect = [
+            {"status": "ok"},
+            {"automatedfanfic": "6.15.14"},
+            {"queues": {}, "workers": {}},
+        ]
+        status = await client.get_system_status()
+        assert status["health"] == {"status": "ok"}
+        assert status["version"]["automatedfanfic"] == "6.15.14"
+        assert "queues" in status["status"]
+        assert mock_req.call_count == 3
+
+    # 2. get_story_history
+    with patch.object(client, "_request", return_value={"found": True}) as mock_req:
+        res = await client.get_story_history("https://ao3.org/123")
+        assert res["found"] is True
+        mock_req.assert_called_once_with(
+            "GET", "/api/history/story", params={"url": "https://ao3.org/123"}
+        )
+
+    # 3. get_downloads
+    with patch.object(client, "_request", return_value={"items": []}) as mock_req:
+        res = await client.get_downloads(
+            search="bard", site="ffnet", status="success", limit=10, offset=5
+        )
+        assert res["items"] == []
+        mock_req.assert_called_once_with(
+            "GET",
+            "/api/history/downloads",
+            params={
+                "limit": 10,
+                "offset": 5,
+                "search": "bard",
+                "site": "ffnet",
+                "status": "success",
+            },
+        )
+
+    # 4. get_retries
+    with patch.object(client, "_request", return_value={"items": []}) as mock_req:
+        res = await client.get_retries(search="bard", site="ffnet", limit=20)
+        assert res["items"] == []
+        mock_req.assert_called_once_with(
+            "GET",
+            "/api/history/retries",
+            params={"limit": 20, "offset": 0, "search": "bard", "site": "ffnet"},
+        )
+
+    # 5. get_email_history
+    with patch.object(client, "_request", return_value={"items": []}) as mock_req:
+        res = await client.get_email_history(limit=15, offset=2)
+        assert res["items"] == []
+        mock_req.assert_called_once_with(
+            "GET", "/api/history/emails", params={"limit": 15, "offset": 2}
+        )
+
+    # 6. get_notification_history
+    with patch.object(client, "_request", return_value={"items": []}) as mock_req:
+        res = await client.get_notification_history(
+            search="alert", site="ao3", limit=30
+        )
+        assert res["items"] == []
+        mock_req.assert_called_once_with(
+            "GET",
+            "/api/history/notifications",
+            params={"limit": 30, "offset": 0, "search": "alert", "site": "ao3"},
+        )
+
+    # 7. get_config
+    with patch.object(
+        client, "_request", return_value={"config": {"retry": {"max_retries": 11}}}
+    ) as mock_req:
+        res = await client.get_config()
+        assert "config" in res
+        res_sec = await client.get_config(section="retry")
+        assert res_sec == {"section": "retry", "values": {"max_retries": 11}}
+
+    # 8. get_ini_file
+    with patch.object(
+        client, "_request", return_value={"content": "[defaults]"}
+    ) as mock_req:
+        res = await client.get_ini_file("personal")
+        assert res["content"] == "[defaults]"
+        mock_req.assert_called_once_with("GET", "/api/config/ini/personal")
+
+    # 9. trigger_email_check
+    with patch.object(client, "_request", return_value={"ok": True}) as mock_req:
+        res = await client.trigger_email_check()
+        assert res["ok"] is True
+        mock_req.assert_called_once_with("POST", "/api/controls/check-emails")
+
+    # 10. restart_daemon
+    with patch.object(client, "_request", return_value={"ok": True}) as mock_req:
+        res = await client.restart_daemon("ao3-worker")
+        assert res["ok"] is True
+        mock_req.assert_called_once_with(
+            "POST", "/api/controls/restart-daemon", json={"name": "ao3-worker"}
+        )
+
+    # 11. retry_all_waiting
+    with patch.object(client, "_request", return_value={"ok": True}) as mock_req:
+        res = await client.retry_all_waiting()
+        assert res["ok"] is True
+        mock_req.assert_called_once_with("POST", "/api/controls/retry-all")
+
+    # 12. toggle_site
+    with patch.object(client, "_request", return_value={"ok": True}) as mock_req:
+        res = await client.toggle_site("archiveofourown")
+        assert res["ok"] is True
+        mock_req.assert_called_once_with(
+            "POST", "/api/controls/toggle-site", json={"site": "archiveofourown"}
+        )
+
+    # 13. redownload_scratch
+    with patch.object(client, "_request", return_value={"ok": True}) as mock_req:
+        res = await client.redownload_scratch("https://ao3.org/123")
+        assert res["ok"] is True
+        mock_req.assert_called_once_with(
+            "POST",
+            "/api/controls/redownload-scratch",
+            json={"url": "https://ao3.org/123"},
+        )
+
+    # 14. recover_flaresolverr
+    with patch.object(
+        client, "_request", return_value={"ok": True, "recovered": 1}
+    ) as mock_req:
+        res = await client.recover_flaresolverr("royalroad")
+        assert res["recovered"] == 1
+        mock_req.assert_called_once_with(
+            "POST", "/api/debug/flaresolverr/recover", json={"target_site": "royalroad"}
+        )
+
+    await client.close()

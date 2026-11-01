@@ -9,6 +9,7 @@ from mcp_server.tools import (
     config,
     controls,
     diagnostics,
+    history,
     logs,
     queues,
     story,
@@ -25,6 +26,7 @@ def register_all_tools(server: FastMCP, client: AutomatedFanficClient) -> None:
     queues.register_tools(server, client)
     logs.register_tools(server, client)
     story.register_tools(server, client)
+    history.register_tools(server, client)
     calibre.register_tools(server, client)
     antibot.register_tools(server, client)
     config.register_tools(server, client)
