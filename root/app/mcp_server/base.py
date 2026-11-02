@@ -2,11 +2,14 @@
 
 from contextvars import ContextVar
 import functools
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 from mcp.server.mcpserver import MCPServer
 from mcp_server.client import AutomatedFanficClient
 
 FastMCP = MCPServer
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 _current_client: ContextVar[AutomatedFanficClient | None] = ContextVar(
     "current_client", default=None
@@ -34,12 +37,12 @@ def get_client() -> AutomatedFanficClient:
 def register_tool(
     server: FastMCP,
     client: AutomatedFanficClient,
-    fn: Callable[..., Coroutine[Any, Any, Any]],
+    fn: Callable[_P, Coroutine[Any, Any, _R]],
 ) -> None:
     """Register tool on FastMCP server bound to the given client instance."""
 
     @functools.wraps(fn)
-    async def wrapped(*args: Any, **kwargs: Any) -> Any:
+    async def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         token = _current_client.set(client)
         try:
             return await fn(*args, **kwargs)

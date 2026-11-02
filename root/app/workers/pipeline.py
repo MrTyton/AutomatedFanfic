@@ -125,10 +125,9 @@ def _process_task(
                     site=fanfic.site,
                 )
                 # Update the pending history DB row with the title
-                if history_recorder:
-                    history_recorder.record_download_title_update(
-                        url=fanfic.url, title=fanfic.title, site=fanfic.site
-                    )
+                history_recorder.record_download_title_update(
+                    url=fanfic.url, title=fanfic.title, site=fanfic.site
+                )
 
             # Log epub metadata for debugging
             if ff_logging.is_verbose():
@@ -142,10 +141,9 @@ def _process_task(
                 "Story not found in Calibre library and update_only is enabled"
             )
             ff_logging.log(f"\t({site}) Skipping {fanfic.url}: {skip_message}")
-            if history_recorder:
-                history_recorder.record_download_abandoned(
-                    url=fanfic.url, error_message=skip_message, site=site
-                )
+            history_recorder.record_download_abandoned(
+                url=fanfic.url, error_message=skip_message, site=site
+            )
             return True
 
         # 3. Handle special case: force requested but update_no_force configured
@@ -409,10 +407,9 @@ def url_worker(
             # Mark as actively being processed by this worker thread
             if active_urls is not None:
                 mark_url_processing(active_urls, fanfic.url, site=fanfic.site)
-            if ctx.history_recorder:
-                ctx.history_recorder.record_download_processing(
-                    fanfic.url, site=fanfic.site
-                )
+            ctx.history_recorder.record_download_processing(
+                fanfic.url, site=fanfic.site
+            )
 
             # Process Task
             should_remove = True
