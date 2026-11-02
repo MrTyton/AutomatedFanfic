@@ -198,4 +198,3 @@ def run_worker_pool(
         ff_logging.log("Worker Pool interrupted", "WARNING")
     finally:
         ff_logging.log_debug("Worker Pool shutting down threads...")
-        pass

@@ -687,3 +687,64 @@ class TestAsyncHistoryDB(unittest.TestCase):
         res_search = self._run(self.async_db.get_notifications(search="error"))
         self.assertEqual(len(res_search), 1)
         self.assertEqual(res_search[0]["site"], "AO3")
+
+    def test_get_retry_count_with_filters(self):
+        d_id = self.sync_db.insert_download(
+            DownloadEvent(url="https://ao3.org/works/1", site="ao3")
+        )
+        self.sync_db.insert_retry(
+            RetryEvent(
+                download_event_id=d_id,
+                url="https://ao3.org/works/1",
+                site="ao3",
+                attempt_number=1,
+                action=RetryAction.RETRY,
+                delay_minutes=5.0,
+                error_message="HTTP 500 error",
+            )
+        )
+        self.sync_db.insert_retry(
+            RetryEvent(
+                url="https://ffnet.net/s/2",
+                site="ffnet",
+                attempt_number=2,
+                action=RetryAction.RETRY,
+                delay_minutes=10.0,
+                error_message="Cloudflare timeout",
+            )
+        )
+
+        total_count = self._run(self.async_db.get_retry_count())
+        self.assertEqual(total_count, 2)
+
+        ao3_count = self._run(self.async_db.get_retry_count(site="ao3"))
+        self.assertEqual(ao3_count, 1)
+
+        search_count = self._run(self.async_db.get_retry_count(search="Cloudflare"))
+        self.assertEqual(search_count, 1)
+
+    def test_get_recent_activity_returns_sorted_non_download_events(self):
+        self.sync_db.insert_retry(
+            RetryEvent(
+                url="https://ao3.org/works/10",
+                site="ao3",
+                attempt_number=1,
+                action=RetryAction.RETRY,
+                delay_minutes=5.0,
+                error_message="Transient error",
+            )
+        )
+        self.sync_db.insert_notification(
+            NotificationEvent(
+                title="Story Update",
+                body="New chapter downloaded",
+                site="ao3",
+                provider="pushbullet",
+            )
+        )
+
+        activity = self._run(self.async_db.get_recent_activity(limit=10))
+        self.assertGreaterEqual(len(activity), 2)
+        event_types = {e.get("event_type") for e in activity}
+        self.assertIn("retry", event_types)
+        self.assertIn("notification", event_types)
