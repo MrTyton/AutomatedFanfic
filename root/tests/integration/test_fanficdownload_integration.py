@@ -601,9 +601,9 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             self.assertTrue(result)
 
     # Full Application Integration Test
-    @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("fanficdownload.calibre_info.CalibreInfo")
+    @patch("services.bootstrap.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.calibre_info.CalibreInfo")
     @patch("fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare")
     @patch("fanficdownload.parse_arguments")
     @patch("fanficdownload.ff_logging")
@@ -636,7 +636,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_calibre.return_value = mock_calibre_instance
 
         # Mock worker functions to be fast and simple
-        with patch("services.url_ingester.email_watcher", _global_mock_worker):
+        with patch("services.supervisor.email_watcher", _global_mock_worker):
             with patch("services.ff_waiter.wait_processor", _global_mock_worker):
                 with patch("workers.pipeline.url_worker", _global_mock_worker):
                     with (
@@ -646,7 +646,9 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                         patch(
                             "process_management.ProcessManager.start_all"
                         ) as mock_start,
-                        patch("fanficdownload.calibre_factory.create_calibre_client"),
+                        patch(
+                            "services.bootstrap.calibre_factory.create_calibre_client"
+                        ),
                     ):
                         mock_wait.return_value = True
 

@@ -30,7 +30,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 
 from config.store import ConfigStore
-from services.url_ingester import _make_fff_get_configuration
+from services.email_client import _make_fff_get_configuration
 from utils.system_utils import get_packaged_defaults_ini_path
 
 

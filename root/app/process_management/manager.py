@@ -23,6 +23,7 @@ import ff_logging
 from config import AppConfig, ProcessConfig
 from models.queue_types import WorkerQueue
 from .state import ProcessInfo, ProcessState
+from .monitor import ProcessMonitor
 
 
 class ProcessManager:
@@ -85,6 +86,7 @@ class ProcessManager:
         # Call set_system_overhead() after construction when web_server is also
         # registered so scaling accounts for the extra process slot.
         self._overhead_count: int = 4
+        self._monitor = ProcessMonitor(self)
 
         # Configuration validation and setup
         if config:
@@ -495,185 +497,38 @@ class ProcessManager:
 
     def _start_monitoring(self) -> None:
         """Start the process monitoring thread."""
-        if self._monitor_thread and self._monitor_thread.is_alive():
-            return
-
-        self._monitor_thread = threading.Thread(
-            target=self._monitor_processes, name="ProcessMonitor", daemon=True
-        )
-        self._monitor_thread.start()
-        ff_logging.log_debug("Started process monitoring thread")
+        self._monitor.start()
+        self._monitor_thread = self._monitor._thread
 
     def _monitor_processes(self) -> None:
-        """
-        Main monitoring loop that runs in a dedicated thread.
-        """
-        ff_logging.log_debug("Process monitoring started")
-
-        # Skip entire loop if monitoring is disabled
-        if not self.process_config.enable_monitoring:
-            ff_logging.log_debug("Process monitoring disabled in configuration")
-            return
-
-        while not self._shutdown_event.is_set():
-            try:
-                current_time = time.time()
-
-                # Iterate through all managed processes
-                for name, process_info in self.processes.items():
-                    # Check if health check interval has elapsed
-                    if (
-                        process_info.last_health_check is None
-                        or current_time - process_info.last_health_check
-                        >= self.process_config.health_check_interval
-                    ):
-                        # Perform health check on this process
-                        self._health_check_process(name, process_info, current_time)
-
-                # Hot-reload process config and handle web auto-restart
-                self._sync_process_config_from_store()
-                self._check_web_restart_event()
-                self._check_supervisor_restart_event()
-                self._check_worker_restart_event()
-                self._check_worker_scaling()
-
-                # Sleep until next monitoring cycle
-                self._shutdown_event.wait(
-                    min(5.0, self.process_config.health_check_interval)
-                )
-
-            except Exception as e:
-                ff_logging.log_failure(f"Error in process monitoring: {e}")
-                # Brief sleep before retrying to avoid rapid error loops
-                self._shutdown_event.wait(
-                    min(5.0, self.process_config.health_check_interval)
-                )
-
-        ff_logging.log_debug("Process monitoring stopped")
+        """Main monitoring loop that runs in a dedicated thread."""
+        self._monitor.run()
 
     def _sync_process_config_from_store(self) -> None:
         """Refresh hot-reloadable ProcessConfig fields from ConfigStore."""
-        if self._config_store is None:
-            return
-        hi = self._config_store.get("process.health_check_interval")
-        if isinstance(hi, (int, float, str)):
-            self.process_config.health_check_interval = float(hi)
-        st = self._config_store.get("process.shutdown_timeout")
-        if isinstance(st, (int, float, str)):
-            self.process_config.shutdown_timeout = float(st)
-        mr = self._config_store.get("process.max_restart_attempts")
-        if isinstance(mr, (int, float, str)):
-            self.process_config.max_restart_attempts = int(mr)
+        self._monitor.sync_process_config_from_store()
 
     def _check_web_restart_event(self) -> None:
         """Restart the web server process if the web_restart_event is set."""
-        if (
-            self._web_restart_event is None
-            or not self._web_restart_event.is_set()
-            or "web_server" not in self.processes
-        ):
-            return
-        ff_logging.log("ProcessManager: web config changed, restarting web_server")
-        self._web_restart_event.clear()
-        # Reset restart_count so this config-driven restart isn't penalised
-        self.processes["web_server"].restart_count = 0
-        self.restart_process("web_server")
+        self._monitor.check_web_restart_event()
 
     def _check_supervisor_restart_event(self) -> None:
         """Restart the supervisor process if the supervisor_restart_event is set."""
-        if (
-            self._supervisor_restart_event is None
-            or not self._supervisor_restart_event.is_set()
-            or "supervisor" not in self.processes
-        ):
-            return
-        ff_logging.log("ProcessManager: restart requested, restarting supervisor")
-        self._supervisor_restart_event.clear()
-        # Reset restart_count so this user-driven restart isn't penalised
-        self.processes["supervisor"].restart_count = 0
-        self.restart_process("supervisor")
+        self._monitor.check_supervisor_restart_event()
 
     def _check_worker_restart_event(self) -> None:
         """Restart the worker pool process if the worker_restart_event is set."""
-        if (
-            self._worker_restart_event is None
-            or not self._worker_restart_event.is_set()
-            or "worker_pool" not in self.processes
-        ):
-            return
-        ff_logging.log("ProcessManager: restart requested, restarting worker_pool")
-        self._worker_restart_event.clear()
-        # Reset restart_count so this user-driven restart isn't penalised
-        self.processes["worker_pool"].restart_count = 0
-        self.restart_process("worker_pool")
+        self._monitor.check_worker_restart_event()
 
     def _check_worker_scaling(self) -> None:
         """Dynamically add or remove worker queues when max_workers changes in ConfigStore."""
-        if (
-            self._config_store is None
-            or self._worker_queues is None
-            or self._create_queue_fn is None
-        ):
-            return
-
-        new_max = self._config_store.get("process.max_workers")
-        if not isinstance(new_max, (int, float, str)):
-            return
-
-        target_size = max(1, int(new_max) - self._overhead_count)
-
-        # Only manage queues that follow the worker_N naming convention
-        managed_ids = sorted(
-            [wid for wid in self._worker_queues.keys() if wid.startswith("worker_")],
-            key=lambda x: int(x.split("_")[-1]),
-        )
-        current_size = len(managed_ids)
-
-        if target_size == current_size:
-            return
-
-        if target_size > current_size:
-            for i in range(current_size, target_size):
-                worker_id = f"worker_{i}"
-                if worker_id not in self._worker_queues:
-                    self._worker_queues[worker_id] = self._create_queue_fn()
-                    ff_logging.log(
-                        f"ProcessManager: scaled up, added {worker_id} "
-                        f"(pool size {current_size} → {target_size})"
-                    )
-        else:
-            workers_to_remove = managed_ids[target_size:]
-            for worker_id in workers_to_remove:
-                if worker_id in self._worker_queues:
-                    # Send None sentinel so the thread exits cleanly after draining its queue
-                    try:
-                        self._worker_queues[worker_id].put(None)
-                    except Exception:
-                        pass
-                    del self._worker_queues[worker_id]
-                    ff_logging.log(
-                        f"ProcessManager: scaled down, removed {worker_id} "
-                        f"(pool size {current_size} → {target_size})"
-                    )
+        self._monitor.check_worker_scaling()
 
     def _health_check_process(
         self, name: str, process_info: ProcessInfo, current_time: float
-    ) -> None:
-        """
-        Perform health check on a single process.
-        """
-        process_info.last_health_check = current_time
-
-        # Check if process is alive
-        if not process_info.is_alive() and process_info.state == ProcessState.RUNNING:
-            ff_logging.log_failure(f"Process '{name}' died unexpectedly")
-            process_info.state = ProcessState.FAILED
-
-            # Attempt restart if enabled
-            if self.process_config.auto_restart:
-                self.restart_process(name)
-
-        # Only log when the health check needs to take action.
+    ) -> bool:
+        """Perform health check on a single process."""
+        return self._monitor.health_check_process(name, process_info, current_time)
 
     def setup_signal_handlers(self) -> None:
         """

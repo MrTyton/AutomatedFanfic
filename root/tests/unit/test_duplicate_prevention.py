@@ -1,7 +1,8 @@
 import threading
 import unittest
 from unittest.mock import patch, MagicMock
-from services.url_ingester import email_watcher, EmailInfo
+from services.email_watcher import email_watcher
+from services.email_client import EmailInfo
 from workers.pipeline import url_worker
 from models.fanfic_info import FanficInfo
 from config import RetryConfig
@@ -24,9 +25,9 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.history_recorder = MagicMock()
         self.config_store = MagicMock()
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("services.url_ingester.ff_logging.log")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.ff_logging.log")
     def test_email_watcher_adds_to_active_urls(
         self, mock_log, mock_generate, mock_sleep
     ):
@@ -54,9 +55,9 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.assertIn(url, self.active_urls)
         self.ingress_queue.put.assert_called_with(fanfic)
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("services.url_ingester.ff_logging.log")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.ff_logging.log")
     def test_email_watcher_skips_active_url(self, mock_log, mock_generate, mock_sleep):
         url = "https://www.fanfiction.net/s/12345/1/"
         self.active_urls[url] = {"site": "fanfiction"}

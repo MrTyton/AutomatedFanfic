@@ -65,7 +65,7 @@ def test_startup_recovery_integration(tmp_path):
     mock_pm = MagicMock()
 
     with mp.Manager() as manager:
-        with patch("fanficdownload.calibre_factory.create_calibre_client"):
+        with patch("services.bootstrap.calibre_factory.create_calibre_client"):
             register_processes(
                 process_manager=mock_pm,
                 config=config,
@@ -146,7 +146,7 @@ def test_startup_recovery_disabled_integration(tmp_path):
     mock_pm = MagicMock()
 
     with mp.Manager() as manager:
-        with patch("fanficdownload.calibre_factory.create_calibre_client"):
+        with patch("services.bootstrap.calibre_factory.create_calibre_client"):
             register_processes(
                 process_manager=mock_pm,
                 config=config,

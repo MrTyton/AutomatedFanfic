@@ -13,13 +13,15 @@ import time
 
 from notifications import notification_wrapper
 import ff_logging
-from services import url_ingester, ff_waiter, coordinator
+from services import ff_waiter, coordinator
+from services.email_client import EmailInfo
+from services.email_watcher import email_watcher
 from models.context import SharedIPCContext
 
 
 def run_supervisor(
     ipc: SharedIPCContext,
-    email_info: url_ingester.EmailInfo,
+    email_info: EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
     url_parsers: dict,
 ) -> None:
@@ -86,7 +88,7 @@ def run_supervisor(
 
         # 1. Email Watcher Thread
         email_thread = threading.Thread(
-            target=url_ingester.email_watcher,
+            target=email_watcher,
             args=(
                 email_info,
                 notification_info,

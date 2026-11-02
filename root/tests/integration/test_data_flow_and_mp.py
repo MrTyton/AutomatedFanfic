@@ -34,7 +34,7 @@ from parsers.url_patterns import generate_url_parsers_from_fanficfare
 from services import supervisor
 from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor
-from services.url_ingester import EmailInfo
+from services.email_client import EmailInfo
 from utils.system_utils import get_packaged_defaults_ini_path
 from workers import fff_runner as command, handlers, pipeline
 

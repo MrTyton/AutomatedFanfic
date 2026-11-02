@@ -103,21 +103,21 @@ class TestFanficDownloadMain(unittest.TestCase):
         self.assertEqual(args.config, expected_config)
         self.assertEqual(args.verbose, expected_verbose)
 
-    @patch("fanficdownload.ConfigStore")
-    @patch("fanficdownload.HistoryWriter")
-    @patch("fanficdownload.HistoryRecorder")
+    @patch("services.bootstrap.ConfigStore")
+    @patch("services.bootstrap.HistoryWriter")
+    @patch("services.bootstrap.HistoryRecorder")
     @patch("fanficdownload.ProcessManager")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("fanficdownload.url_ingester.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.EmailInfo")
     @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")
     @patch("fanficdownload.parse_arguments")
     @patch(
-        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        "services.bootstrap.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
-    @patch("fanficdownload.calibre_factory.create_calibre_client")
+    @patch("services.bootstrap.calibre_factory.create_calibre_client")
     def test_main_successful_startup(
         self,
         mock_calibre_client,
@@ -159,7 +159,9 @@ class TestFanficDownloadMain(unittest.TestCase):
             mock_manager_instance.Queue.return_value = mock_queue
 
             # Mock CalibreInfo
-            with patch("fanficdownload.calibre_info.CalibreInfo") as mock_calibre_info:
+            with patch(
+                "services.bootstrap.calibre_info.CalibreInfo"
+            ) as mock_calibre_info:
                 mock_cdb = MagicMock()
                 mock_calibre_info.return_value = mock_cdb
 
@@ -210,15 +212,15 @@ class TestFanficDownloadMain(unittest.TestCase):
                     mock_pm_instance.start_all.assert_called_once()
                     mock_pm_instance.wait_for_all.assert_called_once()
 
-    @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
     @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
     @patch("sys.exit")
     @patch(
-        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        "services.bootstrap.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
     def test_main_config_error(
@@ -255,15 +257,15 @@ class TestFanficDownloadMain(unittest.TestCase):
         )
         mock_sys_exit.assert_called_once_with(1)
 
-    @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
     @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
     @patch("sys.exit")
     @patch(
-        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        "services.bootstrap.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
     def test_main_config_validation_error(
@@ -300,15 +302,15 @@ class TestFanficDownloadMain(unittest.TestCase):
         )
         mock_sys_exit.assert_called_once_with(1)
 
-    @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
     @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log_failure")
     @patch("fanficdownload.parse_arguments")
     @patch("sys.exit")
     @patch(
-        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        "services.bootstrap.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
     def test_main_unexpected_error(
@@ -345,21 +347,21 @@ class TestFanficDownloadMain(unittest.TestCase):
         )
         mock_sys_exit.assert_called_once_with(1)
 
-    @patch("fanficdownload.ConfigStore")
-    @patch("fanficdownload.HistoryWriter")
-    @patch("fanficdownload.HistoryRecorder")
+    @patch("services.bootstrap.ConfigStore")
+    @patch("services.bootstrap.HistoryWriter")
+    @patch("services.bootstrap.HistoryRecorder")
     @patch("fanficdownload.ProcessManager")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("fanficdownload.url_ingester.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.EmailInfo")
     @patch("config.ConfigManager.load_config")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")
     @patch("fanficdownload.parse_arguments")
     @patch(
-        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        "services.bootstrap.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
-    @patch("fanficdownload.calibre_factory.create_calibre_client")
+    @patch("services.bootstrap.calibre_factory.create_calibre_client")
     def test_main_keyboard_interrupt_handling(
         self,
         mock_calibre_client,
@@ -408,7 +410,9 @@ class TestFanficDownloadMain(unittest.TestCase):
             mock_manager_instance.Queue.return_value = mock_queue
 
             # Mock CalibreInfo
-            with patch("fanficdownload.calibre_info.CalibreInfo") as mock_calibre_info:
+            with patch(
+                "services.bootstrap.calibre_info.CalibreInfo"
+            ) as mock_calibre_info:
                 mock_cdb = MagicMock()
                 mock_calibre_info.return_value = mock_cdb
 
@@ -460,22 +464,22 @@ class TestFanficDownloadMain(unittest.TestCase):
                 )
             )
 
-    @patch("fanficdownload.ConfigStore")
-    @patch("fanficdownload.HistoryWriter")
-    @patch("fanficdownload.HistoryRecorder")
+    @patch("services.bootstrap.ConfigStore")
+    @patch("services.bootstrap.HistoryWriter")
+    @patch("services.bootstrap.HistoryRecorder")
     @patch("fanficdownload.ProcessManager")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("fanficdownload.url_ingester.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.EmailInfo")
     @patch("config.ConfigManager.load_config")
-    @patch("fanficdownload.ff_logging.set_web_enabled")
+    @patch("services.bootstrap.ff_logging.set_web_enabled")
     @patch("fanficdownload.ff_logging.set_verbose")
     @patch("fanficdownload.ff_logging.log")
     @patch("fanficdownload.parse_arguments")
     @patch(
-        "fanficdownload.calibredb_utils.CalibreDBClient.get_calibre_version",
+        "services.bootstrap.calibredb_utils.CalibreDBClient.get_calibre_version",
         return_value="5.0.0",
     )
-    @patch("fanficdownload.calibre_factory.create_calibre_client")
+    @patch("services.bootstrap.calibre_factory.create_calibre_client")
     def test_main_uses_native_mp_queues_and_gates_log_queue_on_web_enabled(
         self,
         mock_calibre_client,
@@ -503,8 +507,8 @@ class TestFanficDownloadMain(unittest.TestCase):
 
         with (
             patch("fanficdownload.mp.Manager") as mock_mp_manager,
-            patch("fanficdownload.mp.Queue") as mock_native_queue,
-            patch("fanficdownload.calibre_info.CalibreInfo"),
+            patch("services.bootstrap.mp.Queue") as mock_native_queue,
+            patch("services.bootstrap.calibre_info.CalibreInfo"),
             patch(
                 "fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare",
                 return_value={"fanfiction": None},
@@ -526,7 +530,7 @@ class TestFanficDownloadMain(unittest.TestCase):
             self.mock_config.web.enabled = True
             self.mock_config.web.port = 8080
             self.mock_config.web.host = "0.0.0.0"
-            with patch("fanficdownload.mp.Event") as mock_native_event:
+            with patch("services.bootstrap.mp.Event") as mock_native_event:
                 fanficdownload.main()
                 self.assertEqual(mock_native_queue.call_count, 5)
                 # 4 native mp.Event calls: web_restart_event, supervisor_restart_event, worker_restart_event, check_emails_event

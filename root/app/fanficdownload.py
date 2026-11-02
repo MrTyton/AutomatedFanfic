@@ -1,93 +1,31 @@
-"""AutomatedFanfic main application module.
-
-This module serves as the primary entry point for the AutomatedFanfic application,
-orchestrating a multiprocessing-based fanfiction downloading system. The application
-monitors email for fanfiction URLs, processes them through site-specific workers,
-and manages downloads/updates via Calibre integration with comprehensive notification
-capabilities.
-
-Key Components:
-    - Command-line argument parsing for configuration and logging control
-    - TOML-based configuration loading with Pydantic validation
-    - ProcessManager-coordinated multiprocessing architecture
-    - Site-specific URL processing queues for scalable fanfiction handling
-    - Email monitoring via IMAP for automated URL ingestion
-    - Calibre database integration for e-book management
-    - Notification systems (Pushbullet, Apprise) for status updates
-    - Graceful shutdown handling with signal management
-
-Architecture:
-    The application uses a multiprocessing design with a ProcessManager coordinating
-    worker processes. Each major fanfiction site gets its own processing queue and
-    worker, while email monitoring and retry handling run in separate processes.
-    All processes communicate via multiprocessing queues and are managed with
-    proper signal handling for Docker compatibility.
-
-Example:
-    python fanficdownload.py --config config.toml --verbose
-
-Author: MrTyton
-Repository: https://github.com/MrTyton/AutomatedFanfic
-"""
+"""AutomatedFanfic main application module."""
 
 import argparse
 import multiprocessing as mp
 from multiprocessing.managers import SyncManager
-from pathlib import Path
 import sys
 
 if sys.version_info < (3, 15):
     raise RuntimeError("AutomatedFanfic requires Python 3.15 or newer.")
+
+from config import AppConfig, ConfigError, ConfigManager, ConfigValidationError
 import ff_logging
-from utils import system_utils
+from process_management import ProcessManager
+from services import bootstrap
 
 lazy from parsers import url_patterns as auto_url_parsers
-from calibre_integration import calibre_info
-from calibre_integration import calibredb_utils
-from calibre_integration import factory as calibre_factory
-lazy from notifications import notification_wrapper
-lazy from services import url_ingester
-lazy from services import supervisor
-lazy from workers import fff_runner, pool_runner
-import config as config_models
-from config import ConfigError, ConfigValidationError
-from models.context import SharedIPCContext
-from process_management import ProcessManager
-from history.recorder import HistoryRecorder, HistoryWriter
-from history.recovery import recover_uncompleted_downloads
-from config.store import ConfigStore
-lazy from web import server as web_server
-lazy from calibre_integration.http_client import CalibreHttpClient
 
-# Define the application version
 __version__ = "6.16.2"
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parses command-line arguments for the AutomatedFanfic application.
-
-    Creates an argument parser to handle configuration file location and logging
-    verbosity settings. These arguments control core application behavior including
-    configuration source and logging output detail level.
-
-    Returns:
-        argparse.Namespace: Parsed command-line arguments containing:
-            - config (str): Path to the TOML configuration file
-            - verbose (bool): Flag to enable detailed logging output
-
-    Example:
-        >>> args = parse_arguments()
-        >>> print(args.config)  # '../config.default/config.toml'
-        >>> print(args.verbose)  # False (unless --verbose flag used)
-    """
+    """Parses command-line arguments for the AutomatedFanfic application."""
     parser = argparse.ArgumentParser(description="Process input arguments.")
-    # Define configuration file location with default fallback
     parser.add_argument(
         "--config",
         default="../config.default/config.toml",
         help="The location of the config.toml file",
     )
-    # Enable detailed logging for debugging and monitoring
     parser.add_argument(
         "--verbose",
         action="store_true",
@@ -97,26 +35,14 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def setup_logging(verbose: bool) -> None:
-    """Configures application logging based on verbosity settings.
-
-    Args:
-        verbose (bool): True to enable debug-level logging output, False for standard output.
-    """
+    """Configures application logging based on verbosity settings."""
     ff_logging.set_verbose(verbose)
 
 
-def load_configuration(config_path: str) -> config_models.AppConfig:
-    """Loads and validates the application configuration from a TOML file.
-
-    Args:
-        config_path (str): Path to the TOML configuration file.
-
-    Returns:
-        AppConfig: Validated application configuration object. Exits the process
-            with status code 1 if configuration loading or validation fails.
-    """
+def load_configuration(config_path: str) -> AppConfig:
+    """Loads and validates the application configuration from a TOML file."""
     try:
-        return config_models.ConfigManager.load_config(config_path)
+        return ConfigManager.load_config(config_path)
     except ConfigError as e:
         ff_logging.log_failure(f"Configuration error: {e}")
         sys.exit(1)
@@ -128,313 +54,24 @@ def load_configuration(config_path: str) -> config_models.AppConfig:
         sys.exit(1)
 
 
-def log_configuration_details(
-    config: config_models.AppConfig, args: argparse.Namespace
-) -> None:
-    """Logs detailed startup and configuration information for diagnostics.
-
-    Args:
-        config (AppConfig): Validated application configuration object.
-        args (argparse.Namespace): Parsed command-line arguments.
-    """
-    # --- Log Version and General Configuration ---
-    ff_logging.log(f"Starting AutomatedFanfic v{__version__}")
-    ff_logging.log(
-        "For issues and updates, please go to https://github.com/MrTyton/AutomatedFanfic"
-    )
-    ff_logging.log(f"Using configuration file: {args.config}")
-
-    # Log environment & runtime versions
-    env_info = system_utils.get_system_environment_summary()
-    env_label = "Docker container" if env_info["is_docker"] else "Host system"
-    ff_logging.log(
-        f"Python version: {env_info['python']} ({env_info['python_implementation']})"
-    )
-    ff_logging.log(f"OS / Platform: {env_info['platform']} [{env_label}]")
-
-    # Log external tool versions
-    if calibre_factory.is_http_location(getattr(config.calibre, "path", "")):
-
-        class _NoopLockFactory:
-            @staticmethod
-            def Lock():
-                return None
-
-        temp_info = calibre_info.CalibreInfo(config.calibre, _NoopLockFactory())
-        calibre_version = CalibreHttpClient(temp_info, ConfigStore({})).get_version()
-    else:
-        calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
-    fanficfare_version = fff_runner.get_fanficfare_version()
-    apprise_version = system_utils.get_installed_package_version("apprise")
-    ff_logging.log(f"Calibre version: {calibre_version}")
-    ff_logging.log(f"FanFicFare version: {fanficfare_version}")
-    ff_logging.log(f"Apprise version: {apprise_version}")
-
-    ff_logging.log("--- Configuration Details ---")
-    try:
-        # Log Email Configuration
-        ff_logging.log(f"  Email Account: {config.email.email or 'Not Specified'}")
-        ff_logging.log(f"  Email Server: {config.email.server or 'Not Specified'}")
-        ff_logging.log(f"  Email Mailbox: {config.email.mailbox}")
-        ff_logging.log(f"  Email Sleep Time: {config.email.sleep_time}")
-        ff_logging.log(
-            f"  Disabled Sites: {config.email.disabled_sites if config.email.disabled_sites else 'None'}"
-        )
-
-        # Log Calibre Configuration
-        ff_logging.log(f"  Calibre Path: {config.calibre.path or 'Not Specified'}")
-        resolved_default_ini = (
-            system_utils.resolve_ini_path(config.calibre.default_ini, "defaults.ini")
-            if hasattr(system_utils, "resolve_ini_path")
-            else None
-        )
-        ff_logging.log(
-            f"  Calibre Default INI: {config.calibre.default_ini or (f'Packaged ({resolved_default_ini})' if resolved_default_ini else 'Packaged')}"
-        )
-        ff_logging.log(
-            f"  Calibre Personal INI: {config.calibre.personal_ini or 'Not Specified'}"
-        )
-        ff_logging.log(f"  Update Method: {config.calibre.update_method}")
-        ff_logging.log(f"  Update Only (email): {config.calibre.update_only}")
-
-        mode_value = (
-            config.calibre.metadata_preservation_mode.value
-            if hasattr(config.calibre.metadata_preservation_mode, "value")
-            else config.calibre.metadata_preservation_mode
-        )
-        ff_logging.log(f"  Metadata Preservation Mode: {mode_value}")
-
-        # Log Pushbullet Configuration
-        pb_status = "Enabled" if config.pushbullet.enabled else "Disabled"
-        ff_logging.log(f"  Pushbullet Notifications: {pb_status}")
-        if config.pushbullet.enabled:
-            ff_logging.log(
-                f"  Pushbullet Device: {config.pushbullet.device or 'Not Specified'}"
-            )
-
-        # Log Apprise Configuration
-        if config.apprise.urls:
-            ff_logging.log(
-                f"  Apprise Notifications: Enabled with {len(config.apprise.urls)} target(s)"
-            )
-        else:
-            ff_logging.log("  Apprise Notifications: Disabled")
-
-        # Log Process Configuration
-        ff_logging.log(f"  Max Workers: {config.max_workers}")
-        ff_logging.log(
-            f"  Process Monitoring: {'Enabled' if config.process.enable_monitoring else 'Disabled'}"
-        )
-        ff_logging.log(
-            f"  Auto Restart: {'Enabled' if config.process.auto_restart else 'Disabled'}"
-        )
-
-    except Exception as e:
-        ff_logging.log_failure(f"  Error accessing specific configuration details: {e}")
-    ff_logging.log("-----------------------------")
+def log_configuration_details(config: AppConfig, args: argparse.Namespace) -> None:
+    """Logs detailed startup and configuration information for diagnostics."""
+    bootstrap.log_configuration_details(config, args, version=__version__)
 
 
 def register_processes(
     process_manager: ProcessManager,
-    config: config_models.AppConfig,
+    config: AppConfig,
     args: argparse.Namespace,
     manager: SyncManager,
     url_parsers: dict,
 ) -> None:
-    """Initializes shared IPC resources and registers all worker processes with the ProcessManager.
-
-    Args:
-        process_manager (ProcessManager): Lifecycle manager for registering child processes.
-        config (AppConfig): Validated application configuration object.
-        args (argparse.Namespace): Parsed command-line arguments.
-        manager (SyncManager): Multiprocessing SyncManager for shared dicts and queues.
-        url_parsers (dict): Mapping of site identifiers to compiled URL parser pairs.
-    """
-    # Register Worker Pool (Single Process with Threads)
-    # We use all available slots for threads as they are lightweight, but we respect the
-    # max_workers limit as a "System Process Limit" since each thread spawns a subprocess.
-    # Overhead = 3 fixed (Main + SyncManager + ResourceTracker)
-    #           + 1 for supervisor
-    #           + 1 for web_server (when enabled)
-    is_web_enabled = bool(getattr(config.web, "enabled", False))
-    _SYSTEM_OVERHEAD = 3  # Main + SyncManager + ResourceTracker
-    overhead_count = (
-        _SYSTEM_OVERHEAD + 1 + (1 if is_web_enabled else 0)
-    )  # +supervisor, +web_server?
-    worker_pool_size = max(1, config.max_workers - overhead_count)
-
-    ff_logging.log(
-        f"Spawning 1 Worker Pool Process with {worker_pool_size} threads "
-        f"(reserved {overhead_count} slots for support processes) "
-        f"to match max_workers={config.max_workers}"
-    )
-
-    ingress_queue = mp.Queue()
-    worker_queues = manager.dict()
-    for i in range(worker_pool_size):
-        worker_id = f"worker_{i}"
-        worker_queues[worker_id] = manager.Queue()
-
-    waiting_queue = mp.Queue()
-    scale_queue = mp.Queue()
-    active_urls = manager.dict()
-    coordinator_status = manager.dict()
-
-    # Cross-process log forwarding queue: when the web server is enabled, all
-    # non-web-server processes push log entries here; the web server drains it
-    # into its own ring buffer so /api/logs shows logs from every process.
-    ff_logging.set_web_enabled(is_web_enabled)
-    log_queue = mp.Queue() if is_web_enabled else None
-
-    # Initialize ConfigStore for hot-reloadable settings
-    config_store = ConfigStore(manager.dict())
-    config_store.initialize_from_config(config)
-
-    # Initialize Calibre components
-    cdb_info = calibre_info.CalibreInfo(config.calibre, manager)
-    calibre_client = calibre_factory.create_calibre_client(cdb_info, config_store)
-
-    # Initialize history recording infrastructure
-    history_queue = mp.Queue(maxsize=10000)
-    history_recorder = HistoryRecorder(history_queue)
-    history_db_path = (
-        config.web.history_db_path
-        if (config.web.enabled or getattr(config.web, "history_db_path", None))
-        else None
-    )
-
-    # Initialize persistent file logging if web server is disabled (otherwise WebServer owns it)
-    if not config.web.enabled:
-        log_file_path = getattr(config.web, "log_file_path", None)
-        if isinstance(log_file_path, str) and log_file_path.strip():
-            # If log_file_path is default /data/... but history_db_path is configured in a custom mount (e.g. /config/history.db)
-            # or executing inside Docker with /config mounted, co-locate automatedfanfic.log alongside history.db
-            if log_file_path == "/data/automatedfanfic.log" and (
-                (history_db_path and not str(history_db_path).startswith("/data/"))
-                or (system_utils.is_docker_environment() and Path("/config").exists())
-            ):
-                target_dir = (
-                    Path(history_db_path).parent
-                    if history_db_path and not str(history_db_path).startswith("/data/")
-                    else Path("/config")
-                )
-                log_file_path = str(target_dir / "automatedfanfic.log")
-            ff_logging.init_persistent_logging(log_file_path)
-    history_writer = HistoryWriter(
-        history_queue,
-        history_db_path or "/data/history.db",
-        shutdown_event=getattr(process_manager, "_shutdown_event", None),
-    )
-    history_writer.start()
-    process_manager._history_writer = history_writer
-
-    # Initialize external resources using ConfigStore as single source of truth.
-    email_info = url_ingester.EmailInfo(
-        config.email,
-        config_store,
-        lazy=True,
-    )
-    notification_info = notification_wrapper.NotificationWrapper(
-        config,
-        config_store,
-        history_recorder,
-    )
-
-    # Shared event: web server sets it when web.host/port/enabled change;
-    # ProcessManager detects it and restarts only the web_server process.
-    shutdown_event = manager.Event()
-    web_restart_event = mp.Event()
-    supervisor_restart_event = mp.Event()
-    worker_restart_event = mp.Event()
-    check_emails_event = mp.Event()
-
-    # Inject hot-reload helpers into ProcessManager (created before the Manager context)
-    process_manager.set_config_store(config_store)
-    process_manager.set_web_restart_event(web_restart_event)
-    process_manager.set_supervisor_restart_event(supervisor_restart_event)
-    process_manager.set_worker_restart_event(worker_restart_event)
-    process_manager.set_worker_queues(worker_queues, manager.Queue)
-    process_manager.set_system_overhead(overhead_count)
-
-    # Arm the cross-process log-forwarding queue BEFORE processes are started
-    # so that all forked child processes inherit the reference and push their
-    # log entries here.  The web server will clear its own copy and instead
-    # drain the queue into its ring buffer.
-    ff_logging.set_log_forward_queue(log_queue)
-
-    ipc = SharedIPCContext(
-        ingress_queue=ingress_queue,
-        waiting_queue=waiting_queue,
-        worker_queues=worker_queues,
-        active_urls=active_urls,
-        history_recorder=history_recorder,
-        config_store=config_store,
-        scale_queue=scale_queue,
-        shutdown_event=shutdown_event,
-        supervisor_restart_event=supervisor_restart_event,
-        worker_restart_event=worker_restart_event,
-        log_queue=log_queue,
-        check_emails_event=check_emails_event,
-        verbose=args.verbose,
-        coordinator_status=coordinator_status,
-    )
-
-    # Rehydrate uncompleted downloads from history.db on startup if enabled
-    if config.retry.resume_uncompleted_on_startup and history_db_path:
-        recover_uncompleted_downloads(
-            history_db_path=history_db_path,
-            ingress_queue=ingress_queue,
-            active_urls=active_urls,
-            history_recorder=history_recorder,
-        )
-
-    # Register Supervisor Process (Hosts Email, Waiter, Coordinator)
-    process_manager.register_process(
-        "supervisor",
-        supervisor.run_supervisor,
-        args=(
-            ipc,
-            email_info,
-            notification_info,
-            url_parsers,
-        ),
-    )
-
-    # Register the single pool process that hosts all worker threads
-    process_manager.register_process(
-        "worker_pool",
-        pool_runner.run_worker_pool,
-        args=(
-            ipc,
-            calibre_client,
-            notification_info,
-            config.retry,
-        ),
-    )
-
-    # Register web server process if enabled
-    if config.web.enabled:
-        ff_logging.log(f"Web dashboard enabled on {config.web.host}:{config.web.port}")
-        process_manager.register_process(
-            "web_server",
-            web_server.run_web_server,
-            args=(
-                ipc,
-                config,
-                args.config,
-                web_restart_event,
-                None,  # process_status_callable — not cross-process safe yet
-            ),
-        )
+    """Initializes shared IPC resources and registers all worker processes with the ProcessManager."""
+    bootstrap.register_processes(process_manager, config, args, manager, url_parsers)
 
 
 def main() -> None:
     """Main application entry point."""
-    # Use forkserver on Linux for safety: fork is deprecated in Python 3.15+
-    # when threads are present (e.g. SyncManager), and forkserver is the
-    # Linux default since Python 3.14.  Setting it explicitly ensures
-    # consistent behaviour on Python 3.13 too.  All subprocess arguments
-    # must be picklable — see url_ingester.EmailInfo for the pattern.
     if sys.platform == "linux" and mp.get_start_method(allow_none=True) is None:
         mp.set_start_method("forkserver")
 
@@ -442,10 +79,8 @@ def main() -> None:
     setup_logging(args.verbose)
     config = load_configuration(args.config)
 
-    # Initialize logging with config details
     log_configuration_details(config, args)
 
-    # Use ProcessManager for robust process handling
     with ProcessManager(config=config) as process_manager:
         with mp.Manager() as manager:
             ff_logging.log("Generating URL parsers from FanFicFare adapters...")

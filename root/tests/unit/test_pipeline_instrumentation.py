@@ -37,10 +37,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         self.recorder = MagicMock()
         self.config_store = MagicMock()
 
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_records_email_check_event(self, mock_generate):
         """email_watcher records an EmailCheckEvent after processing URLs."""
-        from services.url_ingester import email_watcher
+        from services.email_watcher import email_watcher
 
         fanfic = FanficInfo(url="https://archiveofourown.org/works/123", site="ao3")
         mock_generate.return_value = fanfic
@@ -72,10 +72,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             trigger="poll",
         )
 
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_records_download_created_for_new_urls(self, mock_generate):
         """email_watcher records download_created for each new URL."""
-        from services.url_ingester import email_watcher
+        from services.email_watcher import email_watcher
 
         fanfic = FanficInfo(url="https://archiveofourown.org/works/123", site="ao3")
         mock_generate.return_value = fanfic
@@ -102,10 +102,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             "https://archiveofourown.org/works/123", "ao3", None
         )
 
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_counts_disabled_sites(self, mock_generate):
         """email_watcher tracks disabled_site count in email check event."""
-        from services.url_ingester import email_watcher
+        from services.email_watcher import email_watcher
 
         fanfic = FanficInfo(url="https://fanfiction.net/s/123", site="fanfiction")
         mock_generate.return_value = fanfic
@@ -138,10 +138,10 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         )
         self.recorder.record_download_created.assert_not_called()
 
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_counts_duplicates(self, mock_generate):
         """email_watcher tracks duplicate count in email check event."""
-        from services.url_ingester import email_watcher
+        from services.email_watcher import email_watcher
 
         url = "https://archiveofourown.org/works/123"
         fanfic = FanficInfo(url=url, site="ao3")

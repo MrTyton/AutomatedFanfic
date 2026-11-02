@@ -11,7 +11,8 @@ from queue import Empty
 
 
 from config.store import ConfigStore
-from services.url_ingester import EmailInfo, email_watcher, _make_fff_get_configuration
+from services.email_client import EmailInfo, _make_fff_get_configuration
+from services.email_watcher import email_watcher
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from config import (
@@ -102,7 +103,7 @@ class TestUrlIngester(unittest.TestCase):
             ("empty_urls", []),
         ]
     )
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls(self, name, expected_urls, mock_get_urls_class):
         # Create EmailConfig directly
         email_config = EmailConfig(
@@ -123,7 +124,7 @@ class TestUrlIngester(unittest.TestCase):
         mock_get_urls_class.return_value.get_urls_from_imap.assert_called_once()
 
     @patch("antibot.flaresolverr.recover_flaresolverr_crashes", return_value=1)
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls_flaresolverr_tab_crash_recovery(
         self, mock_get_urls_class, mock_recover
     ):
@@ -149,7 +150,7 @@ class TestUrlIngester(unittest.TestCase):
         mock_recover.assert_called_once()
         assert mock_instance.get_urls_from_imap.call_count == 2
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls_exception_handling(self, mock_get_urls_class):
         """Test that get_urls handles exceptions gracefully."""
         # Create EmailConfig directly
@@ -168,7 +169,7 @@ class TestUrlIngester(unittest.TestCase):
 
         email_info = EmailInfo(email_config, ConfigStore({}))
 
-        with patch("services.url_ingester.ff_logging.log_failure") as mock_log_failure:
+        with patch("services.email_client.ff_logging.log_failure") as mock_log_failure:
             result = email_info.get_urls()
 
         # Should return empty set on exception
@@ -212,7 +213,7 @@ class TestUrlIngester(unittest.TestCase):
         email_info = EmailInfo(email_config, ConfigStore({}))
         self.assertEqual(email_info.personal_ini, "")
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls_without_ini_passes_none_to_geturls(
         self, mock_get_urls_class
     ):
@@ -226,7 +227,7 @@ class TestUrlIngester(unittest.TestCase):
         email_info.get_urls()
         mock_get_urls_class.assert_called_once_with(config=None, get_config=None)
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls_with_ini_passes_get_config_to_geturls(
         self, mock_get_urls_class
     ):
@@ -249,7 +250,7 @@ class TestUrlIngester(unittest.TestCase):
             get_config=store.get_fff_configuration,
         )
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls_rebuilds_on_ini_change(self, mock_get_urls_class):
         """GetURLs is rebuilt when ini files have been modified since last build."""
         email_config = EmailConfig(
@@ -261,7 +262,7 @@ class TestUrlIngester(unittest.TestCase):
         store.update("calibre.default_ini", "/a/defaults.ini")
         store.update("calibre.personal_ini", "/a/personal.ini")
 
-        with patch("services.url_ingester.os.path.getmtime") as mock_mtime:
+        with patch("services.email_client.os.path.getmtime") as mock_mtime:
             # First call (during __init__ -> _build_geturls): mtime = 1.0
             mock_mtime.return_value = 1.0
             email_info = EmailInfo(email_config, config_store=store)
@@ -274,7 +275,7 @@ class TestUrlIngester(unittest.TestCase):
         # GetURLs must have been rebuilt once more for the changed ini
         assert mock_get_urls_class.call_count == 2
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls_rebuilds_only_on_content_change(
         self, mock_get_urls_class
     ):
@@ -319,14 +320,14 @@ class TestUrlIngester(unittest.TestCase):
     # imap_idle attribute tests
     # ------------------------------------------------------------------
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_init_imap_idle_defaults_false(self, _):
         """imap_idle defaults to False on EmailInfo when not set in config."""
         email_config = EmailConfig(email="u", password="p", server="s")
         email_info = EmailInfo(email_config, ConfigStore({}))
         self.assertFalse(email_info.imap_idle)
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_init_imap_idle_true(self, _):
         """imap_idle is True on EmailInfo when enabled in config."""
         email_config = EmailConfig(email="u", password="p", server="s", imap_idle=True)
@@ -412,7 +413,7 @@ class TestUrlIngester(unittest.TestCase):
         self.assertEqual(ei2.sleep_time, 15)
         self.assertIsNotNone(ei2._geturls)
 
-    @patch("services.url_ingester.geturls.GetURLs")
+    @patch("services.email_client.geturls.GetURLs")
     def test_email_info_pickle_roundtrip_with_closure(self, mock_geturls):
         """EmailInfo whose _geturls was built from a closure must be picklable.
 
@@ -650,9 +651,9 @@ class TestEmailWatcher(unittest.TestCase):
             # Expected success path: queue had no pending items.
             pass
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("services.url_ingester.ff_logging.log")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.ff_logging.log")
     def test_email_watcher_processes_urls(
         self, mock_log, mock_generate_fanfic, mock_sleep
     ):
@@ -697,9 +698,9 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify fanfic was added to ingress queue
         self.assert_ingress_has_item(mock_fanfic)
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("services.url_ingester.ff_logging.log")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.ff_logging.log")
     def test_email_watcher_marks_fanfics_from_email(
         self, mock_log, mock_generate_fanfic, mock_sleep
     ):
@@ -730,8 +731,8 @@ class TestEmailWatcher(unittest.TestCase):
         queued = self.assert_ingress_has_item(fanfic)
         self.assertTrue(queued.from_email)
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_email_watcher_disabled_sites_notification_only(
         self, mock_generate_fanfic, mock_sleep
     ):
@@ -771,9 +772,9 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify fanfic was NOT added to ingress queue
         self.assert_ingress_empty()
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("services.url_ingester.ff_logging.log")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.ff_logging.log")
     def test_email_watcher_multiple_sites(
         self, mock_log, mock_generate_fanfic, mock_sleep
     ):
@@ -826,7 +827,7 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify logging happened for each fanfic
         self.assertEqual(mock_log.call_count, 3)
 
-    @patch("services.url_ingester.time.sleep")
+    @patch("services.email_watcher.time.sleep")
     def test_email_watcher_empty_urls_cycle(self, mock_sleep):
         """Test that email_watcher handles empty URL responses gracefully."""
         # Setup mock to return empty URLs then stop
@@ -884,8 +885,8 @@ class TestEmailWatcher(unittest.TestCase):
         # Verify shutdown_event.wait was called with correct timeout duration
         mock_shutdown_event.wait.assert_called_with(timeout=custom_sleep_time)
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_email_watcher_uses_idle_wait_when_imap_idle_enabled(
         self, mock_generate_fanfic, mock_sleep
     ):
@@ -983,7 +984,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
             mailbox="INBOX",
             imap_idle=True,
         )
-        with patch("services.url_ingester.geturls.GetURLs"):
+        with patch("services.email_client.geturls.GetURLs"):
             return EmailInfo(email_config, ConfigStore({}))
 
     def _setup_mock_conn(self, mock_cls):
@@ -1070,7 +1071,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         self.assertFalse(result)
         mock_conn.idle_done.assert_called_once()
 
-    @patch("services.url_ingester.ff_logging.log_failure")
+    @patch("services.email_client.ff_logging.log_failure")
     @patch("imapclient.IMAPClient")
     def test_returns_true_and_logs_on_connection_error(
         self, mock_cls, mock_log_failure
@@ -1083,7 +1084,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         self.assertTrue(result)
         mock_log_failure.assert_called_once()
 
-    @patch("services.url_ingester.time.monotonic")
+    @patch("services.email_client.time.monotonic")
     @patch("imapclient.IMAPClient")
     def test_reissues_idle_after_9_minutes(self, mock_cls, mock_monotonic):
         """When 9 minutes elapse without notification, returns True so get_urls() runs as a safety fallback."""
@@ -1098,7 +1099,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn.idle.assert_called_once()
         mock_conn.idle_done.assert_called_once()
 
-    @patch("services.url_ingester.time.monotonic")
+    @patch("services.email_client.time.monotonic")
     @patch("imapclient.IMAPClient")
     def test_idle_refresh_calls_idle_done_and_returns_true(
         self, mock_cls, mock_monotonic
@@ -1172,7 +1173,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
                     KeyboardInterrupt,
                 ],
             ),
-            patch("services.url_ingester.time.sleep", side_effect=KeyboardInterrupt),
+            patch("services.email_watcher.time.sleep", side_effect=KeyboardInterrupt),
         ):
             try:
                 email_watcher(
