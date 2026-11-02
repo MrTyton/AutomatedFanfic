@@ -966,7 +966,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
         )
 
     @patch("workers.common.get_path_or_url")
-    @patch("workers.common.ff_logging.log_debug")
+    @patch("calibre_integration.epub_utils.ff_logging.log_debug")
     def test_title_extraction_in_processing_flow(
         self, mock_log_debug, mock_get_path_or_url
     ):
