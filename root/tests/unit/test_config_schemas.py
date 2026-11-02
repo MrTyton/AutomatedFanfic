@@ -736,6 +736,45 @@ path = ""
         retry_config_disabled = RetryConfig(resume_uncompleted_on_startup=False)
         self.assertFalse(retry_config_disabled.resume_uncompleted_on_startup)
 
+    def test_explicit_init_kwargs_take_precedence_over_ffdl_env_vars(self):
+        """Explicit AppConfig kwargs (e.g. Web UI validation) must not be clobbered by FFDL_* env vars."""
+        with patch.dict(
+            os.environ,
+            {
+                "FFDL_EMAIL_PASSWORD": "env_password",
+                "FFDL_CALIBRE_PATH": "/env/calibre/path",
+            },
+            clear=False,
+        ):
+            cfg = AppConfig(
+                email={"email": "u@test.com", "password": "explicit_password", "server": "imap.test.com"},  # type: ignore[arg-type]
+                calibre={"path": "/explicit/calibre/path"},  # type: ignore[arg-type]
+            )
+        self.assertEqual(cfg.email.password, "explicit_password")
+        self.assertEqual(cfg.calibre.path, "/explicit/calibre/path")
+
+    def test_empty_ffdl_list_env_vars_do_not_crash_validation(self):
+        """Empty string FFDL_* list env vars (Docker Compose default) should resolve to empty lists."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write(self.minimal_toml_content)
+            temp_path = f.name
+
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "FFDL_APPRISE__URLS": "",
+                    "FFDL_EMAIL__DISABLED_SITES": "   ",
+                },
+                clear=False,
+            ):
+                config = ConfigManager.load_config(temp_path, force_reload=True)
+            self.assertEqual(config.apprise.urls, [])
+            self.assertEqual(config.email.disabled_sites, [])
+        finally:
+            os.unlink(temp_path)
+            ConfigManager.clear_cache()
+
     def tearDown(self):
         """Clean up after each test."""
         ConfigManager.clear_cache()

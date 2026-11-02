@@ -5,7 +5,7 @@ import re
 from urllib.parse import urlparse
 
 lazy import fanficfare.adapters as adapters
-from parsers.url_patterns import _generate_site_identifier
+from parsers.url_patterns import generate_site_identifier
 
 
 def clean_display_name_from_adapter(attr: str) -> str:
@@ -49,7 +49,7 @@ def get_supported_sites_catalog() -> dict[str, dict[str, str]]:
                     domain = getattr(cls, "getSiteDomain", lambda: "")()
                     if not domain:
                         continue
-                    site_id = _generate_site_identifier(domain, domain)
+                    site_id = generate_site_identifier(domain, domain)
                     display_name = clean_display_name_from_adapter(attr)
                     catalog[site_id] = {
                         "site": site_id,
@@ -62,7 +62,7 @@ def get_supported_sites_catalog() -> dict[str, dict[str, str]]:
                 continue
             parsed = urlparse(urls[0])
             domain = parsed.netloc
-            site_id = _generate_site_identifier(domain, site)
+            site_id = generate_site_identifier(domain, site)
             if site_id not in catalog:
                 catalog[site_id] = {
                     "site": site_id,

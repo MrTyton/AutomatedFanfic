@@ -15,13 +15,8 @@ from models.queue_types import CheckEmailsEvent, ShutdownEvent
 
 lazy from fanficfare import geturls
 lazy import imapclient
-lazy from antibot import flaresolverr as flaresolverr_utils
+lazy from antibot import flaresolverr
 lazy from utils import system_utils
-
-
-def _make_fff_get_configuration(config_store: ConfigStore):
-    """Return a get_configuration callable for fanficfare.geturls.GetURLs using ConfigStore."""
-    return config_store.get_fff_configuration
 
 
 @contextmanager
@@ -152,7 +147,7 @@ class EmailInfo:
             self.config_store.get("calibre.default_ini")
             or self.config_store.get("calibre.personal_ini")
         ):
-            _get_config = _make_fff_get_configuration(self.config_store)
+            _get_config = self.config_store.get_fff_get_configuration_callable()
             _initial_config = _get_config("test1.com")
 
         self._geturls = geturls.GetURLs(config=_initial_config, get_config=_get_config)
@@ -182,11 +177,11 @@ class EmailInfo:
                 )
             except Exception as e:
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
-                if flaresolverr_utils.is_flaresolverr_crash(e):
+                if flaresolverr.is_flaresolverr_crash(e):
                     ff_logging.log(
                         "EmailWatcher: Detected FlareSolverr crash during email URL extraction; attempting auto-recovery..."
                     )
-                    recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+                    recovered = flaresolverr.recover_flaresolverr_crashes(
                         target_site=None,
                         personal_ini_path=self.personal_ini,
                     )

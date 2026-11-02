@@ -11,7 +11,7 @@ from parameterized import parameterized
 
 from workers import pipeline, handlers, fff_runner as command, common  # noqa: E402
 from workers.fff_runner import FanFicFareResult
-import config as config_models  # noqa: E402
+import config  # noqa: E402
 from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext  # noqa: E402
 from models.fanfic_info import FanficInfo  # noqa: E402
@@ -100,7 +100,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
 
         # Create retry config with specific settings for this test
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=max_normal_retries,
             hail_mary_enabled=hail_mary_enabled,
             hail_mary_wait_hours=12.0,  # Standard wait time
@@ -227,7 +227,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_client.cdb_info = mock_cdb
 
         # Create real retry config
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
         ctx = WorkerContext(
@@ -277,7 +277,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_waiting_queue.put = MagicMock()
 
         # Create real retry config
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
         mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
@@ -360,7 +360,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_waiting_queue.put = MagicMock()
 
         # Create real retry config
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
         mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
@@ -539,7 +539,7 @@ class TestUrlWorker(unittest.TestCase):
             notification_info=mock_notification_info,
             ingress_queue=MagicMock(),
             waiting_queue=mock_queue,
-            retry_config=config_models.RetryConfig(),
+            retry_config=config.RetryConfig(),
             history_recorder=mock_history_recorder,
             active_urls={},
         )
@@ -591,7 +591,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.mock_notification_info = MagicMock(spec=NotificationWrapper)
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
-        self.retry_config = config_models.RetryConfig(
+        self.retry_config = config.RetryConfig(
             hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
         )
         self.ctx = WorkerContext(
@@ -1381,7 +1381,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.mock_waiting_queue = MagicMock()
         self.worker_id = "worker_0"
 
-        self.retry_config = config_models.RetryConfig(
+        self.retry_config = config.RetryConfig(
             hail_mary_enabled=True,
             hail_mary_wait_hours=12.0,
             max_normal_retries=11,

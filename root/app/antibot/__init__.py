@@ -1,7 +1,5 @@
 """Anti-bot defense detection, challenge solving, and session impersonation."""
 
-from fanficfare.fetchers.base_fetcher import LWPCookieJar
-
 from antibot.anubis_client import (
     DEFAULT_USER_AGENT,
     clear_anubis_protected_sites,
@@ -74,5 +72,4 @@ __all__ = [
     "install_impersonated_session",
     "uninstall_impersonated_session",
     "is_impersonated_session_installed",
-    "LWPCookieJar",
 ]

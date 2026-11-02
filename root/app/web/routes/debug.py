@@ -1,13 +1,11 @@
 """Debug REST API routes for queues, coordinator locks, and filtered logs."""
 
 import asyncio
-import re
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from antibot.cookies import inspect_cookiejar_file
-import ff_logging
 from web.services.calibre_lookup import (
     get_calibre_client,
     inspect_calibre_book,
@@ -15,152 +13,17 @@ from web.services.calibre_lookup import (
 from web.services.diagnostics_service import (
     build_story_diagnostics,
     check_antibot_status,
+    get_coordinator_state,
+    inspect_queues_state,
+    query_filtered_logs,
+    recover_flaresolverr_action,
     resolve_config_for_url,
     run_dry_run_extraction,
     run_service_diagnostics,
     simulate_email_parse,
 )
 
-lazy from antibot import flaresolverr as flaresolverr_utils
-
 router = APIRouter(prefix="/api/debug", tags=["debug"])
-
-
-def _matches_filter(pattern: str, text: str) -> bool:
-    """Match text against pattern using regex, falling back to case-insensitive substring."""
-    if not pattern:
-        return True
-    try:
-        regex = re.compile(pattern, re.IGNORECASE)
-        return bool(regex.search(text))
-    except re.error:
-        return pattern.lower() in text.lower()
-
-
-@router.get("/queues/inspect")
-async def inspect_queues(request: Request) -> dict[str, list[dict[str, object]]]:
-    """Inspect and partition active URLs into queued, processing, and waiting lists."""
-    state = request.app.state.web_state
-    queued: list[dict[str, object]] = []
-    processing: list[dict[str, object]] = []
-    waiting: list[dict[str, object]] = []
-
-    if state.active_urls is not None:
-        try:
-            for url, meta in list(state.active_urls.items()):
-                if not isinstance(meta, dict):
-                    continue
-                item = {"url": url, **meta}
-                status = meta.get("status")
-                if status == "queued":
-                    queued.append(item)
-                elif status == "processing":
-                    processing.append(item)
-                elif status == "waiting":
-                    waiting.append(item)
-        except Exception:
-            pass
-
-    return {
-        "queued": queued,
-        "processing": processing,
-        "waiting": waiting,
-    }
-
-
-@router.get("/coordinator")
-async def get_coordinator(request: Request) -> dict[str, object]:
-    """Return published coordinator status including domain assignments and backlogs."""
-    state = request.app.state.web_state
-    if state.coordinator_status is None:
-        return {
-            "assignments": {},
-            "idle_workers": [],
-            "dormant_workers": [],
-            "backlog": {},
-        }
-
-    try:
-        status = dict(state.coordinator_status)
-    except Exception:
-        status = {}
-
-    status.setdefault("assignments", {})
-    status.setdefault("idle_workers", [])
-    status.setdefault("dormant_workers", [])
-    status.setdefault("backlog", {})
-    return status
-
-
-@router.get("/logs")
-async def get_logs(
-    request: Request,
-    level: str = Query(default="ALL"),
-    component: str = Query(default=""),
-    search: str = Query(default=""),
-    limit: int = Query(default=100, ge=1, le=1000),
-) -> dict[str, object]:
-    """Query recent logs with level, component, and message search filtering."""
-    req_level = level.strip().upper()
-    raw_logs = ff_logging.get_recent_logs(limit=2000)
-
-    filtered: list[dict[str, object]] = []
-    for entry in raw_logs:
-        entry_level = str(entry.get("level", "")).lower()
-        if req_level and req_level != "ALL":
-            if req_level in ("ERROR", "FAILURE"):
-                if entry_level not in ("error", "failure"):
-                    continue
-            elif req_level == "DEBUG":
-                if entry_level != "debug":
-                    continue
-            elif req_level == "INFO":
-                if entry_level != "info":
-                    continue
-            elif req_level in ("WARNING", "WARN"):
-                if entry_level not in ("warning", "warn"):
-                    continue
-            elif entry_level != req_level.lower():
-                continue
-
-        msg = str(entry.get("message", ""))
-        if component:
-            site = str(entry.get("thread_site") or "")
-            if not (
-                _matches_filter(component, msg) or _matches_filter(component, site)
-            ):
-                continue
-
-        if search:
-            if not _matches_filter(search, msg):
-                continue
-
-        filtered.append(entry)
-        if len(filtered) >= limit:
-            break
-
-    return {"items": filtered, "count": len(filtered)}
-
-
-@router.get("/story/diagnostics")
-async def get_story_diagnostics(
-    request: Request,
-    url: str = Query(..., description="Fanfiction story URL"),
-) -> dict[str, object]:
-    """Retrieve full autopsy diagnostics for a story URL."""
-    state = request.app.state.web_state
-    client = get_calibre_client(request.app.state)
-    return await build_story_diagnostics(state, client, url)
-
-
-@router.get("/calibre/book")
-async def get_calibre_book(
-    request: Request,
-    query: str = Query(..., description="Calibre ID, story URL, or title substring"),
-) -> dict[str, object]:
-    """Inspect full Calibre metadata for a book resolved by ID, URL, or title."""
-    client = get_calibre_client(request.app.state)
-    return inspect_calibre_book(client, query)
 
 
 class ResolveConfigRequest(BaseModel):
@@ -188,6 +51,52 @@ class FlareSolverrRecoverRequest(BaseModel):
     target_site: str = ""
 
 
+@router.get("/queues/inspect")
+async def inspect_queues(request: Request) -> dict[str, list[dict[str, object]]]:
+    """Inspect and partition active URLs into queued, processing, and waiting lists."""
+    return inspect_queues_state(request.app.state.web_state)
+
+
+@router.get("/coordinator")
+async def get_coordinator(request: Request) -> dict[str, object]:
+    """Return published coordinator status including domain assignments and backlogs."""
+    return get_coordinator_state(request.app.state.web_state)
+
+
+@router.get("/logs")
+async def get_logs(
+    level: str = Query(default="ALL"),
+    component: str = Query(default=""),
+    search: str = Query(default=""),
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> dict[str, object]:
+    """Query recent logs with level, component, and message search filtering."""
+    return query_filtered_logs(
+        level=level, component=component, search=search, limit=limit
+    )
+
+
+@router.get("/story/diagnostics")
+async def get_story_diagnostics(
+    request: Request,
+    url: str = Query(..., description="Fanfiction story URL"),
+) -> dict[str, object]:
+    """Retrieve full autopsy diagnostics for a story URL."""
+    state = request.app.state.web_state
+    client = get_calibre_client(request.app.state)
+    return await build_story_diagnostics(state, client, url)
+
+
+@router.get("/calibre/book")
+async def get_calibre_book(
+    request: Request,
+    query: str = Query(..., description="Calibre ID, story URL, or title substring"),
+) -> dict[str, object]:
+    """Inspect full Calibre metadata for a book resolved by ID, URL, or title."""
+    client = get_calibre_client(request.app.state)
+    return inspect_calibre_book(client, query)
+
+
 @router.get("/cookiejar/{domain}")
 async def inspect_cookiejar(request: Request, domain: str) -> dict[str, object]:
     """Inspect cookies for domain without leaking secret tokens."""
@@ -208,22 +117,8 @@ async def recover_flaresolverr_sessions(
 ) -> dict[str, object]:
     """Recover from FlareSolverr tab crashes by destroying dead sessions."""
     state = request.app.state.web_state
-    personal_path = ""
-    if getattr(state, "config", None) and getattr(state.config, "calibre", None):
-        personal_path = state.config.calibre.personal_ini
-    elif getattr(state, "config_store", None):
-        personal_path = state.config_store.get_resolved_personal_ini()
-
-    target_site = body.target_site.strip() if body and body.target_site else None
-    recovered = flaresolverr_utils.recover_flaresolverr_crashes(
-        target_site=target_site,
-        personal_ini_path=personal_path,
-    )
-    return {
-        "ok": True,
-        "recovered": recovered,
-        "target_site": target_site,
-    }
+    target_site = body.target_site if body is not None else None
+    return recover_flaresolverr_action(state, target_site)
 
 
 @router.post("/resolve-config")

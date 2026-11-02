@@ -128,20 +128,12 @@ class ConfigStore:
         self._store["process.max_workers"] = config.process.max_workers
         self._store["__version__"] = 1
 
-    def update_from_config(self, config: AppConfig) -> None:
-        """Alias for initialize_from_config."""
-        self.initialize_from_config(config)
-
     def get(self, key: str, default: object = None) -> object:
         """Retrieve a value by dotted key path."""
         try:
             return self._store.get(key, default)
         except Exception:
             return default
-
-    def set(self, key: str, value: object) -> None:
-        """Set a value by dotted key path."""
-        self.update(key, value)
 
     def update(self, key: str, value: object) -> None:
         """Update a single key and increment store version."""
@@ -179,10 +171,6 @@ class ConfigStore:
             return data
         except Exception:
             return {}
-
-    def as_dict(self) -> dict[str, object]:
-        """Return a snapshot of the current store contents as a regular dict."""
-        return self.get_all()
 
     # ── FanFicFare INI & Configuration Helpers ───────────────────
 

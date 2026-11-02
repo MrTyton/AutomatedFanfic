@@ -215,13 +215,13 @@ class TestAppriseNotification(unittest.TestCase):
         [
             (
                 "notification_success",
-                None,
+                True,
                 "Test Title",
                 "Test Body",
                 "TestSite",
             ),
-            ("different_title", None, "Another Title", "Another Body", "AnotherSite"),
-            ("empty_body", None, "Title Only", "", "EmptySite"),
+            ("different_title", True, "Another Title", "Another Body", "AnotherSite"),
+            ("empty_body", True, "Title Only", "", "EmptySite"),
         ]
     )
     @patch("notifications.apprise_notification.apprise.Apprise")
@@ -253,7 +253,7 @@ class TestAppriseNotification(unittest.TestCase):
 
         result = notifier.send_notification(title, body, site)
 
-        self.assertIsNone(result)
+        self.assertEqual(result, expected_result)
         mock_apprise_obj_instance.add.assert_called_once_with("url1")
         mock_apprise_obj_instance.notify.assert_called_once_with(body=body, title=title)
 

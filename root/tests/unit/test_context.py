@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from calibre_integration import calibredb_utils
-import config as config_models
+import config
 import ff_logging
 import ff_logging.core
 from models.active_urls import ActiveUrlsDict
@@ -24,7 +24,7 @@ class TestWorkerContext(unittest.TestCase):
         )
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
-        self.retry_config = config_models.RetryConfig()
+        self.retry_config = config.RetryConfig()
         self.mock_recorder = MagicMock()
         self.active_urls: ActiveUrlsDict = {
             "https://archiveofourown.org/works/1": {"status": "queued"}
@@ -203,7 +203,6 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
                 app_config=mock_cfg,
                 config_path="/config/config.toml",
                 web_restart_event=mock_restart_event,
-                process_status_callable=None,
             )
 
         mock_init_log.assert_called_once_with(

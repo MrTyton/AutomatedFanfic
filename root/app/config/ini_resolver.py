@@ -3,6 +3,7 @@
 import functools
 import os
 from pathlib import Path
+from typing import Any
 
 lazy import fanficfare
 lazy from fanficfare import adapters, configurable
@@ -64,6 +65,18 @@ def resolve_ini_path(path: str | None, default_filename: str) -> str:
         return str(Path(path) / default_filename)
 
     return path
+
+
+def resolve_state_personal_ini(state: Any) -> str:
+    """Resolve the filesystem path to personal.ini from a WebState or similar state container."""
+    raw_personal = None
+    if getattr(state, "config", None) and getattr(state.config, "calibre", None):
+        raw_personal = state.config.calibre.personal_ini
+    elif getattr(state, "config_store", None):
+        raw_personal = state.config_store.get_resolved_personal_ini()
+    return (
+        resolve_ini_path(raw_personal, "personal.ini") if raw_personal else ""
+    ) or ""
 
 
 def build_fff_configuration(

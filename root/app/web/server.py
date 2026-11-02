@@ -6,7 +6,6 @@ Provides:
 """
 
 import signal
-from collections.abc import Callable
 from contextlib import asynccontextmanager
 from multiprocessing.synchronize import Event
 from pathlib import Path
@@ -100,7 +99,11 @@ def create_app(web_state: WebState) -> FastAPI:
     app = FastAPI(
         title="AutomatedFanfic Dashboard",
         description="Web interface for monitoring and controlling the fanfiction download system.",
-        version="1.0.0",
+        version=(
+            getattr(web_state.config, "version", "6.16.2")
+            if web_state.config is not None
+            else "6.16.2"
+        ),
         lifespan=_lifespan,
     )
 
@@ -166,7 +169,6 @@ def run_web_server(
     app_config: AppConfig,
     config_path: str,
     web_restart_event: Event,
-    process_status_callable: Callable[[], dict[str, object]] | None = None,
 ) -> None:
     """Process entry point for the web server.
 
@@ -181,8 +183,6 @@ def run_web_server(
             configuration edits made through the web UI.
         web_restart_event (Event): Shared event set when `web.host` or
             `web.port` changes require a web server restart.
-        process_status_callable (Callable[[], dict[str, Any]] | None, optional):
-            Optional callable returning process health status dictionary.
     """
     ff_logging.init_process_logging(
         ipc.verbose,
@@ -218,7 +218,6 @@ def run_web_server(
         ingress_queue=ipc.ingress_queue,
         worker_queues=ipc.worker_queues,
         waiting_queue=ipc.waiting_queue,
-        process_status_callable=process_status_callable,
         history_recorder=ipc.history_recorder,
         config=app_config,
         config_path=config_path,

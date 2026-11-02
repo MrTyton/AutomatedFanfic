@@ -1,6 +1,5 @@
 """Configuration API routes — view and edit config."""
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -33,40 +32,18 @@ class IniUpdateRequest(BaseModel):
 @router.get("")
 async def get_config(request: Request):
     """Get current configuration with sensitive fields masked and reload annotations."""
-    state = request.app.state.web_state
-    if state.config is None:
-        return {"config": {}}
-
-    try:
-        config_dict = state.config.model_dump()
-        masked = config_service.mask_sensitive(config_dict)
-        return {
-            "config": masked,
-            "reload_map": config_service.annotate_reload_behavior(config_dict),
-        }
-    except Exception:
-        return {"config": {}, "error": "Failed to serialize config"}
+    return config_service.get_masked_config_payload(request.app.state.web_state)
 
 
 @router.get("/secret")
 async def get_secret(section: str, key: str, request: Request) -> dict[str, str]:
     """Retrieve the unmasked value of a sensitive configuration field on demand."""
-    state = request.app.state.web_state
-    if state.config is None:
-        raise HTTPException(status_code=404, detail="No config loaded")
-
-    config_dict = state.config.model_dump()
-    sec_data = config_dict.get(section)
-    if not isinstance(sec_data, dict):
-        raise HTTPException(status_code=404, detail=f"Section '{section}' not found")
-
-    if key not in sec_data:
-        raise HTTPException(
-            status_code=404, detail=f"Key '{key}' not found in section '{section}'"
-        )
-
-    val = sec_data.get(key)
-    return {"value": str(val) if val is not None else ""}
+    val, err = config_service.get_unmasked_secret(
+        request.app.state.web_state, section, key
+    )
+    if err is not None or val is None:
+        raise HTTPException(status_code=404, detail=err or "Secret not found")
+    return {"value": val}
 
 
 @router.post("/validate")
@@ -104,40 +81,12 @@ async def get_reload_map():
 @router.get("/ini/{ini_type}")
 async def get_ini_file(ini_type: str, request: Request):
     """Return the raw content of personal.ini or defaults.ini."""
-    state = request.app.state.web_state
-    path, err = config_service.resolve_config_ini_path(state, ini_type)
-    if err or path is None:
-        return {"content": None, "path": None, "error": err}
-
-    ini_path = Path(path)
-    if not ini_path.is_file():
-        return {"content": "", "path": path, "error": None}
-
-    try:
-        content = ini_path.read_text(encoding="utf-8")
-        return {"content": content, "path": path, "error": None}
-    except OSError:
-        return {"content": None, "path": path, "error": "Failed to read file"}
+    return config_service.read_ini_file_action(request.app.state.web_state, ini_type)
 
 
 @router.put("/ini/{ini_type}")
 async def update_ini_file(ini_type: str, request: Request, body: IniUpdateRequest):
     """Overwrite personal.ini with the supplied content. defaults.ini is packaged and read-only."""
-    if ini_type == "defaults":
-        return {
-            "applied": False,
-            "error": "defaults.ini is packaged and updated automatically with FanFicFare releases. Put personal overrides in personal.ini.",
-        }
-
-    state = request.app.state.web_state
-    path, err = config_service.resolve_config_ini_path(state, ini_type)
-    if err or path is None:
-        return {"applied": False, "error": err}
-
-    ini_path = Path(path)
-    try:
-        ini_path.parent.mkdir(parents=True, exist_ok=True)
-        ini_path.write_text(body.content, encoding="utf-8")
-        return {"applied": True}
-    except OSError:
-        return {"applied": False, "error": "Failed to write file"}
+    return config_service.write_ini_file_action(
+        request.app.state.web_state, ini_type, body.content
+    )

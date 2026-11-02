@@ -5,33 +5,152 @@ import re
 import time
 from typing import Any
 
-from config.ini_resolver import resolve_ini_path
+from config.ini_resolver import resolve_state_personal_ini
 from config.store import ConfigStore
 import ff_logging
 from models.fanfic_info import FanficInfo
 from services import email_client
 from web.services.calibre_lookup import get_calibre_metadata
 
-lazy import antibot as anubis_solver
-lazy from antibot import flaresolverr as flaresolverr_utils
+lazy import antibot
+lazy from antibot import flaresolverr
 lazy from fanficfare import adapters as fff_adapters, configurable, geturls
 lazy from notifications.apprise_notification import AppriseNotification
-lazy from parsers import regex_parsing, url_patterns as auto_url_parsers
+lazy from parsers import regex_parsing, url_patterns
 lazy from workers import fff_runner
+
+
+def _matches_filter(pattern: str, text: str) -> bool:
+    """Match text against pattern using regex, falling back to case-insensitive substring."""
+    if not pattern:
+        return True
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+        return bool(regex.search(text))
+    except re.error:
+        return pattern.lower() in text.lower()
+
+
+def inspect_queues_state(state: Any) -> dict[str, list[dict[str, object]]]:
+    """Inspect and partition active URLs into queued, processing, and waiting lists."""
+    queued: list[dict[str, object]] = []
+    processing: list[dict[str, object]] = []
+    waiting: list[dict[str, object]] = []
+
+    if state.active_urls is not None:
+        try:
+            for url, meta in list(state.active_urls.items()):
+                if not isinstance(meta, dict):
+                    continue
+                item = {"url": url, **meta}
+                status = meta.get("status")
+                if status == "queued":
+                    queued.append(item)
+                elif status == "processing":
+                    processing.append(item)
+                elif status == "waiting":
+                    waiting.append(item)
+        except Exception:
+            pass
+
+    return {
+        "queued": queued,
+        "processing": processing,
+        "waiting": waiting,
+    }
+
+
+def get_coordinator_state(state: Any) -> dict[str, object]:
+    """Return published coordinator status including domain assignments and backlogs."""
+    if state.coordinator_status is None:
+        return {
+            "assignments": {},
+            "idle_workers": [],
+            "dormant_workers": [],
+            "backlog": {},
+        }
+
+    try:
+        status = dict(state.coordinator_status)
+    except Exception:
+        status = {}
+
+    status.setdefault("assignments", {})
+    status.setdefault("idle_workers", [])
+    status.setdefault("dormant_workers", [])
+    status.setdefault("backlog", {})
+    return status
+
+
+def query_filtered_logs(
+    level: str = "ALL",
+    component: str = "",
+    search: str = "",
+    limit: int = 100,
+) -> dict[str, object]:
+    """Query recent logs with level, component, and message search filtering."""
+    req_level = level.strip().upper()
+    raw_logs = ff_logging.get_recent_logs(limit=2000)
+
+    filtered: list[dict[str, object]] = []
+    for entry in raw_logs:
+        entry_level = str(entry.get("level", "")).lower()
+        if req_level and req_level != "ALL":
+            if req_level in ("ERROR", "FAILURE"):
+                if entry_level not in ("error", "failure"):
+                    continue
+            elif req_level == "DEBUG":
+                if entry_level != "debug":
+                    continue
+            elif req_level == "INFO":
+                if entry_level != "info":
+                    continue
+            elif req_level in ("WARNING", "WARN"):
+                if entry_level not in ("warning", "warn"):
+                    continue
+            elif entry_level != req_level.lower():
+                continue
+
+        msg = str(entry.get("message", ""))
+        if component:
+            site = str(entry.get("thread_site") or "")
+            if not (
+                _matches_filter(component, msg) or _matches_filter(component, site)
+            ):
+                continue
+
+        if search:
+            if not _matches_filter(search, msg):
+                continue
+
+        filtered.append(entry)
+        if len(filtered) >= limit:
+            break
+
+    return {"items": filtered, "count": len(filtered)}
+
+
+def recover_flaresolverr_action(
+    state: Any, target_site: str | None = None
+) -> dict[str, object]:
+    """Recover from FlareSolverr tab crashes by destroying dead sessions."""
+    personal_path = resolve_state_personal_ini(state)
+    clean_site = target_site.strip() if target_site and target_site.strip() else None
+    recovered = flaresolverr.recover_flaresolverr_crashes(
+        target_site=clean_site,
+        personal_ini_path=personal_path,
+    )
+    return {
+        "ok": True,
+        "recovered": recovered,
+        "target_site": clean_site,
+    }
 
 
 async def check_antibot_status(state: Any) -> dict[str, object]:
     """Test FlareSolverr connectivity and local Anubis Argon2id solver readiness."""
     flaresolverr_endpoint = None
-    raw_personal = None
-    if getattr(state, "config", None) and getattr(state.config, "calibre", None):
-        raw_personal = state.config.calibre.personal_ini
-    elif getattr(state, "config_store", None):
-        raw_personal = state.config_store.get_resolved_personal_ini()
-
-    personal_path = (
-        resolve_ini_path(raw_personal, "personal.ini") if raw_personal else ""
-    )
+    personal_path = resolve_state_personal_ini(state)
     if personal_path and Path(personal_path).is_file():
         try:
             content = Path(personal_path).read_text(encoding="utf-8")
@@ -41,14 +160,14 @@ async def check_antibot_status(state: Any) -> dict[str, object]:
             if m:
                 flaresolverr_endpoint = m.group(1).strip()
             else:
-                fs_cfgs = flaresolverr_utils.get_flaresolverr_configs(personal_path)
+                fs_cfgs = flaresolverr.get_flaresolverr_configs(personal_path)
                 if fs_cfgs:
                     flaresolverr_endpoint = fs_cfgs[0].endpoint
         except Exception:
             pass
 
     if flaresolverr_endpoint:
-        flare_res = flaresolverr_utils.probe_flaresolverr_health(flaresolverr_endpoint)
+        flare_res = flaresolverr.probe_flaresolverr_health(flaresolverr_endpoint)
     else:
         flare_res = {
             "configured": False,
@@ -60,7 +179,7 @@ async def check_antibot_status(state: Any) -> dict[str, object]:
 
     t0 = time.perf_counter()
     try:
-        anubis_solver.solve_pow(
+        antibot.solve_pow(
             b"diagnostic_synthetic_test_anubis", difficulty=1, use_le=False
         )
         bench_ms = round((time.perf_counter() - t0) * 1000, 2)
@@ -363,7 +482,9 @@ def run_service_diagnostics(
                 config_store.initialize_from_config(state.config)
             notifier = AppriseNotification(state.config, config_store)
             ok = notifier.send_notification(
-                "AutomatedFanfic Test", "Notification diagnostic test message"
+                "AutomatedFanfic Test",
+                "Notification diagnostic test message",
+                "diagnostic",
             )
             if ok:
                 return {
@@ -469,15 +590,9 @@ def run_dry_run_extraction(state: Any, url: str) -> dict[str, object]:
     try:
         return _extract()
     except Exception as exc:
-        if flaresolverr_utils.is_flaresolverr_crash(exc):
-            personal_path = ""
-            if getattr(state, "config", None) and getattr(
-                state.config, "calibre", None
-            ):
-                personal_path = state.config.calibre.personal_ini
-            elif getattr(state, "config_store", None):
-                personal_path = state.config_store.get_resolved_personal_ini()
-            recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+        if flaresolverr.is_flaresolverr_crash(exc):
+            personal_path = resolve_state_personal_ini(state)
+            recovered = flaresolverr.recover_flaresolverr_crashes(
                 target_site=url,
                 personal_ini_path=personal_path,
             )
@@ -507,7 +622,7 @@ def simulate_email_parse(subject: str, body: str) -> dict[str, object]:
         if cleaned not in raw_urls:
             raw_urls.append(cleaned)
 
-    url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+    url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
     matches: list[dict[str, str]] = []
     seen: set[str] = set()
 

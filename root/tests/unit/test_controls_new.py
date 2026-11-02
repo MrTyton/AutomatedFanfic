@@ -63,7 +63,7 @@ class TestNewControlsRoutes(unittest.TestCase):
         data = resp.json()
         self.assertTrue(data["ok"])
         self.assertIn("enabled", data["message"])
-        mock_config_store.set.assert_called_with("email.disabled_sites", [])
+        mock_config_store.update.assert_called_with("email.disabled_sites", [])
 
         # Toggling "archiveofourown.org" adds it
         resp2 = self.client.post(
@@ -73,7 +73,7 @@ class TestNewControlsRoutes(unittest.TestCase):
         data2 = resp2.json()
         self.assertTrue(data2["ok"])
         self.assertIn("disabled", data2["message"])
-        mock_config_store.set.assert_called_with(
+        mock_config_store.update.assert_called_with(
             "email.disabled_sites", ["fanfiction.net", "archiveofourown.org"]
         )
 

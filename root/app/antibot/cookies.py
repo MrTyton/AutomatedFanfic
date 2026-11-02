@@ -6,7 +6,7 @@ from pathlib import Path
 import threading
 from typing import Any
 
-from config.ini_resolver import resolve_ini_path
+from config.ini_resolver import resolve_state_personal_ini
 import ff_logging
 
 _site_cookiejars: dict[str, object] = {}
@@ -63,15 +63,7 @@ def mask_cookie_value(val: str | None) -> str:
 
 def resolve_cookiejar_path(state: Any, domain: str) -> Path | None:
     """Locate configured or disk cookiejar for a domain."""
-    raw_personal = None
-    if getattr(state, "config", None) and getattr(state.config, "calibre", None):
-        raw_personal = state.config.calibre.personal_ini
-    elif getattr(state, "config_store", None):
-        raw_personal = state.config_store.get_resolved_personal_ini()
-
-    personal_path = (
-        resolve_ini_path(raw_personal, "personal.ini") if raw_personal else ""
-    )
+    personal_path = resolve_state_personal_ini(state)
     if personal_path and Path(personal_path).is_file():
         try:
             parser = configparser.RawConfigParser(strict=False)

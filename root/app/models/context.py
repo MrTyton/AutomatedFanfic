@@ -9,7 +9,7 @@ lazy from calibre_integration import calibre_info
 lazy from calibre_integration.client_interface import CalibreClient
 lazy from config.store import ConfigStore
 lazy from history.recorder import HistoryRecorder
-lazy import config as config_models
+lazy import config
 lazy from models.active_urls import ActiveUrlsDict
 lazy from models.queue_types import (
     CheckEmailsEvent,
@@ -43,7 +43,7 @@ class WorkerContext:
     notification_info: notification_wrapper.NotificationWrapper
     ingress_queue: IngressQueue
     waiting_queue: WaitingQueue
-    retry_config: config_models.RetryConfig
+    retry_config: config.RetryConfig
     history_recorder: HistoryRecorder
     active_urls: ActiveUrlsDict
 

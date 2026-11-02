@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-lazy from parsers import url_patterns as auto_url_parsers
+lazy from parsers import url_patterns
 from web.services.dashboard_snapshot import invalidate_history_cache
 from web.services import queue_controller
 
@@ -81,7 +81,7 @@ async def add_url(request: Request, body: AddUrlRequest) -> AddUrlResponse:
     if state.ingress_queue is None:
         return AddUrlResponse(accepted=False, message="Ingress queue not available")
 
-    url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+    url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
     accepted, message = queue_controller.ingest_single_url(
         state,
         body.url,
@@ -106,7 +106,7 @@ async def add_urls(request: Request, body: AddUrlsRequest) -> AddUrlsResponse:
             ]
         )
 
-    url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+    url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
     results = []
     for raw_url in body.urls:
         if not raw_url.strip():

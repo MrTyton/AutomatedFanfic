@@ -27,7 +27,7 @@ from history.async_db import AsyncHistoryDB
 from history.sync_db import SyncHistoryDB
 from history.recorder import HistoryRecorder
 from history.writer import HistoryWriter
-import config as config_models
+import config
 from models.active_urls import ActiveUrlsDict
 from models.context import SharedIPCContext, WorkerContext
 from models.fanfic_info import FanficInfo
@@ -104,7 +104,7 @@ def _child_verify_spawn_objects(
     email_info: EmailInfo,
     calibre_client: CalibreDBClient,
     notification_info: NotificationWrapper,
-    retry_config: config_models.RetryConfig,
+    retry_config: config.RetryConfig,
     history_recorder: HistoryRecorder,
     config_store: ConfigStore,
     result_queue: mp.Queue,
@@ -198,13 +198,13 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 mock_cdb_info = MagicMock(spec=CalibreInfo)
                 mock_cdb_info.update_method = "update"
                 mock_cdb_info.metadata_preservation_mode = (
-                    config_models.MetadataPreservationMode.ADD_FORMAT
+                    config.MetadataPreservationMode.ADD_FORMAT
                 )
                 mock_client = MagicMock(spec=CalibreDBClient)
                 mock_client.cdb_info = mock_cdb_info
                 mock_client.get_story_id.return_value = None
                 mock_notif = MagicMock(spec=NotificationWrapper)
-                retry_cfg = config_models.RetryConfig(
+                retry_cfg = config.RetryConfig(
                     max_normal_retries=5,
                     hail_mary_enabled=True,
                     hail_mary_wait_hours=12.0,
@@ -424,7 +424,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     f"[apprise]\nurls = []\n"
                 )
 
-            cfg = config_models.ConfigManager.load_config(cfg_path, force_reload=True)
+            cfg = config.ConfigManager.load_config(cfg_path, force_reload=True)
             store = ConfigStore({})
             store.initialize_from_config(cfg)
 
@@ -459,7 +459,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             )
 
             # 3. RetryConfig hot-reloads max_normal_retries and hail_mary_enabled from ConfigStore inside handle_failure
-            retry_cfg = config_models.RetryConfig(
+            retry_cfg = config.RetryConfig(
                 max_normal_retries=11, hail_mary_enabled=True
             )
             retry_cfg.set_config_store(store)
@@ -502,7 +502,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     f'[calibre]\npath = "{tmp_dir.replace(chr(92), "/")}"\nupdate_method = "update"\n'
                 )
 
-            cfg = config_models.ConfigManager.load_config(cfg_path, force_reload=True)
+            cfg = config.ConfigManager.load_config(cfg_path, force_reload=True)
 
             with mp.Manager() as manager:
                 store = ConfigStore(manager.dict())
@@ -560,8 +560,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
 
     def test_supervisor_process_spawn_with_real_manager_proxies(self):
         """Regression test: Supervisor process must start in a spawned child process with real SyncManager proxies without thread death."""
-        cfg = config_models.AppConfig(
-            email=config_models.EmailConfig(
+        cfg = config.AppConfig(
+            email=config.EmailConfig(
                 email="test@example.com",
                 password="pass",
                 server="imap.example.com",
@@ -569,7 +569,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 sleep_time=60,
                 imap_idle=False,
             ),
-            calibre=config_models.CalibreConfig(),
+            calibre=config.CalibreConfig(),
         )
         store = ConfigStore({})
         store.initialize_from_config(cfg)

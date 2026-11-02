@@ -12,7 +12,7 @@ import ff_logging
 from process_management import ProcessManager
 from services import bootstrap
 
-lazy from parsers import url_patterns as auto_url_parsers
+lazy from parsers import url_patterns
 
 __version__ = "6.16.2"
 
@@ -67,7 +67,7 @@ def main() -> None:
     with ProcessManager(config=config) as process_manager:
         with mp.Manager() as manager:
             ff_logging.log("Generating URL parsers from FanFicFare adapters...")
-            url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+            url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
             ff_logging.log(
                 f"Generated {len(url_parsers)} URL parsers for site recognition"
             )

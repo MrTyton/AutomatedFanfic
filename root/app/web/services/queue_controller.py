@@ -8,7 +8,7 @@ from calibre_integration import calibre_info
 from calibre_integration import factory as calibre_factory
 from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
-lazy from parsers import regex_parsing, url_patterns as auto_url_parsers
+lazy from parsers import regex_parsing, url_patterns
 from web.services.calibre_lookup import _LockFactory
 from web.services.dashboard_snapshot import invalidate_history_cache
 
@@ -73,7 +73,7 @@ def build_fanfic(
     raw_url: str, site: str | None = None, title: str | None = None
 ) -> FanficInfo:
     """Create a FanficInfo using parser normalization when possible."""
-    url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+    url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
     try:
         fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
     except Exception:
@@ -450,7 +450,7 @@ def toggle_site_action(state: Any, site: str) -> tuple[bool, str]:
     site_lower = site.lower()
     if any(s.lower() == site_lower for s in disabled_sites):
         disabled_sites = [s for s in disabled_sites if s.lower() != site_lower]
-        state.config_store.set("email.disabled_sites", disabled_sites)
+        state.config_store.update("email.disabled_sites", disabled_sites)
         if (
             state.config is not None
             and getattr(state.config, "email", None) is not None
@@ -459,7 +459,7 @@ def toggle_site_action(state: Any, site: str) -> tuple[bool, str]:
         return True, f"Site {site} enabled"
 
     disabled_sites.append(site)
-    state.config_store.set("email.disabled_sites", disabled_sites)
+    state.config_store.update("email.disabled_sites", disabled_sites)
     if state.config is not None and getattr(state.config, "email", None) is not None:
         state.config.email.disabled_sites = disabled_sites
     return True, f"Site {site} disabled"

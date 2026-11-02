@@ -10,8 +10,8 @@ from unittest.mock import patch
 from parameterized import parameterized
 import fanficfare.adapters as adapters
 
-from parsers import url_patterns as auto_url_parsers
-from parsers.url_patterns import _generate_pattern_and_prefix
+from parsers import url_patterns
+from parsers.url_patterns import generate_pattern_and_prefix
 from models import fanfic_info
 from parsers import regex_parsing
 from parsers.regex_parsing import generate_FanficInfo_from_url
@@ -24,7 +24,7 @@ class TestAutoUrlParsers(unittest.TestCase):
     def setUpClass(cls):
         """Set up test data from FanFicFare adapters."""
         cls.fanficfare_examples = adapters.getSiteExamples()
-        cls.url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+        cls.url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
 
     class URLPatternTestCase(NamedTuple):
         """Test case for URL pattern matching."""
@@ -233,7 +233,7 @@ class TestAutoUrlParsers(unittest.TestCase):
     )
     def test_site_identifier_generation(self, domain, site, expected_id):
         """Test that site identifiers are generated correctly."""
-        result = auto_url_parsers._generate_site_identifier(domain, site)
+        result = url_patterns.generate_site_identifier(domain, site)
         self.assertEqual(
             result,
             expected_id,
@@ -701,12 +701,12 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
             ("fanfiction.net", ["https://www.fanfiction.net/s/12345/1/Title"]),
         ]
 
-        auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
+        url_patterns.generate_url_parsers_from_fanficfare.cache_clear()
         try:
             with patch(
                 "fanficfare.adapters.getSiteExamples", return_value=mock_examples
             ):
-                parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+                parsers = url_patterns.generate_url_parsers_from_fanficfare()
 
                 # Site with empty URLs should be skipped
                 self.assertNotIn("site_with_empty_urls", parsers)
@@ -715,7 +715,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
                 self.assertIn("fanfiction", parsers)
                 self.assertIn("other", parsers)
         finally:
-            auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
+            url_patterns.generate_url_parsers_from_fanficfare.cache_clear()
 
     def test_regex_compilation_failure(self):
         """Test handling of regex compilation failures."""
@@ -724,21 +724,19 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
             ("bad_regex_site", ["https://example.com/[invalid"]),  # Invalid regex chars
         ]
 
-        auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
+        url_patterns.generate_url_parsers_from_fanficfare.cache_clear()
         try:
             with patch(
                 "fanficfare.adapters.getSiteExamples", return_value=mock_examples
             ):
-                # Mock _generate_pattern_and_prefix to return invalid regex
+                # Mock generate_pattern_and_prefix to return invalid regex
                 with patch(
-                    "parsers.url_patterns._generate_pattern_and_prefix",
+                    "parsers.url_patterns.generate_pattern_and_prefix",
                     return_value=("*invalid_regex[", "example.com"),
                 ):
                     # Capture print output to verify warning message
                     with patch("builtins.print") as mock_print:
-                        parsers = (
-                            auto_url_parsers.generate_url_parsers_from_fanficfare()
-                        )
+                        parsers = url_patterns.generate_url_parsers_from_fanficfare()
 
                         # Should print warning and continue (lines 96-99)
                         mock_print.assert_called()
@@ -751,7 +749,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
                         # Fallback should still exist
                         self.assertIn("other", parsers)
         finally:
-            auto_url_parsers.generate_url_parsers_from_fanficfare.cache_clear()
+            url_patterns.generate_url_parsers_from_fanficfare.cache_clear()
 
     def test_path_pattern_edge_cases(self):
         """Test edge cases in path pattern generation."""
@@ -760,7 +758,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
         path = "/threads/story-title.12345/page-1"
         query = ""
 
-        pattern, prefix = _generate_pattern_and_prefix(domain, path, query)
+        pattern, prefix = generate_pattern_and_prefix(domain, path, query)
 
         # Should generate forum-specific pattern
         self.assertIn("threads", pattern)
@@ -768,7 +766,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
 
         # Test forum sites without /threads/ path (line 157)
         path_no_threads = "/forum/story-discussion-12345"
-        pattern2, prefix2 = _generate_pattern_and_prefix(domain, path_no_threads, query)
+        pattern2, prefix2 = generate_pattern_and_prefix(domain, path_no_threads, query)
 
         # Should handle generic forum pattern
         self.assertIn("forum", pattern2)
@@ -805,7 +803,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
         # Since reloading with patched __name__ is unreliable, we'll test the logic directly
 
         # Get the url_parsers by generating them explicitly
-        parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+        parsers = url_patterns.generate_url_parsers_from_fanficfare()
         self.assertIsInstance(parsers, dict)
         self.assertGreater(len(parsers), 0, "URL parsers should be generated")
 

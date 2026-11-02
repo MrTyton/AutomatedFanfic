@@ -26,7 +26,7 @@ lazy from web import server as web_server
 
 
 def log_configuration_details(
-    config: AppConfig, args: argparse.Namespace, version: str = "6.16.2"
+    config: AppConfig, args: argparse.Namespace, version: str
 ) -> None:
     """Logs detailed startup and configuration information for diagnostics."""
     ff_logging.log(f"Starting AutomatedFanfic v{version}")
@@ -261,6 +261,5 @@ def register_processes(
                 config,
                 args.config,
                 web_restart_event,
-                None,
             ),
         )

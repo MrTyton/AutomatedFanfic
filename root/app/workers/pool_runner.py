@@ -12,7 +12,7 @@ from queue import Empty
 
 import ff_logging
 from workers import pipeline
-import config as config_models
+import config
 from models.context import SharedIPCContext, WorkerContext
 from models.queue_types import WorkerQueue
 from calibre_integration.client_interface import CalibreClient
@@ -56,7 +56,7 @@ def run_worker_pool(
     ipc: SharedIPCContext,
     calibre_client: CalibreClient,
     notification_info: notification_wrapper.NotificationWrapper,
-    retry_config: config_models.RetryConfig,
+    retry_config: config.RetryConfig,
 ) -> None:
     """
     Runs a pool of worker threads within a single process.

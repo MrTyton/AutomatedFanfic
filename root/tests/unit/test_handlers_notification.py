@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 from workers import handlers
-import config as config_models
+import config
 from models import fanfic_info
 from models.context import WorkerContext
 from calibre_integration import calibredb_utils
@@ -23,7 +23,7 @@ class TestHandlersNotification(unittest.TestCase):
         )
         self.mock_ingress_queue = MagicMock(spec=mp.Queue)
         self.mock_queue = MagicMock(spec=mp.Queue)
-        self.mock_config = MagicMock(spec=config_models.RetryConfig)
+        self.mock_config = MagicMock(spec=config.RetryConfig)
         self.ctx = WorkerContext(
             calibre_client=self.mock_client,
             notification_info=self.mock_notification,

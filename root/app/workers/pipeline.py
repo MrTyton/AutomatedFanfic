@@ -18,6 +18,7 @@ import threading
 import time
 from typing import cast
 
+lazy from fanficfare.fetchers.base_fetcher import LWPCookieJar
 from calibre_integration import epub_utils
 from models import active_urls as active_urls_utils
 from models import fanfic_info
@@ -25,9 +26,9 @@ from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
 from models.queue_types import IngressQueue, WorkerQueue
 import ff_logging
-import antibot as anubis_solver
-from antibot import cookies as cookie_cache
-from antibot import flaresolverr as flaresolverr_utils
+import antibot
+from antibot import cookies
+from antibot import flaresolverr
 from utils import system_utils
 
 # Import from sibling modules
@@ -167,18 +168,18 @@ def _process_task(
 
         # Reactive Anubis check: if download failed, probe whether site serves an Anubis challenge
         if fff_result.has_failure and fff_result.target_url:
-            cached_jar = cookie_cache.get_site_cookiejar(site)
-            solved, updated_jar = anubis_solver.probe_and_solve_anubis(
+            cached_jar = cookies.get_site_cookiejar(site)
+            solved, updated_jar = antibot.probe_and_solve_anubis(
                 url=fff_result.target_url,
                 user_agent=fff_result.effective_user_agent,
-                cookiejar=cast(anubis_solver.LWPCookieJar | None, cached_jar),
+                cookiejar=cast(LWPCookieJar | None, cached_jar),
             )
             if solved:
                 ff_logging.log(
                     f"({site}) Anubis challenge solved on reactive probe. Retrying FanFicFare..."
                 )
-                anubis_solver.mark_site_anubis_protected(site)
-                cookie_cache.set_site_cookiejar(site, updated_jar)
+                antibot.mark_site_anubis_protected(site)
+                cookies.set_site_cookiejar(site, updated_jar)
                 fff_result = fff_runner.execute_fanficfare_direct(
                     calibre_client.cdb_info, fanfic, path_or_url, temp_dir
                 )
@@ -194,11 +195,11 @@ def _process_task(
                 if fff_result.exception is not None
                 else "; ".join(fff_result.failure_messages)
             )
-            if flaresolverr_utils.is_flaresolverr_crash(err_candidate):
+            if flaresolverr.is_flaresolverr_crash(err_candidate):
                 ff_logging.log(
                     f"({site}) Detected FlareSolverr tab crash during download. Attempting auto-recovery..."
                 )
-                recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+                recovered = flaresolverr.recover_flaresolverr_crashes(
                     target_site=site,
                     personal_ini_path=calibre_client.cdb_info.personal_ini,
                 )

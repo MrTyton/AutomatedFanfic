@@ -32,8 +32,8 @@ def generate_url_parsers_from_fanficfare() -> dict[str, tuple[re.Pattern, str]]:
         path = parsed.path
         query = parsed.query
 
-        site_id = _generate_site_identifier(domain, site)
-        pattern, prefix = _generate_pattern_and_prefix(domain, path, query)
+        site_id = generate_site_identifier(domain, site)
+        pattern, prefix = generate_pattern_and_prefix(domain, path, query)
 
         try:
             compiled_pattern = re.compile(pattern)
@@ -46,7 +46,7 @@ def generate_url_parsers_from_fanficfare() -> dict[str, tuple[re.Pattern, str]]:
     return url_parsers
 
 
-def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> tuple[str, str]:
+def generate_pattern_and_prefix(domain: str, path: str, query: str) -> tuple[str, str]:
     """Generate regex pattern and URL prefix for a given domain and path structure."""
     is_forum_site = "forum" in domain or "threads" in path
     has_www = domain.startswith("www.")
@@ -101,7 +101,7 @@ def _generate_pattern_and_prefix(domain: str, path: str, query: str) -> tuple[st
     return pattern, prefix
 
 
-def _generate_site_identifier(domain: str, site: str) -> str:
+def generate_site_identifier(domain: str, site: str) -> str:
     """Generate a concise, meaningful site identifier from a domain."""
     parts = domain.split(".")
     if len(parts) >= 2:

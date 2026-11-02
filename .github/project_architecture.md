@@ -11,12 +11,12 @@ graph TD
     subgraph "Main Process"
         Entry["fanficdownload.py"] --> PM["ProcessManager<br/>(process_management/manager.py)"]
         PM --> Super["Supervisor Process<br/>(services/supervisor.py)"]
-        PM --> Pool["WorkerPool<br/>(multiprocessing.Pool)"]
+        PM --> Pool["WorkerPool<br/>(workers/pool_runner.py)"]
     end
 
     subgraph "Supervisor Process"
         Super -->|Thread| Coord["Coordinator<br/>(services/coordinator.py)"]
-        Super -->|Thread| Email["EmailWatcher<br/>(services/url_ingester.py)"]
+        Super -->|Thread| Email["EmailWatcher<br/>(services/email_watcher.py)"]
         Super -->|Thread| Waiter["WaitProcessor<br/>(services/ff_waiter.py)"]
     end
 
@@ -95,7 +95,7 @@ How a URL becomes a Book.
 
 ```mermaid
 sequenceDiagram
-    participant Email as "Email Watcher<br/>(url_ingester.py)"
+    participant Email as "Email Watcher<br/>(email_watcher.py)"
     participant Ingress as Ingress Queue
     participant Coord as "Coordinator<br/>(coordinator.py)"
     participant Worker as "Worker<br/>(pipeline.py)"
@@ -158,19 +158,19 @@ Every worker task runs inside a temporary directory context manager (`utils/syst
 
 ## 8. Developer Guidelines
 
-### 8.1 Configuration (`models/config_models.py`)
+### 8.1 Configuration (`config/schemas/`)
 Configuration is loaded from `config.toml` into strong Pydantic models.
 -   **AppConfig**: Root configuration object.
 -   **ProcessConfig**: Process management settings (timeouts, monitoring).
 -   **EmailConfig**: IMAP credentials.
 -   **RetryConfig**: Policies for backoff and failures.
 
-### 8.2 Logging (`utils/ff_logging.py`)
-Use the custom wrapper, **never** `print()`.
+### 8.2 Logging (`ff_logging/`)
+Use the custom package, **never** `print()`.
 -   **`ff_logging.log(msg, level)`**: Standard logging.
 -   **`ff_logging.log_debug(msg)`**: Verbose debug info.
 -   **`ff_logging.log_failure(msg)`**: Specialized error formatting.
--   **Thread Safety**: This module is thread-safe and handles colorization per-worker.
+-   **Thread Safety**: This package is thread-safe and handles colorization per-worker.
 
 ### 8.3 Testing (`tests/`)
 -   **Unit Tests** (`tests/unit/`): comprehensive coverage for services and pipelines.

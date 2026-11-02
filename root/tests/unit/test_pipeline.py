@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from calibre_integration import calibredb_utils
-import config as config_models
+import config
 from models.context import WorkerContext
 from models.fanfic_info import FanficInfo
 from notifications import notification_wrapper
@@ -23,7 +23,7 @@ class TestPipeline(unittest.TestCase):
         )
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
-        self.retry_config = config_models.RetryConfig()
+        self.retry_config = config.RetryConfig()
         self.worker_id = "worker_1"
         self.ctx = WorkerContext(
             calibre_client=self.mock_client,
@@ -252,7 +252,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         )
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
-        self.retry_config = config_models.RetryConfig()
+        self.retry_config = config.RetryConfig()
         self.worker_id = "worker_1"
         self.ctx = WorkerContext(
             calibre_client=self.mock_client,
@@ -483,7 +483,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
             notification_info=MagicMock(spec=notification_wrapper.NotificationWrapper),
             ingress_queue=MagicMock(),
             waiting_queue=MagicMock(),
-            retry_config=config_models.RetryConfig(),
+            retry_config=config.RetryConfig(),
             history_recorder=self.history_recorder,
             active_urls={},
         )
@@ -547,7 +547,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
         mock_command.execute_fanficfare_direct.assert_called_once()
         self.history_recorder.record_download_abandoned.assert_not_called()
 
-    @patch("workers.pipeline.flaresolverr_utils")
+    @patch("workers.pipeline.flaresolverr")
     def test_flaresolverr_tab_crash_recovered_and_retried_in_pipeline(
         self,
         mock_flaresolverr,
@@ -582,7 +582,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
         )
         mock_handlers.process_fanfic_addition.assert_called_once()
 
-    @patch("workers.pipeline.anubis_solver")
+    @patch("workers.pipeline.antibot")
     def test_anubis_challenge_solved_and_retried_in_pipeline(
         self,
         mock_anubis,
@@ -617,7 +617,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
         mock_anubis.mark_site_anubis_protected.assert_called_once_with(self.fanfic.site)
         mock_handlers.process_fanfic_addition.assert_called_once()
 
-    @patch("workers.pipeline.anubis_solver")
+    @patch("workers.pipeline.antibot")
     def test_anubis_not_challenged_does_not_retry_in_pipeline(
         self,
         mock_anubis,

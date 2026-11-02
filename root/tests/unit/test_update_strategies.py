@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, call, patch
 
 from calibre_integration import update_strategies, calibredb_utils
 from calibre_integration.models import AddedBook, BookExport
-import config as config_models
+import config
 from history.recorder import HistoryRecorder
 from models import fanfic_info
 from models.context import WorkerContext
@@ -30,7 +30,7 @@ class TestUpdateStrategies(unittest.TestCase):
         self.mock_notification = MagicMock(
             spec=notification_wrapper.NotificationWrapper
         )
-        self.retry_config = config_models.RetryConfig()
+        self.retry_config = config.RetryConfig()
 
     # --- AddFormatStrategy Tests ---
 
@@ -351,7 +351,7 @@ class TestUpdateStrategies(unittest.TestCase):
         ingress_q = Queue()
 
         self.mock_client.cdb_info.metadata_preservation_mode = (
-            config_models.MetadataPreservationMode.ADD_FORMAT
+            config.MetadataPreservationMode.ADD_FORMAT
         )
         self.mock_client.add_format_to_existing_story.return_value = False
 

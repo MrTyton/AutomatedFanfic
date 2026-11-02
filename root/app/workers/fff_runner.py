@@ -14,16 +14,17 @@ from typing import cast
 
 lazy from fanficfare import adapters as fff_adapters
 lazy from fanficfare import cli as fff_cli
+lazy from fanficfare.fetchers.base_fetcher import LWPCookieJar
 from calibre_integration import calibre_info
 from config.ini_resolver import read_ini_file_cached
 from models import fanfic_info
 from parsers import regex_parsing
-import antibot as anubis_solver
+import antibot
 import ff_logging
 from utils import thread_stdout
 from utils import url_utils
-from antibot import cookies as cookie_cache
-from antibot import impersonation as impersonated_session
+from antibot import cookies
+from antibot import impersonation
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -110,7 +111,7 @@ def resolve_fanficfare_user_agent(
 ) -> str:
     """Resolve the effective User-Agent for target_url according to FanFicFare configuration."""
     if not target_url:
-        return anubis_solver.DEFAULT_USER_AGENT
+        return antibot.DEFAULT_USER_AGENT
     try:
         resolved_opts = copy.copy(options)
         conf = fff_cli.get_configuration(
@@ -127,7 +128,7 @@ def resolve_fanficfare_user_agent(
         ff_logging.log_debug(
             f"Could not resolve FFF user_agent for {target_url} ({e}); using default browser UA"
         )
-    return anubis_solver.DEFAULT_USER_AGENT
+    return antibot.DEFAULT_USER_AGENT
 
 
 def resolve_target_url(
@@ -172,7 +173,7 @@ def run_fanficfare_download(
         result.failure_messages.append(msg_str)
 
     tl_stdout = thread_stdout.ensure_tl_stdout()
-    impersonated_session.install_impersonated_session()
+    impersonation.install_impersonated_session()
     captured_output = ""
     try:
         with tl_stdout.capture() as captured_buf:
@@ -193,7 +194,7 @@ def run_fanficfare_download(
     finally:
         updated_cookiejar = vars(options).get("cookiejar")
         if updated_cookiejar is not None and site_key:
-            cookie_cache.set_site_cookiejar(site_key, updated_cookiejar)
+            cookies.set_site_cookiejar(site_key, updated_cookiejar)
 
     if captured_output:
         ff_logging.log_debug(f"\tFanFicFare stdout: {captured_output}")
@@ -299,9 +300,7 @@ def execute_fanficfare_direct(
         f"\n[overrides]\noutput_filename: {output_dir}/{_filename_template}\n"
     )
 
-    default_ua_fallback = (
-        f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
-    )
+    default_ua_fallback = f"[defaults]\nuser_agent: {antibot.DEFAULT_USER_AGENT}\n\n"
     passed_personalini = default_ua_fallback + personal_ini_base + output_override
 
     # Parse argv-equivalent flags through FanFicFare's own option parser so
@@ -312,7 +311,7 @@ def execute_fanficfare_direct(
     fff_cli.expandOptions(options)
 
     site_key = getattr(fanfic, "site", "") or ""
-    cached_cookiejar = cookie_cache.get_site_cookiejar(site_key, personal_ini_base)
+    cached_cookiejar = cookies.get_site_cookiejar(site_key, personal_ini_base)
     target_url = resolve_target_url(fanfic, path_or_url, "")
 
     effective_user_agent = resolve_fanficfare_user_agent(
@@ -322,15 +321,15 @@ def execute_fanficfare_direct(
         options,
     )
 
-    if anubis_solver.is_site_anubis_protected(site_key):
-        cookiejar = anubis_solver.ensure_anubis_session(
+    if antibot.is_site_anubis_protected(site_key):
+        cookiejar = antibot.ensure_anubis_session(
             site=site_key,
             url=target_url,
             user_agent=effective_user_agent,
-            cookiejar=cast(anubis_solver.LWPCookieJar | None, cached_cookiejar),
+            cookiejar=cast(LWPCookieJar | None, cached_cookiejar),
         )
         options.cookiejar = cookiejar
-        cookie_cache.set_site_cookiejar(site_key, cookiejar)
+        cookies.set_site_cookiejar(site_key, cookiejar)
     elif cached_cookiejar is not None:
         options.cookiejar = cached_cookiejar
 
@@ -351,7 +350,7 @@ def execute_fanficfare_direct(
     result.target_url = target_url
     result.effective_user_agent = (
         effective_user_agent
-        if effective_user_agent != anubis_solver.DEFAULT_USER_AGENT or not target_url
+        if effective_user_agent != antibot.DEFAULT_USER_AGENT or not target_url
         else resolve_fanficfare_user_agent(
             target_url,
             passed_defaultsini,

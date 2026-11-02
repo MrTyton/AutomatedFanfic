@@ -27,7 +27,7 @@ from models import fanfic_info
 from models.context import WorkerContext
 from calibre_integration import calibre_info
 from notifications import notification_wrapper
-from parsers import url_patterns as auto_url_parsers
+from parsers import url_patterns
 from config import (
     AppConfig,
     EmailConfig,
@@ -54,7 +54,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up URL parsers once for all test methods."""
-        cls.url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+        cls.url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
 
     def setUp(self):
         """Set up test fixtures and temporary files."""
@@ -603,7 +603,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
     @patch("services.bootstrap.EmailInfo")
     @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
     @patch("services.bootstrap.calibre_info.CalibreInfo")
-    @patch("fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("fanficdownload.url_patterns.generate_url_parsers_from_fanficfare")
     @patch("fanficdownload.parse_arguments")
     @patch("fanficdownload.ff_logging")
     def test_full_application_integration(

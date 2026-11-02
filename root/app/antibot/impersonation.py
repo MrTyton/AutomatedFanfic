@@ -11,8 +11,8 @@ from requests.exceptions import (
     Timeout as RequestsTimeout,
 )
 from requests_file import FileAdapter
-from curl_cffi import requests as cffi_requests
-from curl_cffi.requests.exceptions import (
+lazy from curl_cffi import requests as cffi_requests
+lazy from curl_cffi.requests.exceptions import (
     ConnectionError as CffiConnectionError,
     RequestException as CffiRequestException,
     Timeout as CffiTimeout,
@@ -22,8 +22,8 @@ import ff_logging
 
 CURL_CFFI_AVAILABLE = True
 
-_ORIGINAL_MAKE_SESSION = fff_fetcher_requests.RequestsFetcher.make_sesssion
-_ORIGINAL_DO_MOUNTS = fff_fetcher_requests.RequestsFetcher.do_mounts
+_ORIGINAL_MAKE_SESSION: Any = None
+_ORIGINAL_DO_MOUNTS: Any = None
 _IS_INSTALLED = False
 
 
@@ -164,12 +164,17 @@ class ImpersonatedSession:
 
 def install_impersonated_session() -> bool:
     """Configure FanFicFare's RequestsFetcher to use ImpersonatedSession generically."""
-    global _IS_INSTALLED
+    global _IS_INSTALLED, _ORIGINAL_MAKE_SESSION, _ORIGINAL_DO_MOUNTS
     if not CURL_CFFI_AVAILABLE:  # pragma: no cover
         ff_logging.log_debug(
             "curl-cffi is not installed; FanFicFare using standard requests transport"
         )
         return False
+
+    if _ORIGINAL_MAKE_SESSION is None:
+        _ORIGINAL_MAKE_SESSION = fff_fetcher_requests.RequestsFetcher.make_sesssion
+    if _ORIGINAL_DO_MOUNTS is None:
+        _ORIGINAL_DO_MOUNTS = fff_fetcher_requests.RequestsFetcher.do_mounts
 
     def _make_impersonated_session(self: Any) -> ImpersonatedSession:
         return ImpersonatedSession()
@@ -197,10 +202,14 @@ def install_impersonated_session() -> bool:
 def uninstall_impersonated_session() -> None:
     """Restore FanFicFare's RequestsFetcher to original make_sesssion / do_mounts implementations."""
     global _IS_INSTALLED
-    setattr(
-        fff_fetcher_requests.RequestsFetcher, "make_sesssion", _ORIGINAL_MAKE_SESSION
-    )
-    setattr(fff_fetcher_requests.RequestsFetcher, "do_mounts", _ORIGINAL_DO_MOUNTS)
+    if _ORIGINAL_MAKE_SESSION is not None:
+        setattr(
+            fff_fetcher_requests.RequestsFetcher,
+            "make_sesssion",
+            _ORIGINAL_MAKE_SESSION,
+        )
+    if _ORIGINAL_DO_MOUNTS is not None:
+        setattr(fff_fetcher_requests.RequestsFetcher, "do_mounts", _ORIGINAL_DO_MOUNTS)
     _IS_INSTALLED = False
 
 

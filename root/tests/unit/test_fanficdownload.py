@@ -169,9 +169,9 @@ class TestFanficDownloadMain(unittest.TestCase):
                 mock_cdb = MagicMock()
                 mock_calibre_info.return_value = mock_cdb
 
-                # Mock auto_url_parsers.generate_url_parsers_from_fanficfare
+                # Mock url_patterns.generate_url_parsers_from_fanficfare
                 with patch(
-                    "fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare",
+                    "fanficdownload.url_patterns.generate_url_parsers_from_fanficfare",
                     return_value={"fanfiction": None, "other": None},
                 ):
                     # Run main function
@@ -420,9 +420,9 @@ class TestFanficDownloadMain(unittest.TestCase):
                 mock_cdb = MagicMock()
                 mock_calibre_info.return_value = mock_cdb
 
-                # Mock auto_url_parsers.generate_url_parsers_from_fanficfare
+                # Mock url_patterns.generate_url_parsers_from_fanficfare
                 with patch(
-                    "fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare",
+                    "fanficdownload.url_patterns.generate_url_parsers_from_fanficfare",
                     return_value={"fanfiction": None},
                 ):
                     # Run main function
@@ -449,7 +449,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         mock_config.apprise.urls = []
 
         with patch("fanficdownload.ff_logging.log") as mock_log:
-            bootstrap.log_configuration_details(mock_config, args)
+            bootstrap.log_configuration_details(mock_config, args, version="6.16.2")
             logged_messages = [call.args[0] for call in mock_log.call_args_list]
             self.assertTrue(
                 any("Calibre Default INI: Packaged" in msg for msg in logged_messages)
@@ -457,7 +457,7 @@ class TestFanficDownloadMain(unittest.TestCase):
 
         mock_config.calibre.default_ini = "/custom/defaults.ini"
         with patch("fanficdownload.ff_logging.log") as mock_log:
-            bootstrap.log_configuration_details(mock_config, args)
+            bootstrap.log_configuration_details(mock_config, args, version="6.16.2")
             logged_messages = [call.args[0] for call in mock_log.call_args_list]
             self.assertTrue(
                 any(
@@ -512,7 +512,7 @@ class TestFanficDownloadMain(unittest.TestCase):
             patch("services.bootstrap.mp.Queue") as mock_native_queue,
             patch("services.bootstrap.calibre_info.CalibreInfo"),
             patch(
-                "fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare",
+                "fanficdownload.url_patterns.generate_url_parsers_from_fanficfare",
                 return_value={"fanfiction": None},
             ),
         ):

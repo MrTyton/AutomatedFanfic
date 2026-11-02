@@ -6,28 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "automatedfanfic"
 version = "6.16.2"
 description = "Automated Fanfic Downloader"
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 
 [tool.setuptools.packages.find]
 where = ["root/app"]
-
-[tool.pytest.ini_options]
-testpaths = ["root/tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-addopts = [
-    "-v",
-    "--tb=short",
-    "--strict-markers",
-    "--strict-config",
-]
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "slow: Slow running tests",
-    "flaky_ci: Tests that are flaky or environment-dependent in headless CI"
-]
 
 [tool.ruff]
 target-version = "py315"

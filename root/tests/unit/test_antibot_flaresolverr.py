@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import requests
 
 
-from antibot import flaresolverr as flaresolverr_utils
+from antibot import flaresolverr
 
 
 class TestFlareSolverrCrashDetection:
@@ -13,26 +13,26 @@ class TestFlareSolverrCrashDetection:
 
     def test_detects_tab_crashed_string(self):
         msg = "HTTP Error 500: Error solving the challenge. Message: tab crashed (Session info: chrome=133.0.6943.53)"
-        assert flaresolverr_utils.is_flaresolverr_crash(msg) is True
+        assert flaresolverr.is_flaresolverr_crash(msg) is True
 
     def test_detects_target_window_detached(self):
         msg = "Error: target window already detached"
-        assert flaresolverr_utils.is_flaresolverr_crash(msg) is True
+        assert flaresolverr.is_flaresolverr_crash(msg) is True
 
     def test_detects_detach_from_target(self):
         msg = "Protocol error: Target.detachFromTarget occurred"
-        assert flaresolverr_utils.is_flaresolverr_crash(msg) is True
+        assert flaresolverr.is_flaresolverr_crash(msg) is True
 
     def test_detects_from_exception_instance(self):
         exc = RuntimeError("Error solving the challenge. Message: tab crashed")
-        assert flaresolverr_utils.is_flaresolverr_crash(exc) is True
+        assert flaresolverr.is_flaresolverr_crash(exc) is True
 
     def test_returns_false_for_none(self):
-        assert flaresolverr_utils.is_flaresolverr_crash(None) is False
+        assert flaresolverr.is_flaresolverr_crash(None) is False
 
     def test_returns_false_for_unrelated_error(self):
-        assert flaresolverr_utils.is_flaresolverr_crash("404 Not Found") is False
-        assert flaresolverr_utils.is_flaresolverr_crash("Connection refused") is False
+        assert flaresolverr.is_flaresolverr_crash("404 Not Found") is False
+        assert flaresolverr.is_flaresolverr_crash("Connection refused") is False
 
 
 class TestFlareSolverrConfigParsing:
@@ -59,7 +59,7 @@ flaresolverr_session: FanFicFareSession_www_fanfiction_net
         ini_file = tmp_path / "personal.ini"
         ini_file.write_text(ini_content, encoding="utf-8")
 
-        configs = flaresolverr_utils.get_flaresolverr_configs(ini_file)
+        configs = flaresolverr.get_flaresolverr_configs(ini_file)
         assert len(configs) == 2
 
         rr_cfg = next(c for c in configs if c.section == "www.royalroad.com")
@@ -71,7 +71,7 @@ flaresolverr_session: FanFicFareSession_www_fanfiction_net
         assert ffn_cfg.session == "FanFicFareSession_www_fanfiction_net"
 
     def test_handles_nonexistent_or_empty_ini(self, tmp_path: Path):
-        configs = flaresolverr_utils.get_flaresolverr_configs(tmp_path / "missing.ini")
+        configs = flaresolverr.get_flaresolverr_configs(tmp_path / "missing.ini")
         assert configs == []
 
 
@@ -87,17 +87,13 @@ class TestFlareSolverrApiOperations:
         }
         mock_post.return_value = mock_resp
 
-        sessions = flaresolverr_utils.list_flaresolverr_sessions(
-            "http://localhost:8191/v1"
-        )
+        sessions = flaresolverr.list_flaresolverr_sessions("http://localhost:8191/v1")
         assert sessions == ["sess_rr", "sess_ffn"]
 
     @patch("requests.post")
     def test_list_sessions_network_error(self, mock_post):
         mock_post.side_effect = requests.RequestException("Connection refused")
-        sessions = flaresolverr_utils.list_flaresolverr_sessions(
-            "http://localhost:8191/v1"
-        )
+        sessions = flaresolverr.list_flaresolverr_sessions("http://localhost:8191/v1")
         assert sessions == []
 
     @patch("requests.post")
@@ -109,7 +105,7 @@ class TestFlareSolverrApiOperations:
         }
         mock_post.return_value = mock_resp
 
-        success = flaresolverr_utils.destroy_flaresolverr_session(
+        success = flaresolverr.destroy_flaresolverr_session(
             "http://localhost:8191/v1", "sess_rr"
         )
         assert success is True
@@ -117,7 +113,7 @@ class TestFlareSolverrApiOperations:
     @patch("requests.post")
     def test_destroy_session_failure(self, mock_post):
         mock_post.side_effect = requests.RequestException("Timeout")
-        success = flaresolverr_utils.destroy_flaresolverr_session(
+        success = flaresolverr.destroy_flaresolverr_session(
             "http://localhost:8191/v1", "sess_rr"
         )
         assert success is False
@@ -139,7 +135,7 @@ flaresolverr_session: FanFicFareSession_www_royalroad_com
 
         with (
             patch.object(
-                flaresolverr_utils,
+                flaresolverr,
                 "list_flaresolverr_sessions",
                 return_value=[
                     "FanFicFareSession_www_royalroad_com",
@@ -147,10 +143,10 @@ flaresolverr_session: FanFicFareSession_www_royalroad_com
                 ],
             ),
             patch.object(
-                flaresolverr_utils, "destroy_flaresolverr_session", return_value=True
+                flaresolverr, "destroy_flaresolverr_session", return_value=True
             ) as mock_destroy,
         ):
-            recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+            recovered = flaresolverr.recover_flaresolverr_crashes(
                 target_site="royalroad",
                 personal_ini_path=ini_file,
             )
@@ -170,15 +166,15 @@ flaresolverr_proxy: http://192.168.1.161:8191/v1
 
         with (
             patch.object(
-                flaresolverr_utils,
+                flaresolverr,
                 "list_flaresolverr_sessions",
                 return_value=["sess_1", "sess_2"],
             ),
             patch.object(
-                flaresolverr_utils, "destroy_flaresolverr_session", return_value=True
+                flaresolverr, "destroy_flaresolverr_session", return_value=True
             ) as mock_destroy,
         ):
-            recovered = flaresolverr_utils.recover_flaresolverr_crashes(
+            recovered = flaresolverr.recover_flaresolverr_crashes(
                 target_site=None,
                 personal_ini_path=ini_file,
             )

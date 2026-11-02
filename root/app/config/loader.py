@@ -5,7 +5,7 @@ from pathlib import Path
 import tomllib
 
 from config.exceptions import ConfigError, ConfigValidationError
-from config.schemas.app import AppConfig
+from config.schemas.app import AppConfig, toml_settings_context
 import ff_logging
 
 
@@ -58,7 +58,8 @@ class ConfigManager:
                     "path = '/path/to/calibre/library'"
                 )
 
-            config = AppConfig(**toml_data)
+            with toml_settings_context(toml_data):
+                config = AppConfig()  # type: ignore[call-arg]
             cls._cache[cache_key] = config
             ff_logging.log(f"Configuration loaded successfully from {config_path}")
             return config

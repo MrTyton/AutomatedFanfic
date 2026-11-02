@@ -12,7 +12,7 @@ from queue import Empty, Queue
 
 
 from config.store import ConfigStore
-from services.email_client import EmailInfo, _make_fff_get_configuration
+from services.email_client import EmailInfo
 from services.email_watcher import email_watcher
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
@@ -477,13 +477,13 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         ):
             mock_cfg = MagicMock()
             mock_cfg_cls.return_value = mock_cfg
-            fn = _make_fff_get_configuration(store)
+            fn = store.get_fff_get_configuration_callable()
             result = fn(url)
             return result, mock_secs, mock_cfg_cls, mock_cfg
 
     def test_returns_callable(self):
         """Factory always returns a callable regardless of store value."""
-        fn = _make_fff_get_configuration(ConfigStore({}))
+        fn = ConfigStore({}).get_fff_get_configuration_callable()
         self.assertTrue(callable(fn))
 
     def test_callable_uses_sections_from_url(self):
@@ -507,7 +507,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
             patch("fanficfare.configurable.Configuration") as mock_cfg_cls,
         ):
             mock_cfg_cls.return_value = MagicMock()
-            fn = _make_fff_get_configuration(ConfigStore({}))
+            fn = ConfigStore({}).get_fff_get_configuration_callable()
             fn(url)
         mock_cfg_cls.assert_called_once_with(["test1.com"], "EPUB")
 
@@ -526,7 +526,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         ):
             mock_cfg = MagicMock()
             mock_cfg_cls.return_value = mock_cfg
-            fn = _make_fff_get_configuration(store)
+            fn = store.get_fff_get_configuration_callable()
             fn("https://www.royalroad.com/fiction/1/t")
             mock_cfg.read.assert_called_once_with(
                 ["/d/defaults.ini", "/d/personal.ini"]
@@ -547,7 +547,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         ):
             mock_cfg = MagicMock()
             mock_cfg_cls.return_value = mock_cfg
-            fn = _make_fff_get_configuration(store)
+            fn = store.get_fff_get_configuration_callable()
             fn("https://www.royalroad.com/fiction/1/t")
             mock_cfg.read.assert_not_called()
 
@@ -566,7 +566,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         ):
             mock_cfg = MagicMock()
             mock_cfg_cls.return_value = mock_cfg
-            fn = _make_fff_get_configuration(store)
+            fn = store.get_fff_get_configuration_callable()
             fn("https://www.royalroad.com/fiction/1/t")
             mock_cfg.read.assert_called_once_with(["/exists/personal.ini"])
 
@@ -582,7 +582,7 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
         ):
             mock_cfg = MagicMock()
             mock_cfg_cls.return_value = mock_cfg
-            fn = _make_fff_get_configuration(store)
+            fn = store.get_fff_get_configuration_callable()
             fn("https://www.royalroad.com/fiction/1/t")
             mock_cfg.read.assert_not_called()
 

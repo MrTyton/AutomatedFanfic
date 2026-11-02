@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import time
 
 from models import active_urls as active_urls_utils
-import parsers as auto_url_parsers
+import parsers
 from web.dependencies import WebState
 
 # TTL cache for expensive historical DB queries (recent_downloads, recent_activity)
@@ -246,17 +246,17 @@ async def build_snapshot(state: WebState) -> dict[str, object]:
         snapshot["last_email_check"] = None
 
     # ── Site worker stats (determined algorithmically) ───────────
-    adapter_catalog = auto_url_parsers.get_supported_sites_catalog()
+    adapter_catalog = parsers.get_supported_sites_catalog()
     seen_sites: dict[str, dict[str, str]] = dict(adapter_catalog)
 
     def _register_dynamic_site(raw_site: str | None) -> None:
         if not raw_site:
             return
         s_norm = str(raw_site).lower().strip()
-        site_id = auto_url_parsers._generate_site_identifier(s_norm, s_norm)
+        site_id = parsers.generate_site_identifier(s_norm, s_norm)
         if site_id not in seen_sites and s_norm not in seen_sites:
             domain = s_norm if "." in s_norm else f"{s_norm}.com"
-            display_name = auto_url_parsers.clean_display_name_from_domain(domain)
+            display_name = parsers.clean_display_name_from_domain(domain)
             seen_sites[site_id] = {
                 "site": site_id,
                 "domain": domain,
@@ -278,7 +278,7 @@ async def build_snapshot(state: WebState) -> dict[str, object]:
             _register_dynamic_site(str(hs))
 
     disabled_set = {ds.lower() for ds in disabled_sites} | {
-        auto_url_parsers._generate_site_identifier(ds.lower(), ds.lower())
+        parsers.generate_site_identifier(ds.lower(), ds.lower())
         for ds in disabled_sites
     }
 

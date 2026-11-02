@@ -7,7 +7,7 @@ from queue import Empty
 from workers import pool_runner, pipeline
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
-import config as config_models
+import config
 from models.context import SharedIPCContext, WorkerContext
 
 
@@ -19,7 +19,7 @@ class TestPoolRunner(unittest.TestCase):
         )
         self.mock_waiting_queue = MagicMock(spec=mp.Queue)
         self.mock_ingress_queue = MagicMock()
-        self.mock_retry_config = MagicMock(spec=config_models.RetryConfig)
+        self.mock_retry_config = MagicMock(spec=config.RetryConfig)
         self.active_urls = {}
 
         self.worker_queues = {

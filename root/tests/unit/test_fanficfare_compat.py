@@ -30,7 +30,6 @@ from packaging.utils import canonicalize_name
 from packaging.version import Version
 
 from config.store import ConfigStore
-from services.email_client import _make_fff_get_configuration
 from config.ini_resolver import get_packaged_defaults_ini_path
 
 
@@ -199,7 +198,7 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
         defaults_ini = get_packaged_defaults_ini_path()
         store = ConfigStore({})
         store.update("calibre.default_ini", defaults_ini)
-        get_config_fn = _make_fff_get_configuration(store)
+        get_config_fn = store.get_fff_get_configuration_callable()
         initial_config = get_config_fn("test1.com")
         gu = geturls.GetURLs(config=initial_config, get_config=get_config_fn)
 

@@ -404,3 +404,76 @@ def resolve_config_ini_path(state: Any, ini_type: str) -> tuple[str | None, str 
         return None, f"Unknown ini type '{ini_type}'. Valid: personal, defaults"
 
     return path, None
+
+
+def get_masked_config_payload(state: Any) -> dict[str, Any]:
+    """Build the masked configuration and reload behavior payload for GET /api/config."""
+    if state.config is None:
+        return {"config": {}}
+
+    try:
+        config_dict = state.config.model_dump()
+        masked = mask_sensitive(config_dict)
+        return {
+            "config": masked,
+            "reload_map": annotate_reload_behavior(config_dict),
+        }
+    except Exception:
+        return {"config": {}, "error": "Failed to serialize config"}
+
+
+def get_unmasked_secret(
+    state: Any, section: str, key: str
+) -> tuple[str | None, str | None]:
+    """Retrieve the unmasked value of a sensitive configuration field, or (None, error_detail)."""
+    if state.config is None:
+        return None, "No config loaded"
+
+    config_dict = state.config.model_dump()
+    sec_data = config_dict.get(section)
+    if not isinstance(sec_data, dict):
+        return None, f"Section '{section}' not found"
+
+    if key not in sec_data:
+        return None, f"Key '{key}' not found in section '{section}'"
+
+    val = sec_data.get(key)
+    return (str(val) if val is not None else ""), None
+
+
+def read_ini_file_action(state: Any, ini_type: str) -> dict[str, Any]:
+    """Read the raw content of personal.ini or defaults.ini."""
+    path, err = resolve_config_ini_path(state, ini_type)
+    if err or path is None:
+        return {"content": None, "path": None, "error": err}
+
+    ini_path = Path(path)
+    if not ini_path.is_file():
+        return {"content": "", "path": path, "error": None}
+
+    try:
+        content = ini_path.read_text(encoding="utf-8")
+        return {"content": content, "path": path, "error": None}
+    except OSError:
+        return {"content": None, "path": path, "error": "Failed to read file"}
+
+
+def write_ini_file_action(state: Any, ini_type: str, content: str) -> dict[str, Any]:
+    """Overwrite personal.ini with the supplied content (defaults.ini is read-only)."""
+    if ini_type == "defaults":
+        return {
+            "applied": False,
+            "error": "defaults.ini is packaged and updated automatically with FanFicFare releases. Put personal overrides in personal.ini.",
+        }
+
+    path, err = resolve_config_ini_path(state, ini_type)
+    if err or path is None:
+        return {"applied": False, "error": err}
+
+    ini_path = Path(path)
+    try:
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(content, encoding="utf-8")
+        return {"applied": True}
+    except OSError:
+        return {"applied": False, "error": "Failed to write file"}

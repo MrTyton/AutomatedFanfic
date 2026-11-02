@@ -12,9 +12,8 @@ import fanficfare.configurable as configurable
 
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo
-import antibot as anubis_solver
-from config.ini_resolver import get_packaged_defaults_ini_path
 import antibot
+from config.ini_resolver import get_packaged_defaults_ini_path
 from utils.thread_stdout import ThreadLocalStdout as _ThreadLocalStdout
 from workers.fff_runner import (
     build_argv as _build_argv,
@@ -752,7 +751,7 @@ class TestResolveFanficfareUserAgent(unittest.TestCase):
 
     def test_site_specific_user_agent_used(self):
         personal = (
-            f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
+            f"[defaults]\nuser_agent: {antibot.DEFAULT_USER_AGENT}\n\n"
             "[www.royalroad.com]\nuser_agent: CustomRRUA/1.0\n"
         )
         ua = _resolve_fanficfare_user_agent(
@@ -765,7 +764,7 @@ class TestResolveFanficfareUserAgent(unittest.TestCase):
 
     def test_user_defaults_user_agent_overrides_fallback(self):
         personal = (
-            f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
+            f"[defaults]\nuser_agent: {antibot.DEFAULT_USER_AGENT}\n\n"
             "[defaults]\nuser_agent: CustomDefaultUA/2.0\n"
         )
         ua = _resolve_fanficfare_user_agent(
@@ -778,7 +777,7 @@ class TestResolveFanficfareUserAgent(unittest.TestCase):
 
     def test_unset_user_agent_falls_back_to_default_browser_ua(self):
         personal = (
-            f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
+            f"[defaults]\nuser_agent: {antibot.DEFAULT_USER_AGENT}\n\n"
             "[defaults]\nis_adult: true\n[www.fanfiction.net]\nuser_agent: FFNetUA/3.0\n"
         )
         ua = _resolve_fanficfare_user_agent(
@@ -787,7 +786,7 @@ class TestResolveFanficfareUserAgent(unittest.TestCase):
             personal,
             self.options,
         )
-        self.assertEqual(ua, anubis_solver.DEFAULT_USER_AGENT)
+        self.assertEqual(ua, antibot.DEFAULT_USER_AGENT)
 
     def test_empty_target_url_returns_default(self):
         ua = _resolve_fanficfare_user_agent(
@@ -796,7 +795,7 @@ class TestResolveFanficfareUserAgent(unittest.TestCase):
             "",
             self.options,
         )
-        self.assertEqual(ua, anubis_solver.DEFAULT_USER_AGENT)
+        self.assertEqual(ua, antibot.DEFAULT_USER_AGENT)
 
 
 if __name__ == "__main__":

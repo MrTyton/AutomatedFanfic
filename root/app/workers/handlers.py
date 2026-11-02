@@ -2,7 +2,7 @@
 Failure and success handling logic for worker processes.
 """
 
-import config as config_models
+import config
 from models import retry_types
 from models import fanfic_info
 from models.context import WorkerContext
@@ -171,11 +171,11 @@ def process_fanfic_addition(
             # Existing story - use metadata preservation mode from config
             mode = calibre_client.cdb_info.metadata_preservation_mode
 
-            if mode == config_models.MetadataPreservationMode.ADD_FORMAT:
+            if mode == config.MetadataPreservationMode.ADD_FORMAT:
                 strategy: update_strategies.UpdateStrategy = (
                     update_strategies.AddFormatStrategy()
                 )
-            elif mode == config_models.MetadataPreservationMode.PRESERVE_METADATA:
+            elif mode == config.MetadataPreservationMode.PRESERVE_METADATA:
                 strategy = update_strategies.PreserveMetadataStrategy()
             else:
                 strategy = update_strategies.RemoveAddStrategy()
