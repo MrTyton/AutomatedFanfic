@@ -15,6 +15,7 @@ from parameterized import parameterized
 
 
 import fanficdownload
+import ff_logging
 from services import bootstrap  # noqa: E402
 from config import (
     AppConfig,
@@ -69,6 +70,11 @@ class TestFanficDownloadMain(unittest.TestCase):
 
         # Set up top-level config
         self.mock_config.max_workers = 4
+
+    def tearDown(self):
+        """Clean up logging and process state after each test."""
+        ff_logging.set_web_enabled(True)
+        ff_logging.set_log_forward_queue(None)
 
     class ParseArgumentsTestCase(NamedTuple):
         name: str

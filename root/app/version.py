@@ -1,3 +1,3 @@
 """Application version definition for AutomatedFanfic."""
 
-__version__ = "7.0.0"
+__version__ = "7.0.1"

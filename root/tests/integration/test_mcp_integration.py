@@ -51,6 +51,8 @@ async def test_mcp_e2e_tool_execution():
 @pytest.mark.anyio
 async def test_mcp_e2e_full_tool_suite_integration():
     """Verify all 8 core MCP tools execute against live FastAPI endpoints."""
+    ff_logging.set_web_enabled(True)
+    ff_logging.set_log_forward_queue(None)
     sample_url = "https://archiveofourown.org/works/999"
     new_url = "https://archiveofourown.org/works/12345"
     ingress_q = multiprocessing.Queue()
