@@ -119,8 +119,6 @@ class Coordinator:
 
     def _publish_state(self) -> None:
         """Snapshot internal assignments, worker states, and backlogs to shared state."""
-        if self.coordinator_status is None:
-            return
         try:
             backlog_snapshot = {
                 site: [
