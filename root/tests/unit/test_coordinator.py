@@ -28,9 +28,6 @@ def _make_coordinator(ingress_queue, worker_queues, **overrides):
 def _subprocess_init_coordinator(worker_queues_proxy, result_q):
     """Module-level helper to verify Coordinator initialization in a spawned child process."""
     try:
-        from services.coordinator import Coordinator
-        from config.store import ConfigStore
-
         ingress_q = mp.Queue()
         scale_q = mp.Queue()
         coordinator = Coordinator(

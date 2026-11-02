@@ -13,7 +13,7 @@ import fanficfare.configurable as configurable
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo
 import antibot as anubis_solver
-from utils.system_utils import get_packaged_defaults_ini_path
+from config.ini_resolver import get_packaged_defaults_ini_path
 import antibot
 from utils.thread_stdout import ThreadLocalStdout as _ThreadLocalStdout
 from workers.fff_runner import (

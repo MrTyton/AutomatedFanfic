@@ -1075,7 +1075,7 @@ class TestProcessManagerOverheadScaling(unittest.TestCase):
 
         # With overhead=5 and max_workers=8, target = max(1, 8-5) = 3
         self.manager.set_system_overhead(5)
-        self.manager._check_worker_scaling()
+        self.manager._monitor.check_worker_scaling()
 
         # Should have added 3 queues (worker_0, worker_1, worker_2)
         self.assertEqual(len(worker_queues), 3)
@@ -1091,7 +1091,7 @@ class TestProcessManagerOverheadScaling(unittest.TestCase):
         self.manager._config_store = mock_config_store
 
         # With default overhead=4 and max_workers=8, target = max(1, 8-4) = 4
-        self.manager._check_worker_scaling()
+        self.manager._monitor.check_worker_scaling()
 
         self.assertEqual(len(worker_queues), 4)
 

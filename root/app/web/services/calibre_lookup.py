@@ -1,6 +1,6 @@
 """Calibre lookup and metadata extraction service for the web interface."""
 
-import multiprocessing
+import threading
 from typing import Any
 
 from calibre_integration import calibre_info
@@ -13,11 +13,14 @@ class _LockFactory:
 
     @staticmethod
     def Lock():
-        return multiprocessing.Lock()
+        return threading.Lock()
 
 
 def get_calibre_client(app_state: Any) -> Any | None:
     """Obtain or instantiate CalibreClient if available."""
+    if hasattr(app_state, "app") and hasattr(app_state.app, "state"):
+        app_state = app_state.app.state
+
     client = getattr(app_state, "calibre_client", None)
     if client is not None:
         return client
@@ -27,7 +30,7 @@ def get_calibre_client(app_state: Any) -> Any | None:
         web_state is None
         or web_state.config is None
         or getattr(web_state.config, "calibre", None) is None
-        or not getattr(web_state.config.calibre, "location", None)
+        or not getattr(web_state.config.calibre, "path", None)
     ):
         return None
 
@@ -119,3 +122,46 @@ def get_calibre_metadata(
             pass
 
     return None
+
+
+def inspect_calibre_book(client: Any, query: str) -> dict[str, object]:
+    """Inspect full Calibre metadata for a book resolved by ID, URL, or title."""
+    if client is None:
+        return {
+            "found": False,
+            "message": "Calibre is not configured or client unavailable",
+        }
+
+    q = query.strip()
+    book_id = resolve_calibre_book_id(client, q)
+    if book_id is None:
+        return {
+            "found": False,
+            "message": f"No Calibre book found matching query: {query}",
+        }
+
+    meta = get_calibre_metadata(client, book_id, q if "://" in q else "")
+    if meta is None:
+        return {
+            "found": False,
+            "message": f"Book with ID {book_id} has no metadata in Calibre",
+        }
+
+    resolved_id = meta.get("id", book_id)
+    if str(resolved_id).isdigit():
+        resolved_id = int(str(resolved_id))
+
+    custom_cols = {
+        k: v for k, v in meta.items() if k.startswith("#") or k.startswith("*")
+    }
+
+    return {
+        "found": True,
+        "id": resolved_id,
+        "title": meta.get("title"),
+        "authors": meta.get("authors") or meta.get("author", []),
+        "formats": meta.get("formats", []),
+        "custom_columns": custom_cols,
+        "identifiers": meta.get("identifiers", {}),
+        "metadata": meta,
+    }

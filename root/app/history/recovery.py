@@ -7,7 +7,7 @@ resuming them as fresh attempts.
 
 from pathlib import Path
 
-from history.database import SyncHistoryDB
+from history.sync_db import SyncHistoryDB
 from history.recorder import HistoryRecorder
 from models import active_urls as active_urls_utils
 from models.active_urls import ActiveUrlsDict

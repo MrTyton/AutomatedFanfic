@@ -10,6 +10,7 @@ import pytest
 from fanficfare import configurable
 from fanficfare.adapters.base_adapter import BaseSiteAdapter
 
+from config.store import ConfigStore
 from parsers import series as series_utils
 
 _AO3_SERIES_HTML = """
@@ -386,8 +387,6 @@ class TestEdgeCases:
 
     def test_get_series_configuration_loads_site_sections_and_ini_files(self, tmp_path):
         """get_series_configuration creates configuration with site sections and INI files via ConfigStore."""
-        from config.store import ConfigStore
-
         ini_file = tmp_path / "personal.ini"
         ini_file.write_text(
             "[archiveofourown.org]\nusername=testuser\n", encoding="utf-8"

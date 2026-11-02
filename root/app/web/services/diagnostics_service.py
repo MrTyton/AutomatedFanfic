@@ -1,162 +1,23 @@
-"""Diagnostic services for external services, anti-bot solver, cookie jar, and dry-runs."""
+"""Diagnostic services for external services, anti-bot solver, story autopsy, and dry-runs."""
 
-import configparser
-from http.cookiejar import LWPCookieJar, MozillaCookieJar
-import imaplib
 from pathlib import Path
 import re
 import time
 from typing import Any
-import urllib.error
-import urllib.request
 
+from config.ini_resolver import resolve_ini_path
 from config.store import ConfigStore
-from utils.system_utils import resolve_ini_path
+import ff_logging
+from models.fanfic_info import FanficInfo
+from services import email_client
+from web.services.calibre_lookup import get_calibre_metadata
 
+lazy import antibot as anubis_solver
 lazy from antibot import flaresolverr as flaresolverr_utils
 lazy from fanficfare import adapters as fff_adapters, configurable, geturls
 lazy from notifications.apprise_notification import AppriseNotification
 lazy from parsers import regex_parsing, url_patterns as auto_url_parsers
-lazy import antibot as anubis_solver
 lazy from workers import fff_runner
-
-
-def mask_cookie_value(val: str | None) -> str:
-    """Mask secret cookie value while preserving length cue."""
-    if not val:
-        return ""
-    if len(val) > 8:
-        return f"{val[:3]}...{val[-3:]}"
-    return "********"
-
-
-def resolve_cookiejar_path(state: Any, domain: str) -> Path | None:
-    """Locate configured or disk cookiejar for a domain."""
-    raw_personal = None
-    if getattr(state, "config", None) and getattr(state.config, "calibre", None):
-        raw_personal = state.config.calibre.personal_ini
-    elif getattr(state, "config_store", None):
-        raw_personal = state.config_store.get_resolved_personal_ini()
-
-    personal_path = (
-        resolve_ini_path(raw_personal, "personal.ini") if raw_personal else ""
-    )
-    if personal_path and Path(personal_path).is_file():
-        try:
-            parser = configparser.RawConfigParser(strict=False)
-            parser.read(personal_path, encoding="utf-8")
-            sections = [s for s in parser.sections() if domain.lower() in s.lower()]
-            sections.append("defaults")
-            for sec in sections:
-                if parser.has_option(sec, "cookiejar"):
-                    cj = parser.get(sec, "cookiejar").strip()
-                    if cj:
-                        candidate = Path(cj)
-                        if not candidate.is_absolute():
-                            candidate = Path(personal_path).parent / candidate
-                        return candidate
-        except Exception:
-            pass
-
-    for candidate in [
-        Path(f"{domain}.cookies.txt"),
-        Path(f"cookies/{domain}.txt"),
-        Path(f"{domain}.txt"),
-    ]:
-        if candidate.is_file():
-            return candidate
-
-    return None
-
-
-async def check_flaresolverr_reachable(endpoint: str) -> dict[str, object]:
-    """Test responsiveness of a FlareSolverr proxy endpoint."""
-    t0 = time.perf_counter()
-    try:
-        req = urllib.request.Request(
-            endpoint, headers={"User-Agent": "AutomatedFanfic/1.0"}
-        )
-        with urllib.request.urlopen(req, timeout=3.0) as resp:
-            status = getattr(resp, "status", 200)
-            latency_ms = round((time.perf_counter() - t0) * 1000, 2)
-            return {
-                "configured": True,
-                "endpoint": endpoint,
-                "reachable": status < 500,
-                "latency_ms": latency_ms,
-                "error": None,
-            }
-    except urllib.error.HTTPError as exc:
-        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
-        return {
-            "configured": True,
-            "endpoint": endpoint,
-            "reachable": exc.code < 500,
-            "latency_ms": latency_ms,
-            "error": None if exc.code < 500 else str(exc),
-        }
-    except Exception as exc:
-        return {
-            "configured": True,
-            "endpoint": endpoint,
-            "reachable": False,
-            "latency_ms": None,
-            "error": str(exc),
-        }
-
-
-def inspect_cookiejar_file(state: Any, domain: str) -> dict[str, object]:
-    """Inspect cookies for domain without leaking secret tokens."""
-    norm_domain = domain.strip().lower()
-    jar_path = resolve_cookiejar_path(state, norm_domain)
-
-    if jar_path is None or not jar_path.is_file():
-        return {
-            "domain": domain,
-            "cookie_count": 0,
-            "cookies": [],
-            "file_path": None,
-            "message": "No cookiejar found",
-        }
-
-    jar = LWPCookieJar(str(jar_path))
-    try:
-        jar.load(ignore_discard=True, ignore_expires=True)
-    except Exception:
-        try:
-            m_jar = MozillaCookieJar(str(jar_path))
-            m_jar.load(ignore_discard=True, ignore_expires=True)
-            jar = m_jar
-        except Exception as exc:
-            return {
-                "domain": domain,
-                "cookie_count": 0,
-                "cookies": [],
-                "file_path": str(jar_path),
-                "message": f"Failed to parse cookiejar: {exc}",
-            }
-
-    cookies_list: list[dict[str, object]] = []
-    for c in jar:
-        cookies_list.append(
-            {
-                "name": c.name,
-                "domain": c.domain,
-                "path": c.path,
-                "expires": c.expires,
-                "secure": c.secure,
-                "discard": c.discard,
-                "value": mask_cookie_value(c.value),
-            }
-        )
-
-    return {
-        "domain": domain,
-        "cookie_count": len(cookies_list),
-        "cookies": cookies_list,
-        "file_path": str(jar_path),
-        "message": "Cookiejar loaded successfully",
-    }
 
 
 async def check_antibot_status(state: Any) -> dict[str, object]:
@@ -186,19 +47,8 @@ async def check_antibot_status(state: Any) -> dict[str, object]:
         except Exception:
             pass
 
-    import sys
-
-    debug_mod = sys.modules.get("web.routes.debug")
-    checker_fn = (
-        getattr(
-            debug_mod, "_check_flaresolverr_reachable", check_flaresolverr_reachable
-        )
-        if debug_mod
-        else check_flaresolverr_reachable
-    )
-
     if flaresolverr_endpoint:
-        flare_res = await checker_fn(flaresolverr_endpoint)
+        flare_res = flaresolverr_utils.probe_flaresolverr_health(flaresolverr_endpoint)
     else:
         flare_res = {
             "configured": False,
@@ -229,6 +79,130 @@ async def check_antibot_status(state: Any) -> dict[str, object]:
     return {
         "flaresolverr": flare_res,
         "anubis": anubis_res,
+    }
+
+
+async def build_story_diagnostics(
+    state: Any, client: Any, url: str
+) -> dict[str, object]:
+    """Retrieve full autopsy diagnostics for a story URL."""
+    norm_url = url.strip()
+
+    active_state: dict[str, object] | None = None
+    if state.active_urls is not None:
+        raw_active = state.active_urls.get(norm_url)
+        if raw_active is not None:
+            if isinstance(raw_active, dict):
+                active_state = dict(raw_active)
+            elif isinstance(raw_active, FanficInfo):
+                active_state = {
+                    "url": raw_active.url,
+                    "site": raw_active.site,
+                    "status": getattr(raw_active, "last_status", None) or "active",
+                    "calibre_id": raw_active.calibre_id,
+                    "repeats": raw_active.repeats,
+                    "behavior": raw_active.behavior,
+                    "title": raw_active.title,
+                }
+            elif hasattr(raw_active, "to_dict"):
+                active_state = raw_active.to_dict()
+            else:
+                active_state = {
+                    "status": getattr(raw_active, "status", str(raw_active))
+                }
+
+    history: dict[str, object] | None = None
+    latest_download: dict[str, object] | None = None
+    retry_attempts: list[dict[str, object]] = []
+
+    if state.history_db is not None:
+        try:
+            latest_download = await state.history_db.get_latest_download(norm_url)
+        except Exception:
+            latest_download = None
+        try:
+            dl_id = latest_download.get("id") if latest_download else None
+            retry_attempts = await state.history_db.get_retries_for_url(
+                norm_url, download_event_id=dl_id
+            )
+        except Exception:
+            retry_attempts = []
+
+    if latest_download is not None or retry_attempts:
+        history = {
+            **(latest_download or {}),
+            "latest_download": latest_download,
+            "retry_attempts": retry_attempts or [],
+        }
+
+    calibre: dict[str, object] = {"in_library": False}
+    calibre_meta: dict[str, object] | None = None
+    if client is not None:
+        book_id: str | int | None = None
+        if hasattr(client, "search_by_url"):
+            try:
+                book_id = client.search_by_url(norm_url)
+            except Exception:
+                book_id = None
+        elif hasattr(client, "get_story_id"):
+            try:
+                book_id = client.get_story_id(FanficInfo(url=norm_url, site="unknown"))
+            except Exception:
+                book_id = None
+
+        if book_id is not None:
+            calibre_meta = get_calibre_metadata(client, book_id, norm_url)
+            if calibre_meta is not None:
+                calibre = {
+                    "in_library": True,
+                    "id": book_id,
+                    "book_id": book_id,
+                    **calibre_meta,
+                    "metadata": calibre_meta,
+                }
+                chapter_count = calibre_meta.get("chapters") or calibre_meta.get(
+                    "#chapters"
+                )
+                if chapter_count is not None:
+                    calibre.setdefault("chapter_count", chapter_count)
+                calibre.setdefault("formats", calibre_meta.get("formats", []))
+            else:
+                calibre = {
+                    "in_library": True,
+                    "id": book_id,
+                    "book_id": book_id,
+                }
+
+    candidate_titles: list[str] = []
+    if active_state and active_state.get("title"):
+        candidate_titles.append(str(active_state["title"]))
+    if latest_download and latest_download.get("title"):
+        candidate_titles.append(str(latest_download["title"]))
+    if calibre_meta and calibre_meta.get("title"):
+        candidate_titles.append(str(calibre_meta["title"]))
+
+    recent_logs: list[dict[str, object]] = []
+    try:
+        raw_logs = ff_logging.get_recent_logs(limit=2000)
+        for entry in raw_logs:
+            msg = str(entry.get("message", ""))
+            matched = norm_url in msg
+            if not matched and candidate_titles:
+                for t in candidate_titles:
+                    if t and t in msg:
+                        matched = True
+                        break
+            if matched:
+                recent_logs.append(entry)
+    except Exception:
+        recent_logs = []
+
+    return {
+        "url": norm_url,
+        "active_state": active_state,
+        "history": history,
+        "calibre": calibre,
+        "recent_logs": recent_logs,
     }
 
 
@@ -278,7 +252,7 @@ def resolve_config_for_url(state: Any, url: str) -> dict[str, object]:
             calibre_cfg, "metadata_preservation_mode", "preserve_metadata"
         ),
         "update_method": getattr(calibre_cfg, "update_method", "update"),
-        "location": getattr(calibre_cfg, "location", ""),
+        "location": getattr(calibre_cfg, "path", ""),
     }
 
     return {
@@ -311,7 +285,7 @@ def run_service_diagnostics(
                 else "unknown"
             )
             loc = (
-                getattr(getattr(state.config, "calibre", None), "location", "")
+                getattr(getattr(state.config, "calibre", None), "path", "")
                 if getattr(state, "config", None)
                 else ""
             )
@@ -343,25 +317,22 @@ def run_service_diagnostics(
                 "details": None,
             }
         try:
-            client = imaplib.IMAP4_SSL(email_cfg.server, timeout=5)
             email_user = getattr(email_cfg, "email", "") or getattr(
                 email_cfg, "user", ""
             )
-            client.login(email_user, email_cfg.password)
             mailbox = getattr(email_cfg, "mailbox", "INBOX") or "INBOX"
-            client.select(mailbox)
-            _status, msgs = client.search(None, "UNSEEN")
-            unread_count = len(msgs[0].split()) if msgs and msgs[0] else 0
-            client.logout()
+            details = email_client.probe_imap_connection(
+                email_cfg.server,
+                email_user,
+                email_cfg.password,
+                mailbox=mailbox,
+                timeout=5,
+            )
             return {
                 "service": "email",
                 "status": "ok",
                 "message": "IMAP connection successful",
-                "details": {
-                    "server": email_cfg.server,
-                    "mailbox": mailbox,
-                    "unread_count": unread_count,
-                },
+                "details": details,
             }
         except Exception as exc:
             return {
@@ -388,7 +359,8 @@ def run_service_diagnostics(
         try:
             config_store = getattr(state, "config_store", None)
             if config_store is None:
-                config_store = ConfigStore(state.config)
+                config_store = ConfigStore()
+                config_store.initialize_from_config(state.config)
             notifier = AppriseNotification(state.config, config_store)
             ok = notifier.send_notification(
                 "AutomatedFanfic Test", "Notification diagnostic test message"

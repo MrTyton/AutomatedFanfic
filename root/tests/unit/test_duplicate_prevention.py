@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 from services.email_watcher import email_watcher
 from services.email_client import EmailInfo
+from workers.fff_runner import FanFicFareResult
 from workers.pipeline import url_worker
 from models.fanfic_info import FanficInfo
 from config import RetryConfig
@@ -109,8 +110,6 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-        from workers.fff_runner import FanFicFareResult
-
         mock_exec.return_value = FanFicFareResult()
 
         cdb = MagicMock()
@@ -158,8 +157,6 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-
-        from workers.fff_runner import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 
@@ -213,8 +210,6 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-
-        from workers.fff_runner import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 

@@ -2,13 +2,10 @@
 
 import threading
 import time
-from typing import TYPE_CHECKING
 
 import ff_logging
+lazy from process_management.manager import ProcessManager
 from process_management.state import ProcessInfo, ProcessState
-
-if TYPE_CHECKING:
-    from process_management.manager import ProcessManager
 
 
 class ProcessMonitor:

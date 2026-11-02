@@ -12,12 +12,10 @@ import signal
 import threading
 import time
 from collections.abc import MutableMapping
-from typing import Callable, TYPE_CHECKING
+from typing import Callable
 
 from config.store import ConfigStore
-
-if TYPE_CHECKING:
-    from history.recorder import HistoryWriter
+lazy from history.writer import HistoryWriter
 
 import ff_logging
 from config import AppConfig, ProcessConfig
@@ -499,30 +497,6 @@ class ProcessManager:
         """Start the process monitoring thread."""
         self._monitor.start()
         self._monitor_thread = self._monitor._thread
-
-    def _monitor_processes(self) -> None:
-        """Main monitoring loop that runs in a dedicated thread."""
-        self._monitor.run()
-
-    def _sync_process_config_from_store(self) -> None:
-        """Refresh hot-reloadable ProcessConfig fields from ConfigStore."""
-        self._monitor.sync_process_config_from_store()
-
-    def _check_web_restart_event(self) -> None:
-        """Restart the web server process if the web_restart_event is set."""
-        self._monitor.check_web_restart_event()
-
-    def _check_supervisor_restart_event(self) -> None:
-        """Restart the supervisor process if the supervisor_restart_event is set."""
-        self._monitor.check_supervisor_restart_event()
-
-    def _check_worker_restart_event(self) -> None:
-        """Restart the worker pool process if the worker_restart_event is set."""
-        self._monitor.check_worker_restart_event()
-
-    def _check_worker_scaling(self) -> None:
-        """Dynamically add or remove worker queues when max_workers changes in ConfigStore."""
-        self._monitor.check_worker_scaling()
 
     def _health_check_process(
         self, name: str, process_info: ProcessInfo, current_time: float

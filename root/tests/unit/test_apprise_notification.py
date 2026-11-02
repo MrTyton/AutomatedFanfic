@@ -2,6 +2,7 @@ import pickle
 import multiprocessing as mp
 import unittest
 from unittest.mock import patch, MagicMock
+import apprise
 
 from config.store import ConfigStore
 from notifications.apprise_notification import AppriseNotification
@@ -573,8 +574,6 @@ class TestAppriseNotificationPickle(unittest.TestCase):
 
     def _make_notifier(self, urls: list[str], enabled=True):
         """Build an AppriseNotification instance bypassing config loading."""
-        import apprise
-
         obj = object.__new__(AppriseNotification)
         obj.apprise_urls = list(urls)
         obj.apobj = apprise.Apprise()

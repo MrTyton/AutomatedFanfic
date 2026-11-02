@@ -3,15 +3,12 @@
 import collections
 from queue import Empty
 import threading
-from typing import TYPE_CHECKING
 
 from ff_logging.persistent import (
     get_next_sequence_number,
     write_persistent_entry,
 )
-
-if TYPE_CHECKING:
-    from models.queue_types import LogQueue
+lazy from models.queue_types import LogQueue
 
 _LOG_BUFFER_MAX = 2000
 _log_buffer: collections.deque = collections.deque(maxlen=_LOG_BUFFER_MAX)
@@ -34,72 +31,71 @@ _log_forward_queue: LogQueue | None = None
 def append_log_entry(entry: dict) -> None:
     """Append an entry to runtime/startup buffers and write to disk if enabled."""
     global _startup_capture_enabled
-    message = str(entry.get("message", ""))
-
     with _log_buffer_lock:
         if "seq" not in entry:
             entry["seq"] = get_next_sequence_number()
-        if _startup_capture_enabled:
-            entry["is_startup"] = True
-            _startup_log_buffer.append(entry)
-            if any(marker in message for marker in _STARTUP_COMPLETE_MARKERS):
-                _startup_capture_enabled = False
         _log_buffer.append(entry)
+        if _startup_capture_enabled:
+            startup_entry = dict(entry)
+            startup_entry["is_startup"] = True
+            _startup_log_buffer.append(startup_entry)
+            msg = str(entry.get("message", ""))
+            if any(marker in msg for marker in _STARTUP_COMPLETE_MARKERS):
+                _startup_capture_enabled = False
 
     write_persistent_entry(entry)
 
 
-def store_log_entry(
-    timestamp: str,
-    level: str,
-    message: str,
-    *,
-    context: dict[str, object] | None = None,
-    forward: bool = True,
-) -> None:
-    """Store a log entry in memory and optionally forward it cross-process."""
-    entry: dict[str, object] = {
-        "timestamp": timestamp,
-        "level": level,
-        "message": message,
-    }
-    if context:
-        entry.update(context)
-
-    append_log_entry(entry)
-
-    if forward and _log_forward_queue is not None:
-        try:
-            _log_forward_queue.put_nowait(entry)
-        except Exception:
-            pass
-
-
 def rehydrate_buffer(entries: list[dict]) -> None:
-    """Rehydrate in-memory ring buffer with persistent entries from disk."""
+    """Populate the in-memory ring buffer with entries rehydrated from disk."""
     with _log_buffer_lock:
         for entry in entries:
             _log_buffer.append(entry)
 
 
+def store_log_entry(
+    timestamp: str,
+    level: str,
+    msg: str,
+    context: dict,
+    forward: bool = True,
+) -> None:
+    """Build a log entry dict, store it locally, and optionally forward to the queue."""
+    entry: dict = {
+        "timestamp": timestamp,
+        "level": level,
+        "message": str(msg),
+    }
+    entry.update(context)
+
+    if _log_forward_queue is not None and forward:
+        try:
+            _log_forward_queue.put_nowait(entry)
+        except Exception:
+            pass
+    else:
+        append_log_entry(entry)
+
+
 def mark_startup_complete() -> None:
-    """Stop collecting startup log entries in this process."""
+    """Mark startup log capture as completed."""
     global _startup_capture_enabled
     with _log_buffer_lock:
         _startup_capture_enabled = False
 
 
 def set_log_forward_queue(queue: LogQueue | None) -> None:
-    """Set (or clear) the cross-process log-forwarding queue."""
+    """Attach a multiprocessing Queue so logs from this process are forwarded to the web server."""
     global _log_forward_queue
     _log_forward_queue = queue
     if queue is not None:
         with _log_buffer_lock:
-            for entry in list(_log_buffer):
-                try:
-                    queue.put_nowait(entry)
-                except Exception:
-                    pass
+            early_entries = list(_log_buffer)
+        for entry in early_entries:
+            try:
+                queue.put_nowait(entry)
+            except Exception:
+                pass
 
 
 def start_log_drain_thread(queue: LogQueue) -> threading.Thread:
@@ -138,6 +134,8 @@ def get_startup_logs(limit: int = 500) -> list[dict]:
 
 def clear_logs() -> None:
     """Clear all in-memory runtime and startup log buffers."""
+    global _startup_capture_enabled
     with _log_buffer_lock:
         _log_buffer.clear()
         _startup_log_buffer.clear()
+        _startup_capture_enabled = True

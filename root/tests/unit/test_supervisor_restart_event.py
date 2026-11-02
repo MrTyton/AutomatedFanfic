@@ -36,7 +36,7 @@ class TestSupervisorRestartEvent(unittest.TestCase):
         self.manager.processes["supervisor"] = proc_info
 
         with patch.object(self.manager, "restart_process") as mock_restart:
-            self.manager._check_supervisor_restart_event()
+            self.manager._monitor.check_supervisor_restart_event()
             self.assertFalse(event.is_set())
             self.assertEqual(proc_info.restart_count, 0)
             mock_restart.assert_called_once_with("supervisor")
@@ -50,10 +50,10 @@ class TestSupervisorRestartEvent(unittest.TestCase):
         self.manager.processes["supervisor"] = proc_info
 
         with patch.object(self.manager, "restart_process") as mock_restart:
-            self.manager._check_supervisor_restart_event()
+            self.manager._monitor.check_supervisor_restart_event()
             mock_restart.assert_not_called()
 
     def test_check_supervisor_restart_event_when_event_is_none(self) -> None:
         with patch.object(self.manager, "restart_process") as mock_restart:
-            self.manager._check_supervisor_restart_event()
+            self.manager._monitor.check_supervisor_restart_event()
             mock_restart.assert_not_called()

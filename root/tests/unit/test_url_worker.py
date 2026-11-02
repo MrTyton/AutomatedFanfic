@@ -1,18 +1,23 @@
+import multiprocessing as mp
+import os
+from queue import Empty
+from subprocess import CalledProcessError
+import tempfile
 import unittest
 import unittest.mock
 from unittest.mock import MagicMock, patch
+import zipfile
 from parameterized import parameterized
-import multiprocessing as mp
-
 
 from workers import pipeline, handlers, fff_runner as command, common  # noqa: E402
+from workers.fff_runner import FanFicFareResult
 import config as config_models  # noqa: E402
 from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext  # noqa: E402
 from models.fanfic_info import FanficInfo  # noqa: E402
 from calibre_integration.calibre_info import CalibreInfo  # noqa: E402
 from notifications.notification_wrapper import NotificationWrapper  # noqa: E402
-from calibre_integration import calibredb_utils  # noqa: E402
+from calibre_integration import calibredb_utils, epub_utils  # noqa: E402
 from typing import NamedTuple, Optional  # noqa: E402
 
 
@@ -946,7 +951,7 @@ class TestExtractTitleFromEpubPath(unittest.TestCase):
         self, name, input_path, expected_output, description
     ):
         """Test the extract_title_from_epub_path function with various inputs."""
-        result = common.extract_title_from_epub_path(input_path)
+        result = epub_utils.extract_title_from_epub_path(input_path)
         self.assertEqual(
             result,
             expected_output,
@@ -980,7 +985,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 
         # Simulate the title extraction logic from url_worker
         if epub_path.endswith(".epub"):
-            extracted_title = common.extract_title_from_epub_path(epub_path)
+            extracted_title = epub_utils.extract_title_from_epub_path(epub_path)
             if extracted_title != epub_path:
                 self.fanfic.title = extracted_title
 
@@ -993,7 +998,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 
         # Simulate the processing logic
         if url.endswith(".epub"):
-            extracted_title = common.extract_title_from_epub_path(url)
+            extracted_title = epub_utils.extract_title_from_epub_path(url)
             if extracted_title != url:
                 self.fanfic.title = extracted_title
 
@@ -1068,8 +1073,6 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
         mock_log_debug,
     ):
         """Test that CalledProcessError output is logged in verbose mode."""
-        from subprocess import CalledProcessError
-
         # Setup verbose flag
         mock_verbose.value = verbose_enabled
 
@@ -1139,11 +1142,6 @@ class TestLogEpubMetadata(unittest.TestCase):
     @patch("calibre_integration.epub_utils.ff_logging")
     def test_valid_epub_with_metadata(self, mock_logging):
         """Test logging metadata from a valid epub file."""
-        import tempfile
-        import zipfile
-        import os
-
-        # Create a temporary epub with metadata
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
         ) as epub_file:
@@ -1175,7 +1173,7 @@ class TestLogEpubMetadata(unittest.TestCase):
 
         try:
             # Call the function
-            common.log_epub_metadata(epub_path, "ao3")
+            epub_utils.log_epub_metadata(epub_path, "ao3")
 
             # Verify logging calls
             calls = [str(call) for call in mock_logging.log_debug.call_args_list]
@@ -1204,10 +1202,6 @@ class TestLogEpubMetadata(unittest.TestCase):
     @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_without_opf_file(self, mock_logging):
         """Test handling epub without .opf file."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create an epub without .opf file
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1218,7 +1212,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 zf.writestr("random.txt", "No OPF here")
 
         try:
-            common.log_epub_metadata(epub_path, "ffn")
+            epub_utils.log_epub_metadata(epub_path, "ffn")
 
             # Should log error about missing .opf file (generic error from zip read)
             calls = [str(call) for call in mock_logging.log_debug.call_args_list]
@@ -1232,10 +1226,6 @@ class TestLogEpubMetadata(unittest.TestCase):
     @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_malformed_opf(self, mock_logging):
         """Test handling epub with malformed XML in .opf file."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create an epub with malformed OPF
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1257,7 +1247,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 )
 
         try:
-            common.log_epub_metadata(epub_path, "sb")
+            epub_utils.log_epub_metadata(epub_path, "sb")
 
             # Should log error about parsing
             calls = [str(call) for call in mock_logging.log_debug.call_args_list]
@@ -1271,10 +1261,6 @@ class TestLogEpubMetadata(unittest.TestCase):
     @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_no_metadata_section(self, mock_logging):
         """Test handling epub with valid OPF but no metadata section."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create an epub with OPF lacking metadata section
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1301,7 +1287,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 )
 
         try:
-            common.log_epub_metadata(epub_path, "wattpad")
+            epub_utils.log_epub_metadata(epub_path, "wattpad")
 
             # Should log successful metadata read attempt
             self.assertTrue(
@@ -1317,7 +1303,7 @@ class TestLogEpubMetadata(unittest.TestCase):
     @patch("calibre_integration.epub_utils.ff_logging")
     def test_nonexistent_epub_file(self, mock_logging):
         """Test handling non-existent epub file."""
-        common.log_epub_metadata("/nonexistent/file.epub", "test")
+        epub_utils.log_epub_metadata("/nonexistent/file.epub", "test")
 
         # Should log error
         calls = [str(call) for call in mock_logging.log_debug.call_args_list]
@@ -1326,10 +1312,6 @@ class TestLogEpubMetadata(unittest.TestCase):
     @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_attributes_and_empty_values(self, mock_logging):
         """Test logging metadata elements with attributes and empty text values."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create epub with metadata that has attributes but empty text
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1358,7 +1340,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 )
 
         try:
-            common.log_epub_metadata(epub_path, "other")
+            epub_utils.log_epub_metadata(epub_path, "other")
 
             [str(call) for call in mock_logging.log_debug.call_args_list]
 
@@ -1444,8 +1426,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         )
 
         # Set up queue to return 3 tasks, then Empty exceptions (queue drained), then KeyboardInterrupt
-        from queue import Empty
-
         self.mock_queue.get.side_effect = [
             fanfic1,
             fanfic2,
@@ -1457,8 +1437,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing path
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://archiveofourown.org/works/1"
-        from workers.fff_runner import FanFicFareResult
-
         mock_execute.return_value = FanFicFareResult()
 
         # Run worker
@@ -1523,8 +1501,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         )
 
         # Set up queue: 2 AO3 tasks, then Empty, then 1 FFNet task, then Empty, then exit
-        from queue import Empty
-
         self.mock_queue.get.side_effect = [
             fanfic_ao3_1,
             fanfic_ao3_2,
@@ -1537,8 +1513,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://test.com/story"
-        from workers.fff_runner import FanFicFareResult
-
         mock_execute.return_value = FanFicFareResult()
 
         # Run worker

@@ -6,6 +6,8 @@ import logging.handlers
 from pathlib import Path
 import threading
 
+lazy from utils import system_utils
+
 _persistent_logger = logging.getLogger("automatedfanfic.persistent")
 _persistent_logger.setLevel(logging.INFO)
 _persistent_logger.propagate = False
@@ -15,6 +17,26 @@ _persistent_log_path: str | None = None
 
 _log_seq_lock = threading.Lock()
 _log_seq_counter = 0
+
+
+def resolve_log_file_path(
+    log_file_path: str | None,
+    history_db_path: str | None,
+) -> str | None:
+    """Resolve persistent log file path, co-locating alongside history_db_path or /config when using default /data path."""
+    if not isinstance(log_file_path, str) or not log_file_path.strip():
+        return None
+    if log_file_path == "/data/automatedfanfic.log" and (
+        (history_db_path and not str(history_db_path).startswith("/data/"))
+        or (system_utils.is_docker_environment() and Path("/config").exists())
+    ):
+        target_dir = (
+            Path(history_db_path).parent
+            if history_db_path and not str(history_db_path).startswith("/data/")
+            else Path("/config")
+        )
+        return str(target_dir / "automatedfanfic.log")
+    return log_file_path
 
 
 def get_next_sequence_number() -> int:

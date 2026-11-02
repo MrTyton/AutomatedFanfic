@@ -1,18 +1,32 @@
 """Tests for the web server routes and app factory."""
 
-import threading
-import unittest
-from typing import cast
-from models.active_urls import ActiveUrlsDict
+import os
 from queue import Empty, Queue
-from unittest.mock import MagicMock, patch
+import tempfile
+import threading
+from typing import cast
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from config import ConfigManager, WebConfig
+from config.store import ConfigStore
+from history.async_db import AsyncHistoryDB
+from history.models import (
+    DownloadEvent,
+    EmailCheckEvent,
+    NotificationEvent,
+    RetryAction,
+    RetryEvent,
+)
+from history.sync_db import SyncHistoryDB
+from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from web.dependencies import WebState
-from web.routes.controls import _remove_from_calibre_if_possible
 from web.server import create_app
+from web.services.queue_controller import remove_from_calibre_if_possible
 
 
 class TestHealthRoutes(unittest.TestCase):
@@ -122,7 +136,7 @@ class TestHistoryRoutes(unittest.TestCase):
     def test_downloads_pagination_params(self):
         """Pagination parameters are validated."""
         resp = self.client.get("/api/history/downloads?limit=0")
-        self.assertEqual(resp.status_code, 422)  # Validation error
+        self.assertEqual(resp.status_code, 422)
 
         resp = self.client.get("/api/history/downloads?limit=501")
         self.assertEqual(resp.status_code, 422)
@@ -130,12 +144,6 @@ class TestHistoryRoutes(unittest.TestCase):
     def test_downloads_with_mock_db(self):
         """Downloads endpoint queries the database when available."""
         mock_db = MagicMock()
-        mock_db.get_downloads = MagicMock(
-            return_value=[{"url": "https://ao3.org/works/1", "status": "success"}]
-        )
-        mock_db.get_download_count = MagicMock(return_value=1)
-
-        # Make mock awaitable
 
         async def mock_get_downloads(**kwargs):
             return [{"url": "https://ao3.org/works/1", "status": "success"}]
@@ -209,8 +217,6 @@ class TestControlRoutes(unittest.TestCase):
     @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
     def test_add_url_success(self, mock_generate, mock_parsers):
         """Successfully adds a URL to the queue."""
-        from models.fanfic_info import FanficInfo
-
         mock_parsers.return_value = {}
         mock_generate.return_value = FanficInfo(
             url="https://ao3.org/works/1", site="ao3"
@@ -230,8 +236,6 @@ class TestControlRoutes(unittest.TestCase):
     @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
     def test_add_url_duplicate(self, mock_generate, mock_parsers):
         """Rejects duplicate URLs."""
-        from models.fanfic_info import FanficInfo
-
         mock_parsers.return_value = {}
         mock_generate.return_value = FanficInfo(
             url="https://ao3.org/works/1", site="ao3"
@@ -251,8 +255,6 @@ class TestControlRoutes(unittest.TestCase):
 
     def test_retry_now_requeues_waiting_item(self):
         """retry-now should pull waiting item and enqueue immediately."""
-        from models.fanfic_info import FanficInfo
-
         self.state.ingress_queue = Queue()
         self.state.waiting_queue = Queue()
         self.state.active_urls = {}
@@ -272,8 +274,6 @@ class TestControlRoutes(unittest.TestCase):
 
     def test_cancel_retry_removes_waiting_entry(self):
         """cancel-retry should remove pending waiting/ingress queue entries."""
-        from models.fanfic_info import FanficInfo
-
         self.state.ingress_queue = Queue()
         self.state.waiting_queue = Queue()
         self.state.worker_queues = {"worker_1": Queue()}
@@ -307,7 +307,9 @@ class TestControlRoutes(unittest.TestCase):
         mock_recorder = MagicMock()
         self.state.history_recorder = mock_recorder
 
-        with patch("web.routes.controls.invalidate_history_cache") as mock_inv:
+        with patch(
+            "web.services.queue_controller.invalidate_history_cache"
+        ) as mock_inv:
             resp = self.client.post(
                 "/api/controls/cancel",
                 json={
@@ -339,7 +341,7 @@ class TestControlRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(resp.json()["ok"])
 
-    @patch("web.routes.controls._remove_from_calibre_if_possible")
+    @patch("web.services.queue_controller.remove_from_calibre_if_possible")
     @patch("parsers.url_patterns.generate_url_parsers_from_fanficfare")
     @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
     def test_redownload_scratch_queues_force_task(
@@ -391,28 +393,26 @@ class TestControlRoutes(unittest.TestCase):
         self.assertFalse(resp.json()["ok"])
         self.assertIn("not configured", resp.json()["message"])
 
-    @patch("web.routes.controls.calibre_factory.create_calibre_client")
+    @patch("web.services.queue_controller.calibre_factory.create_calibre_client")
     @patch("calibre_integration.calibre_info.CalibreInfo")
     def test_remove_from_calibre_if_possible_uses_config_and_config_store(
         self, mock_calibre_info_cls, mock_create_client
     ):
-        """_remove_from_calibre_if_possible constructs CalibreInfo from state.config.calibre and passes state.config_store."""
+        """remove_from_calibre_if_possible constructs CalibreInfo from state.config.calibre and passes state.config_store."""
         fanfic = FanficInfo(url="https://ao3.org/works/1", site="ao3", calibre_id="42")
 
-        # Missing state.config returns False
         self.state.config = None
-        ok, msg = _remove_from_calibre_if_possible(self.state, fanfic)
+        ok, msg = remove_from_calibre_if_possible(self.state, fanfic)
         self.assertFalse(ok)
         self.assertIn("Calibre configuration unavailable", msg)
 
-        # Valid state.config.calibre and state.config_store
         mock_cfg = MagicMock()
         mock_cfg.calibre = MagicMock()
         mock_store = MagicMock()
         self.state.config = mock_cfg
         self.state.config_store = mock_store
 
-        ok, msg = _remove_from_calibre_if_possible(self.state, fanfic)
+        ok, msg = remove_from_calibre_if_possible(self.state, fanfic)
         self.assertTrue(ok)
         mock_calibre_info_cls.assert_called_once()
         self.assertEqual(mock_calibre_info_cls.call_args.args[0], mock_cfg.calibre)
@@ -570,9 +570,6 @@ class TestConfigRoutes(unittest.TestCase):
 
     def test_get_ini_file_content(self):
         """INI endpoint returns file content when file exists."""
-        import os
-        import tempfile
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             personal_path = os.path.join(tmp_dir, "personal.ini")
             defaults_path = os.path.join(tmp_dir, "defaults.ini")
@@ -612,9 +609,6 @@ class TestConfigRoutes(unittest.TestCase):
 
     def test_get_ini_resolves_directory_path(self):
         """INI endpoint resolves a directory path to the correct ini file."""
-        import os
-        import tempfile
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             personal_path = os.path.join(tmp_dir, "personal.ini")
             defaults_path = os.path.join(tmp_dir, "defaults.ini")
@@ -623,7 +617,6 @@ class TestConfigRoutes(unittest.TestCase):
                     f.write("[resolved]\nfrom_dir = true\n")
 
             mock_config = MagicMock()
-            # Config points to the directory, not the file
             mock_config.calibre.personal_ini = tmp_dir
             mock_config.calibre.default_ini = tmp_dir
             self.state.config = mock_config
@@ -641,11 +634,8 @@ class TestConfigRoutes(unittest.TestCase):
 
     def test_get_ini_resolves_directory_without_file(self):
         """INI endpoint returns empty when directory exists but file doesn't."""
-        import tempfile
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             mock_config = MagicMock()
-            # Directory exists but personal.ini / defaults.ini do not
             mock_config.calibre.personal_ini = tmp_dir
             mock_config.calibre.default_ini = tmp_dir
             self.state.config = mock_config
@@ -667,12 +657,8 @@ class TestConfigRoutes(unittest.TestCase):
 
     def test_put_ini_writes_file(self):
         """PUT INI endpoint writes content to the configured path."""
-        import os
-        import tempfile
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             personal_path = os.path.join(tmp_dir, "personal.ini")
-            # Create the file so the path exists
             with open(personal_path, "w") as f:
                 f.write("")
 
@@ -692,11 +678,11 @@ class TestConfigRoutes(unittest.TestCase):
             with open(personal_path, encoding="utf-8") as fh:
                 self.assertEqual(fh.read(), new_content)
 
-    @patch("imaplib.IMAP4_SSL")
+    @patch("imapclient.IMAPClient")
     def test_test_config_section_email_success(self, mock_imap_cls):
         mock_client = MagicMock()
-        mock_client.search.return_value = ("OK", [b"1 2 3"])
-        mock_imap_cls.return_value = mock_client
+        mock_client.search.return_value = [1, 2, 3]
+        mock_imap_cls.return_value.__enter__.return_value = mock_client
         resp = self.client.post(
             "/api/config/email/test",
             json={
@@ -784,7 +770,6 @@ class TestWidgetRoute(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data["active_downloads"], 2)
         self.assertEqual(len(data["active"]), 2)
-        # Each active item should have url, site, title
         titles = {item["title"] for item in data["active"]}
         self.assertIn("Story One", titles)
         self.assertIn("Story Two", titles)
@@ -869,7 +854,6 @@ class TestWidgetRoute(unittest.TestCase):
         resp = self.client.get("/api/widget")
         data = resp.json()
         self.assertEqual(data["active_downloads"], 1)
-        # Should still appear with url, defaults for missing fields
         self.assertEqual(len(data["active"]), 1)
         self.assertEqual(data["active"][0]["url"], "https://ao3.org/works/5")
 
@@ -943,8 +927,6 @@ class TestWebConfig(unittest.TestCase):
     """Tests for the WebConfig model."""
 
     def test_web_config_defaults(self):
-        from config import WebConfig
-
         wc = WebConfig()
         self.assertFalse(wc.enabled)
         self.assertEqual(wc.host, "0.0.0.0")
@@ -952,16 +934,11 @@ class TestWebConfig(unittest.TestCase):
         self.assertEqual(wc.history_db_path, "/data/history.db")
 
     def test_web_config_custom(self):
-        from config import WebConfig
-
         wc = WebConfig(enabled=False, port=9090, host="127.0.0.1")
         self.assertFalse(wc.enabled)
         self.assertEqual(wc.port, 9090)
 
     def test_web_config_port_validation(self):
-        from config import WebConfig
-        from pydantic import ValidationError
-
         with self.assertRaises(ValidationError):
             WebConfig(port=0)
 
@@ -970,37 +947,26 @@ class TestWebConfig(unittest.TestCase):
 
     def test_history_db_path_directory_gets_filename_appended(self):
         """Directory path without extension gets history.db appended."""
-        from config import WebConfig
-
         wc = WebConfig(history_db_path="/config")
         self.assertEqual(wc.history_db_path, "/config/history.db")
 
     def test_history_db_path_directory_with_trailing_slash(self):
         """Directory path with trailing slash gets history.db appended."""
-        from config import WebConfig
-
         wc = WebConfig(history_db_path="/config/")
         self.assertEqual(wc.history_db_path, "/config/history.db")
 
     def test_history_db_path_explicit_file_unchanged(self):
         """Explicit file path with extension is left unchanged."""
-        from config import WebConfig
-
         wc = WebConfig(history_db_path="/data/my.db")
         self.assertEqual(wc.history_db_path, "/data/my.db")
 
     def test_history_db_path_whitespace_stripped(self):
         """Whitespace in path is stripped."""
-        from config import WebConfig
-
         wc = WebConfig(history_db_path="  /data/history.db  ")
         self.assertEqual(wc.history_db_path, "/data/history.db")
 
     def test_app_config_includes_web(self):
         """AppConfig has a web field with defaults."""
-        from config import WebConfig
-
-        # Just verify the model can be imported and has the field
         wc = WebConfig()
         self.assertIsNotNone(wc)
 
@@ -1009,17 +975,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
     """End-to-end tests for web routes using real FastAPI lifespan, real SQLite DB, real ConfigStore, and real TomlWriter."""
 
     def test_real_lifespan_stats_history_and_logs(self):
-        import os
-        import tempfile
-        from history.database import SyncHistoryDB
-        from history.models import (
-            DownloadEvent,
-            EmailCheckEvent,
-            NotificationEvent,
-            RetryAction,
-            RetryEvent,
-        )
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             db_path = os.path.join(tmp_dir, "history.db")
             sync_db = SyncHistoryDB(db_path)
@@ -1072,8 +1027,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
             finally:
                 sync_db.close()
 
-            from history.database import AsyncHistoryDB
-
             state = WebState(
                 history_db=AsyncHistoryDB(db_path),
                 active_urls={
@@ -1091,7 +1044,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
             )
             app = create_app(state)
             with TestClient(app) as client:
-                # 1. History endpoints backed by real AsyncHistoryDB
                 dl_resp = client.get("/api/history/downloads")
                 self.assertEqual(dl_resp.status_code, 200)
                 dl_data = dl_resp.json()
@@ -1113,7 +1065,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
                 recent_resp = client.get("/api/history/recent")
                 self.assertGreaterEqual(len(recent_resp.json()["items"]), 3)
 
-                # 2. Stats endpoints backed by real AsyncHistoryDB
                 stats_resp = client.get("/api/stats")
                 self.assertEqual(stats_resp.status_code, 200)
                 stats_data = stats_resp.json()
@@ -1127,7 +1078,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
                     stats_data["status_breakdown"], [{"status": "waiting", "count": 1}]
                 )
 
-                # 3. Widget & monitoring exclude cancelled entries
                 widget_resp = client.get("/api/widget")
                 widget_data = widget_resp.json()
                 self.assertEqual(widget_data["active_downloads"], 1)
@@ -1157,7 +1107,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
         app = create_app(state)
         client = TestClient(app)
 
-        # 1. retry-now preserves calibre_id from active_urls when item is in pending_heap (not waiting_queue)
         retry_resp = client.post(
             "/api/controls/retry-now",
             json={"url": "https://archiveofourown.org/works/42"},
@@ -1173,7 +1122,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
             state.active_urls["archiveofourown.org/works/42"]["status"], "queued"
         )
 
-        # 2. cancel-retry marks entry cancelled without adding raw https:// duplicate key, and allows immediate add-url
         state.active_urls["archiveofourown.org/works/42"]["status"] = "waiting"
         cancel_resp = client.post(
             "/api/controls/cancel-retry",
@@ -1185,7 +1133,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
             state.active_urls["archiveofourown.org/works/42"]["status"], "cancelled"
         )
 
-        # Re-adding the same URL immediately after cancel-retry must succeed!
         add_resp = client.post(
             "/api/controls/add-url",
             json={"url": "https://archiveofourown.org/works/42"},
@@ -1197,11 +1144,6 @@ class TestRealLifespanAndDatabaseIntegration(unittest.TestCase):
 
     def test_config_put_preserves_masked_secrets_and_rejects_invalid_values(self):
         """PUT /api/config/{section} preserves '********' secrets and rejects invalid values before mutating state."""
-        import os
-        import tempfile
-        from config.store import ConfigStore
-        from config import ConfigManager
-
         toml_content = """
 [email]
 email = "orig@example.com"
@@ -1243,7 +1185,6 @@ port = 8080
             app = create_app(state)
             client = TestClient(app)
 
-            # 1. Saving email section with masked password '********' must preserve real password
             resp = client.put(
                 "/api/config/email",
                 json={
@@ -1264,7 +1205,6 @@ port = 8080
             self.assertIn("super_secret_password", disk_text)
             self.assertNotIn("********", disk_text)
 
-            # 2. Invalid config value (sleep_time = -10) is rejected before mutating store or file
             bad_resp = client.put(
                 "/api/config/email",
                 json={"values": {"sleep_time": -10}},
@@ -1272,7 +1212,6 @@ port = 8080
             self.assertFalse(bad_resp.json()["applied"])
             self.assertEqual(store.get("email.sleep_time"), 90)
 
-            # 3. Updating process.max_workers updates ConfigStore and TOML
             mw_resp = client.put(
                 "/api/config/process",
                 json={"values": {"max_workers": 6}},
@@ -1285,8 +1224,6 @@ port = 8080
 
     def test_gzip_middleware_and_history_db_lifespan_connect(self):
         """create_app registers GZipMiddleware and connects/closes AsyncHistoryDB during lifespan."""
-        from unittest.mock import AsyncMock
-
         mock_history_db = MagicMock()
         mock_history_db.connect = AsyncMock()
         mock_history_db.ensure_schema = AsyncMock()

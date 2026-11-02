@@ -5,8 +5,8 @@ import multiprocessing as mp
 import queue
 from unittest.mock import MagicMock, patch
 
-from fanficdownload import register_processes
-from history.database import SyncHistoryDB
+from services.bootstrap import register_processes
+from history.sync_db import SyncHistoryDB
 from history.models import DownloadEvent, DownloadStatus
 from config import (
     AppConfig,

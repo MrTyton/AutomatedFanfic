@@ -18,6 +18,7 @@ import threading
 import time
 from typing import cast
 
+from calibre_integration import epub_utils
 from models import active_urls as active_urls_utils
 from models import fanfic_info
 from models.active_urls import ActiveUrlEntry
@@ -102,7 +103,7 @@ def _process_task(
 
         # Extract title from epub filename if we're updating an existing story
         if path_or_url.endswith(".epub"):
-            extracted_title = common.extract_title_from_epub_path(path_or_url)
+            extracted_title = epub_utils.extract_title_from_epub_path(path_or_url)
             if extracted_title != path_or_url:  # Only update if extraction succeeded
                 fanfic.title = extracted_title
                 ff_logging.set_thread_story_title(fanfic.title)
@@ -125,7 +126,7 @@ def _process_task(
 
             # Log epub metadata for debugging
             if ff_logging.is_verbose():
-                common.log_epub_metadata(path_or_url, site)
+                epub_utils.log_epub_metadata(path_or_url, site)
 
         is_new_story = path_or_url in (fanfic.url, fanfic.download_url)
 

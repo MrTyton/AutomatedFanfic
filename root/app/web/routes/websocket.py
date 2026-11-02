@@ -12,19 +12,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from web.dependencies import WebState
-from web.services.dashboard_snapshot import (
-    _history_cache,
-    build_snapshot,
-    invalidate_history_cache,
-)
+from web.services.dashboard_snapshot import build_snapshot
 
 __all__ = [
     "router",
     "dashboard_websocket",
     "broadcast",
-    "_build_snapshot",
-    "_history_cache",
-    "invalidate_history_cache",
 ]
 
 router = APIRouter()
@@ -39,9 +32,6 @@ _last_broadcast_time: float = 0.0
 # Shared background snapshot task state
 _latest_snapshot: dict[str, object] | None = None
 _bg_task: asyncio.Task[None] | None = None
-
-# Backward compatibility alias for tests patching or calling _build_snapshot
-_build_snapshot = build_snapshot
 
 
 async def _build_and_push_snapshot(state: WebState) -> dict[str, object]:

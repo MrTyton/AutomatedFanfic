@@ -15,7 +15,7 @@ from typing import cast
 lazy from fanficfare import adapters as fff_adapters
 lazy from fanficfare import cli as fff_cli
 from calibre_integration import calibre_info
-from config.store import read_ini_file_cached
+from config.ini_resolver import read_ini_file_cached
 from models import fanfic_info
 from parsers import regex_parsing
 import antibot as anubis_solver

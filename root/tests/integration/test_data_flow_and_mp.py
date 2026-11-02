@@ -23,8 +23,10 @@ from fanficfare.adapters.base_adapter import BaseSiteAdapter
 from calibre_integration.calibre_info import CalibreInfo
 from calibre_integration.calibredb_utils import CalibreDBClient
 from config.store import ConfigStore
-from history.database import AsyncHistoryDB, SyncHistoryDB
-from history.recorder import HistoryRecorder, HistoryWriter
+from history.async_db import AsyncHistoryDB
+from history.sync_db import SyncHistoryDB
+from history.recorder import HistoryRecorder
+from history.writer import HistoryWriter
 import config as config_models
 from models.active_urls import ActiveUrlsDict
 from models.context import SharedIPCContext, WorkerContext
@@ -35,7 +37,7 @@ from services import supervisor
 from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor
 from services.email_client import EmailInfo
-from utils.system_utils import get_packaged_defaults_ini_path
+from config.ini_resolver import get_packaged_defaults_ini_path
 from workers import fff_runner as command, handlers, pipeline
 
 

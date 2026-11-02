@@ -92,11 +92,9 @@ def _is_single_story_url(config: configurable.Configuration, url: str) -> bool:
 
 def get_series_configuration(
     url: str,
-    config_store: ConfigStore | None = None,
+    config_store: ConfigStore,
 ) -> configurable.Configuration:
     """Build a FanFicFare Configuration for *url* using ConfigStore."""
-    if config_store is None:
-        config_store = ConfigStore({})
     return config_store.get_fff_configuration(url)
 
 
@@ -123,7 +121,9 @@ def is_series_url(
     """
     url = _normalize_url(url)
     if not config:
-        config = get_series_configuration(url, config_store=config_store)
+        config = get_series_configuration(
+            url, config_store=config_store or ConfigStore({})
+        )
 
     try:
         adapter = adapters.getAdapter(config, url, anyurl=True)
@@ -188,7 +188,9 @@ def expand_series_url(
     """
     url = _normalize_url(url)
     if not config:
-        config = get_series_configuration(url, config_store=config_store)
+        config = get_series_configuration(
+            url, config_store=config_store or ConfigStore({})
+        )
 
     try:
         adapter = adapters.getAdapter(config, url, anyurl=True)
@@ -278,7 +280,9 @@ def process_url(
         return result
 
     if not config:
-        config = get_series_configuration(url, config_store=config_store)
+        config = get_series_configuration(
+            url, config_store=config_store or ConfigStore({})
+        )
 
     try:
         page_cache: dict[str, dict[str, object] | None] = {}

@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import MagicMock
 import pytest
 import requests
+from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 from calibre_integration.calibre_info import CalibreInfo
 from calibre_integration.client_interface import CalibreClient, build_url_search_query
@@ -17,6 +18,7 @@ from calibre_integration.models import (
     CalibreConnectionError,
     MetadataUpdateReport,
 )
+from config import CalibreConfig
 from config.store import ConfigStore
 from models.fanfic_info import FanficInfo
 
@@ -75,8 +77,6 @@ def test_http_client_without_library_fragment() -> None:
 
 
 def test_http_client_is_picklable_for_multiprocessing() -> None:
-    from config import CalibreConfig
-
     class _DummyManager:
         @staticmethod
         def Lock() -> None:
@@ -114,8 +114,6 @@ def test_http_client_refresh_if_changed_reparses_url_and_auth() -> None:
 
 
 def test_http_client_digest_auth_and_basic_fallback() -> None:
-    from requests.auth import HTTPBasicAuth, HTTPDigestAuth
-
     info = _make_mock_info("http://calibre.local:8080/#Fanfic", "alice", "secret")
     client = CalibreHttpClient(info, MagicMock(spec=ConfigStore))
     session = client._get_session()

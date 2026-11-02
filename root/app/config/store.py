@@ -7,18 +7,13 @@ of their local config copies.
 
 from collections.abc import Callable, MutableMapping
 from enum import Enum
-from typing import TYPE_CHECKING
 
 lazy from fanficfare import configurable
+lazy from config.schemas.app import AppConfig
 from config.ini_resolver import (
     build_fff_configuration,
-    clear_ini_cache,
-    read_ini_file_cached,
     resolve_ini_path,
 )
-
-if TYPE_CHECKING:
-    from config.schemas.app import AppConfig
 
 
 class ReloadBehavior(str, Enum):
@@ -259,6 +254,4 @@ __all__ = [
     "ReloadBehavior",
     "FIELD_RELOAD_MAP",
     "ConfigStore",
-    "read_ini_file_cached",
-    "clear_ini_cache",
 ]

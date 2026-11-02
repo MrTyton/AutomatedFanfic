@@ -2,7 +2,8 @@
 
 import pytest
 
-from history.database import AsyncHistoryDB, SyncHistoryDB
+from history.async_db import AsyncHistoryDB
+from history.sync_db import SyncHistoryDB
 from history.models import DownloadEvent, DownloadStatus
 
 

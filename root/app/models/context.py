@@ -4,27 +4,25 @@ Context dataclasses for bundling worker and cross-process dependencies.
 
 from collections.abc import MutableMapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from calibre_integration import calibre_info
-    from calibre_integration.client_interface import CalibreClient
-    from config.store import ConfigStore
-    from history.recorder import HistoryRecorder
-    import config as config_models
-    from models.active_urls import ActiveUrlsDict
-    from models.queue_types import (
-        CheckEmailsEvent,
-        IngressQueue,
-        LogQueue,
-        ScaleQueue,
-        ShutdownEvent,
-        SupervisorRestartEvent,
-        WaitingQueue,
-        WorkerQueues,
-        WorkerRestartEvent,
-    )
-    from notifications import notification_wrapper
+lazy from calibre_integration import calibre_info
+lazy from calibre_integration.client_interface import CalibreClient
+lazy from config.store import ConfigStore
+lazy from history.recorder import HistoryRecorder
+lazy import config as config_models
+lazy from models.active_urls import ActiveUrlsDict
+lazy from models.queue_types import (
+    CheckEmailsEvent,
+    IngressQueue,
+    LogQueue,
+    ScaleQueue,
+    ShutdownEvent,
+    SupervisorRestartEvent,
+    WaitingQueue,
+    WorkerQueues,
+    WorkerRestartEvent,
+)
+lazy from notifications import notification_wrapper
 
 
 @dataclass

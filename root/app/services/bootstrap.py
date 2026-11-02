@@ -3,15 +3,16 @@
 import argparse
 import multiprocessing as mp
 from multiprocessing.managers import SyncManager
-from pathlib import Path
 
 from calibre_integration import calibre_info, calibredb_utils
 from calibre_integration import factory as calibre_factory
 from calibre_integration.http_client import CalibreHttpClient
 from config import AppConfig
+from config.ini_resolver import resolve_ini_path
 from config.store import ConfigStore
 import ff_logging
-from history.recorder import HistoryRecorder, HistoryWriter
+from history.recorder import HistoryRecorder
+from history.writer import HistoryWriter
 from history.recovery import recover_uncompleted_downloads
 from models.context import SharedIPCContext
 from notifications import notification_wrapper
@@ -69,10 +70,8 @@ def log_configuration_details(
         )
 
         ff_logging.log(f"  Calibre Path: {config.calibre.path or 'Not Specified'}")
-        resolved_default_ini = (
-            system_utils.resolve_ini_path(config.calibre.default_ini, "defaults.ini")
-            if hasattr(system_utils, "resolve_ini_path")
-            else None
+        resolved_default_ini = resolve_ini_path(
+            config.calibre.default_ini, "defaults.ini"
         )
         ff_logging.log(
             f"  Calibre Default INI: {config.calibre.default_ini or (f'Packaged ({resolved_default_ini})' if resolved_default_ini else 'Packaged')}"
@@ -165,19 +164,11 @@ def register_processes(
     )
 
     if not config.web.enabled:
-        log_file_path = getattr(config.web, "log_file_path", None)
-        if isinstance(log_file_path, str) and log_file_path.strip():
-            if log_file_path == "/data/automatedfanfic.log" and (
-                (history_db_path and not str(history_db_path).startswith("/data/"))
-                or (system_utils.is_docker_environment() and Path("/config").exists())
-            ):
-                target_dir = (
-                    Path(history_db_path).parent
-                    if history_db_path and not str(history_db_path).startswith("/data/")
-                    else Path("/config")
-                )
-                log_file_path = str(target_dir / "automatedfanfic.log")
-            ff_logging.init_persistent_logging(log_file_path)
+        resolved_log_path = ff_logging.resolve_log_file_path(
+            getattr(config.web, "log_file_path", None), history_db_path
+        )
+        if resolved_log_path:
+            ff_logging.init_persistent_logging(resolved_log_path)
 
     history_writer = HistoryWriter(
         history_queue,

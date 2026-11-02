@@ -1,10 +1,8 @@
 """Analytics, aggregations, and statistics queries for the web dashboard."""
 
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import aiosqlite
+lazy import aiosqlite
 
 
 async def query_site_statistics(

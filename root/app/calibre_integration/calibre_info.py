@@ -30,7 +30,7 @@ from typing import ContextManager, Protocol
 from config.store import ConfigStore
 from config import CalibreConfig
 import ff_logging
-from utils.system_utils import resolve_ini_path
+from config.ini_resolver import resolve_ini_path
 
 
 class LockFactory(Protocol):

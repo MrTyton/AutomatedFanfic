@@ -11,29 +11,16 @@ from requests.exceptions import (
     Timeout as RequestsTimeout,
 )
 from requests_file import FileAdapter
-
-try:
-    from curl_cffi import requests as cffi_requests
-    from curl_cffi.requests.exceptions import (
-        ConnectionError as CffiConnectionError,
-        RequestException as CffiRequestException,
-        Timeout as CffiTimeout,
-    )
-
-    CURL_CFFI_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    cffi_requests = None  # type: ignore[assignment]
-    CffiConnectionError: type[Exception] = type(
-        "_FakeConnectionError", (Exception,), {}
-    )
-    CffiRequestException: type[Exception] = type(
-        "_FakeRequestException", (Exception,), {}
-    )
-    CffiTimeout: type[Exception] = type("_FakeTimeout", (Exception,), {})
-    CURL_CFFI_AVAILABLE = False
-
+from curl_cffi import requests as cffi_requests
+from curl_cffi.requests.exceptions import (
+    ConnectionError as CffiConnectionError,
+    RequestException as CffiRequestException,
+    Timeout as CffiTimeout,
+)
 lazy from fanficfare.fetchers import fetcher_requests as fff_fetcher_requests
 import ff_logging
+
+CURL_CFFI_AVAILABLE = True
 
 _ORIGINAL_MAKE_SESSION = fff_fetcher_requests.RequestsFetcher.make_sesssion
 _ORIGINAL_DO_MOUNTS = fff_fetcher_requests.RequestsFetcher.do_mounts

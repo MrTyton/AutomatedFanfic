@@ -2,10 +2,8 @@
 
 from datetime import datetime
 import sqlite3
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import aiosqlite
+lazy import aiosqlite
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS download_events (

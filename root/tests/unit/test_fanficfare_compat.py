@@ -31,7 +31,7 @@ from packaging.version import Version
 
 from config.store import ConfigStore
 from services.email_client import _make_fff_get_configuration
-from utils.system_utils import get_packaged_defaults_ini_path
+from config.ini_resolver import get_packaged_defaults_ini_path
 
 
 class TestFanFicFareGeturlsAPI(unittest.TestCase):

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from multiprocessing.synchronize import Event
 
 from config.store import ConfigStore
-from history.database import AsyncHistoryDB
+from history.async_db import AsyncHistoryDB
 from history.recorder import HistoryRecorder
 from models.active_urls import ActiveUrlsDict
 from config import AppConfig

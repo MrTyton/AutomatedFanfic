@@ -6,31 +6,24 @@ import re
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from models.fanfic_info import FanficInfo
+from antibot.cookies import inspect_cookiejar_file
 import ff_logging
-lazy from antibot import flaresolverr as flaresolverr_utils
 from web.services.calibre_lookup import (
     get_calibre_client,
-    get_calibre_metadata,
-    resolve_calibre_book_id,
+    inspect_calibre_book,
 )
 from web.services.diagnostics_service import (
+    build_story_diagnostics,
     check_antibot_status,
-    check_flaresolverr_reachable,
-    inspect_cookiejar_file,
     resolve_config_for_url,
     run_dry_run_extraction,
     run_service_diagnostics,
     simulate_email_parse,
 )
 
-router = APIRouter(prefix="/api/debug", tags=["debug"])
+lazy from antibot import flaresolverr as flaresolverr_utils
 
-# Backwards compatibility aliases
-_get_calibre_client = get_calibre_client
-_resolve_calibre_book_id = resolve_calibre_book_id
-_get_calibre_metadata = get_calibre_metadata
-_check_flaresolverr_reachable = check_flaresolverr_reachable
+router = APIRouter(prefix="/api/debug", tags=["debug"])
 
 
 def _matches_filter(pattern: str, text: str) -> bool:
@@ -156,125 +149,8 @@ async def get_story_diagnostics(
 ) -> dict[str, object]:
     """Retrieve full autopsy diagnostics for a story URL."""
     state = request.app.state.web_state
-    norm_url = url.strip()
-
-    active_state: dict[str, object] | None = None
-    if state.active_urls is not None:
-        raw_active = state.active_urls.get(norm_url)
-        if raw_active is not None:
-            if isinstance(raw_active, dict):
-                active_state = dict(raw_active)
-            elif isinstance(raw_active, FanficInfo):
-                active_state = {
-                    "url": raw_active.url,
-                    "site": raw_active.site,
-                    "status": getattr(raw_active, "last_status", None) or "active",
-                    "calibre_id": raw_active.calibre_id,
-                    "repeats": raw_active.repeats,
-                    "behavior": raw_active.behavior,
-                    "title": raw_active.title,
-                }
-            elif hasattr(raw_active, "to_dict"):
-                active_state = raw_active.to_dict()
-            else:
-                active_state = {
-                    "status": getattr(raw_active, "status", str(raw_active))
-                }
-
-    history: dict[str, object] | None = None
-    latest_download: dict[str, object] | None = None
-    retry_attempts: list[dict[str, object]] = []
-
-    if state.history_db is not None:
-        try:
-            latest_download = await state.history_db.get_latest_download(norm_url)
-        except Exception:
-            latest_download = None
-        try:
-            dl_id = latest_download.get("id") if latest_download else None
-            retry_attempts = await state.history_db.get_retries_for_url(
-                norm_url, download_event_id=dl_id
-            )
-        except Exception:
-            retry_attempts = []
-
-    if latest_download is not None or retry_attempts:
-        history = {
-            **(latest_download or {}),
-            "latest_download": latest_download,
-            "retry_attempts": retry_attempts or [],
-        }
-
-    calibre: dict[str, object] = {"in_library": False}
-    calibre_meta: dict[str, object] | None = None
     client = get_calibre_client(request.app.state)
-    if client is not None:
-        book_id: str | int | None = None
-        if hasattr(client, "search_by_url"):
-            try:
-                book_id = client.search_by_url(norm_url)
-            except Exception:
-                book_id = None
-        elif hasattr(client, "get_story_id"):
-            try:
-                book_id = client.get_story_id(FanficInfo(url=norm_url, site="unknown"))
-            except Exception:
-                book_id = None
-
-        if book_id is not None:
-            calibre_meta = get_calibre_metadata(client, book_id, norm_url)
-            if calibre_meta is not None:
-                calibre = {
-                    "in_library": True,
-                    "id": book_id,
-                    "book_id": book_id,
-                    **calibre_meta,
-                    "metadata": calibre_meta,
-                }
-                chapter_count = calibre_meta.get("chapters") or calibre_meta.get(
-                    "#chapters"
-                )
-                if chapter_count is not None:
-                    calibre.setdefault("chapter_count", chapter_count)
-                calibre.setdefault("formats", calibre_meta.get("formats", []))
-            else:
-                calibre = {
-                    "in_library": True,
-                    "id": book_id,
-                    "book_id": book_id,
-                }
-
-    candidate_titles: list[str] = []
-    if active_state and active_state.get("title"):
-        candidate_titles.append(str(active_state["title"]))
-    if latest_download and latest_download.get("title"):
-        candidate_titles.append(str(latest_download["title"]))
-    if calibre_meta and calibre_meta.get("title"):
-        candidate_titles.append(str(calibre_meta["title"]))
-
-    recent_logs: list[dict[str, object]] = []
-    try:
-        raw_logs = ff_logging.get_recent_logs(limit=2000)
-        for entry in raw_logs:
-            msg = str(entry.get("message", ""))
-            matched = norm_url in msg
-            if not matched and candidate_titles:
-                for t in candidate_titles:
-                    if t and t in msg:
-                        matched = True
-                        break
-            if matched:
-                recent_logs.append(entry)
-    except Exception:
-        recent_logs = []
-
-    return {
-        "url": norm_url,
-        "active_state": active_state,
-        "history": history,
-        "calibre": calibre,
-        "recent_logs": recent_logs,
-    }
+    return await build_story_diagnostics(state, client, url)
 
 
 @router.get("/calibre/book")
@@ -284,45 +160,7 @@ async def get_calibre_book(
 ) -> dict[str, object]:
     """Inspect full Calibre metadata for a book resolved by ID, URL, or title."""
     client = get_calibre_client(request.app.state)
-    if client is None:
-        return {
-            "found": False,
-            "message": "Calibre is not configured or client unavailable",
-        }
-
-    q = query.strip()
-    book_id = resolve_calibre_book_id(client, q)
-    if book_id is None:
-        return {
-            "found": False,
-            "message": f"No Calibre book found matching query: {query}",
-        }
-
-    meta = get_calibre_metadata(client, book_id, q if "://" in q else "")
-    if meta is None:
-        return {
-            "found": False,
-            "message": f"Book with ID {book_id} has no metadata in Calibre",
-        }
-
-    resolved_id = meta.get("id", book_id)
-    if str(resolved_id).isdigit():
-        resolved_id = int(str(resolved_id))
-
-    custom_cols = {
-        k: v for k, v in meta.items() if k.startswith("#") or k.startswith("*")
-    }
-
-    return {
-        "found": True,
-        "id": resolved_id,
-        "title": meta.get("title"),
-        "authors": meta.get("authors") or meta.get("author", []),
-        "formats": meta.get("formats", []),
-        "custom_columns": custom_cols,
-        "identifiers": meta.get("identifiers", {}),
-        "metadata": meta,
-    }
+    return inspect_calibre_book(client, query)
 
 
 class ResolveConfigRequest(BaseModel):

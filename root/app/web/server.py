@@ -24,10 +24,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
 from config import AppConfig, ConfigManager
-from history.database import AsyncHistoryDB
+from history.async_db import AsyncHistoryDB
 from models.context import SharedIPCContext
 import ff_logging
-from utils import system_utils
 from web.dependencies import WebState
 from web.routes import (
     config,
@@ -206,21 +205,11 @@ def run_web_server(
     host = getattr(web_cfg, "host", "0.0.0.0") or "0.0.0.0"
     port = int(getattr(web_cfg, "port", 8080) or 8080)
     history_db_path = getattr(web_cfg, "history_db_path", None)
-    log_file_path = getattr(web_cfg, "log_file_path", None)
-    if isinstance(log_file_path, str) and log_file_path.strip():
-        # If log_file_path is default /data/... but history_db_path is configured in a custom mount (e.g. /config/history.db)
-        # or executing inside Docker with /config mounted, co-locate automatedfanfic.log alongside history.db
-        if log_file_path == "/data/automatedfanfic.log" and (
-            (history_db_path and not str(history_db_path).startswith("/data/"))
-            or (system_utils.is_docker_environment() and Path("/config").exists())
-        ):
-            target_dir = (
-                Path(history_db_path).parent
-                if history_db_path and not str(history_db_path).startswith("/data/")
-                else Path("/config")
-            )
-            log_file_path = str(target_dir / "automatedfanfic.log")
-        ff_logging.init_persistent_logging(log_file_path)
+    resolved_log_path = ff_logging.resolve_log_file_path(
+        getattr(web_cfg, "log_file_path", None), history_db_path
+    )
+    if resolved_log_path:
+        ff_logging.init_persistent_logging(resolved_log_path)
 
     # Build shared state
     web_state = WebState(

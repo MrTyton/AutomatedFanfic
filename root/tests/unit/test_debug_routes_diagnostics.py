@@ -73,7 +73,7 @@ async def test_antibot_flaresolverr_configured_and_reachable():
         app = create_app(state)
 
         with patch(
-            "web.routes.debug._check_flaresolverr_reachable",
+            "antibot.flaresolverr.probe_flaresolverr_health",
             return_value={
                 "configured": True,
                 "endpoint": "http://localhost:8191/v1",
@@ -282,12 +282,10 @@ async def test_diagnostics_service_email():
     state = WebState(config=cfg)
     app = create_app(state)
 
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("imapclient.IMAPClient") as mock_imap:
         instance = MagicMock()
-        mock_imap.return_value = instance
-        instance.login.return_value = ("OK", [b"Logged in"])
-        instance.select.return_value = ("OK", [b"42"])
-        instance.search.return_value = ("OK", [b"1 2 3"])
+        mock_imap.return_value.__enter__.return_value = instance
+        instance.search.return_value = [1, 2, 3]
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

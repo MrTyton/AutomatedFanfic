@@ -2,7 +2,6 @@
 
 import argparse
 import multiprocessing as mp
-from multiprocessing.managers import SyncManager
 import sys
 
 if sys.version_info < (3, 15):
@@ -54,22 +53,6 @@ def load_configuration(config_path: str) -> AppConfig:
         sys.exit(1)
 
 
-def log_configuration_details(config: AppConfig, args: argparse.Namespace) -> None:
-    """Logs detailed startup and configuration information for diagnostics."""
-    bootstrap.log_configuration_details(config, args, version=__version__)
-
-
-def register_processes(
-    process_manager: ProcessManager,
-    config: AppConfig,
-    args: argparse.Namespace,
-    manager: SyncManager,
-    url_parsers: dict,
-) -> None:
-    """Initializes shared IPC resources and registers all worker processes with the ProcessManager."""
-    bootstrap.register_processes(process_manager, config, args, manager, url_parsers)
-
-
 def main() -> None:
     """Main application entry point."""
     if sys.platform == "linux" and mp.get_start_method(allow_none=True) is None:
@@ -79,7 +62,7 @@ def main() -> None:
     setup_logging(args.verbose)
     config = load_configuration(args.config)
 
-    log_configuration_details(config, args)
+    bootstrap.log_configuration_details(config, args, version=__version__)
 
     with ProcessManager(config=config) as process_manager:
         with mp.Manager() as manager:
@@ -89,7 +72,9 @@ def main() -> None:
                 f"Generated {len(url_parsers)} URL parsers for site recognition"
             )
 
-            register_processes(process_manager, config, args, manager, url_parsers)
+            bootstrap.register_processes(
+                process_manager, config, args, manager, url_parsers
+            )
 
             ff_logging.log("Starting all processes...")
             process_manager.start_all()

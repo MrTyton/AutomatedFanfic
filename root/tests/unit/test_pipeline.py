@@ -81,17 +81,24 @@ class TestPipeline(unittest.TestCase):
         _, kwargs = mock_handlers.handle_failure.call_args
         self.assertIn("Bytes Output", kwargs["error_message"])
 
+    @patch("workers.pipeline.epub_utils")
     @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
     @patch("workers.pipeline.ff_logging")
     def test_verbose_logging_metadata(
-        self, mock_logging, mock_sys, mock_common, mock_handlers, mock_command
+        self,
+        mock_logging,
+        mock_sys,
+        mock_common,
+        mock_handlers,
+        mock_command,
+        mock_epub_utils,
     ):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "file.epub"
-        mock_common.extract_title_from_epub_path.return_value = "file.epub"
+        mock_epub_utils.extract_title_from_epub_path.return_value = "file.epub"
 
         mock_command.FanFicFareResult = FanFicFareResult
         mock_command.execute_fanficfare_direct.return_value = FanFicFareResult()
@@ -100,7 +107,7 @@ class TestPipeline(unittest.TestCase):
 
         pipeline._process_task(self.fanfic, self.ctx)
 
-        mock_common.log_epub_metadata.assert_called_once_with("file.epub", "site")
+        mock_epub_utils.log_epub_metadata.assert_called_once_with("file.epub", "site")
 
     @patch("workers.pipeline.ff_logging")
     def test_url_worker_stop(self, mock_logging):
@@ -484,7 +491,6 @@ class TestUpdateOnlyMode(unittest.TestCase):
     def _arrange(self, mock_command, mock_common, mock_sys, path_or_url):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = path_or_url
-        mock_common.extract_title_from_epub_path.return_value = "Test Story"
         mock_command.execute_fanficfare_direct.return_value = FanFicFareResult()
 
     def test_email_url_not_in_library_is_dropped(

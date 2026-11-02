@@ -24,6 +24,7 @@ from workers import handlers as worker_handlers
 from workers import fff_runner as worker_command
 from parsers import regex_parsing
 from models import fanfic_info
+from models.context import WorkerContext
 from calibre_integration import calibre_info
 from notifications import notification_wrapper
 from parsers import url_patterns as auto_url_parsers
@@ -536,8 +537,6 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         retry_config = RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
-
-        from models.context import WorkerContext
 
         mock_client = MagicMock()
         mock_client.cdb_info = mock_cdb

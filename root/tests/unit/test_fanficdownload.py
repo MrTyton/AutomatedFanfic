@@ -5,13 +5,17 @@ These tests focus on the main() function that orchestrates application startup,
 configuration loading, process management initialization, and shutdown handling.
 """
 
+import argparse
+import importlib
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 from typing import NamedTuple
 from parameterized import parameterized
 
 
-import fanficdownload  # noqa: E402
+import fanficdownload
+from services import bootstrap  # noqa: E402
 from config import (
     AppConfig,
     ConfigError,
@@ -429,8 +433,6 @@ class TestFanficDownloadMain(unittest.TestCase):
 
     def test_log_configuration_details_with_and_without_default_ini(self):
         """Test log_configuration_details works cleanly with and without default_ini."""
-        import argparse
-
         args = argparse.Namespace(config="test_config.toml")
         mock_config = MagicMock()
         mock_config.email.email = "user@test.com"
@@ -447,7 +449,7 @@ class TestFanficDownloadMain(unittest.TestCase):
         mock_config.apprise.urls = []
 
         with patch("fanficdownload.ff_logging.log") as mock_log:
-            fanficdownload.log_configuration_details(mock_config, args)
+            bootstrap.log_configuration_details(mock_config, args)
             logged_messages = [call.args[0] for call in mock_log.call_args_list]
             self.assertTrue(
                 any("Calibre Default INI: Packaged" in msg for msg in logged_messages)
@@ -455,7 +457,7 @@ class TestFanficDownloadMain(unittest.TestCase):
 
         mock_config.calibre.default_ini = "/custom/defaults.ini"
         with patch("fanficdownload.ff_logging.log") as mock_log:
-            fanficdownload.log_configuration_details(mock_config, args)
+            bootstrap.log_configuration_details(mock_config, args)
             logged_messages = [call.args[0] for call in mock_log.call_args_list]
             self.assertTrue(
                 any(
@@ -539,9 +541,6 @@ class TestFanficDownloadMain(unittest.TestCase):
 
     def test_python_version_guard_raises_on_unsupported_python(self):
         """Test that attempting to load with Python < 3.15 raises RuntimeError."""
-        import importlib
-        import sys
-
         with patch.object(sys, "version_info", (3, 14, 0)):
             with self.assertRaises(RuntimeError) as ctx:
                 importlib.reload(fanficdownload)

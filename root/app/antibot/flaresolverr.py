@@ -1,8 +1,9 @@
-"""FlareSolverr anti-bot crash detection and session recovery utilities."""
+"""FlareSolverr anti-bot crash detection, health probing, and session recovery utilities."""
 
 import configparser
 from dataclasses import dataclass
 from pathlib import Path
+import time
 
 import requests
 
@@ -45,8 +46,36 @@ def _normalize_endpoint(raw: str) -> str:
     return url
 
 
+def probe_flaresolverr_health(endpoint: str, timeout: float = 3.0) -> dict[str, object]:
+    """Test responsiveness of a FlareSolverr proxy endpoint using requests."""
+    t0 = time.perf_counter()
+    try:
+        resp = requests.get(
+            endpoint,
+            headers={"User-Agent": "AutomatedFanfic/1.0"},
+            timeout=timeout,
+        )
+        status = resp.status_code
+        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+        return {
+            "configured": True,
+            "endpoint": endpoint,
+            "reachable": status < 500,
+            "latency_ms": latency_ms,
+            "error": None if status < 500 else f"HTTP {status}",
+        }
+    except Exception as exc:
+        return {
+            "configured": True,
+            "endpoint": endpoint,
+            "reachable": False,
+            "latency_ms": None,
+            "error": str(exc),
+        }
+
+
 def get_flaresolverr_configs(
-    personal_ini_path: str | Path | None = None,
+    personal_ini_path: str | Path,
 ) -> list[FlareSolverrEndpointConfig]:
     """Parse personal.ini to discover all configured FlareSolverr endpoints and sessions."""
     resolved_path: Path | None = None
@@ -189,8 +218,8 @@ def destroy_flaresolverr_session(
 
 
 def recover_flaresolverr_crashes(
-    target_site: str | None = None,
-    personal_ini_path: str | Path | None = None,
+    target_site: str | None,
+    personal_ini_path: str | Path,
 ) -> int:
     """Recover from FlareSolverr tab crashes by destroying dead sessions."""
     configs = get_flaresolverr_configs(personal_ini_path)

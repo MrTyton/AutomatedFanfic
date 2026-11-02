@@ -17,8 +17,13 @@ from config import (
     PushbulletConfig,
     RetryConfig,
 )
+from models.context import WorkerContext
 from models.fanfic_info import FanficInfo
 from models import retry_types
+from notifications.notification_wrapper import NotificationWrapper
+from services.email_watcher import email_watcher
+from services.ff_waiter import wait_processor
+from workers.handlers import handle_failure, process_fanfic_addition
 
 
 class TestEmailWatcherInstrumentation(unittest.TestCase):
@@ -40,8 +45,6 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_records_email_check_event(self, mock_generate):
         """email_watcher records an EmailCheckEvent after processing URLs."""
-        from services.email_watcher import email_watcher
-
         fanfic = FanficInfo(url="https://archiveofourown.org/works/123", site="ao3")
         mock_generate.return_value = fanfic
 
@@ -75,8 +78,6 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_records_download_created_for_new_urls(self, mock_generate):
         """email_watcher records download_created for each new URL."""
-        from services.email_watcher import email_watcher
-
         fanfic = FanficInfo(url="https://archiveofourown.org/works/123", site="ao3")
         mock_generate.return_value = fanfic
 
@@ -105,8 +106,6 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_counts_disabled_sites(self, mock_generate):
         """email_watcher tracks disabled_site count in email check event."""
-        from services.email_watcher import email_watcher
-
         fanfic = FanficInfo(url="https://fanfiction.net/s/123", site="fanfiction")
         mock_generate.return_value = fanfic
         self.email_info.disabled_sites = ["fanfiction"]
@@ -141,8 +140,6 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_counts_duplicates(self, mock_generate):
         """email_watcher tracks duplicate count in email check event."""
-        from services.email_watcher import email_watcher
-
         url = "https://archiveofourown.org/works/123"
         fanfic = FanficInfo(url=url, site="ao3")
         mock_generate.return_value = fanfic
@@ -179,8 +176,6 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
     """Tests for handle_failure history recording."""
 
     def setUp(self):
-        from models.context import WorkerContext
-
         self.fanfic = FanficInfo(url="https://ao3.org/works/1", site="ao3")
         self.notification_info = MagicMock()
         self.ingress_queue = MagicMock()
@@ -201,8 +196,6 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
 
     def test_records_retry_event_on_retry(self):
         """handle_failure records a retry event when decision is RETRY."""
-        from workers.handlers import handle_failure
-
         # First failure → RETRY
         handle_failure(self.fanfic, self.ctx)
 
@@ -213,8 +206,6 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
 
     def test_records_error_message_on_retry(self):
         """handle_failure stores the detailed failure text on retry records."""
-        from workers.handlers import handle_failure
-
         handle_failure(
             self.fanfic,
             self.ctx,
@@ -232,8 +223,6 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
 
     def test_records_abandon_event(self):
         """handle_failure records download_abandoned when retries exhausted."""
-        from workers.handlers import handle_failure
-
         # Exhaust retries
         self.fanfic.repeats = self.retry_config.max_normal_retries + 1
         self.retry_config.hail_mary_enabled = False
@@ -245,8 +234,6 @@ class TestHandleFailureInstrumentation(unittest.TestCase):
 
     def test_records_hail_mary_retry(self):
         """handle_failure records hail_mary retry event."""
-        from workers.handlers import handle_failure
-
         # Set to one before hail mary threshold (increment_repeat adds 1)
         self.fanfic.repeats = self.retry_config.max_normal_retries - 1
         self.retry_config.hail_mary_enabled = True
@@ -262,8 +249,6 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
     """Tests for process_fanfic_addition history recording."""
 
     def setUp(self):
-        from models.context import WorkerContext
-
         self.fanfic = FanficInfo(
             url="https://ao3.org/works/1", site="ao3", title="Test Story"
         )
@@ -288,8 +273,6 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
     @patch("workers.handlers.update_strategies")
     def test_records_success(self, mock_strategies):
         """process_fanfic_addition records download_success on success."""
-        from workers.handlers import process_fanfic_addition
-
         mock_strategy = MagicMock()
         mock_strategy.execute.return_value = (True, None)
         mock_strategies.RemoveAddStrategy.return_value = mock_strategy
@@ -311,8 +294,6 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
     @patch("workers.handlers.update_strategies")
     def test_records_failure_on_exception(self, mock_strategies):
         """process_fanfic_addition records download_failed on exception."""
-        from workers.handlers import process_fanfic_addition
-
         mock_strategies.RemoveAddStrategy.side_effect = Exception("Calibre failed")
 
         process_fanfic_addition(
@@ -332,8 +313,6 @@ class TestWaitProcessorInstrumentation(unittest.TestCase):
 
     def test_records_retry_fired_when_item_expires(self):
         """wait_processor records retry_fired when heap item expires."""
-        from services.ff_waiter import wait_processor
-
         fanfic = FanficInfo(url="https://ao3.org/works/1", site="ao3")
         fanfic.repeats = 3
         fanfic.retry_decision = retry_types.RetryDecision(
@@ -381,8 +360,6 @@ class TestNotificationWrapperInstrumentation(unittest.TestCase):
     @patch("notifications.notification_wrapper.AppriseNotification")
     def test_records_notification_event(self, mock_apprise_cls):
         """NotificationWrapper records notification after dispatch."""
-        from notifications.notification_wrapper import NotificationWrapper
-
         mock_worker = MagicMock()
         mock_worker.is_enabled.return_value = True
         mock_worker.enabled = True

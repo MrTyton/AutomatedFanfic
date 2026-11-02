@@ -5,6 +5,11 @@ Unit tests for generic browser impersonation session.
 from http.cookiejar import Cookie, CookieJar
 import tempfile
 from unittest.mock import MagicMock, patch
+from curl_cffi.requests.exceptions import (
+    ConnectionError as CffiConnError,
+    RequestException as CffiReqError,
+    Timeout as CffiTimeError,
+)
 import pytest
 import requests
 from requests.exceptions import (
@@ -167,12 +172,6 @@ def test_impersonated_session_sanitizes_empty_user_agent():
 
 def test_impersonated_session_translates_exceptions():
     """Verify curl_cffi exceptions are translated into requests equivalents."""
-    from curl_cffi.requests.exceptions import (
-        ConnectionError as CffiConnError,
-        RequestException as CffiReqError,
-        Timeout as CffiTimeError,
-    )
-
     session = ImpersonatedSession()
     if session._cffi_session is not None:
         with patch.object(

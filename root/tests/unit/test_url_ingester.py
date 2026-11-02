@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import time
 from parameterized import parameterized
@@ -7,7 +8,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import multiprocessing as mp
 import threading
-from queue import Empty
+from queue import Empty, Queue
 
 
 from config.store import ConfigStore
@@ -512,8 +513,6 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_loads_both_ini_files_when_present(self):
         """Both ini paths configured in ConfigStore are read when both files exist."""
-        from config.store import ConfigStore
-
         store = ConfigStore({})
         store.update("calibre.default_ini", "/d/defaults.ini")
         store.update("calibre.personal_ini", "/d/personal.ini")
@@ -535,8 +534,6 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_skips_missing_ini_files(self):
         """config.read is never called when neither ini file exists on disk."""
-        from config.store import ConfigStore
-
         store = ConfigStore({})
         store.update("calibre.default_ini", "/missing/defaults.ini")
         store.update("calibre.personal_ini", "/missing/personal.ini")
@@ -556,8 +553,6 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_loads_only_personal_ini_when_default_missing(self):
         """Only the personal.ini is loaded when the defaults file does not exist."""
-        from config.store import ConfigStore
-
         store = ConfigStore({})
         store.update("calibre.default_ini", "/missing/defaults.ini")
         store.update("calibre.personal_ini", "/exists/personal.ini")
@@ -577,8 +572,6 @@ class TestMakeFffGetConfiguration(unittest.TestCase):
 
     def test_callable_handles_empty_config_store(self):
         """An empty ConfigStore skips config.read when no ini files exist."""
-        from config.store import ConfigStore
-
         store = ConfigStore({})
         with (
             patch(
@@ -1117,9 +1110,6 @@ class TestEmailInfoIdleWait(unittest.TestCase):
 
     def test_update_from_config_store_syncs_ini_paths(self):
         """EmailInfo.update_from_config_store hot-reloads calibre.default_ini and calibre.personal_ini."""
-        import os
-        import tempfile
-
         init_store = ConfigStore({})
         email_config = EmailConfig(email="u", password="p", server="s")
         ei = EmailInfo(email_config, init_store)
@@ -1141,9 +1131,6 @@ class TestEmailInfoIdleWait(unittest.TestCase):
 
     def test_email_watcher_reingests_cancelled_url(self):
         """email_watcher must allow re-ingesting a URL whose active_urls entry has status='cancelled'."""
-        import re
-        from queue import Queue
-
         email_config = EmailConfig(email="u", password="p", server="s", sleep_time=1)
         store = ConfigStore({})
         ei = EmailInfo(email_config, store)

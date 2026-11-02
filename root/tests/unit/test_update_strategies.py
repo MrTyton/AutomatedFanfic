@@ -1,11 +1,16 @@
+from pathlib import Path
+from queue import Queue
 import unittest
 from unittest.mock import MagicMock, call, patch
 
 from calibre_integration import update_strategies, calibredb_utils
+from calibre_integration.models import AddedBook, BookExport
 import config as config_models
+from history.recorder import HistoryRecorder
 from models import fanfic_info
 from models.context import WorkerContext
 from notifications import notification_wrapper
+from workers import common, handlers
 
 
 class TestUpdateStrategies(unittest.TestCase):
@@ -340,10 +345,6 @@ class TestUpdateStrategies(unittest.TestCase):
 
     def test_process_fanfic_addition_with_real_strategy_and_history_recorder(self):
         """process_fanfic_addition + real strategy + HistoryRecorder records Calibre failure reason and retry event."""
-        from queue import Queue
-        from history.recorder import HistoryRecorder
-        from workers import handlers
-
         history_q = Queue()
         recorder = HistoryRecorder(history_q)
         waiting_q = Queue()
@@ -392,10 +393,6 @@ class TestUpdateStrategies(unittest.TestCase):
 
     def test_strategies_use_added_book_return_value_and_book_export(self):
         """When add_story returns AddedBook and export_story returns BookExport, no fallback query or dir scan is needed."""
-        from pathlib import Path
-        from calibre_integration.models import AddedBook, BookExport
-        from workers import common
-
         strategy = update_strategies.PreserveMetadataStrategy()
         self.mock_client.get_metadata.return_value = {"#custom": "val"}
 

@@ -1,18 +1,12 @@
-"""Common worker utility functions for task path resolution and EPUB handling."""
+"""Common worker utility functions for task path resolution."""
 
 from calibre_integration.client_interface import CalibreClient
-from calibre_integration.epub_utils import (
-    extract_title_from_epub_path,
-    log_epub_metadata,
-)
 from calibre_integration.models import BookExport
 from models import fanfic_info
 from utils import system_utils
 
 __all__ = [
-    "extract_title_from_epub_path",
     "get_path_or_url",
-    "log_epub_metadata",
 ]
 
 

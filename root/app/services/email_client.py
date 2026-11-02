@@ -8,7 +8,8 @@ import time
 from contextlib import contextmanager
 
 from config import EmailConfig
-from config.store import ConfigStore, read_ini_file_cached
+from config.ini_resolver import read_ini_file_cached
+from config.store import ConfigStore
 import ff_logging
 from models.queue_types import CheckEmailsEvent, ShutdownEvent
 
@@ -186,7 +187,8 @@ class EmailInfo:
                         "EmailWatcher: Detected FlareSolverr crash during email URL extraction; attempting auto-recovery..."
                     )
                     recovered = flaresolverr_utils.recover_flaresolverr_crashes(
-                        personal_ini_path=self.personal_ini
+                        target_site=None,
+                        personal_ini_path=self.personal_ini,
                     )
                     if recovered > 0:
                         ff_logging.log(
@@ -269,3 +271,27 @@ class EmailInfo:
                 f"EmailWatcher: IMAP IDLE error ({e}), falling back to immediate check"
             )
             return True
+
+
+def probe_imap_connection(
+    server: str,
+    username: str,
+    password: str,
+    mailbox: str = "INBOX",
+    port: int = 993,
+    use_ssl: bool = True,
+    timeout: float = 10.0,
+) -> dict[str, int | str]:
+    """Probe IMAP server connectivity, login, folder selection, and unread message count via IMAPClient."""
+    with imapclient.IMAPClient(
+        server, port=port, ssl=use_ssl, timeout=timeout
+    ) as client:
+        client.login(username, password)
+        client.select_folder(mailbox, readonly=True)
+        unread_ids = client.search("UNSEEN")
+        unread_count = len(unread_ids) if unread_ids else 0
+    return {
+        "server": server,
+        "mailbox": mailbox,
+        "unread_count": unread_count,
+    }

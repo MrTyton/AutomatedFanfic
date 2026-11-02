@@ -1,12 +1,17 @@
+import multiprocessing as mp
+import pickle
 import threading
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-import config as config_models
-from models.active_urls import ActiveUrlsDict
-from models.context import WorkerContext
 from calibre_integration import calibredb_utils
+import config as config_models
+import ff_logging
+import ff_logging.core
+from models.active_urls import ActiveUrlsDict
+from models.context import SharedIPCContext, WorkerContext
 from notifications import notification_wrapper
+from web import server as web_server
 
 
 class TestWorkerContext(unittest.TestCase):
@@ -49,9 +54,6 @@ class TestWorkerContext(unittest.TestCase):
 class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
     def test_shared_ipc_context_picklable_and_defaults(self):
         """SharedIPCContext stores cross-process queues and is picklable."""
-        import pickle
-        from models.context import SharedIPCContext
-
         ipc = SharedIPCContext(
             ingress_queue=None,  # type: ignore
             waiting_queue=None,  # type: ignore
@@ -75,9 +77,6 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
         self.assertIsNone(restored.shutdown_event)
 
     def test_shared_ipc_context_includes_scale_queue(self):
-        from models.context import SharedIPCContext
-        import multiprocessing as mp
-
         q = mp.Queue()
         ctx = SharedIPCContext(
             ingress_queue=q,
@@ -94,8 +93,6 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
         self.assertIs(ctx.scale_queue, q)
 
     def test_shared_ipc_context_includes_shutdown_event(self):
-        from models.context import SharedIPCContext
-
         mock_event = MagicMock()
         mock_queue = MagicMock()
         ctx = SharedIPCContext(
@@ -114,18 +111,15 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
 
     def test_init_process_logging_worker_and_supervisor_modes(self):
         """init_process_logging configures verbose, web_enabled, forward queue, and thread color for non-web processes."""
-        from unittest.mock import patch
-        import ff_logging
-
         mock_log_q = MagicMock()
         mock_store = MagicMock()
 
         with (
-            patch.object(ff_logging, "set_verbose") as mock_verbose,
-            patch.object(ff_logging, "set_web_enabled") as mock_web,
-            patch.object(ff_logging, "set_log_forward_queue") as mock_fwd,
-            patch.object(ff_logging, "set_thread_color") as mock_col,
-            patch.object(ff_logging, "start_log_drain_thread") as mock_drain,
+            patch.object(ff_logging.core, "set_verbose") as mock_verbose,
+            patch.object(ff_logging.core, "set_web_enabled") as mock_web,
+            patch.object(ff_logging.core, "set_log_forward_queue") as mock_fwd,
+            patch.object(ff_logging.core, "set_thread_color") as mock_col,
+            patch.object(ff_logging.core, "start_log_drain_thread") as mock_drain,
         ):
             # 1. With log_queue and color (Supervisor with web enabled)
             ff_logging.init_process_logging(
@@ -159,15 +153,12 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
 
     def test_init_process_logging_web_server_mode(self):
         """init_process_logging clears forward queue and starts drain thread when is_web_server=True."""
-        from unittest.mock import patch
-        import ff_logging
-
         mock_log_q = MagicMock()
         with (
-            patch.object(ff_logging, "set_verbose") as mock_verbose,
-            patch.object(ff_logging, "set_log_forward_queue") as mock_fwd,
-            patch.object(ff_logging, "set_thread_color") as mock_col,
-            patch.object(ff_logging, "start_log_drain_thread") as mock_drain,
+            patch.object(ff_logging.core, "set_verbose") as mock_verbose,
+            patch.object(ff_logging.core, "set_log_forward_queue") as mock_fwd,
+            patch.object(ff_logging.core, "set_thread_color") as mock_col,
+            patch.object(ff_logging.core, "start_log_drain_thread") as mock_drain,
         ):
             ff_logging.init_process_logging(
                 True,
@@ -182,10 +173,6 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
 
     def test_run_web_server_builds_web_state_from_shared_ipc_context(self):
         """run_web_server initializes logging and constructs WebState from SharedIPCContext."""
-        from unittest.mock import patch
-        from models.context import SharedIPCContext
-        from web import server as web_server
-
         ipc = SharedIPCContext(
             ingress_queue=MagicMock(),
             waiting_queue=MagicMock(),

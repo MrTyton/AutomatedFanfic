@@ -5,14 +5,6 @@ ring buffer for the web UI, and rotating JSONL disk persistence.
 """
 
 from ff_logging.buffer import (
-    _LOG_BUFFER_MAX,
-    _STARTUP_COMPLETE_MARKERS,
-    _STARTUP_LOG_BUFFER_MAX,
-    _log_buffer,
-    _log_buffer_lock,
-    _log_forward_queue,
-    _startup_capture_enabled,
-    _startup_log_buffer,
     append_log_entry,
     clear_logs,
     get_recent_logs,
@@ -29,7 +21,6 @@ from ff_logging.colors import (
     get_color_for_worker,
 )
 from ff_logging.context import (
-    _thread_local,
     clear_thread_task,
     get_thread_color,
     get_thread_context,
@@ -54,6 +45,7 @@ from ff_logging.core import (
 from ff_logging.persistent import (
     close_persistent_logging,
     is_story_event,
+    resolve_log_file_path,
 )
 
 __all__ = [
@@ -81,20 +73,12 @@ __all__ = [
     "start_log_drain_thread",
     "init_persistent_logging",
     "close_persistent_logging",
+    "resolve_log_file_path",
     "is_story_event",
     "init_process_logging",
     "log",
     "log_failure",
     "log_debug",
-    "_thread_local",
-    "_log_buffer",
-    "_log_buffer_lock",
-    "_startup_log_buffer",
-    "_startup_capture_enabled",
-    "_log_forward_queue",
-    "_LOG_BUFFER_MAX",
-    "_STARTUP_LOG_BUFFER_MAX",
-    "_STARTUP_COMPLETE_MARKERS",
     "append_log_entry",
     "store_log_entry",
     "rehydrate_buffer",

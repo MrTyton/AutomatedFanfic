@@ -8,12 +8,13 @@ import time
 import unittest
 from unittest.mock import patch
 
-from history.database import SyncHistoryDB
+from history.sync_db import SyncHistoryDB
 from history.models import (
     HistoryEventType,
     HistoryMessage,
 )
-from history.recorder import HistoryRecorder, HistoryWriter
+from history.recorder import HistoryRecorder
+from history.writer import HistoryWriter
 
 
 class TestHistoryRecorder(unittest.TestCase):

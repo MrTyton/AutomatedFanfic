@@ -1,5 +1,7 @@
 """Anti-bot defense detection, challenge solving, and session impersonation."""
 
+from fanficfare.fetchers.base_fetcher import LWPCookieJar
+
 from antibot.anubis_client import (
     DEFAULT_USER_AGENT,
     clear_anubis_protected_sites,
@@ -18,6 +20,9 @@ from antibot.anubis_pow import (
 from antibot.cookies import (
     clear_site_cookiejars,
     get_site_cookiejar,
+    inspect_cookiejar_file,
+    mask_cookie_value,
+    resolve_cookiejar_path,
     set_site_cookiejar,
 )
 from antibot.flaresolverr import (
@@ -26,6 +31,7 @@ from antibot.flaresolverr import (
     get_flaresolverr_configs,
     is_flaresolverr_crash,
     list_flaresolverr_sessions,
+    probe_flaresolverr_health,
     recover_flaresolverr_crashes,
 )
 from antibot.impersonation import (
@@ -36,7 +42,6 @@ from antibot.impersonation import (
     is_impersonated_session_installed,
     uninstall_impersonated_session,
 )
-from fanficfare.fetchers.base_fetcher import LWPCookieJar
 
 __all__ = [
     "DEFAULT_USER_AGENT",
@@ -53,11 +58,15 @@ __all__ = [
     "get_site_cookiejar",
     "set_site_cookiejar",
     "clear_site_cookiejars",
+    "mask_cookie_value",
+    "resolve_cookiejar_path",
+    "inspect_cookiejar_file",
     "FlareSolverrEndpointConfig",
     "is_flaresolverr_crash",
     "get_flaresolverr_configs",
     "list_flaresolverr_sessions",
     "destroy_flaresolverr_session",
+    "probe_flaresolverr_health",
     "recover_flaresolverr_crashes",
     "CURL_CFFI_AVAILABLE",
     "ImpersonatedResponse",

@@ -1,20 +1,20 @@
-"""Unit tests for models/active_urls.py and web/routes/controls.py helpers."""
+"""Unit tests for models/active_urls.py and web/services/queue_controller.py helpers."""
 
 from queue import Queue
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from models import active_urls
 from models.active_urls import ActiveUrlEntry
 from models.fanfic_info import FanficInfo
+from web.services import queue_controller
 
 
 class TestActiveUrlsHelpers:
     """Tests for models.active_urls helper functions."""
 
     def test_is_url_active_handles_empty_missing_and_cancelled(self):
-        # Empty store — no URLs are active
         assert active_urls.is_url_active({}, "https://example.com/1") is False
 
         store: dict[str, ActiveUrlEntry] = {
@@ -33,7 +33,6 @@ class TestActiveUrlsHelpers:
                 "heap_gen": 7,
             }
         }
-        # Fresh write (merge=False) drops old keys like heap_gen
         active_urls.mark_url_queued(
             store,
             "https://example.com/1",
@@ -50,7 +49,6 @@ class TestActiveUrlsHelpers:
             "calibre_id": "42",
         }
 
-        # Merge mode preserves existing keys and supports pop_keys / behavior
         store["https://example.com/2"] = {
             "site": "ao3",
             "title": "Story 2",
@@ -123,7 +121,6 @@ class TestActiveUrlsHelpers:
             "heap_gen": 5,
         }
 
-        # Cancelled without delete_if_cancelled leaves it untouched and returns False
         ok_cancel_keep = active_urls.mark_url_waiting(
             store,
             "https://example.com/cancelled",
@@ -133,7 +130,6 @@ class TestActiveUrlsHelpers:
         assert ok_cancel_keep is False
         assert "https://example.com/cancelled" in store
 
-        # Cancelled with delete_if_cancelled removes it and returns False
         ok_cancel_del = active_urls.mark_url_waiting(
             store,
             "https://example.com/cancelled",
@@ -197,13 +193,11 @@ class TestActiveUrlsHelpers:
 
 
 class TestControlsHelpers:
-    """Tests for extracted helpers in web.routes.controls."""
+    """Tests for extracted helpers in web.services.queue_controller."""
 
     def test_dequeue_from_all_queues_removes_matching_across_waiting_ingress_and_workers(
         self,
     ):
-        from web.routes import controls
-
         waiting_q = Queue()
         ingress_q = Queue()
         worker_q = Queue()
@@ -222,7 +216,7 @@ class TestControlsHelpers:
         state.ingress_queue = ingress_q
         state.worker_queues = {"worker_0": worker_q}
 
-        w_rem, i_rem, wk_rem = controls._dequeue_from_all_queues(state, [target])
+        w_rem, i_rem, wk_rem = queue_controller.dequeue_from_all_queues(state, [target])
         assert len(w_rem) == 1 and w_rem[0].url == target
         assert len(i_rem) == 1 and i_rem[0].url == target
         assert len(wk_rem) == 1 and wk_rem[0].url == target
@@ -232,9 +226,6 @@ class TestControlsHelpers:
 
     @pytest.mark.anyio
     async def test_resolve_candidate_urls_combines_metadata_and_canonical_url(self):
-        from unittest.mock import AsyncMock, patch
-        from web.routes import controls
-
         state = MagicMock()
         state.history_db = MagicMock()
         state.history_db.get_latest_download = AsyncMock(
@@ -244,12 +235,9 @@ class TestControlsHelpers:
                 "calibre_id": "77",
             }
         )
-        body = controls.QueueActionRequest(
-            url="archiveofourown.org/works/12345/chapters/67890"
-        )
 
         with patch(
-            "web.routes.controls._build_fanfic",
+            "web.services.queue_controller.build_fanfic",
             return_value=FanficInfo(
                 url="https://archiveofourown.org/works/12345",
                 site="archiveofourown.org",
@@ -264,7 +252,9 @@ class TestControlsHelpers:
                 site,
                 title,
                 calibre_id,
-            ) = await controls._resolve_candidate_urls(state, body)
+            ) = await queue_controller.resolve_candidate_urls(
+                state, "archiveofourown.org/works/12345/chapters/67890"
+            )
 
         assert raw_url == "https://archiveofourown.org/works/12345/chapters/67890"
         assert canonical_url == "https://archiveofourown.org/works/12345"
@@ -278,21 +268,19 @@ class TestControlsHelpers:
         assert calibre_id == "77"
 
     def test_ingest_single_url_enqueues_and_deduplicates(self):
-        from web.routes import controls
-
         state = MagicMock()
         state.ingress_queue = Queue()
         state.active_urls = {}
         state.history_recorder = MagicMock()
 
-        resp1 = controls._ingest_single_url(
+        accepted1, _msg1 = queue_controller.ingest_single_url(
             state,
             "https://archiveofourown.org/works/999",
             {},
             duplicate_prefix="URL already in queue",
             added_suffix=" to processing queue",
         )
-        assert resp1.accepted is True
+        assert accepted1 is True
         assert state.ingress_queue.qsize() == 1
         assert (
             state.active_urls["https://archiveofourown.org/works/999"]["status"]
@@ -300,14 +288,13 @@ class TestControlsHelpers:
         )
         state.history_recorder.record_download_created.assert_called_once()
 
-        # Second call for same URL is rejected as duplicate
-        resp2 = controls._ingest_single_url(
+        accepted2, msg2 = queue_controller.ingest_single_url(
             state,
             "https://archiveofourown.org/works/999",
             {},
             duplicate_prefix="URL already in queue",
             added_suffix=" to processing queue",
         )
-        assert resp2.accepted is False
-        assert "URL already in queue" in resp2.message
+        assert accepted2 is False
+        assert "URL already in queue" in msg2
         assert state.ingress_queue.qsize() == 1

@@ -6,7 +6,6 @@ HistoryWriter is a daemon thread that drains the queue and writes to SQLite.
 
 from datetime import datetime, timezone
 
-from history.writer import HistoryWriter
 from history.models import (
     DownloadEvent,
     DownloadStatus,
@@ -265,4 +264,4 @@ class HistoryRecorder:
         )
 
 
-__all__ = ["HistoryRecorder", "HistoryWriter"]
+__all__ = ["HistoryRecorder"]

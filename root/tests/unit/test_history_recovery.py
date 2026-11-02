@@ -3,7 +3,7 @@
 import queue
 from unittest.mock import MagicMock, patch
 
-from history.database import SyncHistoryDB
+from history.sync_db import SyncHistoryDB
 from history.models import DownloadEvent, DownloadStatus
 from history.recovery import recover_uncompleted_downloads
 

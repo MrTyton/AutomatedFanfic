@@ -1,7 +1,6 @@
 """Dashboard snapshot building and caching service."""
 
 from datetime import datetime, timezone
-import sys
 import time
 
 from models import active_urls as active_urls_utils
@@ -10,14 +9,6 @@ from web.dependencies import WebState
 
 # TTL cache for expensive historical DB queries (recent_downloads, recent_activity)
 _HISTORY_CACHE_TTL: float = 10.0
-
-
-def _get_history_cache() -> dict[str, object]:
-    ws = sys.modules.get("web.routes.websocket")
-    if ws is not None and hasattr(ws, "_history_cache"):
-        return ws._history_cache
-    return _history_cache
-
 
 _history_cache: dict[str, object] = {
     "recent_downloads": [],
@@ -30,13 +21,13 @@ _history_cache: dict[str, object] = {
 
 def invalidate_history_cache() -> None:
     """Reset the historical database queries cache TTL so the next broadcast fetches fresh data."""
-    _get_history_cache()["expires_at"] = 0.0
+    _history_cache["expires_at"] = 0.0
 
 
 async def build_snapshot(state: WebState) -> dict[str, object]:
     """Build a JSON-serialisable dashboard snapshot from WebState."""
     now_ts = time.time()
-    cache = _get_history_cache()
+    cache = _history_cache
     snapshot: dict[str, object] = {"timestamp": now_ts}
 
     # ── Active downloads ────────────────────────────────────────

@@ -1,11 +1,8 @@
 """Retry and Hail-Mary configuration schema."""
 
-from typing import TYPE_CHECKING
-
 from pydantic import BaseModel, Field, PrivateAttr
 
-if TYPE_CHECKING:
-    from config.store import ConfigStore
+lazy from config.store import ConfigStore
 
 
 class RetryConfig(BaseModel):
