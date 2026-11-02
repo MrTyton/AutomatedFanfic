@@ -20,7 +20,7 @@ def recover_uncompleted_downloads(
     history_db_path: str,
     ingress_queue: IngressQueue,
     active_urls: ActiveUrlsDict,
-    history_recorder: HistoryRecorder | None,
+    history_recorder: HistoryRecorder,
 ) -> int:
     """Scan history.db and rehydrate uncompleted tasks into active_urls and ingress_queue.
 
@@ -100,13 +100,12 @@ def recover_uncompleted_downloads(
 
         ingress_queue.put(fanfic)
 
-        if history_recorder is not None:
-            history_recorder.record_download_requeued(
-                url=fanfic.url,
-                site=fanfic.site,
-                title=fanfic.title,
-                error_message=requeue_msg,
-            )
+        history_recorder.record_download_requeued(
+            url=fanfic.url,
+            site=fanfic.site,
+            title=fanfic.title,
+            error_message=requeue_msg,
+        )
 
         recovered_count += 1
 

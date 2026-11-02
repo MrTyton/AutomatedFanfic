@@ -121,7 +121,7 @@ def test_recover_uncompleted_downloads_missing_db(tmp_path):
         history_db_path=missing_file,
         ingress_queue=ingress_q,
         active_urls=active_urls,
-        history_recorder=None,
+        history_recorder=MagicMock(),
     )
 
     assert count == 0
@@ -142,7 +142,7 @@ def test_recover_uncompleted_downloads_empty_db(tmp_path):
         history_db_path=db_file,
         ingress_queue=ingress_q,
         active_urls=active_urls,
-        history_recorder=None,
+        history_recorder=MagicMock(),
     )
 
     assert count == 0
@@ -163,7 +163,7 @@ def test_recover_uncompleted_downloads_database_exception(tmp_path):
             history_db_path=db_file,
             ingress_queue=ingress_q,
             active_urls=active_urls,
-            history_recorder=None,
+            history_recorder=MagicMock(),
         )
 
     assert count == 0
@@ -199,7 +199,7 @@ def test_recover_uncompleted_downloads_ignores_cancelled_and_scheme_variants(tmp
         history_db_path=db_file,
         ingress_queue=ingress_q,
         active_urls=active_urls,
-        history_recorder=None,
+        history_recorder=MagicMock(),
     )
 
     assert count == 0
