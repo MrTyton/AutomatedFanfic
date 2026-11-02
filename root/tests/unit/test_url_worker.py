@@ -1136,7 +1136,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
 class TestLogEpubMetadata(unittest.TestCase):
     """Test suite for log_epub_metadata function."""
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_valid_epub_with_metadata(self, mock_logging):
         """Test logging metadata from a valid epub file."""
         import tempfile
@@ -1201,7 +1201,7 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_without_opf_file(self, mock_logging):
         """Test handling epub without .opf file."""
         import tempfile
@@ -1229,7 +1229,7 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_malformed_opf(self, mock_logging):
         """Test handling epub with malformed XML in .opf file."""
         import tempfile
@@ -1268,7 +1268,7 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_no_metadata_section(self, mock_logging):
         """Test handling epub with valid OPF but no metadata section."""
         import tempfile
@@ -1314,7 +1314,7 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_nonexistent_epub_file(self, mock_logging):
         """Test handling non-existent epub file."""
         common.log_epub_metadata("/nonexistent/file.epub", "test")
@@ -1323,7 +1323,7 @@ class TestLogEpubMetadata(unittest.TestCase):
         calls = [str(call) for call in mock_logging.log_debug.call_args_list]
         self.assertTrue(any("Error reading epub metadata:" in call for call in calls))
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_attributes_and_empty_values(self, mock_logging):
         """Test logging metadata elements with attributes and empty text values."""
         import tempfile

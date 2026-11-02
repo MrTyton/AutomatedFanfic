@@ -10,7 +10,7 @@ import pytest
 from fanficfare import configurable
 from fanficfare.adapters.base_adapter import BaseSiteAdapter
 
-from utils import series_utils
+from parsers import series as series_utils
 
 _AO3_SERIES_HTML = """
 <html>

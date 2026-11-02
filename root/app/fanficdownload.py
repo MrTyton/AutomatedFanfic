@@ -41,7 +41,7 @@ if sys.version_info < (3, 15):
 import ff_logging
 from utils import system_utils
 
-lazy from parsers import auto_url_parsers
+lazy from parsers import url_patterns as auto_url_parsers
 from calibre_integration import calibre_info
 from calibre_integration import calibredb_utils
 from calibre_integration import factory as calibre_factory

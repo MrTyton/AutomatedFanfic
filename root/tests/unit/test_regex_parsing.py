@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 from parameterized import parameterized
 
-from parsers import auto_url_parsers
+from parsers import url_patterns as auto_url_parsers
 from models import fanfic_info
 from parsers import regex_parsing
 

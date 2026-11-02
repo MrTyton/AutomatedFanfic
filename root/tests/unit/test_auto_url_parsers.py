@@ -5,7 +5,7 @@ from typing import NamedTuple
 from parameterized import parameterized
 import fanficfare.adapters as adapters
 
-from parsers import auto_url_parsers
+from parsers import url_patterns as auto_url_parsers
 from models import fanfic_info
 from parsers import regex_parsing
 
@@ -730,7 +730,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
             ):
                 # Mock _generate_pattern_and_prefix to return invalid regex
                 with patch(
-                    "parsers.auto_url_parsers._generate_pattern_and_prefix",
+                    "parsers.url_patterns._generate_pattern_and_prefix",
                     return_value=("*invalid_regex[", "example.com"),
                 ):
                     # Capture print output to verify warning message
@@ -754,7 +754,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
 
     def test_path_pattern_edge_cases(self):
         """Test edge cases in path pattern generation."""
-        from parsers.auto_url_parsers import _generate_pattern_and_prefix
+        from parsers.url_patterns import _generate_pattern_and_prefix
 
         # Test forum sites with /threads/ path (line 156)
         domain = "forums.example.com"
@@ -784,10 +784,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
 
         # Test the main module execution by running it directly
         script_path = (
-            Path(__file__).parent.parent.parent
-            / "app"
-            / "parsers"
-            / "auto_url_parsers.py"
+            Path(__file__).parent.parent.parent / "app" / "parsers" / "url_patterns.py"
         )
         result = subprocess.run(
             [sys.executable, str(script_path)],
@@ -811,7 +808,7 @@ class TestAutoUrlParsersEdgeCases(unittest.TestCase):
     def test_main_module_direct_execution(self):
         """Test direct execution of main module code path."""
         from unittest.mock import patch
-        from parsers import auto_url_parsers
+        from parsers import url_patterns as auto_url_parsers
 
         # Test that the main execution code would work by simulating it
         # Since reloading with patched __name__ is unreliable, we'll test the logic directly

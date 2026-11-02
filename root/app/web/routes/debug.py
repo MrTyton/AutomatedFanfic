@@ -26,7 +26,7 @@ from utils.system_utils import resolve_ini_path
 lazy from config.store import ConfigStore
 lazy from fanficfare import adapters as fff_adapters, configurable, geturls
 lazy from notifications.apprise_notification import AppriseNotification
-lazy from parsers import auto_url_parsers, regex_parsing
+lazy from parsers import regex_parsing, url_patterns as auto_url_parsers
 lazy import antibot as anubis_solver
 lazy from workers import fff_runner
 

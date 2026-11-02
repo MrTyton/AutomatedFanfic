@@ -38,7 +38,7 @@ from models.queue_types import (
     WorkerQueues,
 )
 
-lazy from utils import series_utils
+lazy from parsers import series as series_utils
 lazy from parsers import regex_parsing
 
 _MAX_SERIES_DEPTH: int = 10

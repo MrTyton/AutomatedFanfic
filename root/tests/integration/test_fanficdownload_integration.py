@@ -26,7 +26,7 @@ from parsers import regex_parsing
 from models import fanfic_info
 from calibre_integration import calibre_info
 from notifications import notification_wrapper
-from parsers import auto_url_parsers
+from parsers import url_patterns as auto_url_parsers
 from config import (
     AppConfig,
     EmailConfig,

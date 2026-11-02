@@ -11,7 +11,7 @@ lazy from calibre_integration import (
 )
 from models import active_urls as active_urls_utils
 from models.fanfic_info import FanficInfo
-lazy from parsers import auto_url_parsers, regex_parsing
+lazy from parsers import regex_parsing, url_patterns as auto_url_parsers
 from web.routes.websocket import invalidate_history_cache
 
 router = APIRouter(prefix="/api/controls", tags=["controls"])

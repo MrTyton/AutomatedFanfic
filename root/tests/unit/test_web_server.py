@@ -205,7 +205,7 @@ class TestControlRoutes(unittest.TestCase):
         data = resp.json()
         self.assertFalse(data["accepted"])
 
-    @patch("parsers.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("parsers.url_patterns.generate_url_parsers_from_fanficfare")
     @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
     def test_add_url_success(self, mock_generate, mock_parsers):
         """Successfully adds a URL to the queue."""
@@ -226,7 +226,7 @@ class TestControlRoutes(unittest.TestCase):
         self.assertTrue(data["accepted"])
         self.state.ingress_queue.put.assert_called_once()
 
-    @patch("parsers.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("parsers.url_patterns.generate_url_parsers_from_fanficfare")
     @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
     def test_add_url_duplicate(self, mock_generate, mock_parsers):
         """Rejects duplicate URLs."""
@@ -340,7 +340,7 @@ class TestControlRoutes(unittest.TestCase):
         self.assertFalse(resp.json()["ok"])
 
     @patch("web.routes.controls._remove_from_calibre_if_possible")
-    @patch("parsers.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("parsers.url_patterns.generate_url_parsers_from_fanficfare")
     @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
     def test_redownload_scratch_queues_force_task(
         self, mock_generate, mock_parsers, mock_remove
@@ -421,7 +421,7 @@ class TestControlRoutes(unittest.TestCase):
         )
         mock_create_client.return_value.remove_story.assert_called_once_with(fanfic)
 
-    @patch("parsers.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("parsers.url_patterns.generate_url_parsers_from_fanficfare")
     @patch("parsers.regex_parsing.generate_FanficInfo_from_url")
     def test_add_url_with_update_method(self, mock_generate, mock_parsers):
         mock_parsers.return_value = {}

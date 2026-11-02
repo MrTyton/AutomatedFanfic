@@ -1,30 +1,23 @@
-"""Series/collection URL detection and expansion utility.
+"""Series and collection URL detection and expansion using FanFicFare adapters."""
 
-This module provides functionality to detect whether a URL points to a series,
-collection, or individual story, and to expand series/collection URLs into
-lists of individual story URLs using FanFicFare's adapter API.
-
-The module uses the native adapter methods rather than heuristics or regex,
-ensuring compatibility with how FanFicFare actually handles list pages.
-
-Key Functions:
-    is_series_url: Detect if a URL is a series/collection using adapter methods
-    expand_series_url: Extract individual story URLs from a series/collection
-    process_url: Unified handler that expands series or passes through stories
-
-Adapter API Usage:
-    - Uses get_urls_from_page() for sites that override it (Literotica, FimFiction)
-    - Uses get_series_from_page() for AO3 (BaseOTWAdapter)
-    - Falls back to treating URL as single story if detection fails
-"""
+from __future__ import annotations
 
 import re
 from typing import Protocol, TypedDict
 
-lazy from fanficfare import adapters, configurable, exceptions, geturls
 lazy from config.store import ConfigStore
-from parsers.regex_parsing import normalize_url as _normalize_url
+lazy from fanficfare import adapters, configurable, exceptions, geturls
 import ff_logging
+from parsers.regex_parsing import normalize_url as _normalize_url
+
+__all__ = [
+    "FanFicFareAdapter",
+    "SeriesExpansionResult",
+    "expand_series_url",
+    "get_series_configuration",
+    "is_series_url",
+    "process_url",
+]
 
 
 class SeriesExpansionResult(TypedDict):
@@ -67,13 +60,7 @@ def _call_get_urls_from_page(
 
 
 def _is_known_series_url_pattern(adapter: FanFicFareAdapter, url: str) -> bool:
-    """Return True if *url* matches a known FanFicFare series URL pattern without HTTP requests.
-
-    Covers:
-    - OTW/AO3 sites (``/works/`` in site pattern replaced with ``/series/``)
-    - Twisting the Hellmouth (``/Series-<id>``)
-    - eFiction sites (``viewseries.php?seriesid=<id>`` / ``series.php?ssid=<id>``)
-    """
+    """Return True if *url* matches a known FanFicFare series URL pattern without HTTP requests."""
     site_pattern = (
         adapter.getSiteURLPattern() if hasattr(adapter, "getSiteURLPattern") else None
     )
@@ -122,8 +109,7 @@ def is_series_url(
     config_store: ConfigStore | None = None,
     _page_cache: dict[str, dict[str, object] | None] | None = None,
 ) -> bool:
-    """
-    Determine if a URL points to a series, collection, or single story.
+    """Determine if a URL points to a series, collection, or single story.
 
     Uses the FanFicFare adapter's native methods to check if a URL is a list
     type (series/collection) rather than a single story.
@@ -142,22 +128,16 @@ def is_series_url(
         config = get_series_configuration(url, config_store=config_store)
 
     try:
-        # Try to get the adapter for this URL
         adapter = adapters.getAdapter(config, url, anyurl=True)
 
-        # Method 1: Fast zero-network check for known series URL patterns
-        # (OTW/AO3, Twisting the Hellmouth, eFiction sites)
         if _is_known_series_url_pattern(adapter, url):
             ff_logging.log_debug(f"Series URL detected: {url}")
             return True
 
-        # Fast-path: if FanFicFare validates the URL as a single story (anyurl=False),
-        # never make a network call to scrape the page for list URLs.
         if _is_single_story_url(config, url):
             ff_logging.log_debug(f"Single story URL detected: {url}")
             return False
 
-        # Method 2: Check if this is a site with get_urls_from_page support
         if hasattr(adapter, "get_urls_from_page"):
             try:
                 result = _call_get_urls_from_page(
@@ -165,10 +145,6 @@ def is_series_url(
                 )
                 if isinstance(result, dict) and "urllist" in result:
                     urllist = result.get("urllist", [])
-
-                    # Multiple URLs = series/collection
-                    # Single URL = single story
-                    # Empty = unknown/error
                     if isinstance(urllist, list):
                         if len(urllist) > 1:
                             ff_logging.log_debug(
@@ -197,8 +173,7 @@ def expand_series_url(
     config_store: ConfigStore | None = None,
     _page_cache: dict[str, dict[str, object] | None] | None = None,
 ) -> list[str]:
-    """
-    Extract individual story URLs from a series or collection URL.
+    """Extract individual story URLs from a series or collection URL.
 
     Uses FanFicFare's adapter methods to handle series expansion, including
     pagination and site-specific list extraction.
@@ -220,12 +195,9 @@ def expand_series_url(
     try:
         adapter = adapters.getAdapter(config, url, anyurl=True)
 
-        # Fast-path: if FanFicFare validates the URL as a single story (anyurl=False),
-        # return [] immediately without making any network calls.
         if _is_single_story_url(config, url):
             return []
 
-        # Method 1: Use adapter's get_series_from_page (OTW/AO3, TtH, eFiction)
         if hasattr(adapter, "get_series_from_page") and _is_known_series_url_pattern(
             adapter, url
         ):
@@ -249,7 +221,6 @@ def expand_series_url(
             except Exception as e:
                 ff_logging.log_debug(f"Error in get_series_from_page: {e}")
 
-        # Method 2: Use generic get_urls_from_page (for other sites with list support)
         if hasattr(adapter, "get_urls_from_page"):
             try:
                 result = _call_get_urls_from_page(
@@ -278,8 +249,7 @@ def process_url(
     *,
     config_store: ConfigStore | None = None,
 ) -> SeriesExpansionResult:
-    """
-    Unified handler: detect if URL is series and expand or return as single.
+    """Unified handler: detect if URL is series and expand or return as single.
 
     This is the primary interface for processing URLs in the ingestion pipeline.
     It handles both individual stories and series/collections transparently, and
@@ -313,8 +283,6 @@ def process_url(
         config = get_series_configuration(url, config_store=config_store)
 
     try:
-        # Cache any _call_get_urls_from_page result during this process_url call
-        # so collection URLs are only scraped once across is_series_url + expand_series_url.
         page_cache: dict[str, dict[str, object] | None] = {}
         if is_series_url(
             url, config, config_store=config_store, _page_cache=page_cache

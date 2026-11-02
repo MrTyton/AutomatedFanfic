@@ -13,7 +13,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from models import active_urls as active_urls_utils
-from parsers import auto_url_parsers
+import parsers as auto_url_parsers
 from web.dependencies import WebState
 
 router = APIRouter()

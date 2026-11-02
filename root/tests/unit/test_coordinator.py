@@ -689,7 +689,7 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         }
         self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
 
-    @patch("utils.series_utils.expand_series_url")
+    @patch("parsers.series.expand_series_url")
     @patch("services.coordinator.ff_logging")
     def test_series_expansion_multiple_stories(self, mock_logging, mock_expand_series):
         """Test that series URL is expanded into individual story tasks.
@@ -787,7 +787,7 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         self.assertEqual(len(received_tasks), 1)
         self.assertEqual(received_tasks[0], story_fic)
 
-    @patch("utils.series_utils.expand_series_url")
+    @patch("parsers.series.expand_series_url")
     def test_series_expansion_with_retry_state(self, mock_expand_series):
         """Test that expanded stories inherit retry state from series.
 
@@ -834,7 +834,7 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         for task in received_tasks:
             self.assertEqual(task.repeats, 0)
 
-    @patch("utils.series_utils.expand_series_url")
+    @patch("parsers.series.expand_series_url")
     def test_series_expansion_propagates_from_email(self, mock_expand_series):
         """Expanded stories inherit the series' email origin (for update_only mode)."""
         mock_expand_series.return_value = [
@@ -862,7 +862,7 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         for task in received_tasks:
             self.assertTrue(task.from_email)
 
-    @patch("utils.series_utils.is_series_url", return_value=False)
+    @patch("parsers.series.is_series_url", return_value=False)
     def test_series_with_single_story_not_expanded(self, _mock_is_series_url):
         """Test that a single-story URL is treated as a normal story.
 
@@ -893,7 +893,7 @@ class TestCoordinatorSeriesExpansion(unittest.TestCase):
         # (which will fail since we're not mocking expand_series_url)
         self.assertLessEqual(len(received_tasks), 1)
 
-    @patch("utils.series_utils.process_url")
+    @patch("parsers.series.process_url")
     def test_series_expansion_failure_marks_active_url_failed_and_does_not_route(
         self, mock_process_url
     ):
@@ -1154,7 +1154,7 @@ class TestCoordinatorSeriesRecursionDepth(unittest.TestCase):
         self.coordinator = _make_coordinator(self.ingress_queue, self.worker_queues)
 
     @patch("services.coordinator.ff_logging.log_failure")
-    @patch("utils.series_utils.process_url")
+    @patch("parsers.series.process_url")
     def test_recursive_series_stops_at_max_depth(
         self, mock_process_url, mock_log_failure
     ):
@@ -1193,7 +1193,7 @@ class TestCoordinatorSeriesRecursionDepth(unittest.TestCase):
             f"Expected depth/series failure log, got: {failure_messages}",
         )
 
-    @patch("utils.series_utils.process_url")
+    @patch("parsers.series.process_url")
     def test_normal_series_depth_allowed(self, mock_process_url):
         """A series at depth 0 (normal call) must still expand correctly."""
         story_url = "https://archiveofourown.org/works/1"

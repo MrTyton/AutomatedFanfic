@@ -30,7 +30,7 @@ from models.active_urls import ActiveUrlsDict
 from models.context import SharedIPCContext, WorkerContext
 from models.fanfic_info import FanficInfo
 from notifications.notification_wrapper import NotificationWrapper
-from parsers.auto_url_parsers import generate_url_parsers_from_fanficfare
+from parsers.url_patterns import generate_url_parsers_from_fanficfare
 from services import supervisor
 from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor

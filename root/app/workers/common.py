@@ -1,15 +1,21 @@
-"""
-Common utility functions for worker modules.
-"""
+"""Common worker utility functions for task path resolution and EPUB handling."""
 
-import zipfile
-from xml.etree import ElementTree as ET
-import ff_logging
-from models import fanfic_info
+from __future__ import annotations
+
 from calibre_integration.client_interface import CalibreClient
+from calibre_integration.epub_utils import (
+    extract_title_from_epub_path,
+    log_epub_metadata,
+)
 from calibre_integration.models import BookExport
-
+from models import fanfic_info
 from utils import system_utils
+
+__all__ = [
+    "extract_title_from_epub_path",
+    "get_path_or_url",
+    "log_epub_metadata",
+]
 
 
 def get_path_or_url(
@@ -17,23 +23,18 @@ def get_path_or_url(
     calibre_client: CalibreClient,
     location: str = "",
 ) -> str:
-    """
-    Retrieves the path of an exported story from the Calibre library or the story's
-    URL if not in Calibre.
+    """Retrieve the path of an exported story from Calibre or the story's URL if not in Calibre.
 
     Args:
-        ff_info (fanfic_info.FanficInfo): The fanfic information object.
-        calibre_client (CalibreClient): The Calibre client.
-        location (str, optional): The directory path to export to.
+        ff_info: The fanfic information object.
+        calibre_client: The Calibre client.
+        location: The directory path to export to.
 
     Returns:
-        str: The path to the exported story file if it exists in Calibre, or the
-            URL of the story otherwise.
+        The path to the exported story file if it exists in Calibre, or the URL of the story otherwise.
     """
-    # Check if the story exists in the Calibre library by attempting to retrieve its ID
     story_id = calibre_client.get_story_id(ff_info)
 
-    # If story exists in Calibre, export it
     if story_id:
         export_record = calibre_client.export_story(fanfic=ff_info, location=location)
         if isinstance(export_record, BookExport):
@@ -45,88 +46,4 @@ def get_path_or_url(
         if exported_files:
             return exported_files[0]
 
-    # If the story does not exist in the Calibre library or no files were exported, return the URL of the story
     return ff_info.download_url
-
-
-def extract_title_from_epub_path(epub_path: str) -> str:
-    """
-    Extract the story title from an epub file path.
-
-    Args:
-        epub_path (str): Path to the epub file, which may contain the story title
-
-    Returns:
-        str: Extracted title, or the original path if extraction fails
-    """
-    try:
-        if epub_path.lower().endswith(".epub"):
-            # Handle both Windows and Linux path separators
-            filename = epub_path.split("\\")[-1].split("/")[-1]
-            return filename[:-5]
-
-        return epub_path
-    except Exception as e:
-        ff_logging.log_debug(f"Failed to extract title from path {epub_path}: {e}")
-        return epub_path
-
-
-def log_epub_metadata(epub_path: str, site: str) -> None:
-    """
-    Read and log the metadata from an epub file to help diagnose FanFicFare issues.
-
-    This function extracts key metadata fields from the epub that FanFicFare uses
-    to determine the source URL and other story details. This is crucial for
-    debugging cases where FanFicFare can't find the source URL.
-
-    Args:
-        epub_path (str): Path to the epub file
-        site (str): Site identifier for logging context
-    """
-    try:
-        with zipfile.ZipFile(epub_path, "r") as zip_ref:
-            # Find content.opf file
-            container_xml = zip_ref.read("META-INF/container.xml")
-            container_root = ET.fromstring(container_xml)
-            # Namespace for container.xml
-            ns = {"u": "urn:oasis:names:tc:opendocument:xmlns:container"}
-            rootfile_elem = container_root.find(".//u:rootfile", ns)
-            if rootfile_elem is None:
-                raise ValueError("Could not find rootfile element in container.xml")
-            rootfile_path = rootfile_elem.attrib["full-path"]
-
-            # Read content.opf
-            opf_xml = zip_ref.read(rootfile_path)
-            # Remove namespace prefixes effectively for simple parsing or just use namespaces
-            # A simple approach for logging:
-            opf_root = ET.fromstring(opf_xml)
-
-            # Namespaces likely in OPF
-            # Common ones: dc: http://purl.org/dc/elements/1.1/
-            # opf: http://www.idpf.org/2007/opf
-
-            metadata = {}
-            # Extract anything that looks like a source URL or identifier
-            for elem in opf_root.iter():
-                # Check for dc:identifier
-                if "identifier" in elem.tag.lower():
-                    metadata[f"Identifier ({elem.attrib.get('id', 'unknown')})"] = (
-                        elem.text
-                    )
-                # Check for dc:source
-                if "source" in elem.tag.lower():
-                    metadata["Source"] = elem.text
-                # Check for description
-                if "description" in elem.tag.lower():
-                    # Truncate description
-                    desc = elem.text if elem.text else ""
-                    metadata["Description"] = (
-                        (desc[:50] + "...") if len(desc) > 50 else desc
-                    )
-
-            ff_logging.log_debug(f"\t({site}) Metadata check for {epub_path}:")
-            for key, value in metadata.items():
-                ff_logging.log_debug(f"\t\t{key}: {value}")
-
-    except Exception as e:
-        ff_logging.log_debug(f"\t({site}) Error reading epub metadata: {e}")
