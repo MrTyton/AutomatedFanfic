@@ -336,11 +336,11 @@ export default function AttemptBlockCard({
                                 }}
                                 title={`Open ${block.url} in new tab`}
                             >
-                                {block.title}
+                                {activeBlock.title || block.title}
                             </a>
                         ) : (
                             <span style={{ fontWeight: 600, fontSize: '0.86rem', color: 'var(--text)' }}>
-                                {block.title}
+                                {activeBlock.title || block.title}
                             </span>
                         )}
                     </div>

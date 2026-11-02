@@ -876,25 +876,25 @@ test('buildLogAttemptBlocks ties multiple attempts for the same story URL togeth
     const blocks = buildLogAttemptBlocks(multiAttemptLogs)
     const storyBlocks = blocks.filter((b) => b.kind === 'story_attempt')
 
-    assert.equal(storyBlocks.length, 2)
-    const [att1, att2] = storyBlocks.sort((a, b) => a.attemptNumber - b.attemptNumber)
+    // Multiple attempts for the same story URL must be combined into exactly 1 card
+    assert.equal(storyBlocks.length, 1)
+    const primary = storyBlocks[0]
 
+    assert.equal(primary.attemptNumber, 2)
+    assert.equal(primary.status, 'success')
+
+    // All attempt blocks are linked together through their attempts property!
+    assert.ok(primary.attempts)
+    assert.equal(primary.attempts.length, 2)
+
+    const [att1, att2] = primary.attempts
     assert.equal(att1.attemptNumber, 1)
     assert.equal(att1.status, 'failed')
-
     assert.equal(att2.attemptNumber, 2)
     assert.equal(att2.status, 'success')
 
-    // Both attempt blocks must be linked together through their attempts property!
-    assert.ok(att1.attempts)
-    assert.equal(att1.attempts.length, 2)
-    assert.equal(att1.attempts[0].id, att1.id)
-    assert.equal(att1.attempts[1].id, att2.id)
-
-    assert.ok(att2.attempts)
-    assert.equal(att2.attempts.length, 2)
-    assert.equal(att2.attempts[0].id, att1.id)
-    assert.equal(att2.attempts[1].id, att2.id)
+    assert.equal(att1.id, 'worker_0-attempt-1')
+    assert.equal(att2.id, 'worker_1-attempt-2')
 
     // Formatted text for Attempt 2 must include the summary/trace of Attempt 1
     const text = formatAttemptBlockAsText(att2)

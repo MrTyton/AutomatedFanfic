@@ -1080,7 +1080,7 @@ export function buildLogAttemptBlocks(
         }
     }
 
-    // Tie all attempts for the same story URL together
+    // Tie all attempts for the same story URL together and combine them into a single primary card
     const attemptsByUrl = new Map<string, LogAttemptBlock[]>()
     for (const b of blocks) {
         if (b.kind === 'story_attempt' && b.url) {
@@ -1089,18 +1089,30 @@ export function buildLogAttemptBlocks(
             attemptsByUrl.set(b.url, list)
         }
     }
+
+    const nonPrimaryBlockIds = new Set<string>()
     for (const urlBlocks of attemptsByUrl.values()) {
         if (urlBlocks.length > 1) {
             urlBlocks.sort((a, b) => a.attemptNumber - b.attemptNumber)
             for (const b of urlBlocks) {
                 b.attempts = urlBlocks
             }
+            // Retain only 1 combined card per story URL:
+            // Prefer the active in-flight attempt if one exists; otherwise the latest attempt.
+            const primary = urlBlocks.find((b) => b.isActive) || urlBlocks[urlBlocks.length - 1]
+            for (const b of urlBlocks) {
+                if (b !== primary) {
+                    nonPrimaryBlockIds.add(b.id)
+                }
+            }
         }
     }
 
+    const uniqueBlocks = blocks.filter((b) => !nonPrimaryBlockIds.has(b.id))
+
     const visibleBlocks = latestStartupTs > 0
-        ? blocks.filter((b) => b.kind !== 'system' || parseLogTimestamp(b.endedAt) >= latestStartupTs)
-        : blocks
+        ? uniqueBlocks.filter((b) => b.kind !== 'system' || parseLogTimestamp(b.endedAt) >= latestStartupTs)
+        : uniqueBlocks
 
     // Sort active blocks first, then non-active blocks; within each group sort by latest update (endedAt descending)
     return visibleBlocks.sort((a, b) => {
