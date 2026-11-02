@@ -19,14 +19,63 @@ _startup_log_buffer: collections.deque = collections.deque(
     maxlen=_STARTUP_LOG_BUFFER_MAX
 )
 _startup_capture_enabled = True
-_STARTUP_COMPLETE_MARKERS = (
-    "All processes started successfully",
-    "Processes running. Press Ctrl+C to stop gracefully.",
-    "WebServer: History database connection established",
-    "entered IMAP IDLE mode",
-)
+_startup_subsystems = {
+    "core_ready": False,
+    "web_expected": False,
+    "web_ready": False,
+    "email_expected": False,
+    "email_ready": False,
+}
 
 _log_forward_queue: LogQueue | None = None
+
+
+def _reset_startup_subsystems() -> None:
+    _startup_subsystems["core_ready"] = False
+    _startup_subsystems["web_expected"] = False
+    _startup_subsystems["web_ready"] = False
+    _startup_subsystems["email_expected"] = False
+    _startup_subsystems["email_ready"] = False
+
+
+def _update_startup_readiness(msg: str) -> bool:
+    """Updates subsystem milestones and returns True when ALL expected systems are up."""
+    lower = msg.lower()
+    if "web dashboard enabled on" in lower or "web dashboard: enabled" in lower:
+        _startup_subsystems["web_expected"] = True
+    if "email account:" in lower and not any(
+        kw in lower for kw in ("not configured", "disabled", "none")
+    ):
+        _startup_subsystems["email_expected"] = True
+
+    if (
+        "processes running. press ctrl+c" in lower
+        or "all processes started successfully" in lower
+    ):
+        _startup_subsystems["core_ready"] = True
+    if "webserver: history database connection established" in lower:
+        _startup_subsystems["web_ready"] = True
+    if any(
+        kw in lower
+        for kw in (
+            "entered imap idle mode",
+            "idle refresh timeout reached",
+            "imap idle error",
+            "unread email(s) before entering idle",
+        )
+    ):
+        _startup_subsystems["email_ready"] = True
+
+    return bool(
+        _startup_subsystems["core_ready"]
+        and (
+            not _startup_subsystems["web_expected"] or _startup_subsystems["web_ready"]
+        )
+        and (
+            not _startup_subsystems["email_expected"]
+            or _startup_subsystems["email_ready"]
+        )
+    )
 
 
 def append_log_entry(entry: dict) -> None:
@@ -39,7 +88,7 @@ def append_log_entry(entry: dict) -> None:
             entry["is_startup"] = True
             _startup_log_buffer.append(dict(entry))
             msg = str(entry.get("message", ""))
-            if any(marker in msg for marker in _STARTUP_COMPLETE_MARKERS):
+            if _update_startup_readiness(msg):
                 _startup_capture_enabled = False
         _log_buffer.append(entry)
 
@@ -139,3 +188,4 @@ def clear_logs() -> None:
         _log_buffer.clear()
         _startup_log_buffer.clear()
         _startup_capture_enabled = True
+        _reset_startup_subsystems()
