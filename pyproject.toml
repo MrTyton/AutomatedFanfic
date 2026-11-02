@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "automatedfanfic"
-version = "7.0.1"
+version = "7.0.2"
 description = "Automated Fanfic Downloader"
-requires-python = ">=3.15"
+requires-python = ">=3.14"
 
 [tool.setuptools.packages.find]
 where = ["root/app"]
