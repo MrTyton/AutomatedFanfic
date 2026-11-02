@@ -18,12 +18,12 @@ from calibre_integration import calibre_info
 from config.store import read_ini_file_cached
 from models import fanfic_info
 from parsers import regex_parsing
-from utils import anubis_solver
+import antibot as anubis_solver
 import ff_logging
 from utils import thread_stdout
 from utils import url_utils
-from workers import cookie_cache
-from workers import impersonated_session
+from antibot import cookies as cookie_cache
+from antibot import impersonation as impersonated_session
 
 # ---------------------------------------------------------------------------
 # Result type

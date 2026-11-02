@@ -36,7 +36,7 @@ from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor
 from services.url_ingester import EmailInfo
 from utils.system_utils import get_packaged_defaults_ini_path
-from workers import command, handlers, pipeline
+from workers import fff_runner as command, handlers, pipeline
 
 
 def _child_verify_supervisor_process_boot(
@@ -226,7 +226,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     ) as mock_td,
                     patch("workers.common.get_path_or_url", return_value=story_url),
                     patch(
-                        "workers.command.execute_fanficfare_direct",
+                        "workers.fff_runner.execute_fanficfare_direct",
                         return_value=command.FanFicFareResult(
                             failure_messages=["HTTP Error 503 Service Unavailable"]
                         ),
@@ -305,7 +305,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     ) as mock_td,
                     patch("workers.common.get_path_or_url", return_value=story_url),
                     patch(
-                        "workers.command.execute_fanficfare_direct",
+                        "workers.fff_runner.execute_fanficfare_direct",
                         return_value=command.FanFicFareResult(),
                     ),
                 ):

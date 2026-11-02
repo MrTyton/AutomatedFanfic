@@ -1,6 +1,6 @@
 import unittest
 
-from workers.cookie_cache import (
+from antibot.cookies import (
     clear_site_cookiejars,
     get_site_cookiejar,
     set_site_cookiejar,

@@ -88,7 +88,7 @@ class TestDuplicatePrevention(unittest.TestCase):
 
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.handlers.process_fanfic_addition")
     @patch("workers.pipeline.ff_logging")
     def test_url_worker_removes_from_active_urls_on_success(
@@ -108,7 +108,7 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-        from workers.command import FanFicFareResult
+        from workers.fff_runner import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult()
 
@@ -139,7 +139,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
     @patch("workers.pipeline.ff_logging")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     def test_url_worker_keeps_active_on_retry(
         self,
         mock_exec,
@@ -158,7 +158,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
 
-        from workers.command import FanFicFareResult
+        from workers.fff_runner import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 
@@ -194,7 +194,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
     @patch("workers.pipeline.ff_logging")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     def test_url_worker_removes_active_on_abandon(
         self,
         mock_exec,
@@ -213,7 +213,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
 
-        from workers.command import FanFicFareResult
+        from workers.fff_runner import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 

@@ -1,25 +1,18 @@
-"""Anubis anti-bot challenge detector and proof-of-work solver.
+"""Anubis challenge detection, HTTP solving, and cookiejar session management."""
 
-Sites like Royal Road (and potentially others) use Techaro Anubis as an AI anti-scraping
-firewall. Anubis intercepts HTTP requests with an interstitial proof-of-work challenge
-using Argon2id (difficulty 4) and an optional CSS loading probe before issuing a 7-day
-session JWT cookie ('techaro.lol-anubis-auth-*').
+from __future__ import annotations
 
-This module provides detection, Argon2id PoW solving, reactive site protection tracking,
-and FanFicFare cookiejar integration so downloads proceed automatically without manual intervention.
-"""
-
-from typing import cast
-from urllib.parse import urlparse
-import hashlib
 import json
 import threading
 import time
+from typing import cast
+from urllib.parse import urlparse
+
 from bs4 import BeautifulSoup
 import requests
-import argon2.low_level
-from fanficfare.fetchers.base_fetcher import LWPCookieJar
 
+from antibot.anubis_pow import solve_pow, solve_sha256_pow
+from fanficfare.fetchers.base_fetcher import LWPCookieJar
 import ff_logging
 from utils import url_utils
 
@@ -66,84 +59,32 @@ def is_anubis_challenge(html: str) -> bool:
     return False
 
 
-def validate_anubis_hash(h: bytes, difficulty: int) -> bool:
-    """Verify that the leading `difficulty` bits of the hash `h` are 0."""
-    remaining = difficulty
-    for b in h:
-        if remaining == 0:
-            break
-        if remaining >= 8:
-            if b != 0:
-                return False
-            remaining -= 8
-        else:
-            mask = (0xFF << (8 - remaining)) & 0xFF
-            if (b & mask) != 0:
-                return False
-            remaining = 0
-    return True
+def _has_valid_anubis_cookie(jar: object) -> bool:
+    """Check if the cookiejar contains an unexpired Anubis authentication cookie."""
+    if jar is None:
+        return False
+    try:
+        for cookie in cast(list[object], jar):
+            name = getattr(cookie, "name", "")
+            if _ANUBIS_AUTH_COOKIE_PREFIX in name:
+                is_expired_fn = getattr(cookie, "is_expired", None)
+                if callable(is_expired_fn):
+                    if not is_expired_fn():
+                        return True
+                else:
+                    return True
+    except Exception:
+        return False
+    return False
 
 
-def solve_pow(data_bytes: bytes, difficulty: int, use_le: bool) -> tuple[int, bytes]:
-    """
-    Solve Anubis Argon2id proof-of-work.
+def _create_lwp_cookiejar() -> LWPCookieJar:
+    """Create a new LWPCookieJar compatible with FanFicFare's expectations."""
 
-    Args:
-        data_bytes: The challenge random bytes acting as the Argon2id password.
-        difficulty: Number of leading 0 bits required.
-        use_le: True if nonce is encoded in little-endian (when data_bytes[-1] >= 128).
-
-    Returns:
-        A tuple of (winning_nonce, winning_hash_bytes).
-    """
-    nonce = 0
-    while True:
-        salt = nonce.to_bytes(8, "little" if use_le else "big")
-        h = argon2.low_level.hash_secret_raw(
-            secret=data_bytes,
-            salt=salt,
-            time_cost=2,
-            memory_cost=19456,
-            parallelism=1,
-            hash_len=32,
-            type=argon2.low_level.Type.ID,
-            version=0x13,
-        )
-        if validate_anubis_hash(h, difficulty):
-            return nonce, h
-        nonce += 1
-
-
-def solve_sha256_pow(
-    random_data: str,
-    difficulty: int,
-    max_iterations: int = 10_000_000,
-) -> tuple[int, str]:
-    """
-    Solve Anubis fast/slow/sha256 proof-of-work.
-
-    Computes SHA-256(random_data + str(nonce)) until the resulting hex string
-    begins with `difficulty` zero characters.
-
-    Args:
-        random_data: The challenge salt string.
-        difficulty: Number of leading zero hex characters required.
-        max_iterations: Safety limit to prevent infinite loops.
-
-    Returns:
-        A tuple of (winning_nonce, winning_hex_hash).
-    """
-    target_prefix = "0" * difficulty
-    nonce = 0
-    while nonce < max_iterations:
-        candidate = f"{random_data}{nonce}".encode("utf-8")
-        h = hashlib.sha256(candidate).hexdigest()
-        if h.startswith(target_prefix):
-            return nonce, h
-        nonce += 1
-    raise RuntimeError(
-        f"Anubis SHA-256 PoW could not be solved within {max_iterations} iterations"
-    )
+    jar = LWPCookieJar()
+    setattr(jar, "autosave", False)
+    jar.filename = None
+    return jar
 
 
 def solve_anubis_challenge(
@@ -152,18 +93,7 @@ def solve_anubis_challenge(
     html: str,
     user_agent: str,
 ) -> bool:
-    """
-    Extract challenge parameters, fulfill extensions, compute PoW, and submit solution.
-
-    Args:
-        session: Active requests.Session holding cookies.
-        page_url: The URL that triggered the challenge.
-        html: The challenge page HTML.
-        user_agent: Matching User-Agent string.
-
-    Returns:
-        True if the challenge was successfully passed and authentication cookies acquired.
-    """
+    """Extract challenge parameters, fulfill extensions, compute PoW, and submit solution."""
     try:
         soup = BeautifulSoup(html, "html.parser")
         challenge_tag = soup.find("script", id="anubis_challenge")
@@ -259,45 +189,13 @@ def solve_anubis_challenge(
         return False
 
 
-def _has_valid_anubis_cookie(jar: object) -> bool:
-    """Check if the cookiejar contains an unexpired Anubis authentication cookie."""
-    if jar is None:
-        return False
-    try:
-        for cookie in cast(list[object], jar):
-            name = getattr(cookie, "name", "")
-            if _ANUBIS_AUTH_COOKIE_PREFIX in name:
-                is_expired_fn = getattr(cookie, "is_expired", None)
-                if callable(is_expired_fn):
-                    if not is_expired_fn():
-                        return True
-                else:
-                    return True
-    except Exception:
-        return False
-    return False
-
-
-def _create_lwp_cookiejar() -> LWPCookieJar:
-    """Create a new LWPCookieJar compatible with FanFicFare's expectations."""
-    jar = LWPCookieJar()
-    setattr(jar, "autosave", False)
-    jar.filename = None
-    return jar
-
-
 def probe_and_solve_anubis(
     url: str,
     user_agent: str,
     cookiejar: LWPCookieJar | None,
 ) -> tuple[bool, LWPCookieJar]:
-    """
-    Probe URL to test if Anubis is blocking it, and solve the challenge if present.
+    """Probe URL to test if Anubis is blocking it, and solve the challenge if present."""
 
-    Returns:
-        (True, updated_cookiejar) if an Anubis challenge was found and solved.
-        (False, cookiejar) if no Anubis challenge was detected or solving failed.
-    """
     target_jar: LWPCookieJar
     if cookiejar is not None and (
         isinstance(cookiejar, LWPCookieJar) or hasattr(cookiejar, "set_cookie")
@@ -352,9 +250,8 @@ def ensure_anubis_session(
     user_agent: str,
     cookiejar: LWPCookieJar | None,
 ) -> LWPCookieJar:
-    """
-    Ensure the cookiejar contains an active Anubis session if site is known to require it.
-    """
+    """Ensure the cookiejar contains an active Anubis session if site requires it."""
+
     target_jar: LWPCookieJar
     if cookiejar is not None and (
         isinstance(cookiejar, LWPCookieJar) or hasattr(cookiejar, "set_cookie")

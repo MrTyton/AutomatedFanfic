@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo
-from utils import anubis_solver
+import antibot as anubis_solver
 from utils.system_utils import get_packaged_defaults_ini_path
 from workers import fff_runner
 

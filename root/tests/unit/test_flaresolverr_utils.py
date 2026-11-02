@@ -2,11 +2,10 @@
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-import json
-import urllib.error
+import requests
 
 
-from utils import flaresolverr_utils
+from antibot import flaresolverr as flaresolverr_utils
 
 
 class TestFlareSolverrCrashDetection:
@@ -79,45 +78,45 @@ flaresolverr_session: FanFicFareSession_www_fanfiction_net
 class TestFlareSolverrApiOperations:
     """Tests for sessions.list and sessions.destroy commands."""
 
-    @patch("urllib.request.urlopen")
-    def test_list_sessions_success(self, mock_urlopen):
+    @patch("requests.post")
+    def test_list_sessions_success(self, mock_post):
         mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps(
-            {"status": "ok", "sessions": ["sess_rr", "sess_ffn"]}
-        ).encode("utf-8")
-        mock_resp.__enter__.return_value = mock_resp
-        mock_urlopen.return_value = mock_resp
+        mock_resp.json.return_value = {
+            "status": "ok",
+            "sessions": ["sess_rr", "sess_ffn"],
+        }
+        mock_post.return_value = mock_resp
 
         sessions = flaresolverr_utils.list_flaresolverr_sessions(
             "http://localhost:8191/v1"
         )
         assert sessions == ["sess_rr", "sess_ffn"]
 
-    @patch("urllib.request.urlopen")
-    def test_list_sessions_network_error(self, mock_urlopen):
-        mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
+    @patch("requests.post")
+    def test_list_sessions_network_error(self, mock_post):
+        mock_post.side_effect = requests.RequestException("Connection refused")
         sessions = flaresolverr_utils.list_flaresolverr_sessions(
             "http://localhost:8191/v1"
         )
         assert sessions == []
 
-    @patch("urllib.request.urlopen")
-    def test_destroy_session_success(self, mock_urlopen):
+    @patch("requests.post")
+    def test_destroy_session_success(self, mock_post):
         mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps(
-            {"status": "ok", "message": "The session has been removed."}
-        ).encode("utf-8")
-        mock_resp.__enter__.return_value = mock_resp
-        mock_urlopen.return_value = mock_resp
+        mock_resp.json.return_value = {
+            "status": "ok",
+            "message": "The session has been removed.",
+        }
+        mock_post.return_value = mock_resp
 
         success = flaresolverr_utils.destroy_flaresolverr_session(
             "http://localhost:8191/v1", "sess_rr"
         )
         assert success is True
 
-    @patch("urllib.request.urlopen")
-    def test_destroy_session_failure(self, mock_urlopen):
-        mock_urlopen.side_effect = urllib.error.URLError("Timeout")
+    @patch("requests.post")
+    def test_destroy_session_failure(self, mock_post):
+        mock_post.side_effect = requests.RequestException("Timeout")
         success = flaresolverr_utils.destroy_flaresolverr_session(
             "http://localhost:8191/v1", "sess_rr"
         )

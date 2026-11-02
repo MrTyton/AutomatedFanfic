@@ -8,7 +8,7 @@ from models.context import WorkerContext
 from models.fanfic_info import FanficInfo
 from notifications import notification_wrapper
 from workers import pipeline
-from workers.command import FanFicFareResult
+from workers.fff_runner import FanFicFareResult
 
 
 class TestPipeline(unittest.TestCase):
@@ -35,7 +35,7 @@ class TestPipeline(unittest.TestCase):
             active_urls={},
         )
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
@@ -59,7 +59,7 @@ class TestPipeline(unittest.TestCase):
             error_message="Construction Failed",
         )
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
@@ -81,7 +81,7 @@ class TestPipeline(unittest.TestCase):
         _, kwargs = mock_handlers.handle_failure.call_args
         self.assertIn("Bytes Output", kwargs["error_message"])
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
@@ -182,7 +182,7 @@ class TestPipeline(unittest.TestCase):
         mock_reclaim_memory.assert_not_called()
 
     @patch("workers.pipeline.handlers.process_fanfic_addition", return_value=True)
-    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.fff_runner.execute_fanficfare_direct")
     @patch(
         "workers.pipeline.common.get_path_or_url",
         return_value="http://example.com/story",
@@ -282,7 +282,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         calls = [str(call) for call in mock_logging.log.call_args_list]
         self.assertTrue(any("interrupted" in call.lower() for call in calls))
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
@@ -345,7 +345,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
     @patch("workers.pipeline.time.sleep")
     @patch("workers.pipeline.handlers.process_fanfic_addition", return_value=True)
-    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.fff_runner.execute_fanficfare_direct")
     @patch(
         "workers.pipeline.common.get_path_or_url",
         return_value="https://archiveofourown.org/works/1",
@@ -394,7 +394,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         mock_sleep.assert_called_once_with(pipeline.FAILURE_COOLDOWN_SECONDS)
 
     @patch("workers.pipeline.time.sleep")
-    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.fff_runner.execute_fanficfare_direct")
     @patch(
         "workers.pipeline.common.get_path_or_url",
         return_value="https://archiveofourown.org/works/1",
@@ -459,7 +459,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
 @patch("workers.pipeline.system_utils")
 @patch("workers.pipeline.common")
 @patch("workers.pipeline.handlers")
-@patch("workers.pipeline.command")
+@patch("workers.pipeline.fff_runner")
 class TestUpdateOnlyMode(unittest.TestCase):
     """`calibre.update_only` drops email-sourced URLs that are not in Calibre."""
 

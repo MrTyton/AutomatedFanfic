@@ -24,10 +24,13 @@ from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
 from models.queue_types import IngressQueue, WorkerQueue
 import ff_logging
-from utils import anubis_solver, flaresolverr_utils, system_utils
+import antibot as anubis_solver
+from antibot import cookies as cookie_cache
+from antibot import flaresolverr as flaresolverr_utils
+from utils import system_utils
 
 # Import from sibling modules
-from . import command, common, cookie_cache, handlers
+from . import common, fff_runner, handlers
 
 # Cooldown applied between a failed task and the next queued task on the same site,
 # compensating for FanFicFare's SleepDecorator being bypassed when a request raises.
@@ -157,7 +160,7 @@ def _process_task(
             return handlers.check_active_removal(fanfic)
 
         # 4. Execute FanFicFare via direct Python API
-        fff_result = command.execute_fanficfare_direct(
+        fff_result = fff_runner.execute_fanficfare_direct(
             calibre_client.cdb_info, fanfic, path_or_url, temp_dir
         )
 
@@ -175,7 +178,7 @@ def _process_task(
                 )
                 anubis_solver.mark_site_anubis_protected(site)
                 cookie_cache.set_site_cookiejar(site, updated_jar)
-                fff_result = command.execute_fanficfare_direct(
+                fff_result = fff_runner.execute_fanficfare_direct(
                     calibre_client.cdb_info, fanfic, path_or_url, temp_dir
                 )
                 if not fff_result.has_failure:
@@ -202,7 +205,7 @@ def _process_task(
                     ff_logging.log(
                         f"({site}) FlareSolverr session recovered. Retrying FanFicFare download..."
                     )
-                    fff_result = command.execute_fanficfare_direct(
+                    fff_result = fff_runner.execute_fanficfare_direct(
                         calibre_client.cdb_info, fanfic, path_or_url, temp_dir
                     )
                     if not fff_result.has_failure:

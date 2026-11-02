@@ -5,7 +5,7 @@ from parameterized import parameterized
 import multiprocessing as mp
 
 
-from workers import pipeline, handlers, command, common  # noqa: E402
+from workers import pipeline, handlers, fff_runner as command, common  # noqa: E402
 import config as config_models  # noqa: E402
 from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext  # noqa: E402
@@ -653,7 +653,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 error_message="Force update requested but update method is 'update_no_force'",
             )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -699,7 +699,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 error_message="Command execution failed",
             )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -734,7 +734,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         _, kwargs = mock_handle_failure.call_args
         self.assertIn("Missing required element!", kwargs["error_message"])
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -772,7 +772,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             error_message="FanFicFare reported a permanent failure condition.",
         )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -804,7 +804,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.mock_ingress_queue.put.assert_any_call(self.test_fanfic)
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -1004,14 +1004,14 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 class GetFanficfareVersionTestCase(unittest.TestCase):
     """Test cases for get_fanficfare_version function."""
 
-    @patch("workers.command.ff_logging.log")
+    @patch("workers.fff_runner.ff_logging.log")
     def test_get_fanficfare_version_success(self, _mock_log):
         """get_fanficfare_version returns the installed package version string."""
         with patch("importlib.metadata.version", return_value="4.48.7"):
             result = command.get_fanficfare_version()
         self.assertEqual(result, "4.48.7")
 
-    @patch("workers.command.ff_logging.log")
+    @patch("workers.fff_runner.ff_logging.log")
     def test_get_fanficfare_version_error(self, mock_log):
         """get_fanficfare_version returns an error string and logs when metadata lookup fails."""
         exc = Exception("package not found")
@@ -1415,7 +1415,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         )
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_signals_idle_only_when_queue_empty(
@@ -1457,7 +1457,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing path
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://archiveofourown.org/works/1"
-        from workers.command import FanFicFareResult
+        from workers.fff_runner import FanFicFareResult
 
         mock_execute.return_value = FanFicFareResult()
 
@@ -1494,7 +1494,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.assertEqual(mock_process_addition.call_count, 3)
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_signals_idle_for_different_sites(
@@ -1537,7 +1537,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://test.com/story"
-        from workers.command import FanFicFareResult
+        from workers.fff_runner import FanFicFareResult
 
         mock_execute.return_value = FanFicFareResult()
 
@@ -1575,7 +1575,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.assertEqual(idle_signals[1][2], "fanfiction")
 
     @patch("workers.handlers.process_fanfic_addition", return_value=True)
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_signals_idle_on_poison_pill_exit(
@@ -1615,7 +1615,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             [("WORKER_IDLE", self.worker_id, "archiveofourown")],
         )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_retains_active_url_with_waiting_status_on_strategy_failure(
@@ -1658,14 +1658,14 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self,
     ):
         """command._extract_output_filename_template is LRU-cached and execute_fanficfare_direct reads INI files via read_ini_file_cached."""
-        command._extract_output_filename_template.cache_clear()
+        command.extract_output_filename_template.cache_clear()
         ini_text = "[defaults]\noutput_filename: /some/dir/${title}-${siteabbrev}${formatext}\n"
 
-        t1 = command._extract_output_filename_template(ini_text, "archiveofourown")
-        t2 = command._extract_output_filename_template(ini_text, "archiveofourown")
+        t1 = command.extract_output_filename_template(ini_text, "archiveofourown")
+        t2 = command.extract_output_filename_template(ini_text, "archiveofourown")
         self.assertEqual(t1, "${title}-${siteabbrev}${formatext}")
         self.assertEqual(t1, t2)
-        cache_info = command._extract_output_filename_template.cache_info()
+        cache_info = command.extract_output_filename_template.cache_info()
         self.assertEqual(cache_info.misses, 1)
         self.assertEqual(cache_info.hits, 1)
 

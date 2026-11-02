@@ -12,15 +12,15 @@ import fanficfare.configurable as configurable
 
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo
-from utils import anubis_solver
+import antibot as anubis_solver
 from utils.system_utils import get_packaged_defaults_ini_path
-from workers import command
-from workers.command import (
-    _build_argv,
-    _extract_output_filename_template,
-    _resolve_fanficfare_user_agent,
-    _resolve_target_url,
-    _ThreadLocalStdout,
+import antibot
+from utils.thread_stdout import ThreadLocalStdout as _ThreadLocalStdout
+from workers.fff_runner import (
+    build_argv as _build_argv,
+    extract_output_filename_template as _extract_output_filename_template,
+    resolve_fanficfare_user_agent as _resolve_fanficfare_user_agent,
+    resolve_target_url as _resolve_target_url,
     execute_fanficfare_direct,
     FanFicFareResult,
 )
@@ -80,13 +80,13 @@ class TestBuildArgv(unittest.TestCase):
         self.assertIn("--force", argv)
         self.assertNotIn("-U", argv)
 
-    @patch("workers.command.ff_logging.is_verbose", return_value=True)
+    @patch("workers.fff_runner.ff_logging.is_verbose", return_value=True)
     def test_verbose_adds_debug_flag(self, _mock):
         self.mock_cdb.update_method = "update"
         argv = _build_argv(self.mock_cdb, self.mock_fanfic)
         self.assertIn("--debug", argv)
 
-    @patch("workers.command.ff_logging.is_verbose", return_value=False)
+    @patch("workers.fff_runner.ff_logging.is_verbose", return_value=False)
     def test_non_verbose_omits_debug_flag(self, _mock):
         self.mock_cdb.update_method = "update"
         argv = _build_argv(self.mock_cdb, self.mock_fanfic)
@@ -167,12 +167,12 @@ class TestBuildArgvWithRealFanFicFareParser(unittest.TestCase):
         options = self._parse("update")
         self.assertFalse(options.interactive)
 
-    @patch("workers.command.ff_logging.is_verbose", return_value=True)
+    @patch("workers.fff_runner.ff_logging.is_verbose", return_value=True)
     def test_verbose_sets_debug_flag(self, _mock):
         options = self._parse("update")
         self.assertTrue(options.debug)
 
-    @patch("workers.command.ff_logging.is_verbose", return_value=False)
+    @patch("workers.fff_runner.ff_logging.is_verbose", return_value=False)
     def test_non_verbose_omits_debug_flag(self, _mock):
         options = self._parse("update")
         self.assertFalse(options.debug)
@@ -312,8 +312,7 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         self.mock_fanfic = MagicMock(spec=FanficInfo)
         self.mock_fanfic.behavior = None
         self.mock_fanfic.site = "archiveofourown"
-        if hasattr(command, "clear_site_cookiejars"):
-            command.clear_site_cookiejars()
+        antibot.clear_site_cookiejars()
 
     def _run_direct(self, do_download_side_effect=None, temp_dir="/tmp/test"):
         """Helper: patch fanficfare internals and run execute_fanficfare_direct."""
@@ -322,7 +321,7 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         mock_parser.parse_args.return_value = (mock_options, [])
 
         with (
-            patch("workers.command.ff_logging.is_verbose", return_value=False),
+            patch("workers.fff_runner.ff_logging.is_verbose", return_value=False),
             patch("fanficfare.cli.mkParser", return_value=mock_parser) as mock_mk,
             patch("fanficfare.cli.expandOptions"),
             patch("fanficfare.cli.do_download", side_effect=do_download_side_effect),
@@ -555,13 +554,13 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         mock_jar = MagicMock()
 
         with (
-            patch("workers.command.ff_logging.is_verbose", return_value=False),
+            patch("workers.fff_runner.ff_logging.is_verbose", return_value=False),
             patch("fanficfare.cli.mkParser", return_value=mock_parser),
             patch("fanficfare.cli.expandOptions"),
             patch("fanficfare.cli.do_download"),
-            patch("utils.anubis_solver.is_site_anubis_protected", return_value=True),
+            patch("antibot.is_site_anubis_protected", return_value=True),
             patch(
-                "utils.anubis_solver.ensure_anubis_session", return_value=mock_jar
+                "antibot.ensure_anubis_session", return_value=mock_jar
             ) as mock_ensure,
         ):
             res = execute_fanficfare_direct(

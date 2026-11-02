@@ -1,12 +1,6 @@
-"""
-Generic browser impersonation session for FanFicFare.
+"""Generic browser impersonation session for FanFicFare using curl-cffi."""
 
-Replaces standard Python OpenSSL / urllib3 transport in FanFicFare's RequestsFetcher
-with curl-cffi Chrome impersonation (HTTP/2, HTTP/3, JA3/JA4 TLS fingerprinting).
-This prevents Cloudflare HTTP 525 ("SSL Handshake Failed") errors and 403 Forbidden
-challenges generically across all supported sites without requiring manual cookie
-exports or site-specific hacks.
-"""
+from __future__ import annotations
 
 from collections.abc import Mapping
 from http.cookiejar import CookieJar
@@ -73,12 +67,7 @@ class ImpersonatedResponse:
 
 
 class ImpersonatedSession:
-    """
-    Session conforming to requests.Session interface backed by curl-cffi Chrome impersonation.
-
-    Routes HTTP/HTTPS requests through curl-cffi (HTTP/2, HTTP/3, Chrome TLS fingerprint),
-    and delegates file:// URLs to a standard requests.Session with FileAdapter.
-    """
+    """Session conforming to requests.Session interface backed by curl-cffi Chrome impersonation."""
 
     def __init__(self, impersonate: str = "chrome131") -> None:
         self.impersonate = impersonate
@@ -111,12 +100,7 @@ class ImpersonatedSession:
         self._file_session.cookies = cast(Any, jar)
 
     def mount(self, prefix: str, adapter: Any) -> None:
-        """
-        Mount a transport adapter.
-
-        No-op for HTTP/HTTPS since curl-cffi handles connection pooling and modern TLS
-        fingerprints internally. Mounts to file session if prefix is file://.
-        """
+        """Mount a transport adapter."""
         if prefix.startswith("file:"):
             self._file_session.mount(prefix, adapter)
 
@@ -131,12 +115,7 @@ class ImpersonatedSession:
         timeout: float = 60.0,
         **kwargs: Any,
     ) -> Any:
-        """
-        Send a request using browser impersonation or file transport.
-
-        Translates curl-cffi exceptions to standard requests exceptions so FanFicFare
-        error handling and retries function identically.
-        """
+        """Send a request using browser impersonation or file transport."""
         if url.startswith("file://") or url.startswith("file:"):
             return self._file_session.request(
                 method=method,
@@ -199,11 +178,7 @@ class ImpersonatedSession:
 
 
 def install_impersonated_session() -> bool:
-    """
-    Configure FanFicFare's RequestsFetcher to use ImpersonatedSession generically.
-
-    Returns True if curl-cffi is installed and active; False if falling back to requests.
-    """
+    """Configure FanFicFare's RequestsFetcher to use ImpersonatedSession generically."""
     global _IS_INSTALLED
     if not CURL_CFFI_AVAILABLE:  # pragma: no cover
         ff_logging.log_debug(
@@ -215,7 +190,6 @@ def install_impersonated_session() -> bool:
         return ImpersonatedSession()
 
     def _do_impersonated_mounts(self: Any, session: Any) -> None:
-        # FanFicFare configures proxies and file adapter through do_mounts
         session.mount("file://", FileAdapter())
         if self.getConfig("http_proxy"):
             session.proxies["http"] = self.getConfig("http_proxy")

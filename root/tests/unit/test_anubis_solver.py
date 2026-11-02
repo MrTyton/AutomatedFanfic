@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 import http.cookiejar
 
-from utils.anubis_solver import (
+from antibot.anubis_client import (
     DEFAULT_USER_AGENT,
     clear_anubis_protected_sites,
     ensure_anubis_session,
@@ -10,6 +10,8 @@ from utils.anubis_solver import (
     mark_site_anubis_protected,
     probe_and_solve_anubis,
     solve_anubis_challenge,
+)
+from antibot.anubis_pow import (
     solve_pow,
     solve_sha256_pow,
     validate_anubis_hash,

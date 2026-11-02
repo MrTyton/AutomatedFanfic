@@ -21,13 +21,13 @@ lazy from calibre_integration import (
 )
 from models.fanfic_info import FanficInfo
 import ff_logging
-lazy from utils import flaresolverr_utils
+lazy from antibot import flaresolverr as flaresolverr_utils
 from utils.system_utils import resolve_ini_path
 lazy from config.store import ConfigStore
 lazy from fanficfare import adapters as fff_adapters, configurable, geturls
 lazy from notifications.apprise_notification import AppriseNotification
 lazy from parsers import auto_url_parsers, regex_parsing
-lazy from utils import anubis_solver
+lazy import antibot as anubis_solver
 lazy from workers import fff_runner
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])

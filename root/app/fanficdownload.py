@@ -48,7 +48,7 @@ from calibre_integration import factory as calibre_factory
 lazy from notifications import notification_wrapper
 lazy from services import url_ingester
 lazy from services import supervisor
-lazy from workers import pipeline as url_worker, pool_runner
+lazy from workers import fff_runner, pool_runner
 import config as config_models
 from config import ConfigError, ConfigValidationError
 from models.context import SharedIPCContext
@@ -164,7 +164,7 @@ def log_configuration_details(
         calibre_version = CalibreHttpClient(temp_info, ConfigStore({})).get_version()
     else:
         calibre_version = calibredb_utils.CalibreDBClient.get_calibre_version()
-    fanficfare_version = url_worker.command.get_fanficfare_version()
+    fanficfare_version = fff_runner.get_fanficfare_version()
     apprise_version = system_utils.get_installed_package_version("apprise")
     ff_logging.log(f"Calibre version: {calibre_version}")
     ff_logging.log(f"FanFicFare version: {fanficfare_version}")

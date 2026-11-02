@@ -1,9 +1,8 @@
-"""
-Per-site CookieJar session cache for worker pool threads.
-"""
+"""Per-site CookieJar session caching and cookiejar inspection utilities."""
+
+from __future__ import annotations
 
 import threading
-
 import ff_logging
 
 _site_cookiejars: dict[str, object] = {}

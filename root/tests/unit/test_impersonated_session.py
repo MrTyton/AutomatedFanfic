@@ -15,7 +15,7 @@ from requests.exceptions import (
 )
 
 from fanficfare.fetchers import fetcher_requests as fff_fetcher_requests
-from workers.impersonated_session import (
+from antibot.impersonation import (
     ImpersonatedResponse,
     ImpersonatedSession,
     install_impersonated_session,
@@ -226,7 +226,7 @@ def test_install_and_uninstall_lifecycle():
 
 def test_fallback_when_curl_cffi_missing():
     """Verify fallback when curl-cffi is not available."""
-    with patch("workers.impersonated_session.CURL_CFFI_AVAILABLE", False):
+    with patch("antibot.impersonation.CURL_CFFI_AVAILABLE", False):
         result = install_impersonated_session()
         assert result is False
         assert not is_impersonated_session_installed()

@@ -382,7 +382,7 @@ async def test_dry_run_endpoint_flaresolverr_tab_crash_recovery():
     with (
         patch("fanficfare.adapters.getAdapter", return_value=mock_adapter),
         patch(
-            "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=1
+            "antibot.flaresolverr.recover_flaresolverr_crashes", return_value=1
         ) as mock_recover,
     ):
         async with AsyncClient(
@@ -427,7 +427,7 @@ async def test_recover_flaresolverr_sessions_endpoint():
     app = create_app(state)
 
     with patch(
-        "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=2
+        "antibot.flaresolverr.recover_flaresolverr_crashes", return_value=2
     ) as mock_recover:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -453,7 +453,7 @@ async def test_recover_flaresolverr_sessions_endpoint_default_empty_body():
     app = create_app(state)
 
     with patch(
-        "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=0
+        "antibot.flaresolverr.recover_flaresolverr_crashes", return_value=0
     ) as mock_recover:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

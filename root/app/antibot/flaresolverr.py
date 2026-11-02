@@ -1,24 +1,15 @@
-"""FlareSolverr anti-bot crash detection and session recovery utilities.
+"""FlareSolverr anti-bot crash detection and session recovery utilities."""
 
-When FlareSolverr's underlying Chromium instance experiences an unexpected tab
-or page crash, FlareSolverr retains the dead session in memory and fails all subsequent
-requests with 'HTTP Error 500: Error solving the challenge. Message: tab crashed'.
+from __future__ import annotations
 
-This module provides detection for tab crash conditions, parses FlareSolverr proxy
-configurations from personal.ini, and orchestrates 'sessions.destroy' commands
-so that clean sessions can be re-established automatically.
-"""
-
+import configparser
 from dataclasses import dataclass
 from pathlib import Path
-import configparser
-import json
-import urllib.error
-import urllib.parse
-import urllib.request
 
+import requests
+
+from config.ini_resolver import resolve_ini_path
 import ff_logging
-from utils.system_utils import resolve_ini_path
 
 CRASH_INDICATORS: tuple[str, ...] = (
     "tab crashed",
@@ -106,7 +97,6 @@ def get_flaresolverr_configs(
         if not use_proxy:
             continue
 
-        endpoint: str
         if parser.has_option(sec, "flaresolverr_proxy"):
             raw_proxy = parser.get(sec, "flaresolverr_proxy").strip()
             endpoint = _normalize_endpoint(raw_proxy)
@@ -151,21 +141,17 @@ def get_flaresolverr_configs(
 
 
 def list_flaresolverr_sessions(endpoint: str, timeout: float = 5.0) -> list[str]:
-    """Query active session identifiers from a FlareSolverr v1 endpoint."""
+    """Query active session identifiers from a FlareSolverr v1 endpoint using requests."""
     try:
-        payload = json.dumps({"cmd": "sessions.list"}).encode("utf-8")
-        req = urllib.request.Request(
+        resp = requests.post(
             endpoint,
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "AutomatedFanfic/1.0",
-            },
+            json={"cmd": "sessions.list"},
+            headers={"User-Agent": "AutomatedFanfic/1.0"},
+            timeout=timeout,
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="replace"))
-            sessions = data.get("sessions", [])
-            return [str(s) for s in sessions]
+        data = resp.json()
+        sessions = data.get("sessions", [])
+        return [str(s) for s in sessions]
     except Exception as exc:
         ff_logging.log_debug(
             f"FlareSolverr: Failed to query active sessions at {endpoint}: {exc}"
@@ -176,33 +162,27 @@ def list_flaresolverr_sessions(endpoint: str, timeout: float = 5.0) -> list[str]
 def destroy_flaresolverr_session(
     endpoint: str, session: str, timeout: float = 5.0
 ) -> bool:
-    """Send sessions.destroy for a given session identifier to FlareSolverr."""
+    """Send sessions.destroy for a given session identifier to FlareSolverr using requests."""
     try:
-        payload = json.dumps({"cmd": "sessions.destroy", "session": session}).encode(
-            "utf-8"
-        )
-        req = urllib.request.Request(
+        resp = requests.post(
             endpoint,
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "AutomatedFanfic/1.0",
-            },
+            json={"cmd": "sessions.destroy", "session": session},
+            headers={"User-Agent": "AutomatedFanfic/1.0"},
+            timeout=timeout,
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="replace"))
-            status = data.get("status")
-            if status == "ok":
-                ff_logging.log(
-                    f"FlareSolverr: Successfully destroyed session '{session}' at {endpoint}"
-                )
-                return True
-            else:
-                msg = data.get("message", "")
-                ff_logging.log_debug(
-                    f"FlareSolverr: sessions.destroy returned '{status}': {msg}"
-                )
-                return False
+        data = resp.json()
+        status = data.get("status")
+        if status == "ok":
+            ff_logging.log(
+                f"FlareSolverr: Successfully destroyed session '{session}' at {endpoint}"
+            )
+            return True
+        else:
+            msg = data.get("message", "")
+            ff_logging.log_debug(
+                f"FlareSolverr: sessions.destroy returned '{status}': {msg}"
+            )
+            return False
     except Exception as exc:
         ff_logging.log_failure(
             f"FlareSolverr: Failed to destroy session '{session}' at {endpoint}: {exc}"
@@ -214,17 +194,7 @@ def recover_flaresolverr_crashes(
     target_site: str | None = None,
     personal_ini_path: str | Path | None = None,
 ) -> int:
-    """
-    Recover from FlareSolverr tab crashes by destroying dead sessions.
-
-    Discovers configured FlareSolverr endpoints from personal.ini.
-    If target_site is specified (e.g., 'www.royalroad.com' or 'royalroad'),
-    it finds and destroys matching session(s). If no specific target_site is
-    specified or if matching active sessions are found, active sessions are cleaned up.
-
-    Returns:
-        int: Number of sessions successfully destroyed.
-    """
+    """Recover from FlareSolverr tab crashes by destroying dead sessions."""
     configs = get_flaresolverr_configs(personal_ini_path)
     if not configs:
         ff_logging.log_debug(
@@ -243,7 +213,6 @@ def recover_flaresolverr_crashes(
         sessions_to_destroy: set[str] = set()
 
         if target_clean:
-            # 1. Match against active sessions
             for s in active_sessions:
                 s_lower = s.lower()
                 if (
@@ -254,7 +223,6 @@ def recover_flaresolverr_crashes(
                 ):
                     sessions_to_destroy.add(s)
 
-            # 2. Check personal.ini configs for this target site
             for c in configs:
                 if c.endpoint == ep and c.session:
                     sec_clean = c.section.lower().replace(".", "_")
@@ -263,7 +231,6 @@ def recover_flaresolverr_crashes(
                     ):
                         sessions_to_destroy.add(c.session)
         else:
-            # Destroy all active sessions if no target site specified
             sessions_to_destroy.update(active_sessions)
             if not sessions_to_destroy:
                 for c in configs:

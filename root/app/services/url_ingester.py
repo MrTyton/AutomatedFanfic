@@ -74,7 +74,7 @@ from config.store import ConfigStore, read_ini_file_cached
 from history.recorder import HistoryRecorder
 lazy import imapclient
 import ff_logging
-lazy from utils import flaresolverr_utils
+lazy from antibot import flaresolverr as flaresolverr_utils
 lazy from utils import system_utils
 from parsers import regex_parsing
 from notifications import notification_wrapper

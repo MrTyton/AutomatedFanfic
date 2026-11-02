@@ -122,7 +122,7 @@ class TestUrlIngester(unittest.TestCase):
         self.assertEqual(result, set(expected_urls))
         mock_get_urls_class.return_value.get_urls_from_imap.assert_called_once()
 
-    @patch("utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=1)
+    @patch("antibot.flaresolverr.recover_flaresolverr_crashes", return_value=1)
     @patch("services.url_ingester.geturls.GetURLs")
     def test_email_info_get_urls_flaresolverr_tab_crash_recovery(
         self, mock_get_urls_class, mock_recover
