@@ -23,6 +23,7 @@ _STARTUP_COMPLETE_MARKERS = (
     "All processes started successfully",
     "Processes running. Press Ctrl+C to stop gracefully.",
     "WebServer: History database connection established",
+    "entered IMAP IDLE mode",
 )
 
 _log_forward_queue: LogQueue | None = None
@@ -34,14 +35,13 @@ def append_log_entry(entry: dict) -> None:
     with _log_buffer_lock:
         if "seq" not in entry:
             entry["seq"] = get_next_sequence_number()
-        _log_buffer.append(entry)
         if _startup_capture_enabled:
-            startup_entry = dict(entry)
-            startup_entry["is_startup"] = True
-            _startup_log_buffer.append(startup_entry)
+            entry["is_startup"] = True
+            _startup_log_buffer.append(dict(entry))
             msg = str(entry.get("message", ""))
             if any(marker in msg for marker in _STARTUP_COMPLETE_MARKERS):
                 _startup_capture_enabled = False
+        _log_buffer.append(entry)
 
     write_persistent_entry(entry)
 

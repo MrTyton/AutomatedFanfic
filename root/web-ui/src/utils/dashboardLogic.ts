@@ -433,68 +433,24 @@ function extractTitleFromLogMessage(message: string): string | null {
     return null
 }
 
-export function isStartupMessage(msg: string): boolean {
-    const trimmed = msg.trim()
-    const lower = trimmed.toLowerCase()
+export function isStartupStartMarker(msg: string): boolean {
+    const lower = msg.toLowerCase().trim()
+    return lower.startsWith('starting automatedfanfic')
+}
+
+export function isStartupEndMarker(msg: string): boolean {
+    const lower = msg.toLowerCase().trim()
     return (
-        lower.startsWith('starting automatedfanfic') ||
-        lower.startsWith('for issues and updates') ||
-        lower.startsWith('using configuration file') ||
-        lower.startsWith('python version:') ||
-        lower.startsWith('os / platform:') ||
-        lower.startsWith('calibre version:') ||
-        lower.startsWith('fanficfare version:') ||
-        lower.startsWith('apprise version:') ||
-        lower.includes('configuration details') ||
-        lower.startsWith('email account:') ||
-        lower.startsWith('email server:') ||
-        lower.startsWith('email mailbox:') ||
-        lower.startsWith('email sleep time:') ||
-        lower.startsWith('disabled sites:') ||
-        lower.startsWith('calibre path:') ||
-        lower.startsWith('calibre default ini:') ||
-        lower.startsWith('calibre personal ini:') ||
-        lower.startsWith('update method:') ||
-        lower.startsWith('update only (email):') ||
-        lower.startsWith('metadata preservation mode:') ||
-        lower.startsWith('pushbullet notifications:') ||
-        lower.startsWith('pushbullet device:') ||
-        lower.startsWith('apprise notifications:') ||
-        lower.startsWith('max workers:') ||
-        lower.startsWith('process monitoring:') ||
-        lower.startsWith('auto restart:') ||
-        trimmed.startsWith('---') ||
-        trimmed.startsWith('----------------') ||
-        lower.startsWith('generating url parsers') ||
-        (lower.startsWith('generated ') && lower.includes('url parsers')) ||
-        (lower.startsWith('spawning ') && lower.includes('worker pool')) ||
-        lower.startsWith('configuration loaded successfully') ||
-        lower.startsWith('apprise enabled') ||
-        lower.startsWith('webserver: starting') ||
-        lower.startsWith('web dashboard enabled') ||
-        lower.startsWith('historywriter: started') ||
-        lower.startsWith('starting all processes') ||
-        lower.startsWith('all processes started') ||
-        lower.startsWith('processes running') ||
-        lower.startsWith('supervisor: starting helper services') ||
-        (lower.startsWith('worker ') && lower.includes('started')) ||
-        lower.startsWith('webserver: history database connection established') ||
-        lower.startsWith('processmanager initialized') ||
-        lower.startsWith('signal handlers configured') ||
-        lower.startsWith('pushbullet device specified') ||
-        lower.startsWith('found device id') ||
-        lower.startsWith('automatically added pushbullet') ||
-        lower.startsWith('history recovery:') ||
-        lower.startsWith('registered process:') ||
-        lower.startsWith('started process:') ||
-        lower.startsWith('process monitoring started') ||
-        lower.startsWith('started process monitoring thread') ||
-        lower.startsWith('worker pool process using') ||
-        lower.startsWith('supervisor: started') ||
-        lower.startsWith('coordinator started') ||
-        lower.startsWith('webserver: using config-file') ||
-        lower.startsWith('webserver: log forwarder initialized')
+        lower.includes('all processes started') ||
+        lower.includes('processes running. press ctrl+c') ||
+        lower.includes('webserver: history database connection established') ||
+        lower.includes('entered imap idle mode')
     )
+}
+
+// Retain isStartupMessage for backwards compatibility as a start marker check
+export function isStartupMessage(msg: string): boolean {
+    return isStartupStartMarker(msg)
 }
 
 export interface SystemLogCategory {
@@ -521,13 +477,11 @@ export function categorizeSystemLog(entry: LogEntry, inStartupWindow: boolean): 
         return { category: 'shutdown', title: 'System Shutdown & Teardown' }
     }
 
-    // 2. Application Startup
-    const isReboot = lower.startsWith('starting automatedfanfic')
+    // 2. Application Startup (tagged by backend, start boundary marker, or within active startup phase)
     if (
         Boolean(entry.is_startup) ||
-        isReboot ||
-        inStartupWindow ||
-        isStartupMessage(msg)
+        isStartupStartMarker(msg) ||
+        inStartupWindow
     ) {
         return { category: 'startup', title: 'Application Startup & Lifecycle' }
     }
@@ -695,14 +649,14 @@ export function buildLogAttemptBlocks(
     for (const entry of chronological) {
         const site = extractEntrySite(entry)
         const urlMatch = entry.message.match(URL_EXTRACT_RE)
-        const isSystemBanner = isStartupMessage(entry.message)
+        const isStartupLine = Boolean(entry.is_startup) || isStartupStartMarker(entry.message)
         const procMatch = !urlMatch ? entry.message.match(/processing\s+([^\s<>"')]+)/i) : null
         const rawCandidateUrl =
             entry.story_url ||
             (urlMatch ? urlMatch[1] : undefined) ||
             (procMatch && isStoryCandidateUrl(procMatch[1]) ? procMatch[1] : undefined)
         const candidateUrl = rawCandidateUrl ? normalizeStoryUrl(rawCandidateUrl) : undefined
-        const url = isSystemBanner ? undefined : isStoryCandidateUrl(candidateUrl) ? candidateUrl : undefined
+        const url = isStartupLine ? undefined : isStoryCandidateUrl(candidateUrl) ? candidateUrl : undefined
         const msgLower = entry.message.toLowerCase()
 
         // Determine if this line starts or belongs to a story attempt
@@ -912,20 +866,26 @@ export function buildLogAttemptBlocks(
                 if (entry.worker_id) activeBlockByWorkerId.delete(entry.worker_id)
             }
         } else {
-            const isRebootMarker = msgLower.startsWith('starting automatedfanfic')
-            if (isRebootMarker) {
+            const entryTime = parseLogTimestamp(entry.timestamp)
+            let precedingInitialBlock: LogAttemptBlock | null = null
+            const isStartBoundary = isStartupStartMarker(entry.message)
+            if (isStartBoundary) {
                 const timeDiffSec = activeStartupBlock
-                    ? Math.abs(parseLogTimestamp(entry.timestamp) - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
+                    ? Math.abs(entryTime - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
                     : 999999
                 if (!activeStartupBlock || timeDiffSec > 30 || startupCompleteSeen) {
+                    if (
+                        currentSystemBlock &&
+                        Math.abs(entryTime - parseLogTimestamp(currentSystemBlock.endedAt)) / 1000 <= 10
+                    ) {
+                        precedingInitialBlock = currentSystemBlock
+                    }
                     activeStartupBlock = null
                     currentSystemBlock = null
                     startupCompleteSeen = false
                     startupCompletionTime = 0
                 }
             }
-
-            const entryTime = parseLogTimestamp(entry.timestamp)
             const timeSinceLastStartup = activeStartupBlock
                 ? Math.abs(entryTime - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
                 : 999999
@@ -947,6 +907,16 @@ export function buildLogAttemptBlocks(
                     : 999999
 
                 if (!activeStartupBlock || timeDiffSec > 120) {
+                    const precedingBlock = precedingInitialBlock
+
+                    const initialLines = precedingBlock ? [...precedingBlock.lines, entry] : [entry]
+                    if (precedingBlock) {
+                        const idx = blocks.indexOf(precedingBlock)
+                        if (idx !== -1) {
+                            blocks.splice(idx, 1)
+                        }
+                    }
+
                     activeStartupBlock = {
                         id: `startup-${entry.timestamp}-${blocks.length}`,
                         kind: 'system',
@@ -954,9 +924,9 @@ export function buildLogAttemptBlocks(
                         attemptNumber: 1,
                         status: 'system',
                         isActive: false,
-                        startedAt: entry.timestamp,
+                        startedAt: initialLines[0].timestamp,
                         endedAt: entry.timestamp,
-                        lines: [entry],
+                        lines: initialLines,
                     }
                     blocks.push(activeStartupBlock)
                     startupCompleteSeen = false
@@ -968,12 +938,7 @@ export function buildLogAttemptBlocks(
                 }
                 targetSystemBlock = activeStartupBlock
 
-                if (
-                    msgLower.includes('all processes started') ||
-                    msgLower.includes('processes running. press ctrl+c') ||
-                    msgLower.includes('webserver: history database connection established') ||
-                    msgLower.includes('entered imap idle mode')
-                ) {
+                if (isStartupEndMarker(entry.message)) {
                     startupCompleteSeen = true
                     startupCompletionTime = entryTime
                 }
