@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 from parameterized import parameterized
 
-from parsers import auto_url_parsers
+from parsers import url_patterns
 from models import fanfic_info
 from parsers import regex_parsing
 
@@ -14,7 +14,7 @@ class TestRegexParsing(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Generate URL parsers once for all tests."""
-        cls.url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+        cls.url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
 
     class CheckFilenameExtractionTestCase(NamedTuple):
         input: str

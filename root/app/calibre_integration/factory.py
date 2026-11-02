@@ -5,7 +5,7 @@ from calibre_integration.calibre_info import CalibreInfo
 from calibre_integration.client_interface import CalibreClient
 from calibre_integration.http_client import CalibreHttpClient
 from calibre_integration.models import CalibreConfigurationError
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 
 
 def is_http_location(location: str) -> bool:

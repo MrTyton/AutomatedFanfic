@@ -18,16 +18,13 @@ Architecture Note:
     for retries, creating a unified task ingress point.
 """
 
-import collections
 from collections.abc import MutableMapping
-from dataclasses import dataclass, field
 
 from queue import Empty
-from enum import Enum
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from history.recorder import HistoryRecorder
-from utils import ff_logging
-from models import active_urls as active_urls_utils
+import ff_logging
+from models.active_urls import mark_url_failed, mark_url_queued, remove_active_url
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from models.queue_types import (
@@ -38,65 +35,12 @@ from models.queue_types import (
     WorkerQueues,
 )
 
-lazy from utils import series_utils
+lazy from parsers import series
 lazy from parsers import regex_parsing
 
+from services.coordinator_models import CoordinatorState, SignalType, WorkerSignal
+
 _MAX_SERIES_DEPTH: int = 10
-
-
-class SignalType(Enum):
-    """Types of signals that can be sent to the coordinator."""
-
-    WORKER_IDLE = "WORKER_IDLE"
-    WORKER_STOPPED = "WORKER_STOPPED"
-    SHUTDOWN = "SHUTDOWN"
-
-
-@dataclass
-class WorkerSignal:
-    """Represents a signal from a worker to the coordinator."""
-
-    signal_type: SignalType
-    worker_id: str
-    site: str | None = None
-
-    @classmethod
-    def from_tuple(cls, signal_tuple: tuple) -> "WorkerSignal | None":
-        """Create WorkerSignal from legacy tuple format for backward compatibility."""
-        if not isinstance(signal_tuple, tuple) or len(signal_tuple) < 2:
-            return None
-
-        signal_str = signal_tuple[0]
-        if signal_str == "WORKER_IDLE" and len(signal_tuple) == 3:
-            return cls(
-                signal_type=SignalType.WORKER_IDLE,
-                worker_id=signal_tuple[1],
-                site=signal_tuple[2],
-            )
-        if signal_str == "WORKER_STOPPED" and len(signal_tuple) >= 2:
-            return cls(
-                signal_type=SignalType.WORKER_STOPPED,
-                worker_id=signal_tuple[1],
-                site=signal_tuple[2] if len(signal_tuple) > 2 else None,
-            )
-        return None
-
-
-@dataclass
-class CoordinatorState:
-    """Encapsulates the internal state of the coordinator.
-
-    This dataclass groups related state variables together for clearer
-    state management and easier testing.
-    """
-
-    backlog: dict[str, collections.deque] = field(
-        default_factory=lambda: collections.defaultdict(collections.deque)
-    )
-    assignments: dict[str, str] = field(default_factory=dict)
-    idle_workers: set[str] = field(default_factory=set)
-    dormant_workers: set[str] = field(default_factory=set)
-    qsize_supported: bool = True  # Cache whether queue.qsize() is supported
 
 
 class Coordinator:
@@ -118,7 +62,7 @@ class Coordinator:
         url_parsers: dict,
         config_store: ConfigStore,
         scale_queue: ScaleQueue,
-        coordinator_status: MutableMapping[str, object] | None = None,
+        coordinator_status: MutableMapping[str, object],
         verbose: bool = False,
     ) -> None:
         """Initialize the Coordinator.
@@ -175,8 +119,6 @@ class Coordinator:
 
     def _publish_state(self) -> None:
         """Snapshot internal assignments, worker states, and backlogs to shared state."""
-        if self.coordinator_status is None:
-            return
         try:
             backlog_snapshot = {
                 site: [
@@ -270,7 +212,7 @@ class Coordinator:
                     )
         self._publish_state()
 
-    def _process_single_ingress_item(self, timeout: float | None = None):
+    def _process_single_ingress_item(self, timeout: float | None):
         """
         Wait for and handle a single item from the ingress queue.
 
@@ -331,7 +273,7 @@ class Coordinator:
             try:
                 meta = dict(self.active_urls.get(task.url, {}))
                 if meta.get("status") == "cancelled":
-                    active_urls_utils.remove_active_url(self.active_urls, task.url)
+                    remove_active_url(self.active_urls, task.url)
                     ff_logging.log_debug(
                         f"Coordinator: Dropped cancelled task {task.url}"
                     )
@@ -344,7 +286,7 @@ class Coordinator:
         site = task.site
 
         # Check if this is a series/collection URL
-        expansion_result = series_utils.process_url(
+        expansion_result = series.process_url(
             task.url,
             config_store=self.config_store,
         )
@@ -362,13 +304,13 @@ class Coordinator:
 
                 # Remove the parent series URL from active_urls since workers only
                 # process and clean up the individual child story URLs.
-                active_urls_utils.remove_active_url(self.active_urls, task.url)
+                remove_active_url(self.active_urls, task.url)
             elif expansion_result["count"] == 0:
                 # Detected as series, but expansion produced 0 stories (e.g. 403 or network error)
                 ff_logging.log_failure(
                     f"Coordinator: Failed to expand series {task.url} into story URLs"
                 )
-                active_urls_utils.mark_url_failed(
+                mark_url_failed(
                     self.active_urls,
                     task.url,
                     "Failed to expand series (check credentials/login in personal.ini or network)",
@@ -401,9 +343,7 @@ class Coordinator:
                     retry_decision=task.retry_decision,
                     from_email=task.from_email,
                 )
-                active_urls_utils.mark_url_queued(
-                    self.active_urls, story_task.url, site=story_task.site
-                )
+                mark_url_queued(self.active_urls, story_task.url, site=story_task.site)
                 if self.history_recorder is not None:
                     try:
                         self.history_recorder.record_download_created(
@@ -503,7 +443,7 @@ class Coordinator:
                 try:
                     meta = dict(self.active_urls.get(task.url, {}))
                     if meta.get("status") == "cancelled":
-                        active_urls_utils.remove_active_url(self.active_urls, task.url)
+                        remove_active_url(self.active_urls, task.url)
                         ff_logging.log_debug(
                             f"Coordinator: Dropped cancelled backlog task {task.url}"
                         )
@@ -636,7 +576,7 @@ def start_coordinator(
     url_parsers: dict,
     config_store: ConfigStore,
     scale_queue: ScaleQueue,
-    coordinator_status: MutableMapping[str, object] | None = None,
+    coordinator_status: MutableMapping[str, object],
 ) -> None:
     """Entry point for the coordinator thread/process.
 

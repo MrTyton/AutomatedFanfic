@@ -3,12 +3,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from calibre_integration import calibredb_utils
-from models import config_models
+import config
 from models.context import WorkerContext
 from models.fanfic_info import FanficInfo
 from notifications import notification_wrapper
 from workers import pipeline
-from workers.command import FanFicFareResult
+from workers.fff_runner import FanFicFareResult
 
 
 class TestPipeline(unittest.TestCase):
@@ -23,7 +23,7 @@ class TestPipeline(unittest.TestCase):
         )
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
-        self.retry_config = config_models.RetryConfig()
+        self.retry_config = config.RetryConfig()
         self.worker_id = "worker_1"
         self.ctx = WorkerContext(
             calibre_client=self.mock_client,
@@ -35,7 +35,7 @@ class TestPipeline(unittest.TestCase):
             active_urls={},
         )
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
@@ -59,7 +59,7 @@ class TestPipeline(unittest.TestCase):
             error_message="Construction Failed",
         )
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
@@ -81,17 +81,24 @@ class TestPipeline(unittest.TestCase):
         _, kwargs = mock_handlers.handle_failure.call_args
         self.assertIn("Bytes Output", kwargs["error_message"])
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.epub_utils")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
     @patch("workers.pipeline.ff_logging")
     def test_verbose_logging_metadata(
-        self, mock_logging, mock_sys, mock_common, mock_handlers, mock_command
+        self,
+        mock_logging,
+        mock_sys,
+        mock_common,
+        mock_handlers,
+        mock_command,
+        mock_epub_utils,
     ):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = "file.epub"
-        mock_common.extract_title_from_epub_path.return_value = "file.epub"
+        mock_epub_utils.extract_title_from_epub_path.return_value = "file.epub"
 
         mock_command.FanFicFareResult = FanFicFareResult
         mock_command.execute_fanficfare_direct.return_value = FanFicFareResult()
@@ -100,7 +107,7 @@ class TestPipeline(unittest.TestCase):
 
         pipeline._process_task(self.fanfic, self.ctx)
 
-        mock_common.log_epub_metadata.assert_called_once_with("file.epub", "site")
+        mock_epub_utils.log_epub_metadata.assert_called_once_with("file.epub", "site")
 
     @patch("workers.pipeline.ff_logging")
     def test_url_worker_stop(self, mock_logging):
@@ -171,18 +178,18 @@ class TestPipeline(unittest.TestCase):
     def test_worker_permanent_worker_does_not_terminate_on_idle(
         self, mock_monotonic, mock_logging, mock_reclaim_memory
     ):
-        """Worker with idle_timeout=None does not exit when idle."""
+        """Worker with idle_timeout=0.0 does not exit when idle."""
         queue = MagicMock()
         queue.get.side_effect = [Empty, Empty, None]
         mock_monotonic.side_effect = [0.0, 100.0, 200.0]
 
-        pipeline.url_worker(queue, self.ctx, self.worker_id, idle_timeout=None)
+        pipeline.url_worker(queue, self.ctx, self.worker_id, idle_timeout=0.0)
 
         self.mock_ingress_queue.put.assert_not_called()
         mock_reclaim_memory.assert_not_called()
 
     @patch("workers.pipeline.handlers.process_fanfic_addition", return_value=True)
-    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.fff_runner.execute_fanficfare_direct")
     @patch(
         "workers.pipeline.common.get_path_or_url",
         return_value="http://example.com/story",
@@ -245,7 +252,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         )
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
-        self.retry_config = config_models.RetryConfig()
+        self.retry_config = config.RetryConfig()
         self.worker_id = "worker_1"
         self.ctx = WorkerContext(
             calibre_client=self.mock_client,
@@ -282,7 +289,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         calls = [str(call) for call in mock_logging.log.call_args_list]
         self.assertTrue(any("interrupted" in call.lower() for call in calls))
 
-    @patch("workers.pipeline.command")
+    @patch("workers.pipeline.fff_runner")
     @patch("workers.pipeline.handlers")
     @patch("workers.pipeline.common")
     @patch("workers.pipeline.system_utils")
@@ -345,7 +352,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
 
     @patch("workers.pipeline.time.sleep")
     @patch("workers.pipeline.handlers.process_fanfic_addition", return_value=True)
-    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.fff_runner.execute_fanficfare_direct")
     @patch(
         "workers.pipeline.common.get_path_or_url",
         return_value="https://archiveofourown.org/works/1",
@@ -394,7 +401,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
         mock_sleep.assert_called_once_with(pipeline.FAILURE_COOLDOWN_SECONDS)
 
     @patch("workers.pipeline.time.sleep")
-    @patch("workers.pipeline.command.execute_fanficfare_direct")
+    @patch("workers.pipeline.fff_runner.execute_fanficfare_direct")
     @patch(
         "workers.pipeline.common.get_path_or_url",
         return_value="https://archiveofourown.org/works/1",
@@ -459,7 +466,7 @@ class TestPipelineEdgeCases(unittest.TestCase):
 @patch("workers.pipeline.system_utils")
 @patch("workers.pipeline.common")
 @patch("workers.pipeline.handlers")
-@patch("workers.pipeline.command")
+@patch("workers.pipeline.fff_runner")
 class TestUpdateOnlyMode(unittest.TestCase):
     """`calibre.update_only` drops email-sourced URLs that are not in Calibre."""
 
@@ -476,7 +483,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
             notification_info=MagicMock(spec=notification_wrapper.NotificationWrapper),
             ingress_queue=MagicMock(),
             waiting_queue=MagicMock(),
-            retry_config=config_models.RetryConfig(),
+            retry_config=config.RetryConfig(),
             history_recorder=self.history_recorder,
             active_urls={},
         )
@@ -484,7 +491,6 @@ class TestUpdateOnlyMode(unittest.TestCase):
     def _arrange(self, mock_command, mock_common, mock_sys, path_or_url):
         mock_sys.temporary_directory.return_value.__enter__.return_value = "/tmp"
         mock_common.get_path_or_url.return_value = path_or_url
-        mock_common.extract_title_from_epub_path.return_value = "Test Story"
         mock_command.execute_fanficfare_direct.return_value = FanFicFareResult()
 
     def test_email_url_not_in_library_is_dropped(
@@ -541,7 +547,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
         mock_command.execute_fanficfare_direct.assert_called_once()
         self.history_recorder.record_download_abandoned.assert_not_called()
 
-    @patch("workers.pipeline.flaresolverr_utils")
+    @patch("workers.pipeline.flaresolverr")
     def test_flaresolverr_tab_crash_recovered_and_retried_in_pipeline(
         self,
         mock_flaresolverr,
@@ -576,7 +582,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
         )
         mock_handlers.process_fanfic_addition.assert_called_once()
 
-    @patch("workers.pipeline.anubis_solver")
+    @patch("workers.pipeline.antibot")
     def test_anubis_challenge_solved_and_retried_in_pipeline(
         self,
         mock_anubis,
@@ -611,7 +617,7 @@ class TestUpdateOnlyMode(unittest.TestCase):
         mock_anubis.mark_site_anubis_protected.assert_called_once_with(self.fanfic.site)
         mock_handlers.process_fanfic_addition.assert_called_once()
 
-    @patch("workers.pipeline.anubis_solver")
+    @patch("workers.pipeline.antibot")
     def test_anubis_not_challenged_does_not_retry_in_pipeline(
         self,
         mock_anubis,

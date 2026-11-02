@@ -52,9 +52,7 @@ class TestNewControlsRoutes(unittest.TestCase):
 
     def test_toggle_site_success(self) -> None:
         mock_config_store = MagicMock()
-        mock_config = MagicMock()
-        mock_config.email.disabled_sites = ["fanfiction.net"]
-        mock_config_store.get_config.return_value = mock_config
+        mock_config_store.get.return_value = ["fanfiction.net"]
         self.state.config_store = mock_config_store
 
         # Toggling "fanfiction.net" removes it
@@ -65,7 +63,7 @@ class TestNewControlsRoutes(unittest.TestCase):
         data = resp.json()
         self.assertTrue(data["ok"])
         self.assertIn("enabled", data["message"])
-        mock_config_store.set.assert_called_with("email", "disabled_sites", [])
+        mock_config_store.update.assert_called_with("email.disabled_sites", [])
 
         # Toggling "archiveofourown.org" adds it
         resp2 = self.client.post(
@@ -75,8 +73,8 @@ class TestNewControlsRoutes(unittest.TestCase):
         data2 = resp2.json()
         self.assertTrue(data2["ok"])
         self.assertIn("disabled", data2["message"])
-        mock_config_store.set.assert_called_with(
-            "email", "disabled_sites", ["fanfiction.net", "archiveofourown.org"]
+        mock_config_store.update.assert_called_with(
+            "email.disabled_sites", ["fanfiction.net", "archiveofourown.org"]
         )
 
     def test_toggle_site_invalid(self) -> None:
@@ -179,7 +177,6 @@ class TestNewControlsRoutes(unittest.TestCase):
         }
         self.state.active_urls = cast(ActiveUrlsDict, active)
 
-        # Clear specific URL
         resp = self.client.post(
             "/api/controls/clear-errors",
             json={"url": "https://archiveofourown.org/works/1"},
@@ -194,7 +191,6 @@ class TestNewControlsRoutes(unittest.TestCase):
             "https://archiveofourown.org/works/1", self.state.dismissed_error_urls
         )
 
-        # Clear all errors
         resp2 = self.client.post("/api/controls/clear-errors", json={})
         self.assertEqual(resp2.status_code, 200)
         self.assertTrue(resp2.json()["ok"])

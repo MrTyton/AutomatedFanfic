@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Query
 
-from utils import ff_logging
+import ff_logging
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 

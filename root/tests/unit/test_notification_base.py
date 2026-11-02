@@ -7,7 +7,7 @@ from notifications.notification_base import (
     kSleepTime,
     kMaxAttempts,
 )
-from models.config_models import (
+from config import (
     AppConfig,
     EmailConfig,
     CalibreConfig,
@@ -63,7 +63,7 @@ class TestRetryDecorator(unittest.TestCase):
         # Test that the decorated function is called once if it succeeds
         mock_func = MagicMock(return_value=True)
         decorated_func = retry_decorator(mock_func)
-        decorated_func()
+        self.assertTrue(decorated_func())
         mock_func.assert_called_once()
         mock_sleep.assert_not_called()
 
@@ -72,7 +72,7 @@ class TestRetryDecorator(unittest.TestCase):
         # Test that the decorated function is retried up to 3 times if it fails
         mock_func = MagicMock(return_value=False)
         decorated_func = retry_decorator(mock_func)
-        decorated_func()
+        self.assertFalse(decorated_func())
         self.assertEqual(mock_func.call_count, kMaxAttempts)
         self.assertEqual(mock_sleep.call_count, kMaxAttempts - 1)
         for i in range(kMaxAttempts - 1):

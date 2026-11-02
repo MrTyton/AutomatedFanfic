@@ -27,9 +27,9 @@ Example:
 """
 
 lazy import apprise
-from config.config_store import ConfigStore
-from models.config_models import AppConfig
-from utils import ff_logging
+from config.store import ConfigStore
+from config import AppConfig
+import ff_logging
 from . import notification_base
 lazy import requests
 

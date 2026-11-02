@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
-from history.database import AsyncHistoryDB
+from history.async_db import AsyncHistoryDB
 from web.dependencies import WebState
 from web.server import create_app
 

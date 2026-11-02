@@ -1,0 +1,218 @@
+"""Generic browser impersonation session for FanFicFare using curl-cffi."""
+
+from collections.abc import Mapping
+from http.cookiejar import CookieJar
+from typing import Any, cast
+import requests
+from requests.exceptions import (
+    ConnectionError as RequestsConnectionError,
+    HTTPError as RequestsHTTPError,
+    RequestException as RequestsRequestException,
+    Timeout as RequestsTimeout,
+)
+from requests_file import FileAdapter
+lazy from curl_cffi import requests as cffi_requests
+lazy from curl_cffi.requests.exceptions import (
+    ConnectionError as CffiConnectionError,
+    RequestException as CffiRequestException,
+    Timeout as CffiTimeout,
+)
+lazy from fanficfare.fetchers import fetcher_requests as fff_fetcher_requests
+import ff_logging
+
+CURL_CFFI_AVAILABLE = True
+
+_ORIGINAL_MAKE_SESSION: Any = None
+_ORIGINAL_DO_MOUNTS: Any = None
+_IS_INSTALLED = False
+
+
+class ImpersonatedResponse:
+    """Wrapper around curl_cffi Response matching the requests.Response contract."""
+
+    def __init__(self, raw_resp: Any) -> None:
+        self._raw = raw_resp
+        self.status_code: int = raw_resp.status_code
+        self.content: bytes = raw_resp.content
+        self.text: str = raw_resp.text
+        self.url: str = raw_resp.url
+        self.headers: Any = raw_resp.headers
+        self.cookies: Any = raw_resp.cookies
+
+    def json(self, **kwargs: Any) -> Any:
+        """Parse response JSON payload."""
+        return self._raw.json(**kwargs)
+
+    def raise_for_status(self) -> None:
+        """Raise standard requests.exceptions.HTTPError if response status indicates an error."""
+        if 400 <= self.status_code < 600:
+            error_type = "Client Error" if self.status_code < 500 else "Server Error"
+            msg = f"{self.status_code} {error_type}: for url: {self.url}"
+            raise RequestsHTTPError(msg, response=self)
+
+
+class ImpersonatedSession:
+    """Session conforming to requests.Session interface backed by curl-cffi Chrome impersonation."""
+
+    def __init__(self, impersonate: str = "chrome131") -> None:
+        self.impersonate = impersonate
+        if CURL_CFFI_AVAILABLE and cffi_requests is not None:
+            self._cffi_session: Any = cffi_requests.Session(impersonate=impersonate)
+        else:  # pragma: no cover
+            self._cffi_session = None
+
+        self._file_session = requests.Session()
+        self._file_session.mount("file://", FileAdapter())
+        self.headers: dict[str, str] = {}
+        self.proxies: dict[str, str] = {}
+        self._cookiejar: CookieJar | None = None
+
+    @property
+    def cookies(self) -> Any:
+        """Return the current cookie collection."""
+        if self._cookiejar is not None:
+            return self._cookiejar
+        if self._cffi_session is not None:
+            return self._cffi_session.cookies
+        return self._file_session.cookies
+
+    @cookies.setter
+    def cookies(self, jar: CookieJar) -> None:
+        """Assign an external CookieJar to the session."""
+        self._cookiejar = jar
+        if self._cffi_session is not None:
+            self._cffi_session.cookies = jar
+        self._file_session.cookies = cast(Any, jar)
+
+    def mount(self, prefix: str, adapter: Any) -> None:
+        """Mount a transport adapter."""
+        if prefix.startswith("file:"):
+            self._file_session.mount(prefix, adapter)
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        headers: Mapping[str, str] | None = None,
+        data: Any = None,
+        json: Any = None,
+        verify: bool = True,
+        timeout: float = 60.0,
+        **kwargs: Any,
+    ) -> Any:
+        """Send a request using browser impersonation or file transport."""
+        if url.startswith("file://") or url.startswith("file:"):
+            return self._file_session.request(
+                method=method,
+                url=url,
+                headers=dict(headers) if headers is not None else None,
+                data=data,
+                json=json,
+                verify=verify,
+                timeout=timeout,
+                **kwargs,
+            )
+
+        if not CURL_CFFI_AVAILABLE or self._cffi_session is None:  # pragma: no cover
+            return self._file_session.request(
+                method=method,
+                url=url,
+                headers=dict(headers) if headers is not None else None,
+                data=data,
+                json=json,
+                verify=verify,
+                timeout=timeout,
+                **kwargs,
+            )
+
+        sanitized_headers: dict[str, str] = {}
+        if self.headers:
+            sanitized_headers.update(self.headers)
+        if headers:
+            sanitized_headers.update(headers)
+
+        # Remove blank User-Agent headers that cause Cloudflare 403 blocks
+        if sanitized_headers.get("User-Agent") == "":
+            del sanitized_headers["User-Agent"]
+
+        try:
+            raw_resp = self._cffi_session.request(
+                method=method,
+                url=url,
+                headers=sanitized_headers if sanitized_headers else None,
+                data=data,
+                json=json,
+                verify=verify,
+                timeout=timeout,
+                proxies=self.proxies if self.proxies else None,
+                **kwargs,
+            )
+            return ImpersonatedResponse(raw_resp)
+        except CffiTimeout as e:
+            raise RequestsTimeout(str(e)) from e
+        except CffiConnectionError as e:
+            raise RequestsConnectionError(str(e)) from e
+        except CffiRequestException as e:
+            raise RequestsRequestException(str(e)) from e
+
+    def close(self) -> None:
+        """Close underlying sessions."""
+        if self._cffi_session is not None:
+            self._cffi_session.close()
+        self._file_session.close()
+
+
+def install_impersonated_session() -> bool:
+    """Configure FanFicFare's RequestsFetcher to use ImpersonatedSession generically."""
+    global _IS_INSTALLED, _ORIGINAL_MAKE_SESSION, _ORIGINAL_DO_MOUNTS
+    if not CURL_CFFI_AVAILABLE:  # pragma: no cover
+        ff_logging.log_debug(
+            "curl-cffi is not installed; FanFicFare using standard requests transport"
+        )
+        return False
+
+    if _ORIGINAL_MAKE_SESSION is None:
+        _ORIGINAL_MAKE_SESSION = fff_fetcher_requests.RequestsFetcher.make_sesssion
+    if _ORIGINAL_DO_MOUNTS is None:
+        _ORIGINAL_DO_MOUNTS = fff_fetcher_requests.RequestsFetcher.do_mounts
+
+    def _make_impersonated_session(self: Any) -> ImpersonatedSession:
+        return ImpersonatedSession()
+
+    def _do_impersonated_mounts(self: Any, session: Any) -> None:
+        session.mount("file://", FileAdapter())
+        if self.getConfig("http_proxy"):
+            session.proxies["http"] = self.getConfig("http_proxy")
+        if self.getConfig("https_proxy"):
+            session.proxies["https"] = self.getConfig("https_proxy")
+
+    setattr(
+        fff_fetcher_requests.RequestsFetcher,
+        "make_sesssion",
+        _make_impersonated_session,
+    )
+    setattr(fff_fetcher_requests.RequestsFetcher, "do_mounts", _do_impersonated_mounts)
+    _IS_INSTALLED = True
+    ff_logging.log_debug(
+        "Generic browser impersonation (curl-cffi) active for FanFicFare RequestsFetcher"
+    )
+    return True
+
+
+def uninstall_impersonated_session() -> None:
+    """Restore FanFicFare's RequestsFetcher to original make_sesssion / do_mounts implementations."""
+    global _IS_INSTALLED
+    if _ORIGINAL_MAKE_SESSION is not None:
+        setattr(
+            fff_fetcher_requests.RequestsFetcher,
+            "make_sesssion",
+            _ORIGINAL_MAKE_SESSION,
+        )
+    if _ORIGINAL_DO_MOUNTS is not None:
+        setattr(fff_fetcher_requests.RequestsFetcher, "do_mounts", _ORIGINAL_DO_MOUNTS)
+    _IS_INSTALLED = False
+
+
+def is_impersonated_session_installed() -> bool:
+    """Check if the impersonated session hook is currently installed."""
+    return _IS_INSTALLED

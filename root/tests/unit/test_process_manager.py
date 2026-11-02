@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, Mock, patch
 from parameterized import parameterized
 
 # Add the app directory to the path so we can import our modules
-from models.config_models import (
+from config import (
     AppConfig,
     ProcessConfig,
     EmailConfig,
@@ -149,7 +149,7 @@ class TestProcessManager(unittest.TestCase):
         self.manager.register_process("test", dummy_worker_function)
 
         # Attempt to register again - should fail
-        with patch("utils.ff_logging.log_failure") as mock_log:
+        with patch("ff_logging.log_failure") as mock_log:
             self.manager.register_process("test", dummy_worker_function)
             mock_log.assert_called_once()
 
@@ -181,7 +181,7 @@ class TestProcessManager(unittest.TestCase):
         self.manager.start_process("test")
 
         # Try to start again
-        with patch("utils.ff_logging.log_failure") as mock_log:
+        with patch("ff_logging.log_failure") as mock_log:
             result = self.manager.start_process("test")
             self.assertFalse(result)
             mock_log.assert_called_once()
@@ -529,9 +529,11 @@ class TestProcessManagerMonitoring(unittest.TestCase):
         self.assertTrue(self.manager._monitor_thread.is_alive())
 
         # Wait for the process to fail and for health monitoring to detect it and restart
-        # Health check runs every 0.1 seconds, restart delay is 0.05s
-        # Need to wait long enough for failure detection + restart
-        time.sleep(0.5)
+        # Poll up to 2.0s to avoid runner timing jitter under suite load
+        for _ in range(20):
+            if self.manager.processes["failing_process"].restart_count > 0:
+                break
+            time.sleep(0.1)
 
         process_info = self.manager.processes["failing_process"]
 
@@ -782,8 +784,8 @@ class TestProcessManagerErrorHandling(unittest.TestCase):
         shutdown_thread.join()
         self.manager.stop_all()
 
-    @patch("utils.ff_logging.log")
-    @patch("utils.ff_logging.log_debug")
+    @patch("ff_logging.log")
+    @patch("ff_logging.log_debug")
     def test_signal_handler_logging_messages(self, mock_log_debug, mock_log):
         """Test that signal handler logs appropriate messages."""
         self.manager.setup_signal_handlers()
@@ -1073,7 +1075,7 @@ class TestProcessManagerOverheadScaling(unittest.TestCase):
 
         # With overhead=5 and max_workers=8, target = max(1, 8-5) = 3
         self.manager.set_system_overhead(5)
-        self.manager._check_worker_scaling()
+        self.manager._monitor.check_worker_scaling()
 
         # Should have added 3 queues (worker_0, worker_1, worker_2)
         self.assertEqual(len(worker_queues), 3)
@@ -1089,7 +1091,7 @@ class TestProcessManagerOverheadScaling(unittest.TestCase):
         self.manager._config_store = mock_config_store
 
         # With default overhead=4 and max_workers=8, target = max(1, 8-4) = 4
-        self.manager._check_worker_scaling()
+        self.manager._monitor.check_worker_scaling()
 
         self.assertEqual(len(worker_queues), 4)
 

@@ -22,21 +22,23 @@ from fanficfare.adapters.base_adapter import BaseSiteAdapter
 
 from calibre_integration.calibre_info import CalibreInfo
 from calibre_integration.calibredb_utils import CalibreDBClient
-from config.config_store import ConfigStore
-from history.database import AsyncHistoryDB, SyncHistoryDB
-from history.recorder import HistoryRecorder, HistoryWriter
-from models import config_models
+from config.store import ConfigStore
+from history.async_db import AsyncHistoryDB
+from history.sync_db import SyncHistoryDB
+from history.recorder import HistoryRecorder
+from history.writer import HistoryWriter
+import config
 from models.active_urls import ActiveUrlsDict
 from models.context import SharedIPCContext, WorkerContext
 from models.fanfic_info import FanficInfo
 from notifications.notification_wrapper import NotificationWrapper
-from parsers.auto_url_parsers import generate_url_parsers_from_fanficfare
+from parsers.url_patterns import generate_url_parsers_from_fanficfare
 from services import supervisor
 from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor
-from services.url_ingester import EmailInfo
-from utils.system_utils import get_packaged_defaults_ini_path
-from workers import command, handlers, pipeline
+from services.email_client import EmailInfo
+from config.ini_resolver import get_packaged_defaults_ini_path
+from workers import fff_runner, handlers, pipeline
 
 
 def _child_verify_supervisor_process_boot(
@@ -102,7 +104,7 @@ def _child_verify_spawn_objects(
     email_info: EmailInfo,
     calibre_client: CalibreDBClient,
     notification_info: NotificationWrapper,
-    retry_config: config_models.RetryConfig,
+    retry_config: config.RetryConfig,
     history_recorder: HistoryRecorder,
     config_store: ConfigStore,
     result_queue: mp.Queue,
@@ -150,7 +152,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             db_path = os.path.join(tmp_dir, "history.db")
             history_q = Queue()
             recorder = HistoryRecorder(history_q)
-            writer = HistoryWriter(history_q, db_path)
+            shutdown_ev = threading.Event()
+            writer = HistoryWriter(history_q, db_path, shutdown_event=shutdown_ev)
             writer.start()
 
             try:
@@ -171,6 +174,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     url_parsers=url_parsers,
                     config_store=store,
                     scale_queue=Queue(),
+                    coordinator_status={},
                 )
 
                 # Step 1: Ingest URL (as email_watcher or add-url does)
@@ -196,13 +200,13 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 mock_cdb_info = MagicMock(spec=CalibreInfo)
                 mock_cdb_info.update_method = "update"
                 mock_cdb_info.metadata_preservation_mode = (
-                    config_models.MetadataPreservationMode.ADD_FORMAT
+                    config.MetadataPreservationMode.ADD_FORMAT
                 )
                 mock_client = MagicMock(spec=CalibreDBClient)
                 mock_client.cdb_info = mock_cdb_info
                 mock_client.get_story_id.return_value = None
                 mock_notif = MagicMock(spec=NotificationWrapper)
-                retry_cfg = config_models.RetryConfig(
+                retry_cfg = config.RetryConfig(
                     max_normal_retries=5,
                     hail_mary_enabled=True,
                     hail_mary_wait_hours=12.0,
@@ -226,8 +230,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     ) as mock_td,
                     patch("workers.common.get_path_or_url", return_value=story_url),
                     patch(
-                        "workers.command.execute_fanficfare_direct",
-                        return_value=command.FanFicFareResult(
+                        "workers.fff_runner.execute_fanficfare_direct",
+                        return_value=fff_runner.FanFicFareResult(
                             failure_messages=["HTTP Error 503 Service Unavailable"]
                         ),
                     ),
@@ -305,8 +309,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     ) as mock_td,
                     patch("workers.common.get_path_or_url", return_value=story_url),
                     patch(
-                        "workers.command.execute_fanficfare_direct",
-                        return_value=command.FanFicFareResult(),
+                        "workers.fff_runner.execute_fanficfare_direct",
+                        return_value=fff_runner.FanFicFareResult(),
                     ),
                 ):
                     mock_td.return_value.__enter__.return_value = tmp_dir
@@ -382,6 +386,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             url_parsers=url_parsers,
             config_store=ConfigStore({}),
             scale_queue=Queue(),
+            coordinator_status={},
         )
 
         ingress_q.put(FanficInfo(url=series_url, site="archiveofourown"))
@@ -422,7 +427,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     f"[apprise]\nurls = []\n"
                 )
 
-            cfg = config_models.ConfigManager.load_config(cfg_path, force_reload=True)
+            cfg = config.ConfigManager.load_config(cfg_path, force_reload=True)
             store = ConfigStore({})
             store.initialize_from_config(cfg)
 
@@ -457,7 +462,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             )
 
             # 3. RetryConfig hot-reloads max_normal_retries and hail_mary_enabled from ConfigStore inside handle_failure
-            retry_cfg = config_models.RetryConfig(
+            retry_cfg = config.RetryConfig(
                 max_normal_retries=11, hail_mary_enabled=True
             )
             retry_cfg.set_config_store(store)
@@ -500,7 +505,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     f'[calibre]\npath = "{tmp_dir.replace(chr(92), "/")}"\nupdate_method = "update"\n'
                 )
 
-            cfg = config_models.ConfigManager.load_config(cfg_path, force_reload=True)
+            cfg = config.ConfigManager.load_config(cfg_path, force_reload=True)
 
             with mp.Manager() as manager:
                 store = ConfigStore(manager.dict())
@@ -558,8 +563,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
 
     def test_supervisor_process_spawn_with_real_manager_proxies(self):
         """Regression test: Supervisor process must start in a spawned child process with real SyncManager proxies without thread death."""
-        cfg = config_models.AppConfig(
-            email=config_models.EmailConfig(
+        cfg = config.AppConfig(
+            email=config.EmailConfig(
                 email="test@example.com",
                 password="pass",
                 server="imap.example.com",
@@ -567,7 +572,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 sleep_time=60,
                 imap_idle=False,
             ),
-            calibre=config_models.CalibreConfig(),
+            calibre=config.CalibreConfig(),
         )
         store = ConfigStore({})
         store.initialize_from_config(cfg)
@@ -591,6 +596,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             url_parsers = generate_url_parsers_from_fanficfare()
 
             shutdown_event = manager.Event()
+            check_emails_event = manager.Event()
             ipc = SharedIPCContext(
                 ingress_queue=ingress_q,
                 waiting_queue=waiting_q,
@@ -600,6 +606,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 config_store=store,
                 scale_queue=scale_q,
                 shutdown_event=shutdown_event,
+                check_emails_event=check_emails_event,
                 verbose=False,
             )
 

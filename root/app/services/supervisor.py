@@ -12,14 +12,16 @@ import signal
 import time
 
 from notifications import notification_wrapper
-from utils import ff_logging
-from services import url_ingester, ff_waiter, coordinator
+import ff_logging
+from services import ff_waiter, coordinator
+from services.email_client import EmailInfo
+from services.email_watcher import email_watcher
 from models.context import SharedIPCContext
 
 
 def run_supervisor(
     ipc: SharedIPCContext,
-    email_info: url_ingester.EmailInfo,
+    email_info: EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
     url_parsers: dict,
 ) -> None:
@@ -47,8 +49,14 @@ def run_supervisor(
     log_queue = ipc.log_queue
     scale_queue = ipc.scale_queue
     shutdown_event = ipc.shutdown_event
-    check_emails_event = ipc.check_emails_event
-    coordinator_status = ipc.coordinator_status
+    check_emails_event = (
+        ipc.check_emails_event
+        if ipc.check_emails_event is not None
+        else threading.Event()
+    )
+    coordinator_status = (
+        ipc.coordinator_status if ipc.coordinator_status is not None else {}
+    )
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
@@ -86,7 +94,7 @@ def run_supervisor(
 
         # 1. Email Watcher Thread
         email_thread = threading.Thread(
-            target=url_ingester.email_watcher,
+            target=email_watcher,
             args=(
                 email_info,
                 notification_info,

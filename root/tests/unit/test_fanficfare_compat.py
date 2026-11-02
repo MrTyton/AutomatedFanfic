@@ -22,16 +22,15 @@ import unittest
 
 import fanficfare.adapters as adapters
 import fanficfare.cli as fff_cli
-import fanficfare.configurable as configurable
+from fanficfare import configurable
 import fanficfare.exceptions as exceptions
 import fanficfare.geturls as geturls
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
-from config.config_store import ConfigStore
-from services.url_ingester import _make_fff_get_configuration
-from utils.system_utils import get_packaged_defaults_ini_path
+from config.store import ConfigStore
+from config.ini_resolver import get_packaged_defaults_ini_path
 
 
 class TestFanFicFareGeturlsAPI(unittest.TestCase):
@@ -199,7 +198,7 @@ class TestFanFicFareCliAndIntegrationAPI(unittest.TestCase):
         defaults_ini = get_packaged_defaults_ini_path()
         store = ConfigStore({})
         store.update("calibre.default_ini", defaults_ini)
-        get_config_fn = _make_fff_get_configuration(store)
+        get_config_fn = store.get_fff_get_configuration_callable()
         initial_config = get_config_fn("test1.com")
         gu = geturls.GetURLs(config=initial_config, get_config=get_config_fn)
 

@@ -10,9 +10,9 @@ import threading
 import signal
 from queue import Empty
 
-from utils import ff_logging
+import ff_logging
 from workers import pipeline
-from models import config_models
+import config
 from models.context import SharedIPCContext, WorkerContext
 from models.queue_types import WorkerQueue
 from calibre_integration.client_interface import CalibreClient
@@ -26,7 +26,7 @@ def _spawn_worker_thread(
     queue: WorkerQueue,
     ctx: WorkerContext,
     verbose: bool,
-    idle_timeout: float | None = None,
+    idle_timeout: float = 0.0,
 ) -> threading.Thread:
     """Create and start a daemon worker thread running `pipeline.url_worker`.
 
@@ -56,7 +56,7 @@ def run_worker_pool(
     ipc: SharedIPCContext,
     calibre_client: CalibreClient,
     notification_info: notification_wrapper.NotificationWrapper,
-    retry_config: config_models.RetryConfig,
+    retry_config: config.RetryConfig,
 ) -> None:
     """
     Runs a pool of worker threads within a single process.
@@ -123,7 +123,7 @@ def run_worker_pool(
                 worker_queues["worker_0"],
                 worker_ctx,
                 verbose,
-                idle_timeout=None,
+                idle_timeout=0.0,
             )
         else:
             for worker_id, queue in worker_queues.items():
@@ -132,7 +132,7 @@ def run_worker_pool(
                     queue,
                     worker_ctx,
                     verbose,
-                    idle_timeout=None,
+                    idle_timeout=0.0,
                 )
 
         # Main loop: Wait for shutdown and periodically check scale_queue and thread health
@@ -186,7 +186,7 @@ def run_worker_pool(
                             worker_queues[worker_id],
                             worker_ctx,
                             verbose,
-                            idle_timeout=None,
+                            idle_timeout=0.0,
                         )
                     else:
                         ff_logging.log_debug(
@@ -198,4 +198,3 @@ def run_worker_pool(
         ff_logging.log("Worker Pool interrupted", "WARNING")
     finally:
         ff_logging.log_debug("Worker Pool shutting down threads...")
-        pass

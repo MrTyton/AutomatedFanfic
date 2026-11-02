@@ -107,7 +107,7 @@ def update_pyproject_version(pyproject_file: Path, new_version: str) -> None:
 
 
 def update_python_version(python_file: Path, new_version: str) -> None:
-    """Update the __version__ in fanficdownload.py."""
+    """Update the __version__ in version.py."""
     print(f"📝 Updating {python_file}...")
 
     # Read current content
@@ -183,7 +183,7 @@ def check_git_status(repo_dir: Path) -> bool:
             path in line
             for path in [
                 "release-versions/latest.txt",
-                "root/app/fanficdownload.py",
+                "root/app/version.py",
                 "pyproject.toml",
             ]
         )
@@ -213,7 +213,7 @@ def commit_and_push_changes(
     # Stage the version files
     files_to_add = [
         "release-versions/latest.txt",
-        "root/app/fanficdownload.py",
+        "root/app/version.py",
         "pyproject.toml",
     ]
 
@@ -294,7 +294,7 @@ Examples:
     # Define file paths
     script_dir = Path(__file__).parent.parent
     version_file = script_dir / "release-versions" / "latest.txt"
-    python_file = script_dir / "root" / "app" / "fanficdownload.py"
+    python_file = script_dir / "root" / "app" / "version.py"
     pyproject_file = script_dir / "pyproject.toml"
 
     # Verify files exist
@@ -368,7 +368,7 @@ Examples:
                     print("⚠️  Version bumped but git operations failed.")
                     print("💡 You may need to commit and push manually:")
                     print(
-                        "   git add release-versions/latest.txt root/app/fanficdownload.py pyproject.toml"
+                        "   git add release-versions/latest.txt root/app/version.py pyproject.toml"
                     )
                     print(
                         f'   git commit -m "bump: {args.bump_type} version to {new_version}"'
@@ -381,7 +381,7 @@ Examples:
             print("💡 Git operations skipped (--no-git flag used)")
             print("💡 To commit manually:")
             manual_files = (
-                "release-versions/latest.txt root/app/fanficdownload.py pyproject.toml"
+                "release-versions/latest.txt root/app/version.py pyproject.toml"
             )
             print(f"   git add {manual_files}")
             print(f'   git commit -m "bump: {args.bump_type} version to {new_version}"')

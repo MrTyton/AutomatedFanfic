@@ -165,9 +165,9 @@ jobs:
         if: steps.check_updates.outputs.fff_changed == 'true'
         run: |
           pytest root/tests/unit/test_fanficfare_compat.py \
-                 root/tests/unit/test_auto_url_parsers.py \
-                 root/tests/unit/test_url_ingester.py \
-                 root/tests/unit/test_series_utils.py -v
+                 root/tests/unit/test_url_patterns.py \
+                 root/tests/unit/test_email_watcher.py \
+                 root/tests/unit/test_parsers_series.py -v
 
       - name: Sync latest base version from origin/master
         id: sync_base

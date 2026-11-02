@@ -1,8 +1,11 @@
 """Tests for config store, TOML writer, coordinator snapshot, and updated config routes."""
 
+import collections
 import inspect
+import multiprocessing as mp
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,11 +13,15 @@ from unittest.mock import MagicMock, patch
 import tomlkit
 from fastapi.testclient import TestClient
 
-from config.config_store import (
+from config import AppConfig, CalibreConfig, EmailConfig
+from config.ini_resolver import read_ini_file_cached
+from config.store import (
     ConfigStore,
     ReloadBehavior,
 )
 from config.toml_writer import TomlWriter
+from models.fanfic_info import FanficInfo
+from services.coordinator import Coordinator
 from web.dependencies import WebState
 from web.server import create_app
 
@@ -114,8 +121,6 @@ class TestConfigStoreBasics(unittest.TestCase):
         self.assertNotIn("__version__", store.get_all())
 
     def test_read_ini_file_cached_invalidates_on_change(self):
-        from config.config_store import read_ini_file_cached
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             ini_path = os.path.join(tmp_dir, "personal.ini")
             with open(ini_path, "w", encoding="utf-8") as f:
@@ -290,12 +295,8 @@ class TestTomlWriter(unittest.TestCase):
 
 class TestCoordinatorSnapshot(unittest.TestCase):
     def test_snapshot_empty_state(self):
-        import multiprocessing as mp
-        import threading
-
         q = mp.Queue()
         wq = {"w-1": mp.Queue(), "w-2": mp.Queue()}
-        from services.coordinator import Coordinator
 
         coord = Coordinator(
             q,
@@ -306,6 +307,7 @@ class TestCoordinatorSnapshot(unittest.TestCase):
             {},
             ConfigStore({}),
             scale_queue=mp.Queue(),
+            coordinator_status={},
         )
         snap = coord.get_state_snapshot()
         self.assertEqual(snap["backlog"], {})
@@ -314,13 +316,6 @@ class TestCoordinatorSnapshot(unittest.TestCase):
         self.assertIn("w-2", snap["idle_workers"])
 
     def test_snapshot_with_backlog_and_assignments(self):
-        import collections
-        import multiprocessing as mp
-        import threading
-
-        from models.fanfic_info import FanficInfo
-        from services.coordinator import Coordinator
-
         q = mp.Queue()
         wq = {"w-1": mp.Queue()}
         coord = Coordinator(
@@ -332,6 +327,7 @@ class TestCoordinatorSnapshot(unittest.TestCase):
             {},
             ConfigStore({}),
             scale_queue=mp.Queue(),
+            coordinator_status={},
         )
 
         # Manually set state
@@ -402,7 +398,7 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         self.assertFalse(data["applied"])
         self.assertIn("Unknown section", data["error"])
 
-    @patch("web.routes.config.TomlWriter")
+    @patch("web.services.config_service.TomlWriter")
     def test_put_config_hot_reload(self, MockWriter):
         """Hot-reloadable fields get written to ConfigStore immediately."""
         cfg = MagicMock()
@@ -425,7 +421,7 @@ class TestConfigRoutesUpdated(unittest.TestCase):
         # Verify store was updated
         self.assertEqual(store.get("email.sleep_time"), 120)
 
-    @patch("web.routes.config.TomlWriter")
+    @patch("web.services.config_service.TomlWriter")
     def test_put_config_service_restart(self, MockWriter):
         """Changing web.* fields is flagged as service_restart (auto web restart)."""
         cfg = MagicMock()
@@ -442,8 +438,6 @@ class TestConfigRoutesUpdated(unittest.TestCase):
 
     def test_validate_config_with_real_config(self):
         """POST /api/config/validate merges and validates with Pydantic."""
-        from models.config_models import AppConfig, EmailConfig, CalibreConfig
-
         cfg = AppConfig(
             email=EmailConfig(email="a@b.com", password="p", server="imap.test"),
             calibre=CalibreConfig(path="/lib"),

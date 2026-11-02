@@ -36,11 +36,11 @@ import heapq
 import time
 
 from history.recorder import HistoryRecorder
-from models import active_urls as active_urls_utils
+from models.active_urls import mark_url_queued, mark_url_waiting, remove_active_url
 from models.active_urls import ActiveUrlsDict
 from models import fanfic_info
 from models.queue_types import IngressQueue, ShutdownEvent, WaitingQueue
-from utils import ff_logging
+import ff_logging
 from models import retry_types
 
 
@@ -171,12 +171,12 @@ def wait_processor(
                 is_stale = meta.get("heap_gen") != heap_gen
                 if is_cancelled or is_stale:
                     if is_cancelled:
-                        active_urls_utils.remove_active_url(active_urls, fanfic.url)
+                        remove_active_url(active_urls, fanfic.url)
                     ff_logging.log_debug(
                         f"Waiter: Dropped {'cancelled' if is_cancelled else 'stale'} retry for {fanfic.url}"
                     )
                     continue
-                active_urls_utils.mark_url_queued(
+                mark_url_queued(
                     active_urls,
                     fanfic.url,
                     merge=True,
@@ -215,7 +215,7 @@ def wait_processor(
         # entries: any user action (retry-now, cancel-retry) that writes a fresh
         # dict to active_urls without heap_gen will cause a mismatch on firing.
         heap_gen = seq
-        if not active_urls_utils.mark_url_waiting(
+        if not mark_url_waiting(
             active_urls,
             fanfic_item.url,
             site=fanfic_item.site,

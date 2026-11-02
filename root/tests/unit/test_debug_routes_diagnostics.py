@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 import pytest
 
-from models.config_models import AppConfig, AppriseConfig, CalibreConfig, EmailConfig
+from config import AppConfig, AppriseConfig, CalibreConfig, EmailConfig
 from models.fanfic_info import FanficInfo
 from web.dependencies import WebState
 from web.server import create_app
@@ -73,7 +73,7 @@ async def test_antibot_flaresolverr_configured_and_reachable():
         app = create_app(state)
 
         with patch(
-            "web.routes.debug._check_flaresolverr_reachable",
+            "antibot.flaresolverr.probe_flaresolverr_health",
             return_value={
                 "configured": True,
                 "endpoint": "http://localhost:8191/v1",
@@ -282,12 +282,10 @@ async def test_diagnostics_service_email():
     state = WebState(config=cfg)
     app = create_app(state)
 
-    with patch("imaplib.IMAP4_SSL") as mock_imap:
+    with patch("imapclient.IMAPClient") as mock_imap:
         instance = MagicMock()
-        mock_imap.return_value = instance
-        instance.login.return_value = ("OK", [b"Logged in"])
-        instance.select.return_value = ("OK", [b"42"])
-        instance.search.return_value = ("OK", [b"1 2 3"])
+        mock_imap.return_value.__enter__.return_value = instance
+        instance.search.return_value = [1, 2, 3]
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -382,7 +380,7 @@ async def test_dry_run_endpoint_flaresolverr_tab_crash_recovery():
     with (
         patch("fanficfare.adapters.getAdapter", return_value=mock_adapter),
         patch(
-            "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=1
+            "antibot.flaresolverr.recover_flaresolverr_crashes", return_value=1
         ) as mock_recover,
     ):
         async with AsyncClient(
@@ -427,7 +425,7 @@ async def test_recover_flaresolverr_sessions_endpoint():
     app = create_app(state)
 
     with patch(
-        "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=2
+        "antibot.flaresolverr.recover_flaresolverr_crashes", return_value=2
     ) as mock_recover:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -453,7 +451,7 @@ async def test_recover_flaresolverr_sessions_endpoint_default_empty_body():
     app = create_app(state)
 
     with patch(
-        "utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=0
+        "antibot.flaresolverr.recover_flaresolverr_crashes", return_value=0
     ) as mock_recover:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

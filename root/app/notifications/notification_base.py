@@ -39,8 +39,8 @@ Example:
 
 import time
 from typing import Callable, Any
-from config.config_store import ConfigStore
-from models.config_models import AppConfig
+from config.store import ConfigStore
+from config import AppConfig
 
 # Base sleep time in seconds for retry delays between notification attempts
 kSleepTime = 10
@@ -184,15 +184,16 @@ def retry_decorator(func: Callable) -> Callable:
         >>> send_push_notification("Title", "Body", "site")  # Auto-retries on failure
     """
 
-    def wrapper(*args: Any, **kwargs: Any) -> None:
+    def wrapper(*args: Any, **kwargs: Any) -> bool:
         # Attempt notification with progressive retry delays
         for attempt in range(kMaxAttempts):
             # Try to send notification
             if func(*args, **kwargs):
-                return  # Success - stop retrying
+                return True  # Success - stop retrying
             elif attempt < kMaxAttempts - 1:
                 # Calculate exponential backoff delay: 10s, 20s, 30s
                 delay = kSleepTime * (attempt + 1)
                 time.sleep(delay)
+        return False
 
     return wrapper

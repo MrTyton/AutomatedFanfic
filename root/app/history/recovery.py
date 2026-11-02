@@ -7,20 +7,20 @@ resuming them as fresh attempts.
 
 from pathlib import Path
 
-from history.database import SyncHistoryDB
+from history.sync_db import SyncHistoryDB
 from history.recorder import HistoryRecorder
-from models import active_urls as active_urls_utils
+from models.active_urls import mark_url_queued
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from models.queue_types import IngressQueue
-from utils import ff_logging
+import ff_logging
 
 
 def recover_uncompleted_downloads(
     history_db_path: str,
     ingress_queue: IngressQueue,
     active_urls: ActiveUrlsDict,
-    history_recorder: HistoryRecorder | None,
+    history_recorder: HistoryRecorder,
 ) -> int:
     """Scan history.db and rehydrate uncompleted tasks into active_urls and ingress_queue.
 
@@ -89,7 +89,7 @@ def recover_uncompleted_downloads(
             title=title,
         )
 
-        active_urls_utils.mark_url_queued(
+        mark_url_queued(
             active_urls,
             fanfic.url,
             site=fanfic.site,
@@ -100,13 +100,12 @@ def recover_uncompleted_downloads(
 
         ingress_queue.put(fanfic)
 
-        if history_recorder is not None:
-            history_recorder.record_download_requeued(
-                url=fanfic.url,
-                site=fanfic.site,
-                title=fanfic.title,
-                error_message=requeue_msg,
-            )
+        history_recorder.record_download_requeued(
+            url=fanfic.url,
+            site=fanfic.site,
+            title=fanfic.title,
+            error_message=requeue_msg,
+        )
 
         recovered_count += 1
 

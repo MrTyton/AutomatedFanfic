@@ -6,7 +6,8 @@ from pydantic import ValidationError
 
 
 from calibre_integration.calibre_info import CalibreInfo
-from models.config_models import (
+from config.ini_resolver import get_packaged_defaults_ini_path
+from config import (
     CalibreConfig,
     MetadataPreservationMode,
 )
@@ -65,8 +66,6 @@ class TestCalibreInfo(unittest.TestCase):
         if default_ini:
             self.assertEqual(calibre_info.default_ini, default_ini)
         else:
-            from utils.system_utils import get_packaged_defaults_ini_path
-
             self.assertEqual(calibre_info.default_ini, get_packaged_defaults_ini_path())
         self.assertEqual(calibre_info.personal_ini, personal_ini)
 

@@ -19,7 +19,7 @@ and observe the output.
 import os
 import time
 
-from models.config_models import (  # noqa: E402
+from config import (  # noqa: E402
     AppConfig,
     ProcessConfig,
     EmailConfig,

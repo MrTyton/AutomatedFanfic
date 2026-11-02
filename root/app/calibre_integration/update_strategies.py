@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from .client_interface import CalibreClient
 from .models import AddedBook
 from models import fanfic_info
-from utils import ff_logging
+import ff_logging
 
 
 class UpdateStrategy(ABC):

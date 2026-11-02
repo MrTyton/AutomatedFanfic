@@ -5,12 +5,11 @@ from unittest.mock import patch
 
 from parameterized import parameterized
 
+from config.ini_resolver import get_packaged_defaults_ini_path
 from utils.system_utils import (
     get_files,
     get_installed_package_version,
-    get_packaged_defaults_ini_path,
     get_system_environment_summary,
-    is_docker_environment,
     temporary_directory,
 )
 
@@ -91,7 +90,7 @@ class TestSystemUtils(unittest.TestCase):
         get_packaged_defaults_ini_path.cache_clear()
         try:
             with patch(
-                "utils.system_utils.fanficfare.__file__",
+                "config.ini_resolver.fanficfare.__file__",
                 "/nonexistent/site-packages/fanficfare/__init__.py",
             ):
                 self.assertEqual(get_packaged_defaults_ini_path(), "")
@@ -108,11 +107,10 @@ class TestSystemUtils(unittest.TestCase):
 
         # Nonexistent package should return unknown without error
         self.assertEqual(
-            get_installed_package_version("nonexistent_package_xyz_123"), "unknown"
+            get_installed_package_version("nonexistent-pkg-xyz-12345"), "unknown"
         )
-
-        with patch("os.path.exists", return_value=True):
-            self.assertTrue(is_docker_environment())
+        # Installed package should return a version string
+        self.assertNotEqual(get_installed_package_version("pytest"), "unknown")
 
 
 if __name__ == "__main__":

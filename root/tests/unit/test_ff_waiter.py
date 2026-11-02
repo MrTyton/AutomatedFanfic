@@ -7,7 +7,7 @@ from helpers.log_capture import LogCapture
 from models import fanfic_info
 from services import ff_waiter
 from models import retry_types
-from utils import ff_logging
+import ff_logging
 
 
 class TestLogRetryDecision(unittest.TestCase):

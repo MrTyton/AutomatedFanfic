@@ -33,27 +33,21 @@ Error Detection:
 
 Example:
     ```python
-    from regex_parsing import generate_FanficInfo_from_url, check_failure_regexes
-    from auto_url_parsers import generate_url_parsers_from_fanficfare
+    from parsers.regex_parsing import generate_FanficInfo_from_url
+    from parsers.url_patterns import generate_url_parsers_from_fanficfare
 
     # Generate URL parsers and parse URL to identify site
     url_parsers = generate_url_parsers_from_fanficfare()
     fanfic_info = generate_FanficInfo_from_url("https://archiveofourown.org/works/12345", url_parsers)
-
-    # Check FanFicFare output for errors
-    if check_failure_regexes(fanficfare_output):
-        print("Download succeeded")
-    else:
-        print("Download failed")
     ```
 
 Dependencies:
-    - auto_url_parsers: Provides automatically generated URL pattern recognition
+    - parsers.url_patterns: Provides automatically generated URL pattern recognition
     - fanfic_info: Defines FanficInfo data structures
     - ff_logging: Provides logging capabilities for error reporting
 
 Note:
-    This module relies on auto_url_parsers for site recognition, which
+    This module relies on parsers.url_patterns for site recognition, which
     automatically generates URL patterns from FanFicFare's adapter definitions.
     This eliminates the need for manual regex maintenance as new sites are added.
 """

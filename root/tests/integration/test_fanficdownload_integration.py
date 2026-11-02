@@ -20,14 +20,15 @@ from parameterized import parameterized
 from typing import Dict, Any
 
 import fanficdownload
-from workers import handlers as worker_handlers
-from workers import command as worker_command
+from workers import handlers
+from workers import fff_runner
 from parsers import regex_parsing
 from models import fanfic_info
+from models.context import WorkerContext
 from calibre_integration import calibre_info
 from notifications import notification_wrapper
-from parsers import auto_url_parsers
-from models.config_models import (
+from parsers import url_patterns
+from config import (
     AppConfig,
     EmailConfig,
     CalibreConfig,
@@ -53,7 +54,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up URL parsers once for all test methods."""
-        cls.url_parsers = auto_url_parsers.generate_url_parsers_from_fanficfare()
+        cls.url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
 
     def setUp(self):
         """Set up test fixtures and temporary files."""
@@ -309,7 +310,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_fanfic.url = "http://test.site/story/123"
 
         # Test command argument construction
-        command = worker_command._build_argv(mock_cdb, mock_fanfic)
+        command = fff_runner.build_argv(mock_cdb, mock_fanfic)
 
         # Validate expected behaviors
         if expected_behavior == "normal_update":
@@ -537,8 +538,6 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
 
-        from models.context import WorkerContext
-
         mock_client = MagicMock()
         mock_client.cdb_info = mock_cdb
         ctx = WorkerContext(
@@ -553,7 +552,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
 
         # Test failure handling
         with patch("workers.handlers.ff_logging") as mock_logging:
-            worker_handlers.handle_failure(mock_fanfic, ctx)
+            handlers.handle_failure(mock_fanfic, ctx)
 
             # Validate expected behaviors
             if expected_behavior == "hail_mary_activation":
@@ -601,10 +600,10 @@ class TestFanficdownloadIntegration(unittest.TestCase):
             self.assertTrue(result)
 
     # Full Application Integration Test
-    @patch("fanficdownload.url_ingester.EmailInfo")
-    @patch("fanficdownload.notification_wrapper.NotificationWrapper")
-    @patch("fanficdownload.calibre_info.CalibreInfo")
-    @patch("fanficdownload.auto_url_parsers.generate_url_parsers_from_fanficfare")
+    @patch("services.bootstrap.EmailInfo")
+    @patch("services.bootstrap.notification_wrapper.NotificationWrapper")
+    @patch("services.bootstrap.calibre_info.CalibreInfo")
+    @patch("fanficdownload.url_patterns.generate_url_parsers_from_fanficfare")
     @patch("fanficdownload.parse_arguments")
     @patch("fanficdownload.ff_logging")
     def test_full_application_integration(
@@ -636,7 +635,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_calibre.return_value = mock_calibre_instance
 
         # Mock worker functions to be fast and simple
-        with patch("services.url_ingester.email_watcher", _global_mock_worker):
+        with patch("services.supervisor.email_watcher", _global_mock_worker):
             with patch("services.ff_waiter.wait_processor", _global_mock_worker):
                 with patch("workers.pipeline.url_worker", _global_mock_worker):
                     with (
@@ -646,7 +645,9 @@ class TestFanficdownloadIntegration(unittest.TestCase):
                         patch(
                             "process_management.ProcessManager.start_all"
                         ) as mock_start,
-                        patch("fanficdownload.calibre_factory.create_calibre_client"),
+                        patch(
+                            "services.bootstrap.calibre_factory.create_calibre_client"
+                        ),
                     ):
                         mock_wait.return_value = True
 

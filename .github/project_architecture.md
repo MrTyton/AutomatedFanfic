@@ -11,12 +11,12 @@ graph TD
     subgraph "Main Process"
         Entry["fanficdownload.py"] --> PM["ProcessManager<br/>(process_management/manager.py)"]
         PM --> Super["Supervisor Process<br/>(services/supervisor.py)"]
-        PM --> Pool["WorkerPool<br/>(multiprocessing.Pool)"]
+        PM --> Pool["WorkerPool<br/>(workers/pool_runner.py)"]
     end
 
     subgraph "Supervisor Process"
         Super -->|Thread| Coord["Coordinator<br/>(services/coordinator.py)"]
-        Super -->|Thread| Email["EmailWatcher<br/>(services/url_ingester.py)"]
+        Super -->|Thread| Email["EmailWatcher<br/>(services/email_watcher.py)"]
         Super -->|Thread| Waiter["WaitProcessor<br/>(services/ff_waiter.py)"]
     end
 
@@ -95,7 +95,7 @@ How a URL becomes a Book.
 
 ```mermaid
 sequenceDiagram
-    participant Email as "Email Watcher<br/>(url_ingester.py)"
+    participant Email as "Email Watcher<br/>(email_watcher.py)"
     participant Ingress as Ingress Queue
     participant Coord as "Coordinator<br/>(coordinator.py)"
     participant Worker as "Worker<br/>(pipeline.py)"
@@ -139,10 +139,20 @@ The system assumes things will fail (network issues, Cloudflare, rate limits) an
 
 ## 6. Directory Structure Reference
 
--   `app/services/`: Long-running loop services.
--   `app/workers/`: 'One-off' task executors.
--   `app/process_management/`: Infrastructure code.
--   `app/calibre_integration/`: Database abstraction layer.
+-   `app/antibot/`: Anti-bot detection, FlareSolverr crash recovery, and cookiejar inspection.
+-   `app/calibre_integration/`: Database abstraction layer (calibredb CLI / HTTP API) and metadata preservation.
+-   `app/config/`: Configuration system, modular Pydantic schemas, and ConfigStore.
+-   `app/ff_logging/`: Colorized process/thread logging, log forwarding, and drain threads.
+-   `app/history/`: Persistent SQLite history database, async client, recorder, and crash recovery.
+-   `app/mcp_server/`: Model Context Protocol server tools and resources.
+-   `app/models/`: Shared data models (FanficInfo, retry types, active URLs, WorkerContext, IPC queues).
+-   `app/notifications/`: Apprise notification wrapper and multi-service alerting.
+-   `app/parsers/`: Regex metadata extractors, URL pattern matchers, and series expansion.
+-   `app/process_management/`: Central ProcessManager lifecycle, state tracking, and health monitoring.
+-   `app/services/`: Supervisor, Coordinator, EmailWatcher, Waiter, and bootstrap orchestration.
+-   `app/utils/`: System utilities and temporary directory context managers.
+-   `app/web/`: FastAPI web dashboard, REST/WebSocket API endpoints, and background monitors.
+-   `app/workers/`: Site-specific download workers, FanFicFare execution pipeline, and handlers.
 
 ## 7. Key Patterns & Strategies
 
@@ -158,19 +168,19 @@ Every worker task runs inside a temporary directory context manager (`utils/syst
 
 ## 8. Developer Guidelines
 
-### 8.1 Configuration (`models/config_models.py`)
+### 8.1 Configuration (`config/schemas/`)
 Configuration is loaded from `config.toml` into strong Pydantic models.
 -   **AppConfig**: Root configuration object.
 -   **ProcessConfig**: Process management settings (timeouts, monitoring).
 -   **EmailConfig**: IMAP credentials.
 -   **RetryConfig**: Policies for backoff and failures.
 
-### 8.2 Logging (`utils/ff_logging.py`)
-Use the custom wrapper, **never** `print()`.
+### 8.2 Logging (`ff_logging/`)
+Use the custom package, **never** `print()`.
 -   **`ff_logging.log(msg, level)`**: Standard logging.
 -   **`ff_logging.log_debug(msg)`**: Verbose debug info.
 -   **`ff_logging.log_failure(msg)`**: Specialized error formatting.
--   **Thread Safety**: This module is thread-safe and handles colorization per-worker.
+-   **Thread Safety**: This package is thread-safe and handles colorization per-worker.
 
 ### 8.3 Testing (`tests/`)
 -   **Unit Tests** (`tests/unit/`): comprehensive coverage for services and pipelines.

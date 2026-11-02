@@ -6,7 +6,6 @@ Provides:
 """
 
 import signal
-from collections.abc import Callable
 from contextlib import asynccontextmanager
 from multiprocessing.synchronize import Event
 from pathlib import Path
@@ -23,10 +22,10 @@ from starlette.types import Receive, Scope, Send
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
-from models.config_models import AppConfig, ConfigManager
-from history.database import AsyncHistoryDB
+from config import AppConfig, ConfigManager
+from history.async_db import AsyncHistoryDB
 from models.context import SharedIPCContext
-from utils import ff_logging, system_utils
+import ff_logging
 from web.dependencies import WebState
 from web.routes import (
     config,
@@ -100,7 +99,11 @@ def create_app(web_state: WebState) -> FastAPI:
     app = FastAPI(
         title="AutomatedFanfic Dashboard",
         description="Web interface for monitoring and controlling the fanfiction download system.",
-        version="1.0.0",
+        version=(
+            getattr(web_state.config, "version", "6.16.2")
+            if web_state.config is not None
+            else "6.16.2"
+        ),
         lifespan=_lifespan,
     )
 
@@ -166,7 +169,6 @@ def run_web_server(
     app_config: AppConfig,
     config_path: str,
     web_restart_event: Event,
-    process_status_callable: Callable[[], dict[str, object]] | None = None,
 ) -> None:
     """Process entry point for the web server.
 
@@ -181,8 +183,6 @@ def run_web_server(
             configuration edits made through the web UI.
         web_restart_event (Event): Shared event set when `web.host` or
             `web.port` changes require a web server restart.
-        process_status_callable (Callable[[], dict[str, Any]] | None, optional):
-            Optional callable returning process health status dictionary.
     """
     ff_logging.init_process_logging(
         ipc.verbose,
@@ -205,21 +205,11 @@ def run_web_server(
     host = getattr(web_cfg, "host", "0.0.0.0") or "0.0.0.0"
     port = int(getattr(web_cfg, "port", 8080) or 8080)
     history_db_path = getattr(web_cfg, "history_db_path", None)
-    log_file_path = getattr(web_cfg, "log_file_path", None)
-    if isinstance(log_file_path, str) and log_file_path.strip():
-        # If log_file_path is default /data/... but history_db_path is configured in a custom mount (e.g. /config/history.db)
-        # or executing inside Docker with /config mounted, co-locate automatedfanfic.log alongside history.db
-        if log_file_path == "/data/automatedfanfic.log" and (
-            (history_db_path and not str(history_db_path).startswith("/data/"))
-            or (system_utils.is_docker_environment() and Path("/config").exists())
-        ):
-            target_dir = (
-                Path(history_db_path).parent
-                if history_db_path and not str(history_db_path).startswith("/data/")
-                else Path("/config")
-            )
-            log_file_path = str(target_dir / "automatedfanfic.log")
-        ff_logging.init_persistent_logging(log_file_path)
+    resolved_log_path = ff_logging.resolve_log_file_path(
+        getattr(web_cfg, "log_file_path", None), history_db_path
+    )
+    if resolved_log_path:
+        ff_logging.init_persistent_logging(resolved_log_path)
 
     # Build shared state
     web_state = WebState(
@@ -228,7 +218,6 @@ def run_web_server(
         ingress_queue=ipc.ingress_queue,
         worker_queues=ipc.worker_queues,
         waiting_queue=ipc.waiting_queue,
-        process_status_callable=process_status_callable,
         history_recorder=ipc.history_recorder,
         config=app_config,
         config_path=config_path,

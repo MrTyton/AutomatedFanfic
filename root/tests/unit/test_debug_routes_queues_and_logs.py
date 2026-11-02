@@ -3,7 +3,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import patch
 
-from utils import ff_logging
+import ff_logging
 from web.dependencies import WebState
 from web.server import create_app
 

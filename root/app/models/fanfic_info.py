@@ -40,7 +40,7 @@ class FanficInfo:
         site (str): The hosting site identifier (e.g., 'fanfiction', 'archiveofourown').
         calibre_id (Optional[str]): The unique ID in the Calibre database if the
             story exists there, None if not found or not yet searched.
-        repeats (Optional[int]): Current retry count for failed processing attempts.
+        repeats (int): Current retry count for failed processing attempts.
         behavior (Optional[str]): Special processing behavior flag (e.g., 'force').
         title (Optional[str]): The extracted or provided title of the story.
 
@@ -56,7 +56,7 @@ class FanficInfo:
         url: str,
         site: str,
         calibre_id: str | None = None,
-        repeats: int | None = 0,
+        repeats: int = 0,
         behavior: str | None = None,
         title: str | None = None,
         retry_decision: retry_types.RetryDecision | None = None,

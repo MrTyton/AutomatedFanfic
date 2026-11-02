@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo
-from utils import anubis_solver
-from utils.system_utils import get_packaged_defaults_ini_path
+import antibot
+from config.ini_resolver import get_packaged_defaults_ini_path
 from workers import fff_runner
 
 
@@ -40,11 +40,11 @@ class TestFffRunner(unittest.TestCase):
         ua = fff_runner.resolve_fanficfare_user_agent(
             "", self.defaults_ini, "", self.options
         )
-        self.assertEqual(ua, anubis_solver.DEFAULT_USER_AGENT)
+        self.assertEqual(ua, antibot.DEFAULT_USER_AGENT)
 
     def test_resolve_fanficfare_user_agent_with_site_override(self):
         personal = (
-            f"[defaults]\nuser_agent: {anubis_solver.DEFAULT_USER_AGENT}\n\n"
+            f"[defaults]\nuser_agent: {antibot.DEFAULT_USER_AGENT}\n\n"
             "[www.royalroad.com]\nuser_agent: CustomRRUA/1.0\n"
         )
         ua = fff_runner.resolve_fanficfare_user_agent(

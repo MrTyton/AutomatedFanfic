@@ -8,7 +8,7 @@ import pytest
 
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
-from utils import ff_logging
+import ff_logging
 from web.dependencies import WebState
 from web.server import create_app
 

@@ -2,11 +2,11 @@
 Failure and success handling logic for worker processes.
 """
 
-from models import config_models
+import config
 from models import retry_types
 from models import fanfic_info
 from models.context import WorkerContext
-from utils import ff_logging
+import ff_logging
 from calibre_integration import update_strategies
 
 
@@ -66,16 +66,15 @@ def handle_failure(
             f"Maximum retries reached for {fanfic.title}. "
             f"Abandoning after {fanfic.repeats} attempts."
         )
-        if history_recorder:
-            history_recorder.record_download_abandoned(
-                fanfic.url,
-                (
-                    error_message
-                    if error_message is not None
-                    else f"Maximum retries reached after {fanfic.repeats} attempts"
-                ),
-                site=fanfic.site,
-            )
+        history_recorder.record_download_abandoned(
+            fanfic.url,
+            (
+                error_message
+                if error_message is not None
+                else f"Maximum retries reached after {fanfic.repeats} attempts"
+            ),
+            site=fanfic.site,
+        )
         return
 
     # Handle RETRY and HAIL_MARY cases
@@ -97,21 +96,20 @@ def handle_failure(
     )
 
     # Record retry event in history and update download status to waiting
-    if history_recorder:
-        history_recorder.record_retry(
-            url=fanfic.url,
-            site=fanfic.site,
-            attempt_number=fanfic.repeats or 0,
-            action=decision.action.value,
-            delay_minutes=decision.delay_minutes,
-            error_message=error_message,
-        )
-        history_recorder.record_download_waiting(
-            url=fanfic.url,
-            site=fanfic.site,
-            title=fanfic.title,
-            error_message=error_message,
-        )
+    history_recorder.record_retry(
+        url=fanfic.url,
+        site=fanfic.site,
+        attempt_number=fanfic.repeats or 0,
+        action=decision.action.value,
+        delay_minutes=decision.delay_minutes,
+        error_message=error_message,
+    )
+    history_recorder.record_download_waiting(
+        url=fanfic.url,
+        site=fanfic.site,
+        title=fanfic.title,
+        error_message=error_message,
+    )
 
     # Send to waiting queue with decision information attached
     waiting_queue.put(fanfic)
@@ -171,11 +169,11 @@ def process_fanfic_addition(
             # Existing story - use metadata preservation mode from config
             mode = calibre_client.cdb_info.metadata_preservation_mode
 
-            if mode == config_models.MetadataPreservationMode.ADD_FORMAT:
+            if mode == config.MetadataPreservationMode.ADD_FORMAT:
                 strategy: update_strategies.UpdateStrategy = (
                     update_strategies.AddFormatStrategy()
                 )
-            elif mode == config_models.MetadataPreservationMode.PRESERVE_METADATA:
+            elif mode == config.MetadataPreservationMode.PRESERVE_METADATA:
                 strategy = update_strategies.PreserveMetadataStrategy()
             else:
                 strategy = update_strategies.RemoveAddStrategy()
@@ -204,13 +202,12 @@ def process_fanfic_addition(
 
             ff_logging.log(f"\t({site}) Successfully processed {fanfic.title}")
 
-            if history_recorder:
-                history_recorder.record_download_success(
-                    url=fanfic.url,
-                    title=fanfic.title,
-                    calibre_id=fanfic.calibre_id,
-                    site=fanfic.site,
-                )
+            history_recorder.record_download_success(
+                url=fanfic.url,
+                title=fanfic.title,
+                calibre_id=fanfic.calibre_id,
+                site=fanfic.site,
+            )
 
             ff_logging.log_debug(
                 f"\t({site}) Sending success notification for {fanfic.title}"
@@ -229,10 +226,7 @@ def process_fanfic_addition(
 
     except Exception as e:
         ff_logging.log_failure(f"Error processing additions to Calibre: {e}")
-        if history_recorder:
-            history_recorder.record_download_failed(
-                fanfic.url, str(e), site=fanfic.site
-            )
+        history_recorder.record_download_failed(fanfic.url, str(e), site=fanfic.site)
         handle_failure(
             fanfic,
             ctx,

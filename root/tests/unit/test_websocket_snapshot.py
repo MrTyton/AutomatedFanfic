@@ -5,14 +5,14 @@ from typing import cast
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
+from config import AppConfig, CalibreConfig, EmailConfig, RetryConfig
 from models.active_urls import ActiveUrlsDict
-from models.config_models import AppConfig, CalibreConfig, EmailConfig, RetryConfig
 from web.dependencies import WebState
-from web.routes.websocket import _build_snapshot
+from web.services.dashboard_snapshot import build_snapshot
 
 
 class TestWebsocketSnapshot(unittest.TestCase):
-    """Tests that _build_snapshot produces all expected enriched fields."""
+    """Tests that build_snapshot produces all expected enriched fields."""
 
     async def _async_test_snapshot(self) -> None:
         mock_db = MagicMock()
@@ -51,9 +51,8 @@ class TestWebsocketSnapshot(unittest.TestCase):
             coordinator_status={"paused": True},
         )
 
-        snap = await _build_snapshot(state)
+        snap = await build_snapshot(state)
 
-        # Enriched fields check
         self.assertTrue(snap.get("coordinator_paused"))
         self.assertEqual(snap.get("disabled_sites"), ["wattpad.com"])
         self.assertEqual(snap.get("max_normal_retries"), 7)
@@ -77,9 +76,8 @@ class TestWebsocketSnapshot(unittest.TestCase):
         self.assertIn("notable_sites", worker_stats)
         self.assertEqual(snap.get("dismissed_error_urls"), [])
 
-        # Review Focus 5: empty/uninitialized WebState must not raise exceptions
         empty_state = WebState()
-        empty_snap = await _build_snapshot(empty_state)
+        empty_snap = await build_snapshot(empty_state)
         self.assertFalse(empty_snap.get("coordinator_paused"))
         self.assertEqual(empty_snap.get("disabled_sites"), [])
         self.assertIsNone(empty_snap.get("calibre_server_url"))

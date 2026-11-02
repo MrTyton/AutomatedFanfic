@@ -35,10 +35,8 @@ class TestFanficInfo(unittest.TestCase):
     def test_increment_repeat(self):
         self.fanfic_info.increment_repeat()
         self.assertEqual(self.fanfic_info.repeats, 1)
-        # Test with None repeats
-        self.fanfic_info.repeats = None
         self.fanfic_info.increment_repeat()
-        self.assertIsNone(self.fanfic_info.repeats)
+        self.assertEqual(self.fanfic_info.repeats, 2)
 
     # --- Equality Tests ---
     class CheckEqualityTestCase(NamedTuple):

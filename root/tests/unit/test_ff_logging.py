@@ -7,11 +7,12 @@ from typing import NamedTuple
 import unittest
 from unittest.mock import patch
 
-
 from freezegun import freeze_time
 from parameterized import parameterized
 
-from utils import ff_logging
+import ff_logging
+import ff_logging.buffer
+import ff_logging.context
 
 
 class TestLogFunction(unittest.TestCase):
@@ -90,21 +91,17 @@ class TestLogForwarding(unittest.TestCase):
         # Always start each test with forwarding disabled and web_enabled True.
         ff_logging.set_web_enabled(True)
         ff_logging.set_log_forward_queue(None)
-        if hasattr(ff_logging._thread_local, "color"):
-            del ff_logging._thread_local.color
-        with ff_logging._log_buffer_lock:
-            ff_logging._log_buffer.clear()
-            ff_logging._startup_log_buffer.clear()
-            ff_logging._startup_capture_enabled = True
+        if hasattr(ff_logging.context._thread_local, "color"):
+            del ff_logging.context._thread_local.color
+        ff_logging.clear_logs()
 
     def tearDown(self):
         # Restore clean state so other tests are not affected.
         ff_logging.set_web_enabled(True)
         ff_logging.set_log_forward_queue(None)
-        if hasattr(ff_logging._thread_local, "color"):
-            del ff_logging._thread_local.color
-        with ff_logging._log_buffer_lock:
-            ff_logging._startup_capture_enabled = True
+        if hasattr(ff_logging.context._thread_local, "color"):
+            del ff_logging.context._thread_local.color
+        ff_logging.clear_logs()
 
     @patch("builtins.print")
     def test_log_puts_entry_to_forward_queue_when_set(self, _mock_print):
@@ -194,8 +191,10 @@ class TestLogForwarding(unittest.TestCase):
         deadline = time.monotonic() + 2.0
         found = False
         while time.monotonic() < deadline:
-            with ff_logging._log_buffer_lock:
-                found = any(e["message"] == "drained" for e in ff_logging._log_buffer)
+            with ff_logging.buffer._log_buffer_lock:
+                found = any(
+                    e["message"] == "drained" for e in ff_logging.buffer._log_buffer
+                )
             if found:
                 break
             time.sleep(0.05)
@@ -256,16 +255,12 @@ class TestPersistentLogging(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.log_path = os.path.join(self.temp_dir.name, "test_persistent.log")
         ff_logging.set_web_enabled(True)
-        with ff_logging._log_buffer_lock:
-            ff_logging._log_buffer.clear()
-            ff_logging._startup_log_buffer.clear()
+        ff_logging.clear_logs()
 
     def tearDown(self):
         ff_logging.close_persistent_logging()
         self.temp_dir.cleanup()
-        with ff_logging._log_buffer_lock:
-            ff_logging._log_buffer.clear()
-            ff_logging._startup_log_buffer.clear()
+        ff_logging.clear_logs()
 
     def test_init_persistent_logging_and_append(self):
         ff_logging.init_persistent_logging(self.log_path)

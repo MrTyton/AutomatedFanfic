@@ -2,11 +2,12 @@ import pickle
 import multiprocessing as mp
 import unittest
 from unittest.mock import patch, MagicMock
+import apprise
 
-from config.config_store import ConfigStore
+from config.store import ConfigStore
 from notifications.apprise_notification import AppriseNotification
 from parameterized import parameterized
-from models.config_models import (
+from config import (
     AppConfig,
     AppriseConfig,
     PushbulletConfig,
@@ -214,13 +215,13 @@ class TestAppriseNotification(unittest.TestCase):
         [
             (
                 "notification_success",
-                None,
+                True,
                 "Test Title",
                 "Test Body",
                 "TestSite",
             ),
-            ("different_title", None, "Another Title", "Another Body", "AnotherSite"),
-            ("empty_body", None, "Title Only", "", "EmptySite"),
+            ("different_title", True, "Another Title", "Another Body", "AnotherSite"),
+            ("empty_body", True, "Title Only", "", "EmptySite"),
         ]
     )
     @patch("notifications.apprise_notification.apprise.Apprise")
@@ -252,7 +253,7 @@ class TestAppriseNotification(unittest.TestCase):
 
         result = notifier.send_notification(title, body, site)
 
-        self.assertIsNone(result)
+        self.assertEqual(result, expected_result)
         mock_apprise_obj_instance.add.assert_called_once_with("url1")
         mock_apprise_obj_instance.notify.assert_called_once_with(body=body, title=title)
 
@@ -573,8 +574,6 @@ class TestAppriseNotificationPickle(unittest.TestCase):
 
     def _make_notifier(self, urls: list[str], enabled=True):
         """Build an AppriseNotification instance bypassing config loading."""
-        import apprise
-
         obj = object.__new__(AppriseNotification)
         obj.apprise_urls = list(urls)
         obj.apobj = apprise.Apprise()
@@ -671,7 +670,7 @@ class TestAppriseNotificationPickle(unittest.TestCase):
         p.start()
         p.join(timeout=30)
         self.assertEqual(p.exitcode, 0, "Spawned subprocess exited non-zero")
-        result = result_q.get_nowait()
+        result = result_q.get(timeout=5.0)
         self.assertTrue(result["enabled"])
         self.assertTrue(
             result["has_log_callback"],

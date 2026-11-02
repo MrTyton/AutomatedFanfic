@@ -1,18 +1,23 @@
+import multiprocessing as mp
+import os
+from queue import Empty
+from subprocess import CalledProcessError
+import tempfile
 import unittest
 import unittest.mock
 from unittest.mock import MagicMock, patch
+import zipfile
 from parameterized import parameterized
-import multiprocessing as mp
 
-
-from workers import pipeline, handlers, command, common  # noqa: E402
-from models import config_models  # noqa: E402
+from workers import common, fff_runner, handlers, pipeline  # noqa: E402
+from workers.fff_runner import FanFicFareResult
+import config  # noqa: E402
 from models.active_urls import ActiveUrlsDict
 from models.context import WorkerContext  # noqa: E402
 from models.fanfic_info import FanficInfo  # noqa: E402
 from calibre_integration.calibre_info import CalibreInfo  # noqa: E402
 from notifications.notification_wrapper import NotificationWrapper  # noqa: E402
-from calibre_integration import calibredb_utils  # noqa: E402
+from calibre_integration import calibredb_utils, epub_utils  # noqa: E402
 from typing import NamedTuple, Optional  # noqa: E402
 
 
@@ -64,7 +69,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure(
         self,
         name,
@@ -95,7 +100,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_fanfic.increment_repeat = MagicMock(side_effect=simulate_increment)
 
         # Create retry config with specific settings for this test
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=max_normal_retries,
             hail_mary_enabled=hail_mary_enabled,
             hail_mary_wait_hours=12.0,  # Standard wait time
@@ -185,7 +190,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure_update_no_force(
         self,
         name,
@@ -222,7 +227,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_client.cdb_info = mock_cdb
 
         # Create real retry config
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
         ctx = WorkerContext(
@@ -251,7 +256,7 @@ class TestUrlWorker(unittest.TestCase):
 
         mock_waiting_queue.put.assert_not_called()
 
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure_with_none_cdb(self, mock_log_failure):
         """Test handle_failure with cdb=None (should never send special notification)."""
         # Setup common mocks
@@ -272,7 +277,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_waiting_queue.put = MagicMock()
 
         # Create real retry config
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
         mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
@@ -326,7 +331,7 @@ class TestUrlWorker(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_failure")
+    @patch("ff_logging.log_failure")
     def test_handle_failure_edge_cases(
         self,
         name,
@@ -355,7 +360,7 @@ class TestUrlWorker(unittest.TestCase):
         mock_waiting_queue.put = MagicMock()
 
         # Create real retry config
-        retry_config = config_models.RetryConfig(
+        retry_config = config.RetryConfig(
             max_normal_retries=11, hail_mary_enabled=True, hail_mary_wait_hours=12.0
         )
         mock_client = MagicMock(spec=calibredb_utils.CalibreDBClient)
@@ -476,7 +481,7 @@ class TestUrlWorker(unittest.TestCase):
         "workers.handlers.update_strategies"
     )  # Patch strategies to avoid actual execution
     @patch(
-        "utils.ff_logging.log_failure"
+        "ff_logging.log_failure"
     )  # Keep patching log_failure for the specific log inside this function
     def test_process_fanfic_addition(
         self,
@@ -534,7 +539,7 @@ class TestUrlWorker(unittest.TestCase):
             notification_info=mock_notification_info,
             ingress_queue=MagicMock(),
             waiting_queue=mock_queue,
-            retry_config=config_models.RetryConfig(),
+            retry_config=config.RetryConfig(),
             history_recorder=mock_history_recorder,
             active_urls={},
         )
@@ -586,7 +591,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.mock_notification_info = MagicMock(spec=NotificationWrapper)
         self.mock_ingress_queue = MagicMock()
         self.mock_waiting_queue = MagicMock()
-        self.retry_config = config_models.RetryConfig(
+        self.retry_config = config.RetryConfig(
             hail_mary_enabled=True, hail_mary_wait_hours=12.0, max_normal_retries=11
         )
         self.ctx = WorkerContext(
@@ -634,7 +639,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_get_path.return_value = "test_file.epub"
 
         # Mock logging failure to capture the specific error message
-        with patch("utils.ff_logging.log_failure") as mock_log_failure:
+        with patch("ff_logging.log_failure") as mock_log_failure:
             # Run worker - checks it exits cleanly after KeyboardInterrupt
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
@@ -653,7 +658,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 error_message="Force update requested but update method is 'update_no_force'",
             )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -674,13 +679,13 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Set up temp directory and processing until execute_fanficfare_direct
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        fff_result = command.FanFicFareResult(
+        fff_result = fff_runner.FanFicFareResult(
             failure_messages=["Command execution failed"]
         )
         mock_execute.return_value = fff_result
 
         # Mock logging failure to capture the specific error message
-        with patch("utils.ff_logging.log_failure") as mock_log_failure:
+        with patch("ff_logging.log_failure") as mock_log_failure:
             # Run worker - checks it exits cleanly after KeyboardInterrupt
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
@@ -699,7 +704,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
                 error_message="Command execution failed",
             )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -720,10 +725,10 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         error_text = (
             "Error downloading Chapter: https://example.com/! Missing required element!"
         )
-        fff_result = command.FanFicFareResult(failure_messages=[error_text])
+        fff_result = fff_runner.FanFicFareResult(failure_messages=[error_text])
         mock_execute.return_value = fff_result
 
-        with patch("utils.ff_logging.log_failure"):
+        with patch("ff_logging.log_failure"):
             with patch("workers.pipeline.time.sleep"):
                 pipeline.url_worker(
                     self.mock_queue,
@@ -734,7 +739,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         _, kwargs = mock_handle_failure.call_args
         self.assertIn("Missing required element!", kwargs["error_message"])
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -754,7 +759,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        fff_result = command.FanFicFareResult(
+        fff_result = fff_runner.FanFicFareResult(
             failure_messages=["FanFicFare reported a permanent failure condition."]
         )
         mock_execute.return_value = fff_result
@@ -772,7 +777,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
             error_message="FanFicFare reported a permanent failure condition.",
         )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -790,7 +795,9 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        fff_result = command.FanFicFareResult(forceable_messages=["chapter difference"])
+        fff_result = fff_runner.FanFicFareResult(
+            forceable_messages=["chapter difference"]
+        )
         mock_execute.return_value = fff_result
 
         pipeline.url_worker(
@@ -804,7 +811,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.mock_ingress_queue.put.assert_any_call(self.test_fanfic)
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     @patch("workers.pipeline.ff_logging.log")
@@ -825,7 +832,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
         # Return a clean FanFicFareResult (no failures, no forceable conditions)
-        mock_execute.return_value = command.FanFicFareResult()
+        mock_execute.return_value = fff_runner.FanFicFareResult()
 
         # Run worker - will exit with KeyboardInterrupt after processing
         pipeline.url_worker(
@@ -946,7 +953,7 @@ class TestExtractTitleFromEpubPath(unittest.TestCase):
         self, name, input_path, expected_output, description
     ):
         """Test the extract_title_from_epub_path function with various inputs."""
-        result = common.extract_title_from_epub_path(input_path)
+        result = epub_utils.extract_title_from_epub_path(input_path)
         self.assertEqual(
             result,
             expected_output,
@@ -966,7 +973,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
         )
 
     @patch("workers.common.get_path_or_url")
-    @patch("workers.common.ff_logging.log_debug")
+    @patch("calibre_integration.epub_utils.ff_logging.log_debug")
     def test_title_extraction_in_processing_flow(
         self, mock_log_debug, mock_get_path_or_url
     ):
@@ -980,7 +987,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 
         # Simulate the title extraction logic from url_worker
         if epub_path.endswith(".epub"):
-            extracted_title = common.extract_title_from_epub_path(epub_path)
+            extracted_title = epub_utils.extract_title_from_epub_path(epub_path)
             if extracted_title != epub_path:
                 self.fanfic.title = extracted_title
 
@@ -993,7 +1000,7 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 
         # Simulate the processing logic
         if url.endswith(".epub"):
-            extracted_title = common.extract_title_from_epub_path(url)
+            extracted_title = epub_utils.extract_title_from_epub_path(url)
             if extracted_title != url:
                 self.fanfic.title = extracted_title
 
@@ -1004,19 +1011,19 @@ class TestTitleExtractionIntegration(unittest.TestCase):
 class GetFanficfareVersionTestCase(unittest.TestCase):
     """Test cases for get_fanficfare_version function."""
 
-    @patch("workers.command.ff_logging.log")
+    @patch("workers.fff_runner.ff_logging.log")
     def test_get_fanficfare_version_success(self, _mock_log):
         """get_fanficfare_version returns the installed package version string."""
         with patch("importlib.metadata.version", return_value="4.48.7"):
-            result = command.get_fanficfare_version()
+            result = fff_runner.get_fanficfare_version()
         self.assertEqual(result, "4.48.7")
 
-    @patch("workers.command.ff_logging.log")
+    @patch("workers.fff_runner.ff_logging.log")
     def test_get_fanficfare_version_error(self, mock_log):
         """get_fanficfare_version returns an error string and logs when metadata lookup fails."""
         exc = Exception("package not found")
         with patch("importlib.metadata.version", side_effect=exc):
-            result = command.get_fanficfare_version()
+            result = fff_runner.get_fanficfare_version()
         self.assertEqual(result, "Error: package not found")
         mock_log.assert_called_once_with(
             "Failed to get FanFicFare version: package not found", "WARNING"
@@ -1025,7 +1032,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
     def test_get_fanficfare_version_returns_real_version(self):
         """Smoke test: get_fanficfare_version actually resolves against the installed FFF."""
 
-        result = command.get_fanficfare_version()
+        result = fff_runner.get_fanficfare_version()
         self.assertRegex(
             result,
             r"^\d+\.\d+",
@@ -1054,9 +1061,9 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
             ),
         ]
     )
-    @patch("utils.ff_logging.log_debug")
-    @patch("utils.ff_logging.log_failure")
-    @patch("utils.ff_logging.verbose")
+    @patch("ff_logging.log_debug")
+    @patch("ff_logging.log_failure")
+    @patch("ff_logging.verbose")
     def test_fanfic_addition_verbose_error_output(
         self,
         name,
@@ -1068,8 +1075,6 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
         mock_log_debug,
     ):
         """Test that CalledProcessError output is logged in verbose mode."""
-        from subprocess import CalledProcessError
-
         # Setup verbose flag
         mock_verbose.value = verbose_enabled
 
@@ -1136,14 +1141,9 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
 class TestLogEpubMetadata(unittest.TestCase):
     """Test suite for log_epub_metadata function."""
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_valid_epub_with_metadata(self, mock_logging):
         """Test logging metadata from a valid epub file."""
-        import tempfile
-        import zipfile
-        import os
-
-        # Create a temporary epub with metadata
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
         ) as epub_file:
@@ -1175,7 +1175,7 @@ class TestLogEpubMetadata(unittest.TestCase):
 
         try:
             # Call the function
-            common.log_epub_metadata(epub_path, "ao3")
+            epub_utils.log_epub_metadata(epub_path, "ao3")
 
             # Verify logging calls
             calls = [str(call) for call in mock_logging.log_debug.call_args_list]
@@ -1201,13 +1201,9 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_without_opf_file(self, mock_logging):
         """Test handling epub without .opf file."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create an epub without .opf file
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1218,7 +1214,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 zf.writestr("random.txt", "No OPF here")
 
         try:
-            common.log_epub_metadata(epub_path, "ffn")
+            epub_utils.log_epub_metadata(epub_path, "ffn")
 
             # Should log error about missing .opf file (generic error from zip read)
             calls = [str(call) for call in mock_logging.log_debug.call_args_list]
@@ -1229,13 +1225,9 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_malformed_opf(self, mock_logging):
         """Test handling epub with malformed XML in .opf file."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create an epub with malformed OPF
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1257,7 +1249,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 )
 
         try:
-            common.log_epub_metadata(epub_path, "sb")
+            epub_utils.log_epub_metadata(epub_path, "sb")
 
             # Should log error about parsing
             calls = [str(call) for call in mock_logging.log_debug.call_args_list]
@@ -1268,13 +1260,9 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_no_metadata_section(self, mock_logging):
         """Test handling epub with valid OPF but no metadata section."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create an epub with OPF lacking metadata section
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1301,7 +1289,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 )
 
         try:
-            common.log_epub_metadata(epub_path, "wattpad")
+            epub_utils.log_epub_metadata(epub_path, "wattpad")
 
             # Should log successful metadata read attempt
             self.assertTrue(
@@ -1314,22 +1302,18 @@ class TestLogEpubMetadata(unittest.TestCase):
         finally:
             os.unlink(epub_path)
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_nonexistent_epub_file(self, mock_logging):
         """Test handling non-existent epub file."""
-        common.log_epub_metadata("/nonexistent/file.epub", "test")
+        epub_utils.log_epub_metadata("/nonexistent/file.epub", "test")
 
         # Should log error
         calls = [str(call) for call in mock_logging.log_debug.call_args_list]
         self.assertTrue(any("Error reading epub metadata:" in call for call in calls))
 
-    @patch("workers.common.ff_logging")
+    @patch("calibre_integration.epub_utils.ff_logging")
     def test_epub_with_attributes_and_empty_values(self, mock_logging):
         """Test logging metadata elements with attributes and empty text values."""
-        import tempfile
-        import zipfile
-        import os
-
         # Create epub with metadata that has attributes but empty text
         with tempfile.NamedTemporaryFile(
             mode="w+b", suffix=".epub", delete=False
@@ -1358,7 +1342,7 @@ class TestLogEpubMetadata(unittest.TestCase):
                 )
 
         try:
-            common.log_epub_metadata(epub_path, "other")
+            epub_utils.log_epub_metadata(epub_path, "other")
 
             [str(call) for call in mock_logging.log_debug.call_args_list]
 
@@ -1399,7 +1383,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.mock_waiting_queue = MagicMock()
         self.worker_id = "worker_0"
 
-        self.retry_config = config_models.RetryConfig(
+        self.retry_config = config.RetryConfig(
             hail_mary_enabled=True,
             hail_mary_wait_hours=12.0,
             max_normal_retries=11,
@@ -1415,7 +1399,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         )
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_signals_idle_only_when_queue_empty(
@@ -1444,8 +1428,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         )
 
         # Set up queue to return 3 tasks, then Empty exceptions (queue drained), then KeyboardInterrupt
-        from queue import Empty
-
         self.mock_queue.get.side_effect = [
             fanfic1,
             fanfic2,
@@ -1457,8 +1439,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing path
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://archiveofourown.org/works/1"
-        from workers.command import FanFicFareResult
-
         mock_execute.return_value = FanFicFareResult()
 
         # Run worker
@@ -1494,7 +1474,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.assertEqual(mock_process_addition.call_count, 3)
 
     @patch("workers.handlers.process_fanfic_addition")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_signals_idle_for_different_sites(
@@ -1523,8 +1503,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         )
 
         # Set up queue: 2 AO3 tasks, then Empty, then 1 FFNet task, then Empty, then exit
-        from queue import Empty
-
         self.mock_queue.get.side_effect = [
             fanfic_ao3_1,
             fanfic_ao3_2,
@@ -1537,8 +1515,6 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         # Set up successful processing
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://test.com/story"
-        from workers.command import FanFicFareResult
-
         mock_execute.return_value = FanFicFareResult()
 
         # Run worker
@@ -1575,7 +1551,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.assertEqual(idle_signals[1][2], "fanfiction")
 
     @patch("workers.handlers.process_fanfic_addition", return_value=True)
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_signals_idle_on_poison_pill_exit(
@@ -1595,7 +1571,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.mock_queue.get.side_effect = [fanfic, None]
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://archiveofourown.org/works/99"
-        mock_execute.return_value = command.FanFicFareResult()
+        mock_execute.return_value = fff_runner.FanFicFareResult()
 
         pipeline.url_worker(
             self.mock_queue,
@@ -1615,7 +1591,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
             [("WORKER_IDLE", self.worker_id, "archiveofourown")],
         )
 
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
     def test_worker_retains_active_url_with_waiting_status_on_strategy_failure(
@@ -1638,7 +1614,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.mock_queue.get.side_effect = [fanfic, None]
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "/tmp/test/story.epub"
-        mock_execute.return_value = command.FanFicFareResult()
+        mock_execute.return_value = fff_runner.FanFicFareResult()
         # Simulate Calibre strategy failure (add_format_to_existing_story returns False)
         self.mock_cdb_info.metadata_preservation_mode = "add_format"
         self.mock_client.add_format_to_existing_story.return_value = False
@@ -1657,15 +1633,15 @@ class TestWorkerIdleSignaling(unittest.TestCase):
     def test_extract_output_filename_template_cached_and_execute_uses_read_ini_file_cached(
         self,
     ):
-        """command._extract_output_filename_template is LRU-cached and execute_fanficfare_direct reads INI files via read_ini_file_cached."""
-        command._extract_output_filename_template.cache_clear()
+        """fff_runner._extract_output_filename_template is LRU-cached and execute_fanficfare_direct reads INI files via read_ini_file_cached."""
+        fff_runner.extract_output_filename_template.cache_clear()
         ini_text = "[defaults]\noutput_filename: /some/dir/${title}-${siteabbrev}${formatext}\n"
 
-        t1 = command._extract_output_filename_template(ini_text, "archiveofourown")
-        t2 = command._extract_output_filename_template(ini_text, "archiveofourown")
+        t1 = fff_runner.extract_output_filename_template(ini_text, "archiveofourown")
+        t2 = fff_runner.extract_output_filename_template(ini_text, "archiveofourown")
         self.assertEqual(t1, "${title}-${siteabbrev}${formatext}")
         self.assertEqual(t1, t2)
-        cache_info = command._extract_output_filename_template.cache_info()
+        cache_info = fff_runner.extract_output_filename_template.cache_info()
         self.assertEqual(cache_info.misses, 1)
         self.assertEqual(cache_info.hits, 1)
 

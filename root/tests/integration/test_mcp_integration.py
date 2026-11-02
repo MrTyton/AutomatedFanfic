@@ -11,7 +11,7 @@ import pytest
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
 from models.fanfic_info import FanficInfo
-from utils import ff_logging
+import ff_logging
 from web.dependencies import WebState
 from web.server import create_app
 
@@ -170,7 +170,7 @@ async def test_mcp_e2e_full_tool_suite_integration():
     assert "config" in cfg_data
 
     # Tool 11: recover_flaresolverr
-    with patch("utils.flaresolverr_utils.recover_flaresolverr_crashes", return_value=0):
+    with patch("antibot.flaresolverr.recover_flaresolverr_crashes", return_value=0):
         res_fs = await server.call_tool("recover_flaresolverr", {})
         fs_data = json.loads(_tool_text(res_fs))
         assert fs_data["ok"] is True

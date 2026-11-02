@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, Query, Request
 
+from web.services import history_service
+
 router = APIRouter(prefix="/api/history", tags=["history"])
 
 
@@ -17,23 +19,16 @@ async def list_downloads(
     offset: int | None = Query(default=None, ge=0),
 ):
     """Paginated list of download events with optional filters."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"items": [], "total": 0}
-
-    # Support both page/page_size and limit/offset params
-    actual_limit = limit if limit is not None else page_size
-    actual_offset = offset if offset is not None else (page - 1) * page_size
-
-    items = await db.get_downloads(
+    return await history_service.query_downloads(
+        request.app.state.web_state.history_db,
         site=site,
         status=status,
         search=search,
-        limit=actual_limit,
-        offset=actual_offset,
+        limit=limit,
+        offset=offset,
+        page=page,
+        page_size=page_size,
     )
-    total = await db.get_download_count(site=site, status=status, search=search)
-    return {"items": items, "total": total}
 
 
 @router.get("/retries")
@@ -47,42 +42,31 @@ async def list_retries(
     offset: int | None = Query(default=None, ge=0),
 ):
     """Paginated list of all retry events."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"items": [], "total": 0}
-
-    actual_limit = limit if limit is not None else page_size
-    actual_offset = offset if offset is not None else (page - 1) * page_size
-
-    items = await db.get_retries(
-        limit=actual_limit, offset=actual_offset, site=site, search=search
+    return await history_service.query_retries(
+        request.app.state.web_state.history_db,
+        site=site,
+        search=search,
+        limit=limit,
+        offset=offset,
+        page=page,
+        page_size=page_size,
     )
-    total = await db.get_retry_count(site=site, search=search)
-    return {"items": items, "total": total}
 
 
 @router.get("/retries/{url:path}")
 async def retries_for_url(request: Request, url: str):
     """All retry events for a specific URL, ordered by attempt number."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"items": []}
-
-    items = await db.get_retries_for_url(url)
-    return {"items": items}
+    return await history_service.query_retries_for_url(
+        request.app.state.web_state.history_db, url
+    )
 
 
 @router.get("/story")
 async def get_story_history(request: Request, url: str):
     """Retrieve full persistent download and retry history for a specific story URL."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"found": False, "story": None}
-
-    story = await db.get_story_history(url)
-    if not story:
-        return {"found": False, "story": None}
-    return {"found": True, "story": story}
+    return await history_service.query_story_history(
+        request.app.state.web_state.history_db, url
+    )
 
 
 @router.get("/emails")
@@ -92,27 +76,17 @@ async def list_email_checks(
     offset: int = Query(default=0, ge=0),
 ):
     """Paginated list of email check events."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"items": [], "total": 0}
-
-    items = await db.get_email_checks(limit=limit, offset=offset)
-    total = (
-        await db.get_email_checks_count()
-        if hasattr(db, "get_email_checks_count")
-        else len(items)
+    return await history_service.query_email_checks(
+        request.app.state.web_state.history_db, limit=limit, offset=offset
     )
-    return {"items": items, "total": total}
 
 
 @router.get("/sites")
 async def list_sites(request: Request):
     """Return distinct site identifiers found in history records."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"sites": []}
-    sites = await db.get_distinct_sites()
-    return {"sites": sites}
+    return await history_service.query_distinct_sites(
+        request.app.state.web_state.history_db
+    )
 
 
 @router.get("/notifications")
@@ -124,19 +98,13 @@ async def list_notifications(
     offset: int = Query(default=0, ge=0),
 ):
     """Paginated list of notification events."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"items": [], "total": 0}
-
-    items = await db.get_notifications(
-        limit=limit, offset=offset, site=site, search=search
+    return await history_service.query_notifications(
+        request.app.state.web_state.history_db,
+        site=site,
+        search=search,
+        limit=limit,
+        offset=offset,
     )
-    total = (
-        await db.get_notifications_count(site=site, search=search)
-        if hasattr(db, "get_notifications_count")
-        else len(items)
-    )
-    return {"items": items, "total": total}
 
 
 @router.get("/recent")
@@ -145,9 +113,6 @@ async def recent_events(
     limit: int = Query(default=20, ge=1, le=100),
 ):
     """Most recent events across all types (for dashboard feed)."""
-    db = request.app.state.web_state.history_db
-    if db is None:
-        return {"items": []}
-
-    items = await db.get_recent_events(limit=limit)
-    return {"items": items}
+    return await history_service.query_recent_events(
+        request.app.state.web_state.history_db, limit=limit
+    )

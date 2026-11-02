@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import MagicMock
 
-from models import active_urls as active_urls_utils
+from models.active_urls import mark_url_waiting
 from models.fanfic_info import FanficInfo
 from models.retry_types import FailureAction, RetryDecision
 from services import ff_waiter
@@ -19,7 +19,7 @@ class TestWaiterActiveUrlsEnrichment(unittest.TestCase):
         delay_seconds = 300.0
         retry_count = 3
 
-        result = active_urls_utils.mark_url_waiting(
+        result = mark_url_waiting(
             active_urls,
             url,
             site="example",

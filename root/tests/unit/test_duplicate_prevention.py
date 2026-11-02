@@ -1,10 +1,12 @@
 import threading
 import unittest
 from unittest.mock import patch, MagicMock
-from services.url_ingester import email_watcher, EmailInfo
+from services.email_watcher import email_watcher
+from services.email_client import EmailInfo
+from workers.fff_runner import FanFicFareResult
 from workers.pipeline import url_worker
 from models.fanfic_info import FanficInfo
-from models.config_models import RetryConfig
+from config import RetryConfig
 from models.context import WorkerContext
 from models import retry_types
 
@@ -23,10 +25,11 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.shutdown_event = threading.Event()
         self.history_recorder = MagicMock()
         self.config_store = MagicMock()
+        self.check_emails_event = threading.Event()
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("services.url_ingester.ff_logging.log")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.ff_logging.log")
     def test_email_watcher_adds_to_active_urls(
         self, mock_log, mock_generate, mock_sleep
     ):
@@ -47,6 +50,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.shutdown_event,
                 self.history_recorder,
                 self.config_store,
+                self.check_emails_event,
             )
         except KeyboardInterrupt:
             pass
@@ -54,9 +58,9 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.assertIn(url, self.active_urls)
         self.ingress_queue.put.assert_called_with(fanfic)
 
-    @patch("services.url_ingester.time.sleep")
-    @patch("services.url_ingester.regex_parsing.generate_FanficInfo_from_url")
-    @patch("services.url_ingester.ff_logging.log")
+    @patch("services.email_watcher.time.sleep")
+    @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
+    @patch("services.email_watcher.ff_logging.log")
     def test_email_watcher_skips_active_url(self, mock_log, mock_generate, mock_sleep):
         url = "https://www.fanfiction.net/s/12345/1/"
         self.active_urls[url] = {"site": "fanfiction"}
@@ -77,6 +81,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.shutdown_event,
                 self.history_recorder,
                 self.config_store,
+                self.check_emails_event,
             )
         except KeyboardInterrupt:
             pass
@@ -88,7 +93,7 @@ class TestDuplicatePrevention(unittest.TestCase):
 
     @patch("workers.pipeline.system_utils.temporary_directory")
     @patch("workers.common.get_path_or_url")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     @patch("workers.handlers.process_fanfic_addition")
     @patch("workers.pipeline.ff_logging")
     def test_url_worker_removes_from_active_urls_on_success(
@@ -108,8 +113,6 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-        from workers.command import FanFicFareResult
-
         mock_exec.return_value = FanFicFareResult()
 
         cdb = MagicMock()
@@ -139,7 +142,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
     @patch("workers.pipeline.ff_logging")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     def test_url_worker_keeps_active_on_retry(
         self,
         mock_exec,
@@ -157,8 +160,6 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-
-        from workers.command import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 
@@ -194,7 +195,7 @@ class TestDuplicatePrevention(unittest.TestCase):
     @patch("workers.common.get_path_or_url")
     @patch("workers.handlers.handle_failure")
     @patch("workers.pipeline.ff_logging")
-    @patch("workers.command.execute_fanficfare_direct")
+    @patch("workers.fff_runner.execute_fanficfare_direct")
     def test_url_worker_removes_active_on_abandon(
         self,
         mock_exec,
@@ -212,8 +213,6 @@ class TestDuplicatePrevention(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp"
         mock_get_path.return_value = url
-
-        from workers.command import FanFicFareResult
 
         mock_exec.return_value = FanFicFareResult(failure_messages=["Download failed"])
 

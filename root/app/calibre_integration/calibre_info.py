@@ -27,10 +27,10 @@ from subprocess import call
 from multiprocessing.managers import SyncManager
 from typing import ContextManager, Protocol
 
-from config.config_store import ConfigStore
-from models.config_models import CalibreConfig
-from utils import ff_logging  # Custom logging module for failure logging
-from utils.system_utils import resolve_ini_path
+from config.store import ConfigStore
+from config import CalibreConfig
+import ff_logging
+from config.ini_resolver import resolve_ini_path
 
 
 class LockFactory(Protocol):

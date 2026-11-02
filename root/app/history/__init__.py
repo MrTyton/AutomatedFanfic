@@ -1,34 +1,27 @@
-"""History subsystem for persistent event recording.
+"""History tracking package providing persistent database storage and queue recorder."""
 
-Provides cross-process event recording via mp.Queue and SQLite storage.
-"""
-
-from history.database import AsyncHistoryDB, SyncHistoryDB
+from history.async_db import AsyncHistoryDB
 from history.models import (
     DownloadEvent,
     DownloadStatus,
     EmailCheckEvent,
-    HistoryEventType,
-    HistoryMessage,
     NotificationEvent,
     RetryAction,
     RetryEvent,
 )
-from history.recorder import HistoryRecorder, HistoryWriter
-from history.recovery import recover_uncompleted_downloads
+from history.recorder import HistoryRecorder
+from history.sync_db import SyncHistoryDB
+from history.writer import HistoryWriter
 
 __all__ = [
     "AsyncHistoryDB",
-    "SyncHistoryDB",
     "DownloadEvent",
     "DownloadStatus",
     "EmailCheckEvent",
-    "HistoryEventType",
-    "HistoryMessage",
     "HistoryRecorder",
     "HistoryWriter",
     "NotificationEvent",
     "RetryAction",
     "RetryEvent",
-    "recover_uncompleted_downloads",
+    "SyncHistoryDB",
 ]

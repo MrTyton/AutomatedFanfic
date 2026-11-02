@@ -1,17 +1,26 @@
 """Tests for WebSocket dashboard endpoint."""
 
 import asyncio
+import json
+import time
 import unittest
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-import web.routes.websocket as ws_module
-from history.database import AsyncHistoryDB
+from history.async_db import AsyncHistoryDB
 from web.dependencies import WebState
-from web.routes.websocket import _build_snapshot, _connections, _snapshot_loop
+import web.routes.websocket as ws_module
+from web.routes.websocket import (
+    _build_and_push_snapshot,
+    _connections,
+    _snapshot_loop,
+    broadcast,
+)
 from web.server import create_app
+import web.services.dashboard_snapshot as snapshot_module
+from web.services.dashboard_snapshot import build_snapshot
 
 
 class TestWebSocketDashboard(unittest.TestCase):
@@ -24,11 +33,16 @@ class TestWebSocketDashboard(unittest.TestCase):
         # Reset shared module state between tests to prevent leakage
         ws_module._latest_snapshot = None
         ws_module._bg_task = None
-        ws_module._history_cache = {
-            "recent_downloads": [],
-            "recent_activity": [],
-            "expires_at": 0.0,
-        }
+        snapshot_module._history_cache.clear()
+        snapshot_module._history_cache.update(
+            {
+                "recent_downloads": [],
+                "recent_activity": [],
+                "site_statistics": {},
+                "distinct_sites": [],
+                "expires_at": 0.0,
+            }
+        )
 
     def test_websocket_connect_receive_snapshot(self):
         """Client connects and receives at least one snapshot."""
@@ -53,11 +67,9 @@ class TestWebSocketDashboard(unittest.TestCase):
         }
         with self.client.websocket_connect("/ws/dashboard") as ws:
             data = ws.receive_json()
-            # Only status=processing appears in active_downloads
             self.assertEqual(data["active_downloads"]["count"], 1)
             active_urls = [item["url"] for item in data["active_downloads"]["items"]]
             self.assertIn("https://ao3.org/works/1", active_urls)
-            # status=queued appears in queued_downloads
             self.assertEqual(data["queued_downloads"]["count"], 1)
             queued_urls = [item["url"] for item in data["queued_downloads"]["items"]]
             self.assertIn("https://ao3.org/works/2", queued_urls)
@@ -133,12 +145,6 @@ class TestWebSocketDashboard(unittest.TestCase):
 
     def test_broadcast_throttle_drops_rapid_calls(self):
         """broadcast() should silently drop a second call within 100 ms."""
-        import asyncio
-        import json
-        import web.routes.websocket as ws_module
-        from web.routes.websocket import broadcast, _connections
-
-        # Reset module state
         ws_module._last_broadcast_time = 0.0
 
         sent_payloads = []
@@ -155,11 +161,9 @@ class TestWebSocketDashboard(unittest.TestCase):
 
             async def run():
                 await broadcast({"event": "first"})
-                # Immediately call again — should be throttled (no sleep between calls)
                 await broadcast({"event": "second"})
 
             asyncio.run(run())
-            # Only the first message should have been delivered
             self.assertEqual(len(sent_payloads), 1)
             self.assertEqual(json.loads(sent_payloads[0])["event"], "first")
         finally:
@@ -168,12 +172,6 @@ class TestWebSocketDashboard(unittest.TestCase):
 
     def test_broadcast_allows_call_after_interval(self):
         """broadcast() should allow a call when last broadcast was 200+ ms ago."""
-        import asyncio
-        import time
-        import web.routes.websocket as ws_module
-        from web.routes.websocket import broadcast, _connections
-
-        # Pretend last broadcast was 200 ms ago (past the 100 ms window)
         ws_module._last_broadcast_time = time.time() - 0.2
 
         sent_payloads = []
@@ -194,7 +192,7 @@ class TestWebSocketDashboard(unittest.TestCase):
             ws_module._last_broadcast_time = 0.0
 
     def test_history_cache_avoids_repeat_queries(self):
-        """_build_snapshot should only refresh history queries when TTL expires."""
+        """build_snapshot should only refresh history queries when TTL expires."""
         call_counts = {"downloads": 0, "activity": 0}
 
         class StubHistoryDB(AsyncHistoryDB):
@@ -213,14 +211,12 @@ class TestWebSocketDashboard(unittest.TestCase):
                 return [{"id": 2}]
 
         self.state.history_db = StubHistoryDB()
-        # Ensure cache is cold (expires_at=0.0 set in setUp)
 
         async def run():
-            await _build_snapshot(self.state)  # cold cache → queries run
-            await _build_snapshot(self.state)  # hot cache → queries skipped
+            await build_snapshot(self.state)
+            await build_snapshot(self.state)
 
         asyncio.run(run())
-        # Each history query should have been called exactly once despite two builds
         self.assertEqual(
             call_counts["downloads"],
             1,
@@ -234,8 +230,6 @@ class TestWebSocketDashboard(unittest.TestCase):
 
     def test_build_and_push_snapshot_sends_to_all_clients(self):
         """_build_and_push_snapshot should push identical snapshot to every connection."""
-        from web.routes.websocket import _build_and_push_snapshot, _connections
-
         sent: dict[int, list] = {1: [], 2: []}
 
         class FakeWS:
@@ -250,10 +244,8 @@ class TestWebSocketDashboard(unittest.TestCase):
         _connections.add(fake2)  # type: ignore[arg-type]
         try:
             asyncio.run(_build_and_push_snapshot(self.state))
-            # Both clients should have received exactly one snapshot
             self.assertEqual(len(sent[1]), 1)
             self.assertEqual(len(sent[2]), 1)
-            # Snapshots must be identical (same object built once)
             self.assertEqual(sent[1][0]["timestamp"], sent[2][0]["timestamp"])
             self.assertIn("active_downloads", sent[1][0])
         finally:
@@ -263,7 +255,6 @@ class TestWebSocketDashboard(unittest.TestCase):
 
     def test_build_and_push_snapshot_removes_dead_connections(self):
         """_build_and_push_snapshot should drop connections that raise on send."""
-        from web.routes.websocket import _build_and_push_snapshot, _connections
 
         class DeadWS:
             async def send_json(self, data: dict) -> None:
@@ -273,7 +264,6 @@ class TestWebSocketDashboard(unittest.TestCase):
         _connections.add(dead)  # type: ignore[arg-type]
         try:
             asyncio.run(_build_and_push_snapshot(self.state))
-            # Dead connection should have been removed
             self.assertNotIn(dead, _connections)
         finally:
             _connections.discard(dead)
@@ -322,7 +312,7 @@ class TestWebSocketDashboard(unittest.TestCase):
             mock_build.assert_not_called()
 
     def test_build_snapshot_deterministic_sorting(self):
-        """_build_snapshot deterministically sorts active, queued, and waiting URLs by queued_at and url."""
+        """build_snapshot deterministically sorts active, queued, and waiting URLs by queued_at and url."""
         self.state.active_urls = {
             "https://ao3.org/works/3": {
                 "status": "queued",
@@ -361,9 +351,8 @@ class TestWebSocketDashboard(unittest.TestCase):
             },
         }
 
-        snapshot = asyncio.run(_build_snapshot(self.state))
+        snapshot = asyncio.run(build_snapshot(self.state))
 
-        # Check queued order: works/1 (100.0), works/2 (200.0), works/3 (300.0)
         queued_data = cast(dict[str, Any], snapshot["queued_downloads"])
         queued_urls = [item["url"] for item in queued_data["items"]]
         self.assertEqual(
@@ -375,7 +364,6 @@ class TestWebSocketDashboard(unittest.TestCase):
             ],
         )
 
-        # Check processing order: s/1 (10.0), s/2 (20.0)
         active_data = cast(dict[str, Any], snapshot["active_downloads"])
         active_urls = [item["url"] for item in active_data["items"]]
         self.assertEqual(
@@ -386,7 +374,6 @@ class TestWebSocketDashboard(unittest.TestCase):
             ],
         )
 
-        # Check waiting order: f/1 (40.0), f/2 (50.0)
         waiting_data = cast(dict[str, Any], snapshot["waiting_downloads"])
         waiting_urls = [item["url"] for item in waiting_data["items"]]
         self.assertEqual(

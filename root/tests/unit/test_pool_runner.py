@@ -7,7 +7,7 @@ from queue import Empty
 from workers import pool_runner, pipeline
 from calibre_integration import calibredb_utils
 from notifications import notification_wrapper
-from models import config_models
+import config
 from models.context import SharedIPCContext, WorkerContext
 
 
@@ -19,7 +19,7 @@ class TestPoolRunner(unittest.TestCase):
         )
         self.mock_waiting_queue = MagicMock(spec=mp.Queue)
         self.mock_ingress_queue = MagicMock()
-        self.mock_retry_config = MagicMock(spec=config_models.RetryConfig)
+        self.mock_retry_config = MagicMock(spec=config.RetryConfig)
         self.active_urls = {}
 
         self.worker_queues = {
@@ -230,7 +230,7 @@ class TestPoolRunner(unittest.TestCase):
         self.assertIs(result, mock_thread)
         mock_thread_cls.assert_called_once_with(
             target=pipeline.url_worker,
-            args=(q, ctx, "worker_1", True, None),
+            args=(q, ctx, "worker_1", True, 0.0),
             name="worker_1",
             daemon=True,
         )
@@ -300,7 +300,7 @@ class TestPoolRunner(unittest.TestCase):
         # First call: initial spawn of worker_0
         self.assertEqual(mock_spawn.call_args_list[0][0][0], "worker_0")
         self.assertEqual(mock_spawn.call_args_list[0][0][1], q0)
-        self.assertIsNone(mock_spawn.call_args_list[0][1].get("idle_timeout"))
+        self.assertEqual(mock_spawn.call_args_list[0][1].get("idle_timeout"), 0.0)
         # Second call: scaled worker_1
         self.assertEqual(mock_spawn.call_args_list[1][0][0], "worker_1")
         self.assertEqual(mock_spawn.call_args_list[1][0][1], q1)
@@ -378,9 +378,9 @@ class TestPoolRunner(unittest.TestCase):
         # worker_0 spawned initially, then restarted
         self.assertEqual(mock_spawn.call_count, 2)
         self.assertEqual(mock_spawn.call_args_list[0][0][0], "worker_0")
-        self.assertIsNone(mock_spawn.call_args_list[0][1].get("idle_timeout"))
+        self.assertEqual(mock_spawn.call_args_list[0][1].get("idle_timeout"), 0.0)
         self.assertEqual(mock_spawn.call_args_list[1][0][0], "worker_0")
-        self.assertIsNone(mock_spawn.call_args_list[1][1].get("idle_timeout"))
+        self.assertEqual(mock_spawn.call_args_list[1][1].get("idle_timeout"), 0.0)
         mock_logging.log_failure.assert_called_with(
             "Thread worker_0 died unexpectedly - Restarting..."
         )
