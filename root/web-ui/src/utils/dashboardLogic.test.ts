@@ -23,6 +23,7 @@ import {
     parseLogTimestamp,
     formatBlockTimeRange,
     categorizeSystemLog,
+    updateStartupTracker,
 } from './dashboardLogic.ts'
 import { STATUS_COLORS, getSiteBadgeInfo } from '../statusColors.ts'
 
@@ -936,4 +937,32 @@ test('buildLogAttemptBlocks does not fragment startup into multiple accordion bl
     assert.equal(startupBlocks[0].lines.length, 24)
     assert.equal(startupBlocks[0].lines[0].message, 'Configuration loaded successfully from /config/config.toml')
     assert.equal(startupBlocks[0].lines[23].message, 'EmailWatcher: entered IMAP IDLE mode')
+})
+test('updateStartupTracker enforces AND condition across all expected subsystems', () => {
+    const tracker = {
+        coreReady: false,
+        webExpected: false,
+        webReady: false,
+        emailExpected: false,
+        emailReady: false,
+    }
+
+    // 1. Initial config dump logs expectations
+    assert.equal(updateStartupTracker(tracker, 'Web dashboard enabled on 0.0.0.0:8080'), false)
+    assert.equal(tracker.webExpected, true)
+
+    assert.equal(updateStartupTracker(tracker, 'Email account: user@example.com'), false)
+    assert.equal(tracker.emailExpected, true)
+
+    // 2. Core processes start up - should NOT complete because Web and Email are not ready yet
+    assert.equal(updateStartupTracker(tracker, 'Processes running. Press Ctrl+C to stop gracefully.'), false)
+    assert.equal(tracker.coreReady, true)
+
+    // 3. WebServer finishes - still NOT complete because Email is not ready yet
+    assert.equal(updateStartupTracker(tracker, 'WebServer: History database connection established'), false)
+    assert.equal(tracker.webReady, true)
+
+    // 4. EmailWatcher finishes - now ALL expected systems are ready (AND satisfied!)
+    assert.equal(updateStartupTracker(tracker, 'EmailWatcher: entered IMAP IDLE mode'), true)
+    assert.equal(tracker.emailReady, true)
 })

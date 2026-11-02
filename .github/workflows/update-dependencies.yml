@@ -186,7 +186,7 @@ jobs:
           reason: "dependency"
           current-version: ${{ steps.sync_base.outputs.base_version }}
 
-      - name: Update version in fanficdownload.py
+      - name: Update version in version.py
         if: steps.update_latest_txt.outputs.version-changed == 'true'
         run: |
           echo "✅ Version updated by bump-version action"
@@ -195,7 +195,7 @@ jobs:
 
           # Verification that the action worked correctly
           echo "Verification:"
-          grep "__version__" root/app/fanficdownload.py
+          grep "__version__" root/app/version.py
 
       - name: Prepare Commit Message
         id: prepare_commit
@@ -224,7 +224,7 @@ jobs:
           author_email: github-actions[bot]@users.noreply.github.com
           message: ${{ steps.prepare_commit.outputs.commit_message }}
           # Ensure latest.txt is committed along with dependency files
-          add: "release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/fanficdownload.py pyproject.toml"
+          add: "release-versions/latest.txt release-versions/fanficfare.txt release-versions/calibre.txt root/app/version.py pyproject.toml"
 
       - name: Verify commit and set output
         id: verify_commit

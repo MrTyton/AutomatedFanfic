@@ -216,6 +216,45 @@ class TestLogForwarding(unittest.TestCase):
         self.assertNotIn("after marker", startup_messages)
 
     @patch("builtins.print")
+    def test_startup_log_buffer_requires_all_expected_subsystems_and_condition(
+        self, _mock_print
+    ):
+        """Startup buffer should require an AND of all expected subsystems (core, web, email)."""
+        ff_logging.clear_logs()
+        ff_logging.log("Starting AutomatedFanfic v7.0.5")
+        ff_logging.log("Web dashboard enabled on 0.0.0.0:8080")
+        ff_logging.log("Email Account: test@example.com")
+
+        # 1. Core finishes - web and email not ready yet -> startup should still capture
+        ff_logging.log("Processes running. Press Ctrl+C to stop gracefully.")
+        ff_logging.log("Supervisor: Starting helper services...")
+
+        # 2. WebServer finishes - email still not ready -> startup should still capture
+        ff_logging.log("WebServer: History database connection established")
+        ff_logging.log("Worker worker_0 ready")
+
+        # 3. EmailWatcher finishes - now ALL expected systems are up -> startup complete!
+        ff_logging.log("EmailWatcher: entered IMAP IDLE mode")
+
+        # 4. Post-startup operational log - should NOT be captured as startup
+        ff_logging.log("Post-startup periodic maintenance check")
+
+        startup_entries = ff_logging.get_startup_logs(limit=50)
+        startup_messages = [entry["message"] for entry in startup_entries]
+
+        self.assertIn("Starting AutomatedFanfic v7.0.5", startup_messages)
+        self.assertIn(
+            "Processes running. Press Ctrl+C to stop gracefully.", startup_messages
+        )
+        self.assertIn("Supervisor: Starting helper services...", startup_messages)
+        self.assertIn(
+            "WebServer: History database connection established", startup_messages
+        )
+        self.assertIn("Worker worker_0 ready", startup_messages)
+        self.assertIn("EmailWatcher: entered IMAP IDLE mode", startup_messages)
+        self.assertNotIn("Post-startup periodic maintenance check", startup_messages)
+
+    @patch("builtins.print")
     def test_log_debug_skipped_when_web_disabled_and_verbose_false(self, mock_print):
         """When web_enabled=False and verbose=False, log_debug does zero work and neither prints nor buffers."""
         ff_logging.set_verbose(False)

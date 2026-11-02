@@ -234,11 +234,11 @@ jobs:
             set -e
             if [ $merge_rc -ne 0 ]; then
               conflicted_files=$(git diff --name-only --diff-filter=U)
-              non_version_conflicts=$(echo "$conflicted_files" | grep -vE '^(release-versions/latest\.txt|pyproject\.toml|root/app/fanficdownload\.py)$' || true)
+              non_version_conflicts=$(echo "$conflicted_files" | grep -vE '^(release-versions/latest\.txt|pyproject\.toml|root/app/version\.py)$' || true)
               if [ -z "$non_version_conflicts" ] && [ -n "$conflicted_files" ]; then
                 echo "Resolving version-file-only conflicts using origin/$BASE_REF..."
-                git checkout --theirs release-versions/latest.txt pyproject.toml root/app/fanficdownload.py
-                git add release-versions/latest.txt pyproject.toml root/app/fanficdownload.py
+                git checkout --theirs release-versions/latest.txt pyproject.toml root/app/version.py
+                git add release-versions/latest.txt pyproject.toml root/app/version.py
                 git commit --no-edit
               else
                 echo "Non-version merge conflict with origin/$BASE_REF detected; aborting local merge so conflict handler can run."
@@ -297,7 +297,7 @@ jobs:
             COMMIT_MSG="chore: bump version to $NEW_VERSION for dependency updates"
           fi
 
-          git add release-versions/latest.txt root/app/fanficdownload.py pyproject.toml
+          git add release-versions/latest.txt root/app/version.py pyproject.toml
           git commit -m "$COMMIT_MSG"
           git push origin HEAD
 
