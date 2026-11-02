@@ -438,6 +438,43 @@ export function isStartupStartMarker(msg: string): boolean {
     return lower.startsWith('starting automatedfanfic')
 }
 
+export interface StartupReadinessTracker {
+    coreReady: boolean
+    webExpected: boolean
+    webReady: boolean
+    emailExpected: boolean
+    emailReady: boolean
+}
+
+export function updateStartupTracker(tracker: StartupReadinessTracker, msg: string): boolean {
+    const lower = msg.toLowerCase().trim()
+    if (lower.includes('web dashboard enabled on') || lower.includes('web dashboard: enabled')) {
+        tracker.webExpected = true
+    }
+    if (lower.includes('email account:') && !lower.includes('not configured') && !lower.includes('disabled') && !lower.includes('none')) {
+        tracker.emailExpected = true
+    }
+    if (lower.includes('all processes started') || lower.includes('processes running. press ctrl+c')) {
+        tracker.coreReady = true
+    }
+    if (lower.includes('webserver: history database connection established')) {
+        tracker.webReady = true
+    }
+    if (
+        lower.includes('entered imap idle mode') ||
+        lower.includes('idle refresh timeout reached') ||
+        lower.includes('imap idle error') ||
+        lower.includes('unread email(s) before entering idle')
+    ) {
+        tracker.emailReady = true
+    }
+    return (
+        tracker.coreReady &&
+        (!tracker.webExpected || tracker.webReady) &&
+        (!tracker.emailExpected || tracker.emailReady)
+    )
+}
+
 export function isStartupEndMarker(msg: string): boolean {
     const lower = msg.toLowerCase().trim()
     return (
@@ -645,6 +682,13 @@ export function buildLogAttemptBlocks(
     let activeStartupBlock: LogAttemptBlock | null = null
     let startupCompleteSeen = false
     let startupCompletionTime = 0
+    let startupTracker: StartupReadinessTracker = {
+        coreReady: false,
+        webExpected: false,
+        webReady: false,
+        emailExpected: false,
+        emailReady: false,
+    }
 
     for (const entry of chronological) {
         const site = extractEntrySite(entry)
@@ -884,6 +928,13 @@ export function buildLogAttemptBlocks(
                     currentSystemBlock = null
                     startupCompleteSeen = false
                     startupCompletionTime = 0
+                    startupTracker = {
+                        coreReady: false,
+                        webExpected: false,
+                        webReady: false,
+                        emailExpected: false,
+                        emailReady: false,
+                    }
                 }
             }
             const timeSinceLastStartup = activeStartupBlock
@@ -931,6 +982,16 @@ export function buildLogAttemptBlocks(
                     blocks.push(activeStartupBlock)
                     startupCompleteSeen = false
                     startupCompletionTime = 0
+                    startupTracker = {
+                        coreReady: false,
+                        webExpected: false,
+                        webReady: false,
+                        emailExpected: false,
+                        emailReady: false,
+                    }
+                    for (const initLine of initialLines) {
+                        updateStartupTracker(startupTracker, initLine.message)
+                    }
                     currentSystemBlock = null
                 } else {
                     activeStartupBlock.lines.push(entry)
@@ -938,7 +999,7 @@ export function buildLogAttemptBlocks(
                 }
                 targetSystemBlock = activeStartupBlock
 
-                if (isStartupEndMarker(entry.message)) {
+                if (updateStartupTracker(startupTracker, entry.message)) {
                     startupCompleteSeen = true
                     startupCompletionTime = entryTime
                 }
