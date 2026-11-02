@@ -54,7 +54,7 @@ class TestCoordinatorStatePublishing(unittest.TestCase):
             url_parsers={},
             config_store=MagicMock(),
             scale_queue=MagicMock(),
-            coordinator_status=None,
+            coordinator_status={},
             verbose=False,
         )
         # Should not raise exception

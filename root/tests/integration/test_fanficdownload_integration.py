@@ -20,7 +20,7 @@ from parameterized import parameterized
 from typing import Dict, Any
 
 import fanficdownload
-from workers import handlers as worker_handlers
+from workers import handlers
 from workers import fff_runner
 from parsers import regex_parsing
 from models import fanfic_info
@@ -552,7 +552,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
 
         # Test failure handling
         with patch("workers.handlers.ff_logging") as mock_logging:
-            worker_handlers.handle_failure(mock_fanfic, ctx)
+            handlers.handle_failure(mock_fanfic, ctx)
 
             # Validate expected behaviors
             if expected_behavior == "hail_mary_activation":

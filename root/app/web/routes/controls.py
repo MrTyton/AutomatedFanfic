@@ -3,7 +3,6 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-lazy from parsers import url_patterns
 from web.services import queue_controller
 
 __all__ = ["router"]
@@ -76,19 +75,11 @@ class RestartDaemonRequest(BaseModel):
 @router.post("/add-url", response_model=AddUrlResponse)
 async def add_url(request: Request, body: AddUrlRequest) -> AddUrlResponse:
     """Add a fanfiction URL directly to the ingress queue."""
-    state = request.app.state.web_state
-    if state.ingress_queue is None:
-        return AddUrlResponse(accepted=False, message="Ingress queue not available")
-
-    url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
-    accepted, message = queue_controller.ingest_single_url(
-        state,
+    accepted, message = queue_controller.add_single_url_action(
+        request.app.state.web_state,
         body.url,
-        url_parsers,
         force=body.force,
-        behavior_override=body.update_method,
-        duplicate_prefix="URL already in queue",
-        added_suffix=" to processing queue",
+        update_method=body.update_method,
     )
     return AddUrlResponse(accepted=accepted, message=message)
 

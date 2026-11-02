@@ -41,6 +41,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         self.shutdown_event = threading.Event()
         self.recorder = MagicMock()
         self.config_store = MagicMock()
+        self.check_emails_event = threading.Event()
 
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
     def test_records_email_check_event(self, mock_generate):
@@ -65,7 +66,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
-            None,
+            self.check_emails_event,
         )
 
         self.recorder.record_email_check.assert_called_once_with(
@@ -98,7 +99,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
-            None,
+            self.check_emails_event,
         )
 
         self.recorder.record_download_created.assert_called_once_with(
@@ -128,7 +129,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
-            None,
+            self.check_emails_event,
         )
 
         self.recorder.record_email_check.assert_called_once_with(
@@ -164,7 +165,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
-            None,
+            self.check_emails_event,
         )
 
         self.recorder.record_email_check.assert_called_once_with(

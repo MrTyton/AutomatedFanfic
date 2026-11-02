@@ -208,7 +208,7 @@ class EmailInfo:
     def _idle_wait_for_notification(
         self,
         shutdown_event: ShutdownEvent,
-        check_emails_event: CheckEmailsEvent | None,
+        check_emails_event: CheckEmailsEvent,
     ) -> bool:
         """Block using IMAP IDLE until the server signals new mail or shutdown."""
         IDLE_REISSUE_SECONDS = 9 * 60
@@ -235,7 +235,7 @@ class EmailInfo:
                         client.idle_done()
                         return False
 
-                    if check_emails_event is not None and check_emails_event.is_set():
+                    if check_emails_event.is_set():
                         ff_logging.log_debug(
                             "EmailWatcher: manual email check triggered during IMAP IDLE"
                         )

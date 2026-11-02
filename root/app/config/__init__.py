@@ -11,6 +11,7 @@ from config.ini_resolver import (
     get_packaged_defaults_ini_path,
     read_ini_file_cached,
     resolve_ini_path,
+    resolve_state_default_ini,
     resolve_state_personal_ini,
 )
 from config.loader import ConfigManager, get_config, load_config
@@ -54,6 +55,7 @@ __all__ = [
     "TomlWriter",
     "resolve_ini_path",
     "resolve_state_personal_ini",
+    "resolve_state_default_ini",
     "get_packaged_defaults_ini_path",
     "read_ini_file_cached",
     "clear_ini_cache",

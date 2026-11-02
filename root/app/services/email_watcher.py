@@ -5,7 +5,7 @@ import time
 from config.store import ConfigStore
 import ff_logging
 from history.recorder import HistoryRecorder
-from models import active_urls as active_urls_utils
+from models.active_urls import is_url_active, mark_url_queued
 from models.active_urls import ActiveUrlsDict
 from models.queue_types import CheckEmailsEvent, IngressQueue, ShutdownEvent
 from notifications import notification_wrapper
@@ -23,7 +23,7 @@ def email_watcher(
     shutdown_event: ShutdownEvent,
     history_recorder: HistoryRecorder,
     config_store: ConfigStore,
-    check_emails_event: CheckEmailsEvent | None,
+    check_emails_event: CheckEmailsEvent,
 ) -> None:
     """Continuously monitor email for fanfiction URLs and route to the ingress queue."""
     ff_logging.set_verbose(verbose)
@@ -35,7 +35,7 @@ def email_watcher(
             ff_logging.log_debug("EmailWatcher received shutdown signal")
             break
 
-        if check_emails_event is not None and check_emails_event.is_set():
+        if check_emails_event.is_set():
             check_emails_event.clear()
             is_manual = True
             ff_logging.log("EmailWatcher: manual email check triggered")
@@ -70,7 +70,7 @@ def email_watcher(
                 )
                 continue
 
-            if active_urls_utils.is_url_active(active_urls, fanfic.url):
+            if is_url_active(active_urls, fanfic.url):
                 urls_duplicate += 1
                 ff_logging.log(
                     f"Skipping {fanfic.url} - already in queue or processing",
@@ -80,7 +80,7 @@ def email_watcher(
 
             urls_new += 1
             fics_to_add.add(fanfic)
-            active_urls_utils.mark_url_queued(active_urls, fanfic.url, site=fanfic.site)
+            mark_url_queued(active_urls, fanfic.url, site=fanfic.site)
 
         for fic in fics_to_add:
             ff_logging.log(
@@ -106,9 +106,6 @@ def email_watcher(
                 shutdown_event, check_emails_event
             )
             if not idle_notified:
-                break
-        elif check_emails_event is None:
-            if shutdown_event.wait(timeout=email_info.sleep_time):
                 break
         else:
             start_wait = time.monotonic()

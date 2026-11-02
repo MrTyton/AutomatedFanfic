@@ -451,7 +451,7 @@ class TestUrlIngester(unittest.TestCase):
         p.start()
         p.join(timeout=30)
         self.assertEqual(p.exitcode, 0, "Spawned subprocess exited non-zero")
-        result = result_q.get_nowait()
+        result = result_q.get(timeout=5.0)
         self.assertEqual(result["email"], "u")
         self.assertEqual(result["server"], "s")
 
@@ -600,6 +600,7 @@ class TestEmailWatcher(unittest.TestCase):
         self.mock_notification_info = MagicMock()
 
         self.ingress_queue = mp.Queue()
+        self.check_emails_event = threading.Event()
 
         # Mock URL parsers for testing
         self.mock_url_parsers = {
@@ -675,7 +676,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
-                None,
+                self.check_emails_event,
             )
 
         # Verify URL was processed
@@ -720,7 +721,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
-                None,
+                self.check_emails_event,
             )
 
         queued = self.assert_ingress_has_item(fanfic)
@@ -757,7 +758,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
-                None,
+                self.check_emails_event,
             )
 
         # Verify notification was sent
@@ -811,7 +812,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
-                None,
+                self.check_emails_event,
             )
 
         # Verify each fanfic was added to the ingress queue (order may vary)
@@ -845,7 +846,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
-                None,
+                self.check_emails_event,
             )
 
         # Verify ingress queue remain empty
@@ -858,31 +859,26 @@ class TestEmailWatcher(unittest.TestCase):
         """Test that email_watcher waits on shutdown_event for the configured sleep_time duration."""
         custom_sleep_time = 42
         self.mock_email_info.sleep_time = custom_sleep_time
-        self.mock_email_info.get_urls.side_effect = [
-            [],  # No URLs found
-            KeyboardInterrupt(),  # Stop the infinite loop
-        ]
+        self.mock_email_info.get_urls.return_value = []
         mock_shutdown_event = MagicMock(spec=threading.Event)
-        mock_shutdown_event.is_set.return_value = False
-        mock_shutdown_event.wait.return_value = False
+        mock_shutdown_event.is_set.side_effect = [False, False, True]
+        mock_shutdown_event.wait.return_value = True
 
-        # Run email_watcher until KeyboardInterrupt
-        with self.assertRaises(KeyboardInterrupt):
-            email_watcher(
-                self.mock_email_info,
-                self.mock_notification_info,
-                self.ingress_queue,
-                self.mock_url_parsers,
-                {},
-                False,
-                mock_shutdown_event,
-                MagicMock(),
-                ConfigStore({}),
-                None,
-            )
+        email_watcher(
+            self.mock_email_info,
+            self.mock_notification_info,
+            self.ingress_queue,
+            self.mock_url_parsers,
+            {},
+            False,
+            mock_shutdown_event,
+            MagicMock(),
+            ConfigStore({}),
+            self.check_emails_event,
+        )
 
-        # Verify shutdown_event.wait was called with correct timeout duration
-        mock_shutdown_event.wait.assert_called_with(timeout=custom_sleep_time)
+        # Verify shutdown_event.wait was called with 1.0s slice
+        mock_shutdown_event.wait.assert_called_with(timeout=1.0)
 
     @patch("services.email_watcher.time.sleep")
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
@@ -909,7 +905,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
-                None,
+                self.check_emails_event,
             )
 
         self.mock_email_info._idle_wait_for_notification.assert_called_once()
@@ -933,11 +929,11 @@ class TestEmailWatcher(unittest.TestCase):
             shutdown_event,
             MagicMock(),
             ConfigStore({}),
-            None,
+            self.check_emails_event,
         )
 
         self.mock_email_info._idle_wait_for_notification.assert_called_once_with(
-            shutdown_event, None
+            shutdown_event, self.check_emails_event
         )
 
     def test_email_watcher_manual_check_event(self):
@@ -1000,7 +996,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn.search.return_value = [101]
 
         result = self._make_email_info()._idle_wait_for_notification(
-            threading.Event(), None
+            threading.Event(), threading.Event()
         )
 
         self.assertTrue(result)
@@ -1014,7 +1010,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn.idle_check.return_value = [(12, b"EXISTS")]
 
         result = self._make_email_info()._idle_wait_for_notification(
-            threading.Event(), None
+            threading.Event(), threading.Event()
         )
 
         self.assertTrue(result)
@@ -1028,7 +1024,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn.idle_check.return_value = [(5, b"RECENT")]
 
         result = self._make_email_info()._idle_wait_for_notification(
-            threading.Event(), None
+            threading.Event(), threading.Event()
         )
 
         self.assertTrue(result)
@@ -1056,7 +1052,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn = self._setup_mock_conn(mock_cls)
 
         result = self._make_email_info()._idle_wait_for_notification(
-            shutdown_event, None
+            shutdown_event, threading.Event()
         )
 
         self.assertFalse(result)
@@ -1076,7 +1072,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn.idle_check.side_effect = idle_check_side_effect
 
         result = self._make_email_info()._idle_wait_for_notification(
-            shutdown_event, None
+            shutdown_event, threading.Event()
         )
 
         self.assertFalse(result)
@@ -1091,7 +1087,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_cls.return_value.__enter__.side_effect = Exception("Connection refused")
 
         result = self._make_email_info()._idle_wait_for_notification(
-            threading.Event(), None
+            threading.Event(), threading.Event()
         )
 
         self.assertTrue(result)
@@ -1107,7 +1103,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn.idle_check.return_value = []  # no mail signalled during IDLE
 
         result = self._make_email_info()._idle_wait_for_notification(
-            threading.Event(), None
+            threading.Event(), threading.Event()
         )
 
         self.assertTrue(result)
@@ -1126,7 +1122,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn.idle_check.return_value = []
 
         result = self._make_email_info()._idle_wait_for_notification(
-            threading.Event(), None
+            threading.Event(), threading.Event()
         )
 
         self.assertTrue(result)
@@ -1197,12 +1193,12 @@ class TestEmailInfoIdleWait(unittest.TestCase):
                     threading.Event(),
                     MagicMock(),
                     store,
-                    None,
+                    threading.Event(),
                 )
             except KeyboardInterrupt:
                 pass
 
-        queued = ingress_q.get_nowait()
+        queued = ingress_q.get(timeout=5.0)
         self.assertEqual(queued.url, "archiveofourown.org/works/12345")
         self.assertEqual(
             active_urls["archiveofourown.org/works/12345"]["status"], "queued"

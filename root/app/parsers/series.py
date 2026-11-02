@@ -6,7 +6,7 @@ from typing import Protocol, TypedDict
 lazy from config.store import ConfigStore
 lazy from fanficfare import adapters, configurable, exceptions, geturls
 import ff_logging
-from parsers.regex_parsing import normalize_url as _normalize_url
+from parsers.regex_parsing import normalize_url
 
 __all__ = [
     "FanFicFareAdapter",
@@ -119,7 +119,7 @@ def is_series_url(
     Returns:
         True if the URL is a series/collection, False if single story or unknown
     """
-    url = _normalize_url(url)
+    url = normalize_url(url)
     if not config:
         config = get_series_configuration(
             url, config_store=config_store or ConfigStore({})
@@ -186,7 +186,7 @@ def expand_series_url(
         List of individual story URLs extracted from the series.
         Returns empty list if URL is not a series or extraction fails.
     """
-    url = _normalize_url(url)
+    url = normalize_url(url)
     if not config:
         config = get_series_configuration(
             url, config_store=config_store or ConfigStore({})

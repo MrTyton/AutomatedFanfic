@@ -178,12 +178,12 @@ class TestPipeline(unittest.TestCase):
     def test_worker_permanent_worker_does_not_terminate_on_idle(
         self, mock_monotonic, mock_logging, mock_reclaim_memory
     ):
-        """Worker with idle_timeout=None does not exit when idle."""
+        """Worker with idle_timeout=0.0 does not exit when idle."""
         queue = MagicMock()
         queue.get.side_effect = [Empty, Empty, None]
         mock_monotonic.side_effect = [0.0, 100.0, 200.0]
 
-        pipeline.url_worker(queue, self.ctx, self.worker_id, idle_timeout=None)
+        pipeline.url_worker(queue, self.ctx, self.worker_id, idle_timeout=0.0)
 
         self.mock_ingress_queue.put.assert_not_called()
         mock_reclaim_memory.assert_not_called()

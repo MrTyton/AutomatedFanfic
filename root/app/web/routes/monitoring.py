@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Request
 
-from models import active_urls as active_urls_utils
+from models.active_urls import get_queue_depths
 from web.services.dashboard_snapshot import (
     get_active_downloads_summary,
     get_worker_status_summary,
@@ -21,7 +21,7 @@ async def active_downloads(request: Request):
 async def queue_depths(request: Request):
     """Current queue sizes across the system."""
     state = request.app.state.web_state
-    return active_urls_utils.get_queue_depths(
+    return get_queue_depths(
         state.ingress_queue, state.waiting_queue, state.worker_queues
     )
 

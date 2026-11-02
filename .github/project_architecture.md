@@ -139,10 +139,20 @@ The system assumes things will fail (network issues, Cloudflare, rate limits) an
 
 ## 6. Directory Structure Reference
 
--   `app/services/`: Long-running loop services.
--   `app/workers/`: 'One-off' task executors.
--   `app/process_management/`: Infrastructure code.
--   `app/calibre_integration/`: Database abstraction layer.
+-   `app/antibot/`: Anti-bot detection, FlareSolverr crash recovery, and cookiejar inspection.
+-   `app/calibre_integration/`: Database abstraction layer (calibredb CLI / HTTP API) and metadata preservation.
+-   `app/config/`: Configuration system, modular Pydantic schemas, and ConfigStore.
+-   `app/ff_logging/`: Colorized process/thread logging, log forwarding, and drain threads.
+-   `app/history/`: Persistent SQLite history database, async client, recorder, and crash recovery.
+-   `app/mcp_server/`: Model Context Protocol server tools and resources.
+-   `app/models/`: Shared data models (FanficInfo, retry types, active URLs, WorkerContext, IPC queues).
+-   `app/notifications/`: Apprise notification wrapper and multi-service alerting.
+-   `app/parsers/`: Regex metadata extractors, URL pattern matchers, and series expansion.
+-   `app/process_management/`: Central ProcessManager lifecycle, state tracking, and health monitoring.
+-   `app/services/`: Supervisor, Coordinator, EmailWatcher, Waiter, and bootstrap orchestration.
+-   `app/utils/`: System utilities and temporary directory context managers.
+-   `app/web/`: FastAPI web dashboard, REST/WebSocket API endpoints, and background monitors.
+-   `app/workers/`: Site-specific download workers, FanFicFare execution pipeline, and handlers.
 
 ## 7. Key Patterns & Strategies
 

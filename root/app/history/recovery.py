@@ -9,7 +9,7 @@ from pathlib import Path
 
 from history.sync_db import SyncHistoryDB
 from history.recorder import HistoryRecorder
-from models import active_urls as active_urls_utils
+from models.active_urls import mark_url_queued
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from models.queue_types import IngressQueue
@@ -89,7 +89,7 @@ def recover_uncompleted_downloads(
             title=title,
         )
 
-        active_urls_utils.mark_url_queued(
+        mark_url_queued(
             active_urls,
             fanfic.url,
             site=fanfic.site,

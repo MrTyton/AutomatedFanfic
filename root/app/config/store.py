@@ -77,11 +77,9 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
 class ConfigStore:
     """Thread-safe and process-safe configuration store backed by a Manager dict."""
 
-    def __init__(self, shared_dict: MutableMapping[str, object] | None = None) -> None:
-        """Initialize the store with an optional shared dictionary."""
-        self._store: MutableMapping[str, object] = (
-            shared_dict if shared_dict is not None else {}
-        )
+    def __init__(self, shared_dict: MutableMapping[str, object]) -> None:
+        """Initialize the store with a shared dictionary."""
+        self._store: MutableMapping[str, object] = shared_dict
 
     def initialize_from_config(self, config: AppConfig) -> None:
         """Populate the store from an AppConfig object."""

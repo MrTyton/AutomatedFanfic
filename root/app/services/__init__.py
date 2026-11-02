@@ -1,6 +1,6 @@
 """Runtime services coordinating task distribution, email monitoring, and retries."""
 
-from services import (
+lazy from services import (
     bootstrap,
     coordinator,
     email_client,

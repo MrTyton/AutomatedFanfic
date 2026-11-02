@@ -24,7 +24,7 @@ from queue import Empty
 from config.store import ConfigStore
 from history.recorder import HistoryRecorder
 import ff_logging
-from models import active_urls as active_urls_utils
+from models.active_urls import mark_url_failed, mark_url_queued, remove_active_url
 from models.active_urls import ActiveUrlsDict
 from models.fanfic_info import FanficInfo
 from models.queue_types import (
@@ -62,7 +62,7 @@ class Coordinator:
         url_parsers: dict,
         config_store: ConfigStore,
         scale_queue: ScaleQueue,
-        coordinator_status: MutableMapping[str, object] | None = None,
+        coordinator_status: MutableMapping[str, object],
         verbose: bool = False,
     ) -> None:
         """Initialize the Coordinator.
@@ -275,7 +275,7 @@ class Coordinator:
             try:
                 meta = dict(self.active_urls.get(task.url, {}))
                 if meta.get("status") == "cancelled":
-                    active_urls_utils.remove_active_url(self.active_urls, task.url)
+                    remove_active_url(self.active_urls, task.url)
                     ff_logging.log_debug(
                         f"Coordinator: Dropped cancelled task {task.url}"
                     )
@@ -306,13 +306,13 @@ class Coordinator:
 
                 # Remove the parent series URL from active_urls since workers only
                 # process and clean up the individual child story URLs.
-                active_urls_utils.remove_active_url(self.active_urls, task.url)
+                remove_active_url(self.active_urls, task.url)
             elif expansion_result["count"] == 0:
                 # Detected as series, but expansion produced 0 stories (e.g. 403 or network error)
                 ff_logging.log_failure(
                     f"Coordinator: Failed to expand series {task.url} into story URLs"
                 )
-                active_urls_utils.mark_url_failed(
+                mark_url_failed(
                     self.active_urls,
                     task.url,
                     "Failed to expand series (check credentials/login in personal.ini or network)",
@@ -345,9 +345,7 @@ class Coordinator:
                     retry_decision=task.retry_decision,
                     from_email=task.from_email,
                 )
-                active_urls_utils.mark_url_queued(
-                    self.active_urls, story_task.url, site=story_task.site
-                )
+                mark_url_queued(self.active_urls, story_task.url, site=story_task.site)
                 if self.history_recorder is not None:
                     try:
                         self.history_recorder.record_download_created(
@@ -447,7 +445,7 @@ class Coordinator:
                 try:
                     meta = dict(self.active_urls.get(task.url, {}))
                     if meta.get("status") == "cancelled":
-                        active_urls_utils.remove_active_url(self.active_urls, task.url)
+                        remove_active_url(self.active_urls, task.url)
                         ff_logging.log_debug(
                             f"Coordinator: Dropped cancelled backlog task {task.url}"
                         )
@@ -580,7 +578,7 @@ def start_coordinator(
     url_parsers: dict,
     config_store: ConfigStore,
     scale_queue: ScaleQueue,
-    coordinator_status: MutableMapping[str, object] | None = None,
+    coordinator_status: MutableMapping[str, object],
 ) -> None:
     """Entry point for the coordinator thread/process.
 

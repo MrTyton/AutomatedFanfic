@@ -23,14 +23,7 @@ from config.schemas.process import ProcessConfig
 from config.schemas.retry import RetryConfig
 from config.schemas.web import WebConfig
 import ff_logging
-
-lazy import fanficdownload
-
-
-def _get_default_version() -> str:
-    """Return the application version dynamically from fanficdownload."""
-    return getattr(fanficdownload, "__version__", "6.16.2")
-
+from version import __version__
 
 _active_toml_data: ContextVar[dict[str, Any] | None] = ContextVar(
     "_active_toml_data", default=None
@@ -154,9 +147,7 @@ class AppConfig(BaseSettings):
     web: WebConfig = Field(default_factory=WebConfig)
 
     # Application settings
-    version: str = Field(
-        default_factory=_get_default_version, description="Application version"
-    )
+    version: str = Field(default=__version__, description="Application version")
 
     @property
     def resume_uncompleted_on_startup(self) -> bool:

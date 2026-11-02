@@ -307,6 +307,7 @@ class TestCoordinatorSnapshot(unittest.TestCase):
             {},
             ConfigStore({}),
             scale_queue=mp.Queue(),
+            coordinator_status={},
         )
         snap = coord.get_state_snapshot()
         self.assertEqual(snap["backlog"], {})
@@ -326,6 +327,7 @@ class TestCoordinatorSnapshot(unittest.TestCase):
             {},
             ConfigStore({}),
             scale_queue=mp.Queue(),
+            coordinator_status={},
         )
 
         # Manually set state

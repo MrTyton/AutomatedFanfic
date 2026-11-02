@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 import time
 
-from models import active_urls as active_urls_utils
+from models.active_urls import get_queue_depths
 import parsers
 from web.dependencies import WebState
 
@@ -24,14 +24,11 @@ def invalidate_history_cache() -> None:
     _history_cache["expires_at"] = 0.0
 
 
-async def build_snapshot(state: WebState) -> dict[str, object]:
-    """Build a JSON-serialisable dashboard snapshot from WebState."""
-    now_ts = time.time()
-    cache = _history_cache
-    snapshot: dict[str, object] = {"timestamp": now_ts}
-
-    # ── Active downloads ────────────────────────────────────────
-    url_metadata: dict[str, dict[str, object]] = {}  # url -> {site, title, ...}
+async def _collect_active_and_waiting_urls(
+    state: WebState,
+) -> tuple[dict[str, dict], dict[str, dict], list[dict], list[dict], list[dict]]:
+    """Query state.active_urls and state.history_db to partition URLs into active, queued, and waiting lists."""
+    url_metadata: dict[str, dict] = {}
     if state.active_urls is not None:
         try:
             for url, meta in state.active_urls.items():
@@ -44,8 +41,7 @@ async def build_snapshot(state: WebState) -> dict[str, object]:
 
     urls = list(url_metadata.keys())
 
-    # Split active URLs into truly-processing vs waiting-for-retry
-    waiting_url_map: dict[str, dict] = {}  # url -> waiting row metadata
+    waiting_url_map: dict[str, dict] = {}
     if state.history_db is not None:
         try:
             for row in await state.history_db.get_waiting_urls():
@@ -94,6 +90,23 @@ async def build_snapshot(state: WebState) -> dict[str, object]:
         else:
             queued_urls.append({"url": u, **meta})
 
+    return url_metadata, waiting_url_map, active_urls_list, queued_urls, waiting_urls
+
+
+async def build_snapshot(state: WebState) -> dict[str, object]:
+    """Build a JSON-serialisable dashboard snapshot from WebState."""
+    now_ts = time.time()
+    cache = _history_cache
+    snapshot: dict[str, object] = {"timestamp": now_ts}
+
+    (
+        url_metadata,
+        waiting_url_map,
+        active_urls_list,
+        queued_urls,
+        waiting_urls,
+    ) = await _collect_active_and_waiting_urls(state)
+
     active_urls_list.sort(
         key=lambda x: (float(x.get("queued_at") or 0.0), str(x.get("url") or ""))
     )
@@ -124,7 +137,7 @@ async def build_snapshot(state: WebState) -> dict[str, object]:
     snapshot["dismissed_error_urls"] = sorted(dismissed_urls)
 
     # ── Queue depths ────────────────────────────────────────────
-    snapshot["queues"] = active_urls_utils.get_queue_depths(
+    snapshot["queues"] = get_queue_depths(
         state.ingress_queue, state.waiting_queue, state.worker_queues
     )
 
@@ -419,49 +432,49 @@ async def build_snapshot(state: WebState) -> dict[str, object]:
 
 async def build_homepage_widget(state: WebState) -> dict[str, object]:
     """Single flat JSON payload for Homepage customapi widget."""
-    waiting_urls: set[str] = set()
-    if state.history_db is not None:
-        try:
-            for row in await state.history_db.get_waiting_urls():
-                waiting_urls.add(row["url"])
-        except Exception:
-            pass
+    (
+        url_metadata,
+        waiting_url_map,
+        active_urls_list,
+        queued_urls,
+        waiting_urls,
+    ) = await _collect_active_and_waiting_urls(state)
 
     active_items = []
-    active_count = 0
-    if state.active_urls is not None:
-        try:
-            for url, meta in state.active_urls.items():
-                if isinstance(meta, dict) and meta.get("status") == "cancelled":
-                    continue
-                entry = {"url": url}
-                if isinstance(meta, dict):
-                    entry["site"] = meta.get("site", "unknown")
-                    entry["title"] = meta.get("title", url)
-                    is_waiting = url in waiting_urls or meta.get("status") == "waiting"
-                else:
-                    entry["site"] = "unknown"
-                    entry["title"] = url
-                    is_waiting = url in waiting_urls
-                entry["state"] = "waiting" if is_waiting else "downloading"
-                active_items.append(entry)
-            active_count = len(active_items)
-        except Exception:
-            pass
+    for item in active_urls_list + queued_urls:
+        active_items.append(
+            {
+                "url": item["url"],
+                "site": item.get("site", "unknown"),
+                "title": item.get("title", item["url"]),
+                "state": "downloading",
+            }
+        )
+    for item in waiting_urls:
+        active_items.append(
+            {
+                "url": item["url"],
+                "site": item.get("site", "unknown"),
+                "title": item.get("title", item["url"]),
+                "state": "waiting",
+            }
+        )
 
-    queued = 0
-    if state.ingress_queue is not None:
-        try:
-            queued = state.ingress_queue.qsize()
-        except NotImplementedError:
-            queued = 0
-
-    waiting_retry = 0
-    if state.waiting_queue is not None:
-        try:
-            waiting_retry = state.waiting_queue.qsize()
-        except NotImplementedError:
-            waiting_retry = 0
+    queue_depths = get_queue_depths(
+        state.ingress_queue, state.waiting_queue, state.worker_queues
+    )
+    queued_val = queue_depths.get("ingress", 0)
+    queued = (
+        int(queued_val)
+        if isinstance(queued_val, (int, float)) and queued_val >= 0
+        else 0
+    )
+    waiting_val = queue_depths.get("waiting", 0)
+    waiting_retry = (
+        int(waiting_val)
+        if isinstance(waiting_val, (int, float)) and waiting_val >= 0
+        else 0
+    )
 
     total_completed = 0
     if state.history_db is not None:
@@ -473,7 +486,7 @@ async def build_homepage_widget(state: WebState) -> dict[str, object]:
             total_completed = 0
 
     return {
-        "active_downloads": active_count,
+        "active_downloads": len(active_items),
         "queued": queued,
         "waiting_retry": waiting_retry,
         "total_completed": total_completed,

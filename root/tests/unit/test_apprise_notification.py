@@ -670,7 +670,7 @@ class TestAppriseNotificationPickle(unittest.TestCase):
         p.start()
         p.join(timeout=30)
         self.assertEqual(p.exitcode, 0, "Spawned subprocess exited non-zero")
-        result = result_q.get_nowait()
+        result = result_q.get(timeout=5.0)
         self.assertTrue(result["enabled"])
         self.assertTrue(
             result["has_log_callback"],

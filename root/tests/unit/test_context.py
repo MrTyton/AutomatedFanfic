@@ -11,7 +11,7 @@ import ff_logging.core
 from models.active_urls import ActiveUrlsDict
 from models.context import SharedIPCContext, WorkerContext
 from notifications import notification_wrapper
-from web import server as web_server
+from web import server
 
 
 class TestWorkerContext(unittest.TestCase):
@@ -198,7 +198,7 @@ class TestSharedIPCContextAndProcessLogging(unittest.TestCase):
             patch("web.server.uvicorn.Config") as mock_uvicorn_cfg,
             patch("web.server.uvicorn.Server") as mock_uvicorn_srv,
         ):
-            web_server.run_web_server(
+            server.run_web_server(
                 ipc,
                 app_config=mock_cfg,
                 config_path="/config/config.toml",

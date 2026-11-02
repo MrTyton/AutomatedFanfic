@@ -79,10 +79,20 @@ def resolve_state_personal_ini(state: Any) -> str:
     ) or ""
 
 
+def resolve_state_default_ini(state: Any) -> str:
+    """Resolve the filesystem path to defaults.ini from a WebState or similar state container."""
+    if getattr(state, "config_store", None):
+        return state.config_store.get_resolved_default_ini()
+    raw_default = None
+    if getattr(state, "config", None) and getattr(state.config, "calibre", None):
+        raw_default = state.config.calibre.default_ini
+    return (resolve_ini_path(raw_default, "defaults.ini") if raw_default else "") or ""
+
+
 def build_fff_configuration(
     url: str,
-    default_ini_path: str | None = None,
-    personal_ini_path: str | None = None,
+    default_ini_path: str = "",
+    personal_ini_path: str = "",
 ) -> configurable.Configuration:
     """Return a FanFicFare Configuration loaded with site sections and INI files."""
     try:
@@ -119,6 +129,7 @@ def build_fff_configuration(
 __all__ = [
     "resolve_ini_path",
     "resolve_state_personal_ini",
+    "resolve_state_default_ini",
     "get_packaged_defaults_ini_path",
     "read_ini_file_cached",
     "clear_ini_cache",

@@ -14,7 +14,7 @@ from services import bootstrap
 
 lazy from parsers import url_patterns
 
-__version__ = "6.16.2"
+from version import __version__
 
 
 def parse_arguments() -> argparse.Namespace:

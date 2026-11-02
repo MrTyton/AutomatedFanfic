@@ -25,6 +25,7 @@ class TestDuplicatePrevention(unittest.TestCase):
         self.shutdown_event = threading.Event()
         self.history_recorder = MagicMock()
         self.config_store = MagicMock()
+        self.check_emails_event = threading.Event()
 
     @patch("services.email_watcher.time.sleep")
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")
@@ -49,7 +50,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.shutdown_event,
                 self.history_recorder,
                 self.config_store,
-                None,
+                self.check_emails_event,
             )
         except KeyboardInterrupt:
             pass
@@ -80,7 +81,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.shutdown_event,
                 self.history_recorder,
                 self.config_store,
-                None,
+                self.check_emails_event,
             )
         except KeyboardInterrupt:
             pass

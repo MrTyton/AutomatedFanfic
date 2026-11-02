@@ -22,7 +22,7 @@ import unittest
 
 import fanficfare.adapters as adapters
 import fanficfare.cli as fff_cli
-import fanficfare.configurable as configurable
+from fanficfare import configurable
 import fanficfare.exceptions as exceptions
 import fanficfare.geturls as geturls
 from packaging.requirements import Requirement

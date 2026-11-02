@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from fanficfare.cli import do_download, expandOptions, mkParser
-import fanficfare.configurable as configurable
+from fanficfare import configurable
 
 from calibre_integration.calibre_info import CalibreInfo
 from models.fanfic_info import FanficInfo

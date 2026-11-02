@@ -8,7 +8,9 @@ from typing import Any
 from config.ini_resolver import resolve_state_personal_ini
 from config.store import ConfigStore
 import ff_logging
+from models import active_urls
 from models.fanfic_info import FanficInfo
+from web.dependencies import WebState
 from services import email_client
 from utils import system_utils
 from web.services.calibre_lookup import get_calibre_metadata
@@ -16,7 +18,7 @@ from web.services.calibre_lookup import get_calibre_metadata
 lazy import antibot
 lazy from antibot import flaresolverr
 lazy from calibre_integration import calibredb_utils, factory as calibre_factory
-lazy from fanficdownload import __version__
+from version import __version__
 lazy from fanficfare import adapters as fff_adapters, configurable, geturls
 lazy from notifications.apprise_notification import AppriseNotification
 lazy from parsers import regex_parsing, url_patterns
@@ -481,7 +483,7 @@ def run_service_diagnostics(
         try:
             config_store = getattr(state, "config_store", None)
             if config_store is None:
-                config_store = ConfigStore()
+                config_store = ConfigStore({})
                 config_store.initialize_from_config(state.config)
             notifier = AppriseNotification(state.config, config_store)
             ok = notifier.send_notification(
@@ -682,9 +684,11 @@ def get_system_version_payload(app_state: Any) -> dict[str, object]:
     }
 
 
-def get_system_status_payload(web_state: Any) -> dict[str, object]:
+def get_system_status_payload(web_state: WebState) -> dict[str, object]:
     """Overall system status including process states and queue sizes."""
-    queues: dict[str, object] = {}
+    queues = active_urls.get_queue_depths(
+        web_state.ingress_queue, web_state.waiting_queue, web_state.worker_queues
+    )
     result: dict[str, object] = {
         "status": "running",
         "version": __version__,
@@ -692,36 +696,15 @@ def get_system_status_payload(web_state: Any) -> dict[str, object]:
         "queues": queues,
     }
 
-    if getattr(web_state, "process_status_callable", None):
+    if web_state.process_status_callable is not None:
         try:
             result["processes"] = web_state.process_status_callable()
         except Exception:
             result["processes"] = {"error": "unavailable"}
 
-    for name, queue in [
-        ("ingress", getattr(web_state, "ingress_queue", None)),
-        ("waiting", getattr(web_state, "waiting_queue", None)),
-    ]:
-        if queue is not None:
-            try:
-                queues[name] = queue.qsize()
-            except NotImplementedError:
-                queues[name] = -1
-
-    worker_queues = getattr(web_state, "worker_queues", None)
-    if worker_queues:
-        workers_dict: dict[str, int] = {}
-        queues["workers"] = workers_dict
-        for worker_id, queue in worker_queues.items():
-            try:
-                workers_dict[worker_id] = queue.qsize()
-            except NotImplementedError:
-                workers_dict[worker_id] = -1
-
-    active_urls = getattr(web_state, "active_urls", None)
-    if active_urls is not None:
+    if web_state.active_urls is not None:
         try:
-            result["active_downloads"] = len(active_urls)
+            result["active_downloads"] = len(web_state.active_urls)
         except Exception:
             result["active_downloads"] = -1
 

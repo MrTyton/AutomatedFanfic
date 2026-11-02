@@ -20,7 +20,12 @@ from typing import cast
 
 lazy from fanficfare.fetchers.base_fetcher import LWPCookieJar
 from calibre_integration import epub_utils
-from models import active_urls as active_urls_utils
+from models.active_urls import (
+    mark_url_processing,
+    mark_url_queued,
+    remove_active_url,
+    update_url_title,
+)
 from models import fanfic_info
 from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
@@ -113,7 +118,7 @@ def _process_task(
                 )
                 # Push title to active_urls so the web UI can show it immediately.
                 # Merge into the existing entry to preserve heap_gen and other fields.
-                active_urls_utils.update_url_title(
+                update_url_title(
                     active_urls,
                     fanfic.url,
                     title=fanfic.title,
@@ -237,7 +242,7 @@ def _process_task(
         if fff_result.is_forceable:
             # Conditions that can be resolved by force-retrying
             fanfic.behavior = "force"
-            active_urls_utils.mark_url_queued(
+            mark_url_queued(
                 active_urls,
                 fanfic.url,
                 behavior="force",
@@ -264,7 +269,7 @@ def url_worker(
     ctx: WorkerContext,
     worker_id: str,
     verbose: bool = False,
-    idle_timeout: float | None = None,
+    idle_timeout: float = 0.0,
 ) -> None:
     """Main worker loop for processing fanfiction downloads on a dedicated thread.
 
@@ -339,7 +344,7 @@ def url_worker(
                     last_active_time = time.monotonic()
                     continue
 
-                if idle_timeout is not None and (
+                if idle_timeout > 0.0 and (
                     time.monotonic() - last_active_time >= idle_timeout
                 ):
                     ff_logging.log_debug(
@@ -381,7 +386,7 @@ def url_worker(
                 try:
                     meta = dict(active_urls.get(fanfic.url, {}))
                     if meta.get("status") == "cancelled":
-                        active_urls_utils.remove_active_url(active_urls, fanfic.url)
+                        remove_active_url(active_urls, fanfic.url)
                         ff_logging.log(
                             f"Worker {worker_id}: Dropped cancelled task {fanfic.url}"
                         )
@@ -403,9 +408,7 @@ def url_worker(
 
             # Mark as actively being processed by this worker thread
             if active_urls is not None:
-                active_urls_utils.mark_url_processing(
-                    active_urls, fanfic.url, site=fanfic.site
-                )
+                mark_url_processing(active_urls, fanfic.url, site=fanfic.site)
             if ctx.history_recorder:
                 ctx.history_recorder.record_download_processing(
                     fanfic.url, site=fanfic.site

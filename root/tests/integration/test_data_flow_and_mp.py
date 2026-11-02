@@ -174,6 +174,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     url_parsers=url_parsers,
                     config_store=store,
                     scale_queue=Queue(),
+                    coordinator_status={},
                 )
 
                 # Step 1: Ingest URL (as email_watcher or add-url does)
@@ -385,6 +386,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             url_parsers=url_parsers,
             config_store=ConfigStore({}),
             scale_queue=Queue(),
+            coordinator_status={},
         )
 
         ingress_q.put(FanficInfo(url=series_url, site="archiveofourown"))
@@ -594,6 +596,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             url_parsers = generate_url_parsers_from_fanficfare()
 
             shutdown_event = manager.Event()
+            check_emails_event = manager.Event()
             ipc = SharedIPCContext(
                 ingress_queue=ingress_q,
                 waiting_queue=waiting_q,
@@ -603,6 +606,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                 config_store=store,
                 scale_queue=scale_q,
                 shutdown_event=shutdown_event,
+                check_emails_event=check_emails_event,
                 verbose=False,
             )
 

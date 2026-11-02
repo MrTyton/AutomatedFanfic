@@ -6,7 +6,12 @@ from typing import Any
 
 from calibre_integration import calibre_info
 from calibre_integration import factory as calibre_factory
-from models import active_urls as active_urls_utils
+from models.active_urls import (
+    is_url_active,
+    mark_url_cancelled,
+    mark_url_queued,
+    remove_active_url,
+)
 from models.fanfic_info import FanficInfo
 lazy from parsers import regex_parsing, url_patterns
 from web.services.calibre_lookup import _LockFactory
@@ -143,7 +148,7 @@ def remove_from_active_urls(state: Any, url: str) -> tuple[dict, bool]:
     status = existing.get("status")
     can_remove = status != "processing"
     if can_remove:
-        active_urls_utils.remove_active_url(state.active_urls, url)
+        remove_active_url(state.active_urls, url)
     return existing, can_remove
 
 
@@ -172,7 +177,7 @@ def remove_from_active_url_candidates(
 
 def enqueue_fanfic(state: Any, fanfic: FanficInfo) -> None:
     """Queue a FanficInfo and reflect it in active_urls/history."""
-    active_urls_utils.mark_url_queued(
+    mark_url_queued(
         state.active_urls,
         fanfic.url,
         site=fanfic.site,
@@ -226,10 +231,10 @@ def ingest_single_url(
     elif force:
         fanfic.behavior = "force"
 
-    if active_urls_utils.is_url_active(state.active_urls, fanfic.url):
+    if is_url_active(state.active_urls, fanfic.url):
         return False, f"{duplicate_prefix}: {fanfic.url}"
 
-    active_urls_utils.mark_url_queued(
+    mark_url_queued(
         state.active_urls, fanfic.url, site=fanfic.site, behavior=fanfic.behavior
     )
     state.ingress_queue.put(fanfic)
@@ -275,10 +280,10 @@ async def cancel_retry_action(
         for candidate in candidate_urls:
             if candidate in state.active_urls:
                 matched_any = True
-                if active_urls_utils.mark_url_cancelled(state.active_urls, candidate):
+                if mark_url_cancelled(state.active_urls, candidate):
                     active_cancelled += 1
         if not matched_any:
-            active_urls_utils.mark_url_cancelled(state.active_urls, canonical_url)
+            mark_url_cancelled(state.active_urls, canonical_url)
 
     if state.history_recorder:
         state.history_recorder.record_download_abandoned(
@@ -355,7 +360,7 @@ async def retry_now_action(
     if resolved_calibre_id and not fanfic.calibre_id:
         fanfic.calibre_id = resolved_calibre_id
 
-    active_urls_utils.mark_url_queued(
+    mark_url_queued(
         state.active_urls,
         fanfic.url,
         site=fanfic.site,
@@ -501,7 +506,7 @@ def retry_all_action(state: Any) -> tuple[bool, str]:
         if calibre_id:
             fanfic.calibre_id = calibre_id
         if state.active_urls is not None:
-            active_urls_utils.mark_url_queued(
+            mark_url_queued(
                 state.active_urls,
                 url,
                 site=site,
@@ -542,7 +547,7 @@ def cancel_all_action(state: Any) -> tuple[bool, str]:
     if state.active_urls is not None:
         try:
             for url in list(state.active_urls.keys()):
-                if active_urls_utils.mark_url_cancelled(state.active_urls, url):
+                if mark_url_cancelled(state.active_urls, url):
                     cancelled_count += 1
         except Exception:
             pass
@@ -631,6 +636,28 @@ def restart_daemon_action(state: Any, name: str) -> tuple[bool, str]:
         return False, "Worker restart event unavailable"
 
     return False, f"Unknown daemon '{name}'"
+
+
+def add_single_url_action(
+    state: Any,
+    url: str,
+    force: bool = False,
+    update_method: str | None = None,
+) -> tuple[bool, str]:
+    """Ingest a single fanfiction URL into the processing queue."""
+    if state.ingress_queue is None:
+        return False, "Ingress queue not available"
+
+    parsers_map = url_patterns.generate_url_parsers_from_fanficfare()
+    return ingest_single_url(
+        state,
+        url,
+        parsers_map,
+        force=force,
+        behavior_override=update_method,
+        duplicate_prefix="URL already in queue",
+        added_suffix=" to processing queue",
+    )
 
 
 def ingest_multiple_urls(

@@ -26,7 +26,7 @@ def _spawn_worker_thread(
     queue: WorkerQueue,
     ctx: WorkerContext,
     verbose: bool,
-    idle_timeout: float | None = None,
+    idle_timeout: float = 0.0,
 ) -> threading.Thread:
     """Create and start a daemon worker thread running `pipeline.url_worker`.
 
@@ -123,7 +123,7 @@ def run_worker_pool(
                 worker_queues["worker_0"],
                 worker_ctx,
                 verbose,
-                idle_timeout=None,
+                idle_timeout=0.0,
             )
         else:
             for worker_id, queue in worker_queues.items():
@@ -132,7 +132,7 @@ def run_worker_pool(
                     queue,
                     worker_ctx,
                     verbose,
-                    idle_timeout=None,
+                    idle_timeout=0.0,
                 )
 
         # Main loop: Wait for shutdown and periodically check scale_queue and thread health
@@ -186,7 +186,7 @@ def run_worker_pool(
                             worker_queues[worker_id],
                             worker_ctx,
                             verbose,
-                            idle_timeout=None,
+                            idle_timeout=0.0,
                         )
                     else:
                         ff_logging.log_debug(

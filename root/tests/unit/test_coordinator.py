@@ -20,6 +20,7 @@ def _make_coordinator(ingress_queue, worker_queues, **overrides):
         "url_parsers": {},
         "config_store": ConfigStore({}),
         "scale_queue": mp.Queue(),
+        "coordinator_status": {},
     }
     defaults.update(overrides)
     return Coordinator(ingress_queue, worker_queues, **defaults)
@@ -39,6 +40,7 @@ def _subprocess_init_coordinator(worker_queues_proxy, result_q):
             url_parsers={},
             config_store=ConfigStore({}),
             scale_queue=scale_q,
+            coordinator_status={},
         )
         result_q.put(
             {
@@ -301,6 +303,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
             url_parsers={},
             config_store=MagicMock(),
             scale_queue=MagicMock(),
+            coordinator_status={},
         )
 
         mock_logging.set_verbose.assert_called_with(True)
@@ -324,6 +327,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
             url_parsers={},
             config_store=MagicMock(),
             scale_queue=MagicMock(),
+            coordinator_status={},
         )
 
         mock_logging.log.assert_called_with("Coordinator stopped by KeyboardInterrupt")
@@ -345,6 +349,7 @@ class TestCoordinatorEdgeCases(unittest.TestCase):
             url_parsers={},
             config_store=MagicMock(),
             scale_queue=MagicMock(),
+            coordinator_status={},
         )
 
         mock_logging.log_failure.assert_called()

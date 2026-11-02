@@ -49,8 +49,14 @@ def run_supervisor(
     log_queue = ipc.log_queue
     scale_queue = ipc.scale_queue
     shutdown_event = ipc.shutdown_event
-    check_emails_event = ipc.check_emails_event
-    coordinator_status = ipc.coordinator_status
+    check_emails_event = (
+        ipc.check_emails_event
+        if ipc.check_emails_event is not None
+        else threading.Event()
+    )
+    coordinator_status = (
+        ipc.coordinator_status if ipc.coordinator_status is not None else {}
+    )
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
