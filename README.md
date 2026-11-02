@@ -1,7 +1,7 @@
 # AutomatedFanfic
-Automated Fanfiction Download using FanficFare CLI
+Automated Fanfiction Download using FanFicFare
 
-This is a docker image to run the Automated FFF CLI, with Apprise integration.
+AutomatedFanfic is a multi-threaded, parallel fanfiction downloader and library manager. It monitors email (IMAP) for fanfiction updates, downloads and updates e-books using FanFicFare across 100+ sites, organizes libraries via Calibre (supporting both local `calibredb` and remote Calibre Content Server over HTTP), dispatches multi-service alerts via Apprise, and provides a real-time web monitoring dashboard and Model Context Protocol (MCP) server.
 
 [FanFicFare](https://github.com/JimmXinu/FanFicFare)
 
@@ -25,6 +25,8 @@ This is a docker image to run the Automated FFF CLI, with Apprise integration.
     - [Apprise](#apprise)
     - [Web Dashboard](#web-dashboard)
     - [Process Management](#process-management)
+  - [Anti-Bot & FlareSolverr](#anti-bot--flaresolverr)
+  - [Model Context Protocol (MCP)](#model-context-protocol-mcp)
 
 ## Platform Support
 
@@ -58,16 +60,24 @@ AutomatedFanfic publishes two image flavors on Docker Hub (`mrtyton/automated-ff
 
 ## Site Support
 
-This program will support any website that FanFicFare will support. However, it does make use of multi-processing, spawning a different "watcher" for each website. This list is automatically generated, based on the adaptors that FanFicFare has.
+AutomatedFanfic supports any website supported by [FanFicFare](https://github.com/JimmXinu/FanFicFare) (over 100+ archives). The site catalog is automatically built at startup from FanFicFare's installed adapters.
+
+**Concurrency & Domain Locking:**
+Downloads run in parallel across a managed worker pool. To respect archive rate limits and avoid IP bans, the system enforces a strict **Domain Locking** politeness policy: multiple workers can process downloads concurrently across different archives, but no two workers will ever query the same site domain simultaneously.
+
+**Series & Collection Expansion:**
+In addition to individual story URLs, AutomatedFanfic automatically detects and expands **series and collection URLs** across any supported sites that provide them (including Archive of Our Own (AO3), eFiction-based archives, Twisting the Hellmouth, and any FanFicFare adapter implementing series/collection extraction). When a series or collection link is received via email or manual entry, all constituent stories are automatically extracted, deduplicated, and queued for download.
 
 ## Repeats
 
-The script will try to download every story maximum of 11 times, waiting an additional minute for each time - so on the first failure, it will wait for 1 minute, then on the second failure, it will wait for 2. The 11th time is special, as it activates a Hail-Mary protocol, which will wait for an additional 12 hours before continuing. This is to try and get around server instability, which can happen on sites like AO3.
+AutomatedFanfic includes an automatic retry system with incremental backoff and an optional Hail-Mary protocol to overcome temporary archive outages or server instability (such as AO3 maintenance or Cloudflare rate limits). All retry thresholds are fully configurable in `config.toml` (see [Retry and Hail-Mary Protocol](#retry-and-hail-mary-protocol)):
 
-If you have notifications enabled, it will send a notification of the failure for the penultimate failure, before the Hail-Mary - but it will not send a notification if the Hail-Mary fails, only if it succeeds.
+1. **Normal Retries (Configurable)**: Failed downloads wait with linearly increasing backoff delays (1 minute after the 1st failure, 2 minutes after the 2nd, 3 minutes after the 3rd, etc.). By default, it will retry up to **11 times** (configurable from 1 to 50 via `[retry] max_normal_retries`).
+2. **Hail-Mary Protocol**: When enabled (`[retry] hail_mary_enabled = true`, default), exhausting normal retries activates a final Hail-Mary attempt after an extended cooldown (default **12 hours**, configurable from 0.1 to 168 hours via `[retry] hail_mary_wait_hours`). This attempt automatically applies a forced update (`--force`) to resolve metadata bugs or chapter mismatches. If disabled, downloads permanently fail immediately after exhausting normal retries.
+3. **Notifications**: If notifications are enabled, a failure notification is sent when normal retries are exhausted before the Hail-Mary wait begins. If the Hail-Mary attempt later succeeds, a success notification is dispatched.
 
 **Special Case - Force Requests with `update_no_force`:**
-If the `update_method` is set to `"update_no_force"` and a force update is requested (either through email commands or manual triggers), the force request will be ignored and the story will be processed as a normal update. If the final Hail-Mary attempt fails under these conditions, a special notification will be sent explaining that the force request was ignored due to the `update_no_force` setting.
+If `update_method` is set to `"update_no_force"` and a force update is requested (either automatically detected or manually triggered), the force request is ignored and the story is processed as a normal update. If the final Hail-Mary attempt fails under these conditions, a special notification will be sent explaining that the force request was ignored due to the `update_no_force` setting.
 
 ## Calibre Setup
 
@@ -82,11 +92,9 @@ If the `update_method` is set to `"update_no_force"` and a force update is reque
    - For standalone (local library / calibredb): `docker pull mrtyton/automated-ffdl:latest`
    - For slim (remote Calibre server over HTTP): `docker pull mrtyton/automated-ffdl:slim`
    - Both variants support x86_64 and ARM64 architectures; Docker will automatically pull the correct architecture for your platform.
-2. Map the `/config` volume to someplace on your drive.
-3. Map the `/data` volume for persistent history database storage (required if using the web dashboard).
+2. Map the `/config` volume to a directory on your host containing your `config.toml` (copy `root/config.default/config.toml` from this repository as a starting template) and optional `personal.ini`.
+3. Map the `/data` volume for persistent database storage (`history.db`) and persistent log files (`automatedfanfic.log`). This enables automatic recovery of in-flight and interrupted downloads upon restart and powers the history and live dashboard.
 4. If you want to use the web dashboard, map port `8080` (or your configured port) and set `enabled = true` in the `[web]` section of `config.toml`.
-5. After running the image once, it will have copied over default configs. Fill them out and everything should start working.
-   1. This default config is currently broken, so when you map the `/config` volume just copy over the default ones found in this repo.
 
 **Docker Run Example:**
 ```bash
@@ -116,7 +124,7 @@ services:
 | Volume | Purpose |
 |---|---|
 | `/config` | Configuration files (`config.toml`, `personal.ini`) |
-| `/data` | Persistent data (history database for the web dashboard) |
+| `/data` | Persistent data (`history.db` for task state/recovery and `automatedfanfic.log` for logs) |
 
 **Ports:**
 | Port | Purpose |
@@ -126,16 +134,16 @@ services:
 ### How to Run - Non-Docker
 
 1. Make sure that you have calibre, and more importantly [calibredb](https://manual.calibre-ebook.com/generated/en/calibredb.html) installed on the system that you're running the script on. `calibredb` should be installed standard when you install calibre.
-2. Install [Python3](https://www.python.org/downloads/)
+2. Install [Python 3.15+](https://www.python.org/downloads/) (Python 3.15 or newer is required)
 3. Clone the Repo
 4. Create a virtual environment: `python3 -m venv /path/to/repo/.venv`
 5. Activate the virtual environment: `source /path/to/repo/.venv/bin/activate` (Linux/macOS) or `.venv\Scripts\activate` (Windows)
 6. For production use: `python -m pip install -r requirements.txt`
    For development (includes testing tools): `python -m pip install -r requirements-dev.txt`
-7. Install [FanficFare](https://github.com/JimmXinu/FanFicFare/wiki#command-line-interface-cli-version): `pip install FanFicFare`
-8. Fill out the config.toml file
-9. Navigate to `root/app` and run `python fanficdownload.py`
-10. To exit the virtual environment when done: `deactivate`
+   *(FanFicFare and all runtime dependencies are included automatically in `requirements.txt`)*
+7. Fill out the `config.toml` file (copy from `root/config.default/config.toml` as a template)
+8. Navigate to `root/app` and run `python fanficdownload.py`
+9. To exit the virtual environment when done: `deactivate`
 
 A `run.sh` example script is included in the repo root for running the app from a virtual environment on Linux/macOS.
 
@@ -154,9 +162,9 @@ Most configuration fields are applied immediately — no Docker restart required
 
 ### Environment Variable Overrides
 
-AutomatedFanfic supports environment variable overrides using the `FFDL_` prefix. This is useful for Docker Compose/Kubernetes deployments where you want to inject secrets (like passwords) without storing them directly in `config.toml`.
+AutomatedFanfic supports environment variable overrides using the `FFDL_` prefix. This is useful for Docker Compose/Kubernetes deployments where you want to inject secrets (like passwords) without storing them directly in `config.toml`. AutomatedFanfic also automatically reads from a local `.env` file in the working directory if present.
 
-Environment values are applied **after** loading `config.toml`, so environment variables take precedence.
+Environment values (from environment variables or `.env` files) are applied **after** loading `config.toml`, so they always take precedence over values in `config.toml`.
 
 **Important:** A valid `config.toml` is still required at startup (at minimum, include required `[email]` and `[calibre]` sections). Environment variables then override individual values.
 
@@ -263,12 +271,13 @@ path=""
 username=""
 password=""
 personal_ini=""
+default_ini=""
 update_method="update"
 metadata_preservation_mode="remove_add"
 update_only=false
 ```
 
-- `path`: This is the path to your Calibre database. It's the location where your Calibre library is stored on your system. This can be either a directory that contains the `calibre.db` file, or the URL/Port/Library marked down above, such as `https://192.168.1.1:9001/#Fanfiction` This is the only argument that is **required** in this section.
+- `path`: This is the path to your Calibre database or server. It's the location where your Calibre library is stored on your system. This can be either a local filesystem directory containing the Calibre library's `metadata.db` file, or a remote Calibre Content Server URL including the port and library fragment, such as `http://192.168.1.50:8080/#MyLibrary`. This is the only argument that is **required** in this section.
 - `username`: If your Calibre database is password protected, this is the username you use to access it.
 - `password`: If your Calibre database is password protected, this is the password you use to access it.
 - `personal_ini`: This is the path to your [personal INI configuration file](https://github.com/JimmXinu/FanFicFare/wiki/INI-File) for FanFicFare. All user customizations (credentials, filename templates, custom columns) belong here.
@@ -392,20 +401,25 @@ enabled = false
 host = "0.0.0.0"
 port = 8080
 history_db_path = "/data/history.db"
+log_file_path = "/data/automatedfanfic.log"
 ```
 
 - `enabled`: Set to `true` to start the web dashboard server. Defaults to `false`.
 - `host`: The address the web server binds to. Use `"0.0.0.0"` to listen on all interfaces (required for Docker), or `"127.0.0.1"` for local-only access.
 - `port`: The port the web server listens on (1–65535). Defaults to `8080`.
 - `history_db_path`: Path to the SQLite database file used for storing download history, retry events, email checks, notifications, and persistent task state across container restarts. Defaults to `"/data/history.db"` (the `/data` Docker volume). Runs in the core application process and remains active even when `web.enabled = false`.
+- `log_file_path`: Path to the persistent rotating log file used for log streaming and persistent troubleshooting. Defaults to `"/data/automatedfanfic.log"`.
 
 **Dashboard Features:**
-- **Live Dashboard**: Real-time view of active downloads, waiting retries, queue depths, and process status
-- **Activity Feed**: Recent downloads, retries, and notifications in a unified timeline
-- **Add URLs**: Manually inject fanfiction URLs into the processing queue
-- **History**: Searchable, paginated history of all downloads, retries, email checks, and notifications
-- **Expandable Errors**: Click truncated error messages to see full details
-- **Live Config Editor**: Edit `config.toml` directly from the browser. Most changes apply immediately (hot-reload). Changes to `web.host`/`web.port` automatically restart only the web server — no container restart required.
+- **Live Dashboard**: Real-time view of active downloads, waiting retries, queue depths, and process status with consolidated story cards for multi-attempt downloads
+- **Queue Controls**: Cancel active or queued downloads, trigger immediate retries for individual waiting URLs, or retry all waiting items with one click
+- **Daemon Management**: Bounce and restart individual background daemons (EmailWatcher, Coordinator, Supervisor, WebServer) without container restarts
+- **Interactive `personal.ini` Editor**: Visual editor with section bubbles, directive autocomplete, FanFicFare reference lookups, and one-click FlareSolverr proxy toggle
+- **Live Config Editor**: Edit `config.toml` directly from the browser with instant hot-reload for supported fields
+- **Story Diagnostics**: Comprehensive story autopsy modal inspecting active state, Calibre book records, retry history, and relevant logs
+- **Log Streaming & Search**: Real-time unified log viewer with component filtering, attempt-block collapsing, and persistent file log fallback
+- **Activity Feed & History**: Searchable, paginated history of all downloads, retries, email checks, and notifications
+- **Add URLs**: Manually inject individual fanfiction URLs or full series/collection links with optional force update
 
 **Docker Setup:**
 
@@ -466,6 +480,17 @@ The web dashboard exposes a widget-friendly endpoint at `/api/widget` for use wi
 
 Replace `your-host:8080` with the address and port of your AutomatedFanfic instance.
 
+**Healthcheck and Monitoring API Endpoints:**
+
+When the web dashboard is enabled (`[web] enabled = true`), the server exposes standardized API endpoints suitable for Docker health checks, Kubernetes probes, and monitoring tools:
+- `GET /api/health`: Basic JSON status (`{"status": "ok"}`) returning HTTP 200 when the web server is responsive. Ideal for Docker container `HEALTHCHECK`:
+  ```bash
+  # Example container health check
+  curl -f http://localhost:8080/api/health || exit 1
+  ```
+- `GET /api/status`: Returns high-level system state, process statuses (Supervisor, EmailWatcher, Coordinator, WorkerPool), and active queue depths.
+- `GET /api/version`: Returns runtime versions of the host/container OS, Python runtime, Calibre, FanFicFare, and Apprise.
+
 ### Process Management
 
 Fine-grained control over worker pool sizing, process health monitoring, and restart behavior.
@@ -479,6 +504,8 @@ auto_restart = true
 max_restart_attempts = 3
 restart_delay = 5.0
 enable_monitoring = true
+signal_timeout = 10.0
+# worker_timeout = 300.0
 ```
 
 - `max_workers`: Controls the maximum number of simultaneous system processes/threads (workers + support processes). Defaults to system CPU count. A portion of this budget is reserved for internal support processes (email watcher, coordinator, etc.), so the actual number of download worker threads is `max_workers - 4`. Minimum effective pool is 1 worker thread. Changing this via the dashboard scales the pool immediately without restart.
@@ -488,5 +515,35 @@ enable_monitoring = true
 - `max_restart_attempts`: How many times a crashed process will be restarted before it is permanently stopped (0–10, default `3`).
 - `restart_delay`: Seconds to wait before restarting a failed process (0–60, default `5.0`).
 - `enable_monitoring`: When `false`, disables the health monitoring thread entirely. Default `true`.
+- `signal_timeout`: Timeout in seconds to wait for signal handling completion (1–60, default `10.0`).
+- `worker_timeout`: Optional timeout in seconds for individual worker download operations (minimum `30.0`; disabled by default).
 
 All `[process]` fields support hot-reload.
+
+## Anti-Bot & FlareSolverr
+
+Many fanfiction archives (such as FanFiction.Net, Royal Road, and others) employ Cloudflare or custom anti-bot protections. AutomatedFanfic includes dedicated anti-bot subsystems to ensure reliable downloads:
+
+- **FlareSolverr Integration**: Direct support for routing requests through a FlareSolverr proxy instance. Configurable per-site or globally in `personal.ini` via `use_flaresolverr_proxy`, `flaresolverr_proxy_address`, and `flaresolverr_proxy_port`.
+- **Automatic Chromium Tab Crash Recovery**: When FlareSolverr's Chromium browser tab crashes (returning `HTTP 500: ... tab crashed`), AutomatedFanfic automatically detects the condition, destroys the dead FlareSolverr session via API, and provisions a clean session on retry.
+- **Anubis Anti-Bot Challenge Handling**: Automatic detection and solving for Anubis challenge pages.
+- **Royal Road Email Tracking Redirects**: Supports authenticated cookie forwarding for Royal Road `email-click.royalroad.com` tracking links.
+- **One-Click Proxy Configuration**: The Web Dashboard's `personal.ini` visual editor features section bubbles with a one-click toggle to inject or remove FlareSolverr proxy directives for specific sites.
+
+## Model Context Protocol (MCP)
+
+AutomatedFanfic integrates a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, enabling AI assistants (such as Google Antigravity, Claude Desktop, Cursor, and Cline) to monitor, diagnose, and control the download system directly.
+
+The server provides 25+ specialized tools:
+- **System Overview & Health**: `get_system_overview`, `test_calibre_connection`, `test_email_connection`, `test_antibot_status`
+- **Queue & Lock Inspection**: `inspect_queues`, `inspect_coordinator_locks`, `inspect_cookiejar`
+- **History & Diagnostics**: `get_story_diagnostics`, `get_story_history`, `query_download_history`, `query_retry_history`, `query_logs`
+- **Live Controls & Interventions**: `inject_download`, `cancel_download`, `retry_now`, `retry_all_waiting`, `redownload_from_scratch`, `restart_daemon`, `toggle_site`
+
+### Connecting an MCP Client
+
+The MCP server supports two transport mechanisms:
+1. **Stdio Transport**: Runs as a local CLI process via `python -m mcp_server` (ideal for local AI tools like Claude Desktop).
+2. **Server-Sent Events (SSE) Transport**: Built directly into the FastAPI web server at `/api/mcp/sse` (ideal for remote Docker deployments).
+
+For full client configuration examples and tool schemas, refer to the [MCP Setup & Integration Guide](docs/mcp-setup.md).
