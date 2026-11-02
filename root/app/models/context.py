@@ -2,8 +2,6 @@
 Context dataclasses for bundling worker and cross-process dependencies.
 """
 
-from __future__ import annotations
-
 from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING

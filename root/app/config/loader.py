@@ -1,7 +1,5 @@
 """Centralized configuration loader with caching, validation, and env overrides."""
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 import re

@@ -1,7 +1,5 @@
 """Anubis Proof-of-Work challenge algorithms (Argon2id and SHA-256)."""
 
-from __future__ import annotations
-
 import hashlib
 import argon2.low_level
 

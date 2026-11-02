@@ -4,8 +4,6 @@ Provides colored console logging, thread-local execution context, an in-memory
 ring buffer for the web UI, and rotating JSONL disk persistence.
 """
 
-from __future__ import annotations
-
 import datetime
 from typing import TYPE_CHECKING
 

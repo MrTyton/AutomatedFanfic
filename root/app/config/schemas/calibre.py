@@ -1,7 +1,5 @@
 """Calibre configuration schema and preservation modes."""
 
-from __future__ import annotations
-
 from enum import Enum
 from pathlib import Path
 from typing import Literal

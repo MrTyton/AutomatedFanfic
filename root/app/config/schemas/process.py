@@ -1,7 +1,5 @@
 """Process management and worker scaling configuration schema."""
 
-from __future__ import annotations
-
 import multiprocessing
 
 import ff_logging

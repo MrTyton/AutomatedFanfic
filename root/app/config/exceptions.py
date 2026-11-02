@@ -1,7 +1,5 @@
 """Custom configuration exceptions."""
 
-from __future__ import annotations
-
 
 class ConfigError(Exception):
     """Base exception for configuration-related errors."""

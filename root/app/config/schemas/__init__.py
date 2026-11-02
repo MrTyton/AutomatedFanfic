@@ -1,7 +1,5 @@
 """Configuration schema package exporting all model classes."""
 
-from __future__ import annotations
-
 from config.schemas.app import AppConfig
 from config.schemas.calibre import (
     CalibreConfig,

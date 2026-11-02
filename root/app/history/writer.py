@@ -1,7 +1,5 @@
 """Single-threaded background SQLite writer consuming events from history_queue."""
 
-from __future__ import annotations
-
 from datetime import datetime
 from queue import Empty
 import threading

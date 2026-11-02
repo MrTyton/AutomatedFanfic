@@ -4,8 +4,6 @@ Provides Pydantic-based configuration schemas, environment variable overrides,
 caching, validation, FanFicFare INI resolution, and cross-process shared store.
 """
 
-from __future__ import annotations
-
 from config.exceptions import ConfigError, ConfigValidationError
 from config.ini_resolver import (
     build_fff_configuration,

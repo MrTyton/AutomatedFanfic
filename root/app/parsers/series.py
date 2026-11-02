@@ -1,7 +1,5 @@
 """Series and collection URL detection and expansion using FanFicFare adapters."""
 
-from __future__ import annotations
-
 import re
 from typing import Protocol, TypedDict
 

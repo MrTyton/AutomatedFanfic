@@ -1,7 +1,5 @@
 """FlareSolverr anti-bot crash detection and session recovery utilities."""
 
-from __future__ import annotations
-
 import configparser
 from dataclasses import dataclass
 from pathlib import Path

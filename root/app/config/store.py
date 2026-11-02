@@ -5,8 +5,6 @@ between all processes. Services read from this store each iteration instead
 of their local config copies.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, MutableMapping
 from enum import Enum
 from typing import TYPE_CHECKING

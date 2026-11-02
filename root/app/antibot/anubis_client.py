@@ -1,7 +1,5 @@
 """Anubis challenge detection, HTTP solving, and cookiejar session management."""
 
-from __future__ import annotations
-
 import json
 import threading
 import time

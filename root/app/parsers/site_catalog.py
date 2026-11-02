@@ -1,7 +1,5 @@
 """Fanfiction site catalog and adapter metadata discovery."""
 
-from __future__ import annotations
-
 import functools
 import re
 from urllib.parse import urlparse

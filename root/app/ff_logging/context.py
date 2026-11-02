@@ -1,7 +1,5 @@
 """Thread-local context and process-wide flags for ff_logging."""
 
-from __future__ import annotations
-
 import threading
 
 

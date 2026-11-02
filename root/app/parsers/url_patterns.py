@@ -1,7 +1,5 @@
 """Automatic URL pattern and parser generation from FanFicFare adapters."""
 
-from __future__ import annotations
-
 import functools
 import re
 from urllib.parse import urlparse

@@ -1,7 +1,5 @@
 """FanFicFare INI file resolution, caching, and configuration construction."""
 
-from __future__ import annotations
-
 import functools
 import os
 from pathlib import Path

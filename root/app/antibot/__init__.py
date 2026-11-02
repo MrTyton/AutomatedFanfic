@@ -1,7 +1,5 @@
 """Anti-bot defense detection, challenge solving, and session impersonation."""
 
-from __future__ import annotations
-
 from antibot.anubis_client import (
     DEFAULT_USER_AGENT,
     clear_anubis_protected_sites,

@@ -1,7 +1,5 @@
 """ANSI terminal colors and palette helpers for ff_logging."""
 
-from __future__ import annotations
-
 
 class bcolors:
     """Terminal ANSI color codes for colored console output."""

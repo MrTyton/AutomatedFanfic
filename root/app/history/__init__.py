@@ -1,7 +1,5 @@
 """History tracking package providing persistent database storage and queue recorder."""
 
-from __future__ import annotations
-
 from history.async_db import AsyncHistoryDB
 from history.models import (
     DownloadEvent,

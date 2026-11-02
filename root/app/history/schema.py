@@ -1,7 +1,5 @@
 """Database schema, DDL definitions, connection pragmas, and migrations for history storage."""
 
-from __future__ import annotations
-
 from datetime import datetime
 import sqlite3
 from typing import TYPE_CHECKING

@@ -14,7 +14,7 @@ import ff_logging
 from utils.system_utils import resolve_ini_path
 
 lazy import apprise
-lazy from web.routes.debug import _get_calibre_client
+lazy from web.services.calibre_lookup import get_calibre_client as _get_calibre_client
 lazy from config import (
     AppConfig,
     AppriseConfig,

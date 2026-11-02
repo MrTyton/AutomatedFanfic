@@ -1,7 +1,5 @@
 """Common worker utility functions for task path resolution and EPUB handling."""
 
-from __future__ import annotations
-
 from calibre_integration.client_interface import CalibreClient
 from calibre_integration.epub_utils import (
     extract_title_from_epub_path,

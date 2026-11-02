@@ -1,7 +1,5 @@
 """Email configuration schema and validators."""
 
-from __future__ import annotations
-
 import ff_logging
 from pydantic import BaseModel, Field, field_validator, model_validator
 

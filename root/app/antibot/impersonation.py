@@ -1,7 +1,5 @@
 """Generic browser impersonation session for FanFicFare using curl-cffi."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from http.cookiejar import CookieJar
 from typing import Any, cast

@@ -1,7 +1,5 @@
 """Root application configuration model combining all subsystem schemas."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import ff_logging

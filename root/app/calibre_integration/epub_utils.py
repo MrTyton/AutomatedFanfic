@@ -1,7 +1,5 @@
 """EPUB file inspection, title extraction, and metadata diagnostics for Calibre integration."""
 
-from __future__ import annotations
-
 import zipfile
 from xml.etree import ElementTree as ET
 

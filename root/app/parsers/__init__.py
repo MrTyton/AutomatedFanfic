@@ -1,7 +1,5 @@
 """URL pattern parsing, site catalogs, series expansion, and regex extraction."""
 
-from __future__ import annotations
-
 from parsers.regex_parsing import (
     check_failure_from_message,
     check_forceable_from_message,

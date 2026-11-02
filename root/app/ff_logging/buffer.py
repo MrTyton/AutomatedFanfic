@@ -1,7 +1,5 @@
 """In-memory ring buffer and cross-process log forwarding for ff_logging."""
 
-from __future__ import annotations
-
 import collections
 from queue import Empty
 import threading

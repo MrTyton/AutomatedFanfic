@@ -1,7 +1,5 @@
 """Async SQLite database wrapper for FastAPI web server read operations."""
 
-from __future__ import annotations
-
 from contextlib import asynccontextmanager
 from pathlib import Path
 

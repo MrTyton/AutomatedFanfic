@@ -1,7 +1,5 @@
 """Analytics, aggregations, and statistics queries for the web dashboard."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
