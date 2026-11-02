@@ -529,9 +529,11 @@ class TestProcessManagerMonitoring(unittest.TestCase):
         self.assertTrue(self.manager._monitor_thread.is_alive())
 
         # Wait for the process to fail and for health monitoring to detect it and restart
-        # Health check runs every 0.1 seconds, restart delay is 0.05s
-        # Need to wait long enough for failure detection + restart
-        time.sleep(0.5)
+        # Poll up to 2.0s to avoid runner timing jitter under suite load
+        for _ in range(20):
+            if self.manager.processes["failing_process"].restart_count > 0:
+                break
+            time.sleep(0.1)
 
         process_info = self.manager.processes["failing_process"]
 

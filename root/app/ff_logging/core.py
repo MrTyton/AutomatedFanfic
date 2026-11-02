@@ -1,6 +1,8 @@
 """Core logging functions with formatting, level resolution, and process setup."""
 
 import datetime
+import sys
+from typing import Any
 from typing import TYPE_CHECKING
 
 from ff_logging.buffer import (
@@ -56,6 +58,13 @@ def init_persistent_logging(
         rehydrate_buffer(rehydrated)
 
 
+def _get_hook(name: str, fallback: Any) -> Any:
+    pkg = sys.modules.get("ff_logging")
+    if pkg is not None and hasattr(pkg, name):
+        return getattr(pkg, name)
+    return fallback
+
+
 def init_process_logging(
     verbose_flag: bool,
     *,
@@ -69,22 +78,30 @@ def init_process_logging(
     Centralizes verbose flag setup, thread color, web ring-buffer toggling,
     and cross-process log forwarding or draining.
     """
-    set_verbose(verbose_flag)
+    _set_verbose = _get_hook("set_verbose", set_verbose)
+    _set_thread_color = _get_hook("set_thread_color", set_thread_color)
+    _set_log_forward_queue = _get_hook("set_log_forward_queue", set_log_forward_queue)
+    _start_log_drain_thread = _get_hook(
+        "start_log_drain_thread", start_log_drain_thread
+    )
+    _set_web_enabled = _get_hook("set_web_enabled", set_web_enabled)
+
+    _set_verbose(verbose_flag)
     if color is not None:
-        set_thread_color(color)
+        _set_thread_color(color)
 
     if is_web_server:
         # The web server drains the cross-process log queue into its own ring buffer
         # rather than forwarding its own logs back onto the queue.
-        set_log_forward_queue(None)
+        _set_log_forward_queue(None)
         if log_queue is not None:
-            start_log_drain_thread(log_queue)
+            _start_log_drain_thread(log_queue)
     else:
         if log_queue is not None:
-            set_web_enabled(True)
+            _set_web_enabled(True)
         elif config_store is not None:
-            set_web_enabled(False)
-        set_log_forward_queue(log_queue)
+            _set_web_enabled(False)
+        _set_log_forward_queue(log_queue)
 
 
 def log(
