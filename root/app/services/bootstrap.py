@@ -173,7 +173,7 @@ def register_processes(
     history_writer = HistoryWriter(
         history_queue,
         history_db_path or "/data/history.db",
-        shutdown_event=getattr(process_manager, "_shutdown_event", None),
+        shutdown_event=process_manager._shutdown_event,
     )
     history_writer.start()
     process_manager._history_writer = history_writer

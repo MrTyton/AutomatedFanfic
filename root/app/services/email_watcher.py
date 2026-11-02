@@ -23,7 +23,7 @@ def email_watcher(
     shutdown_event: ShutdownEvent,
     history_recorder: HistoryRecorder,
     config_store: ConfigStore,
-    check_emails_event: CheckEmailsEvent | None = None,
+    check_emails_event: CheckEmailsEvent | None,
 ) -> None:
     """Continuously monitor email for fanfiction URLs and route to the ingress queue."""
     ff_logging.set_verbose(verbose)
@@ -102,12 +102,9 @@ def email_watcher(
         )
 
         if email_info.imap_idle:
-            if check_emails_event is not None:
-                idle_notified = email_info._idle_wait_for_notification(
-                    shutdown_event, check_emails_event
-                )
-            else:
-                idle_notified = email_info._idle_wait_for_notification(shutdown_event)
+            idle_notified = email_info._idle_wait_for_notification(
+                shutdown_event, check_emails_event
+            )
             if not idle_notified:
                 break
         elif check_emails_event is None:

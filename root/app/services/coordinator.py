@@ -35,7 +35,7 @@ from models.queue_types import (
     WorkerQueues,
 )
 
-lazy from parsers import series as series_utils
+lazy from parsers import series
 lazy from parsers import regex_parsing
 
 from services.coordinator_models import CoordinatorState, SignalType, WorkerSignal
@@ -214,7 +214,7 @@ class Coordinator:
                     )
         self._publish_state()
 
-    def _process_single_ingress_item(self, timeout: float | None = None):
+    def _process_single_ingress_item(self, timeout: float | None):
         """
         Wait for and handle a single item from the ingress queue.
 
@@ -288,7 +288,7 @@ class Coordinator:
         site = task.site
 
         # Check if this is a series/collection URL
-        expansion_result = series_utils.process_url(
+        expansion_result = series.process_url(
             task.url,
             config_store=self.config_store,
         )

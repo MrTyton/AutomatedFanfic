@@ -65,6 +65,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
+            None,
         )
 
         self.recorder.record_email_check.assert_called_once_with(
@@ -97,6 +98,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
+            None,
         )
 
         self.recorder.record_download_created.assert_called_once_with(
@@ -126,6 +128,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
+            None,
         )
 
         self.recorder.record_email_check.assert_called_once_with(
@@ -161,6 +164,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
             self.shutdown_event,
             self.recorder,
             self.config_store,
+            None,
         )
 
         self.recorder.record_email_check.assert_called_once_with(

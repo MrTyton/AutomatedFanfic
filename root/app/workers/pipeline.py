@@ -256,11 +256,7 @@ def _process_task(
         if getattr(fanfic, "retry_decision", None) is not None:
             _worker_local.last_task_failed = True
 
-        # If process_fanfic_addition was mocked in a test and returned None,
-        # fall back to check_active_removal(fanfic).
-        if result is None:
-            return handlers.check_active_removal(fanfic)
-        return bool(result)
+        return result
 
 
 def url_worker(

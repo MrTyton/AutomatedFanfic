@@ -49,6 +49,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.shutdown_event,
                 self.history_recorder,
                 self.config_store,
+                None,
             )
         except KeyboardInterrupt:
             pass
@@ -79,6 +80,7 @@ class TestDuplicatePrevention(unittest.TestCase):
                 self.shutdown_event,
                 self.history_recorder,
                 self.config_store,
+                None,
             )
         except KeyboardInterrupt:
             pass

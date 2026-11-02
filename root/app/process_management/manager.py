@@ -44,23 +44,12 @@ class ProcessManager:
     def __init__(
         self,
         config: AppConfig,
-        config_store: ConfigStore | None = None,
-        web_restart_event: Event | None = None,
-        supervisor_restart_event: Event | None = None,
-        worker_restart_event: Event | None = None,
     ) -> None:
         """
         Initialize the ProcessManager with configuration.
 
         Args:
             config (AppConfig): AppConfig instance containing process configuration.
-            config_store (ConfigStore | None, optional): Shared ConfigStore for
-                hot-reloading process settings.
-            web_restart_event (Event | None, optional): Event signalling the web
-                server should be restarted (set by the config route on web field
-                changes; cleared here after the restart).
-            supervisor_restart_event (Event | None, optional): Event signalling the
-                supervisor process should be restarted.
         """
         # Process tracking and state management
         self.processes: dict[str, ProcessInfo] = {}
@@ -71,10 +60,10 @@ class ProcessManager:
         self._signal_handlers_set = False
 
         # Hot-reload helpers
-        self._config_store: ConfigStore | None = config_store
-        self._web_restart_event: Event | None = web_restart_event
-        self._supervisor_restart_event: Event | None = supervisor_restart_event
-        self._worker_restart_event: Event | None = worker_restart_event
+        self._config_store: ConfigStore | None = None
+        self._web_restart_event: Event | None = None
+        self._supervisor_restart_event: Event | None = None
+        self._worker_restart_event: Event | None = None
         self._worker_queues: MutableMapping[str, WorkerQueue] | None = None
         self._create_queue_fn: Callable[[], WorkerQueue] | None = None
         self._history_writer: HistoryWriter | None = None

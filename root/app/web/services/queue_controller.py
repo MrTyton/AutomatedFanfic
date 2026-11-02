@@ -631,3 +631,51 @@ def restart_daemon_action(state: Any, name: str) -> tuple[bool, str]:
         return False, "Worker restart event unavailable"
 
     return False, f"Unknown daemon '{name}'"
+
+
+def ingest_multiple_urls(
+    state: Any,
+    urls: list[str],
+    update_method: str | None = None,
+) -> list[tuple[bool, str]]:
+    """Ingest multiple fanfiction URLs into the processing queue."""
+    if state.ingress_queue is None:
+        return [(False, "Ingress queue not available") for _ in urls]
+
+    parsers_map = url_patterns.generate_url_parsers_from_fanficfare()
+    results: list[tuple[bool, str]] = []
+    for raw_url in urls:
+        if not raw_url.strip():
+            continue
+        try:
+            accepted, message = ingest_single_url(
+                state,
+                raw_url,
+                parsers_map,
+                behavior_override=update_method,
+                duplicate_prefix="Already in queue",
+                added_suffix="",
+            )
+            results.append((accepted, message))
+        except Exception as e:
+            results.append((False, f"Error: {e}"))
+    return results
+
+
+def trigger_email_check_action(state: Any) -> tuple[bool, str]:
+    """Trigger an immediate check of monitored email accounts."""
+    if state.check_emails_event is None:
+        return False, "Email check event not configured"
+    state.check_emails_event.set()
+    invalidate_history_cache()
+    return True, "Email check triggered"
+
+
+def toggle_coordinator_action(state: Any) -> tuple[bool, str]:
+    """Toggle coordinator task assignment pause state."""
+    if state.coordinator_status is None:
+        return False, "Coordinator status unavailable"
+    is_paused = bool(state.coordinator_status.get("paused", False))
+    new_state = not is_paused
+    state.coordinator_status["paused"] = new_state
+    return True, "Coordinator paused" if new_state else "Coordinator resumed"

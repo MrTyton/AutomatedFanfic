@@ -291,7 +291,7 @@ class TestHistoryWriter(unittest.TestCase):
 
     def test_stop_without_start_is_safe(self):
         """Stopping a writer that was never started should not error."""
-        writer = HistoryWriter(self.queue, self.tmp.name)
+        writer = HistoryWriter(self.queue, self.tmp.name, self.shutdown)
         writer.stop()
 
     def test_drains_batch_with_single_commit_per_batch(self):

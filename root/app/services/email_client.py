@@ -208,7 +208,7 @@ class EmailInfo:
     def _idle_wait_for_notification(
         self,
         shutdown_event: ShutdownEvent,
-        check_emails_event: CheckEmailsEvent | None = None,
+        check_emails_event: CheckEmailsEvent | None,
     ) -> bool:
         """Block using IMAP IDLE until the server signals new mail or shutdown."""
         IDLE_REISSUE_SECONDS = 9 * 60

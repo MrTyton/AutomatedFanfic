@@ -378,7 +378,9 @@ class TestControlRoutes(unittest.TestCase):
         event = threading.Event()
         self.state.check_emails_event = event
 
-        with patch("web.routes.controls.invalidate_history_cache") as mock_inv:
+        with patch(
+            "web.services.queue_controller.invalidate_history_cache"
+        ) as mock_inv:
             resp = self.client.post("/api/controls/check-emails")
             self.assertEqual(resp.status_code, 200)
             self.assertTrue(resp.json()["ok"])

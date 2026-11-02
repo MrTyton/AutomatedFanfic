@@ -415,3 +415,111 @@ async def build_snapshot(state: WebState) -> dict[str, object]:
     }
 
     return snapshot
+
+
+async def build_homepage_widget(state: WebState) -> dict[str, object]:
+    """Single flat JSON payload for Homepage customapi widget."""
+    waiting_urls: set[str] = set()
+    if state.history_db is not None:
+        try:
+            for row in await state.history_db.get_waiting_urls():
+                waiting_urls.add(row["url"])
+        except Exception:
+            pass
+
+    active_items = []
+    active_count = 0
+    if state.active_urls is not None:
+        try:
+            for url, meta in state.active_urls.items():
+                if isinstance(meta, dict) and meta.get("status") == "cancelled":
+                    continue
+                entry = {"url": url}
+                if isinstance(meta, dict):
+                    entry["site"] = meta.get("site", "unknown")
+                    entry["title"] = meta.get("title", url)
+                    is_waiting = url in waiting_urls or meta.get("status") == "waiting"
+                else:
+                    entry["site"] = "unknown"
+                    entry["title"] = url
+                    is_waiting = url in waiting_urls
+                entry["state"] = "waiting" if is_waiting else "downloading"
+                active_items.append(entry)
+            active_count = len(active_items)
+        except Exception:
+            pass
+
+    queued = 0
+    if state.ingress_queue is not None:
+        try:
+            queued = state.ingress_queue.qsize()
+        except NotImplementedError:
+            queued = 0
+
+    waiting_retry = 0
+    if state.waiting_queue is not None:
+        try:
+            waiting_retry = state.waiting_queue.qsize()
+        except NotImplementedError:
+            waiting_retry = 0
+
+    total_completed = 0
+    if state.history_db is not None:
+        try:
+            total_completed = await state.history_db.get_download_count(
+                status="success"
+            )
+        except Exception:
+            total_completed = 0
+
+    return {
+        "active_downloads": active_count,
+        "queued": queued,
+        "waiting_retry": waiting_retry,
+        "total_completed": total_completed,
+        "status": "running",
+        "active": active_items,
+    }
+
+
+def get_active_downloads_summary(state: WebState) -> dict[str, object]:
+    """List of URLs currently being processed with metadata."""
+    if state.active_urls is None:
+        return {"items": [], "count": 0}
+
+    try:
+        items = [
+            {"url": url, **(meta if isinstance(meta, dict) else {})}
+            for url, meta in state.active_urls.items()
+            if not (isinstance(meta, dict) and meta.get("status") == "cancelled")
+        ]
+    except Exception:
+        items = []
+
+    return {"items": items, "count": len(items)}
+
+
+def get_worker_status_summary(state: WebState) -> dict[str, object]:
+    """Worker process and thread status summary."""
+    result: dict[str, object] = {"workers": {}}
+    if state.process_status_callable:
+        try:
+            all_status = state.process_status_callable()
+            workers_map: dict[str, object] = {}
+            for name, info in all_status.items():
+                if "worker" in name.lower():
+                    workers_map[name] = info
+            result["workers"] = workers_map
+        except Exception:
+            pass
+
+    return result
+
+
+__all__ = [
+    "invalidate_history_cache",
+    "build_snapshot",
+    "build_homepage_widget",
+    "get_active_downloads_summary",
+    "get_worker_status_summary",
+]

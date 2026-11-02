@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, Request
 
+from web.services.dashboard_snapshot import build_homepage_widget
+
 router = APIRouter(prefix="/api", tags=["widget"])
 
 
@@ -13,71 +15,4 @@ async def homepage_widget(request: Request):
     (dynamic-list display) in one response so two Homepage widget
     configs can point at the same URL.
     """
-    state = request.app.state.web_state
-
-    # Build set of URLs currently in retry backoff
-    waiting_urls: set[str] = set()
-    if state.history_db is not None:
-        try:
-            for row in await state.history_db.get_waiting_urls():
-                waiting_urls.add(row["url"])
-        except Exception:
-            pass
-
-    # Active downloads
-    active_items = []
-    active_count = 0
-    if state.active_urls is not None:
-        try:
-            for url, meta in state.active_urls.items():
-                if isinstance(meta, dict) and meta.get("status") == "cancelled":
-                    continue
-                entry = {"url": url}
-                if isinstance(meta, dict):
-                    entry["site"] = meta.get("site", "unknown")
-                    entry["title"] = meta.get("title", url)
-                    is_waiting = url in waiting_urls or meta.get("status") == "waiting"
-                else:
-                    entry["site"] = "unknown"
-                    entry["title"] = url
-                    is_waiting = url in waiting_urls
-                entry["state"] = "waiting" if is_waiting else "downloading"
-                active_items.append(entry)
-            active_count = len(active_items)
-        except Exception:
-            pass
-
-    # Ingress queue depth
-    queued = 0
-    if state.ingress_queue is not None:
-        try:
-            queued = state.ingress_queue.qsize()
-        except NotImplementedError:
-            queued = 0
-
-    # Waiting/retry queue depth
-    waiting_retry = 0
-    if state.waiting_queue is not None:
-        try:
-            waiting_retry = state.waiting_queue.qsize()
-        except NotImplementedError:
-            waiting_retry = 0
-
-    # Total completed downloads from history DB
-    total_completed = 0
-    if state.history_db is not None:
-        try:
-            total_completed = await state.history_db.get_download_count(
-                status="success"
-            )
-        except Exception:
-            total_completed = 0
-
-    return {
-        "active_downloads": active_count,
-        "queued": queued,
-        "waiting_retry": waiting_retry,
-        "total_completed": total_completed,
-        "status": "running",
-        "active": active_items,
-    }
+    return await build_homepage_widget(request.app.state.web_state)

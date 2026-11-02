@@ -1,6 +1,6 @@
 """Tests for series/collection URL detection and expansion.
 
-Tests verify that series_utils correctly identifies and expands series/collection
+Tests verify that series correctly identifies and expands series/collection
 URLs using FanFicFare's native adapter methods without tautological assertions
 or unexpected network calls on single-story URLs.
 """
@@ -11,7 +11,7 @@ from fanficfare import configurable
 from fanficfare.adapters.base_adapter import BaseSiteAdapter
 
 from config.store import ConfigStore
-from parsers import series as series_utils
+from parsers import series
 
 _AO3_SERIES_HTML = """
 <html>
@@ -64,16 +64,12 @@ class TestIsSeriesUrl:
             ),
         ):
             assert (
-                series_utils.is_series_url("https://archiveofourown.org/series/3039543")
+                series.is_series_url("https://archiveofourown.org/series/3039543")
                 is True
             )
+            assert series.is_series_url("archiveofourown.org/series/3039543") is True
             assert (
-                series_utils.is_series_url("archiveofourown.org/series/3039543") is True
-            )
-            assert (
-                series_utils.is_series_url(
-                    "https://archiveofourown.org/series/3039543/"
-                )
+                series.is_series_url("https://archiveofourown.org/series/3039543/")
                 is True
             )
 
@@ -99,12 +95,12 @@ class TestIsSeriesUrl:
                 f"Unexpected HTTP call for single-story URL {url}"
             ),
         ):
-            assert series_utils.is_series_url(url) is False
+            assert series.is_series_url(url) is False
 
     def test_unknown_site_returns_false(self):
         """Unknown sites default to False."""
         url = "https://example-unknown-site.com/story/123"
-        assert series_utils.is_series_url(url) is False
+        assert series.is_series_url(url) is False
 
     def test_with_custom_config(self):
         """Custom FanFicFare Configuration is respected."""
@@ -112,7 +108,7 @@ class TestIsSeriesUrl:
         custom_config = configurable.Configuration(
             ["test.com"], "EPUB", lightweight=True
         )
-        assert series_utils.is_series_url(url, config=custom_config) is True
+        assert series.is_series_url(url, config=custom_config) is True
 
     def test_collection_url_via_get_urls_from_page_passes_geturls_helper(self):
         """Collection/list URLs using get_urls_from_page receive a real GetURLs helper."""
@@ -120,7 +116,7 @@ class TestIsSeriesUrl:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_COLLECTION_HTML
         ):
-            assert series_utils.is_series_url(url) is True
+            assert series.is_series_url(url) is True
 
 
 class TestExpandSeriesUrl:
@@ -132,7 +128,7 @@ class TestExpandSeriesUrl:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_SERIES_HTML
         ):
-            result = series_utils.expand_series_url(url)
+            result = series.expand_series_url(url)
 
         assert result == [
             "https://archiveofourown.org/works/1001",
@@ -145,7 +141,7 @@ class TestExpandSeriesUrl:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_SERIES_HTML
         ):
-            result = series_utils.expand_series_url(url)
+            result = series.expand_series_url(url)
 
         assert result == [
             "https://archiveofourown.org/works/1001",
@@ -160,14 +156,14 @@ class TestExpandSeriesUrl:
             "get_request",
             side_effect=AssertionError("Single story URL must not make network calls"),
         ):
-            result = series_utils.expand_series_url(url)
+            result = series.expand_series_url(url)
 
         assert result == []
 
     def test_invalid_url_returns_empty(self):
         """Invalid/unknown URLs return empty list."""
         url = "https://example-invalid.com/story/123"
-        assert series_utils.expand_series_url(url) == []
+        assert series.expand_series_url(url) == []
 
     def test_with_custom_config(self):
         """Custom config is passed through to expand_series_url."""
@@ -178,7 +174,7 @@ class TestExpandSeriesUrl:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_SERIES_HTML
         ):
-            result = series_utils.expand_series_url(url, config=custom_config)
+            result = series.expand_series_url(url, config=custom_config)
 
         assert result == [
             "https://archiveofourown.org/works/1001",
@@ -191,7 +187,7 @@ class TestExpandSeriesUrl:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_COLLECTION_HTML
         ):
-            result = series_utils.expand_series_url(url)
+            result = series.expand_series_url(url)
 
         assert result == [
             "https://archiveofourown.org/works/2001",
@@ -208,7 +204,7 @@ class TestProcessUrl:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_SERIES_HTML
         ):
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result == {
             "is_series": True,
@@ -228,7 +224,7 @@ class TestProcessUrl:
             "get_request",
             side_effect=AssertionError("Single story URL must not make network calls"),
         ):
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result == {
             "is_series": False,
@@ -240,7 +236,7 @@ class TestProcessUrl:
     def test_result_structure(self):
         """Result dictionary has exact required keys and types."""
         url = "https://archiveofourown.org/works/40707027"
-        result = series_utils.process_url(url)
+        result = series.process_url(url)
         assert set(result.keys()) == {"is_series", "urls", "count", "source_url"}
         assert result["is_series"] is False
         assert result["urls"] == [url]
@@ -250,7 +246,7 @@ class TestProcessUrl:
     def test_graceful_error_handling(self):
         """Invalid URLs do not crash and fall back to treating input as single URL."""
         url = "not-a-valid-url"
-        result = series_utils.process_url(url)
+        result = series.process_url(url)
         assert result["is_series"] is False
         assert result["urls"] == [url]
         assert result["count"] == 1
@@ -271,10 +267,10 @@ class TestProcessUrl:
             "get_request",
             side_effect=AssertionError("TtH series detection must not make HTTP calls"),
         ):
-            assert series_utils.is_series_url(url) is True
+            assert series.is_series_url(url) is True
 
         with patch.object(BaseSiteAdapter, "get_request", return_value=tth_html):
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result["is_series"] is True
         assert result["count"] == 2
@@ -301,10 +297,10 @@ class TestProcessUrl:
                 "eFiction series detection must not make HTTP calls"
             ),
         ):
-            assert series_utils.is_series_url(url) is True
+            assert series.is_series_url(url) is True
 
         with patch.object(BaseSiteAdapter, "get_request", return_value=efiction_html):
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result["is_series"] is True
         assert result["count"] == 2
@@ -315,7 +311,7 @@ class TestProcessUrl:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_COLLECTION_HTML
         ) as mock_get_req:
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result["is_series"] is True
         assert result["count"] == 2
@@ -324,7 +320,7 @@ class TestProcessUrl:
     def test_process_url_passes_page_cache_without_mutating_globals(self):
         """process_url uses an explicit _page_cache dict rather than mutating globals()['_call_get_urls_from_page']."""
         url = "https://archiveofourown.org/collections/TestCollection2026/works"
-        orig_fn = series_utils._call_get_urls_from_page
+        orig_fn = series._call_get_urls_from_page
 
         with patch.object(
             BaseSiteAdapter,
@@ -332,14 +328,14 @@ class TestProcessUrl:
             return_value=_AO3_COLLECTION_HTML,
         ) as mock_get_req:
             cache: dict = {}
-            assert series_utils.is_series_url(url, _page_cache=cache) is True
+            assert series.is_series_url(url, _page_cache=cache) is True
             assert url in cache
             assert mock_get_req.call_count == 1
-            expanded = series_utils.expand_series_url(url, _page_cache=cache)
+            expanded = series.expand_series_url(url, _page_cache=cache)
             assert len(expanded) == 2
             # Because cache already held the page result, get_request was not called again
             assert mock_get_req.call_count == 1
-            assert series_utils._call_get_urls_from_page is orig_fn
+            assert series._call_get_urls_from_page is orig_fn
 
 
 class TestEdgeCases:
@@ -347,14 +343,14 @@ class TestEdgeCases:
 
     def test_empty_url(self):
         """Empty URL returns safe non-series result."""
-        result = series_utils.process_url("")
+        result = series.process_url("")
         assert result["is_series"] is False
         assert result["urls"] == [""]
         assert result["count"] == 1
 
     def test_none_url(self):
         """None URL is handled gracefully without crashing."""
-        result = series_utils.process_url(None)
+        result = series.process_url(None)
         assert result["is_series"] is False
         assert isinstance(result["urls"], list)
 
@@ -368,7 +364,7 @@ class TestEdgeCases:
                 "Single story URL with query params must not make network calls"
             ),
         ):
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result["is_series"] is False
         assert result["urls"] == [url]
@@ -380,7 +376,7 @@ class TestEdgeCases:
         with patch.object(
             BaseSiteAdapter, "get_request", return_value=_AO3_SERIES_HTML
         ):
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result["is_series"] is True
         assert result["count"] == 2
@@ -394,7 +390,7 @@ class TestEdgeCases:
 
         store = ConfigStore({})
         store.update("calibre.personal_ini", str(ini_file))
-        config = series_utils.get_series_configuration(
+        config = series.get_series_configuration(
             "https://archiveofourown.org/series/12345",
             config_store=store,
         )
@@ -408,7 +404,7 @@ class TestEdgeCases:
         with patch.object(
             BaseSiteAdapter, "get_request", side_effect=Exception("403 Forbidden")
         ):
-            result = series_utils.process_url(url)
+            result = series.process_url(url)
 
         assert result["is_series"] is True
         assert result["urls"] == []

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import zipfile
 from parameterized import parameterized
 
-from workers import pipeline, handlers, fff_runner as command, common  # noqa: E402
+from workers import common, fff_runner, handlers, pipeline  # noqa: E402
 from workers.fff_runner import FanFicFareResult
 import config  # noqa: E402
 from models.active_urls import ActiveUrlsDict
@@ -679,7 +679,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         # Set up temp directory and processing until execute_fanficfare_direct
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        fff_result = command.FanFicFareResult(
+        fff_result = fff_runner.FanFicFareResult(
             failure_messages=["Command execution failed"]
         )
         mock_execute.return_value = fff_result
@@ -725,7 +725,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         error_text = (
             "Error downloading Chapter: https://example.com/! Missing required element!"
         )
-        fff_result = command.FanFicFareResult(failure_messages=[error_text])
+        fff_result = fff_runner.FanFicFareResult(failure_messages=[error_text])
         mock_execute.return_value = fff_result
 
         with patch("ff_logging.log_failure"):
@@ -759,7 +759,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        fff_result = command.FanFicFareResult(
+        fff_result = fff_runner.FanFicFareResult(
             failure_messages=["FanFicFare reported a permanent failure condition."]
         )
         mock_execute.return_value = fff_result
@@ -795,7 +795,9 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
 
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
-        fff_result = command.FanFicFareResult(forceable_messages=["chapter difference"])
+        fff_result = fff_runner.FanFicFareResult(
+            forceable_messages=["chapter difference"]
+        )
         mock_execute.return_value = fff_result
 
         pipeline.url_worker(
@@ -830,7 +832,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "test_file.epub"
         # Return a clean FanFicFareResult (no failures, no forceable conditions)
-        mock_execute.return_value = command.FanFicFareResult()
+        mock_execute.return_value = fff_runner.FanFicFareResult()
 
         # Run worker - will exit with KeyboardInterrupt after processing
         pipeline.url_worker(
@@ -1013,7 +1015,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
     def test_get_fanficfare_version_success(self, _mock_log):
         """get_fanficfare_version returns the installed package version string."""
         with patch("importlib.metadata.version", return_value="4.48.7"):
-            result = command.get_fanficfare_version()
+            result = fff_runner.get_fanficfare_version()
         self.assertEqual(result, "4.48.7")
 
     @patch("workers.fff_runner.ff_logging.log")
@@ -1021,7 +1023,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
         """get_fanficfare_version returns an error string and logs when metadata lookup fails."""
         exc = Exception("package not found")
         with patch("importlib.metadata.version", side_effect=exc):
-            result = command.get_fanficfare_version()
+            result = fff_runner.get_fanficfare_version()
         self.assertEqual(result, "Error: package not found")
         mock_log.assert_called_once_with(
             "Failed to get FanFicFare version: package not found", "WARNING"
@@ -1030,7 +1032,7 @@ class GetFanficfareVersionTestCase(unittest.TestCase):
     def test_get_fanficfare_version_returns_real_version(self):
         """Smoke test: get_fanficfare_version actually resolves against the installed FFF."""
 
-        result = command.get_fanficfare_version()
+        result = fff_runner.get_fanficfare_version()
         self.assertRegex(
             result,
             r"^\d+\.\d+",
@@ -1569,7 +1571,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.mock_queue.get.side_effect = [fanfic, None]
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "https://archiveofourown.org/works/99"
-        mock_execute.return_value = command.FanFicFareResult()
+        mock_execute.return_value = fff_runner.FanFicFareResult()
 
         pipeline.url_worker(
             self.mock_queue,
@@ -1612,7 +1614,7 @@ class TestWorkerIdleSignaling(unittest.TestCase):
         self.mock_queue.get.side_effect = [fanfic, None]
         mock_temp_dir.return_value.__enter__.return_value = "/tmp/test"
         mock_get_path.return_value = "/tmp/test/story.epub"
-        mock_execute.return_value = command.FanFicFareResult()
+        mock_execute.return_value = fff_runner.FanFicFareResult()
         # Simulate Calibre strategy failure (add_format_to_existing_story returns False)
         self.mock_cdb_info.metadata_preservation_mode = "add_format"
         self.mock_client.add_format_to_existing_story.return_value = False
@@ -1631,15 +1633,15 @@ class TestWorkerIdleSignaling(unittest.TestCase):
     def test_extract_output_filename_template_cached_and_execute_uses_read_ini_file_cached(
         self,
     ):
-        """command._extract_output_filename_template is LRU-cached and execute_fanficfare_direct reads INI files via read_ini_file_cached."""
-        command.extract_output_filename_template.cache_clear()
+        """fff_runner._extract_output_filename_template is LRU-cached and execute_fanficfare_direct reads INI files via read_ini_file_cached."""
+        fff_runner.extract_output_filename_template.cache_clear()
         ini_text = "[defaults]\noutput_filename: /some/dir/${title}-${siteabbrev}${formatext}\n"
 
-        t1 = command.extract_output_filename_template(ini_text, "archiveofourown")
-        t2 = command.extract_output_filename_template(ini_text, "archiveofourown")
+        t1 = fff_runner.extract_output_filename_template(ini_text, "archiveofourown")
+        t2 = fff_runner.extract_output_filename_template(ini_text, "archiveofourown")
         self.assertEqual(t1, "${title}-${siteabbrev}${formatext}")
         self.assertEqual(t1, t2)
-        cache_info = command.extract_output_filename_template.cache_info()
+        cache_info = fff_runner.extract_output_filename_template.cache_info()
         self.assertEqual(cache_info.misses, 1)
         self.assertEqual(cache_info.hits, 1)
 

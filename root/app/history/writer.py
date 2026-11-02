@@ -28,11 +28,11 @@ class HistoryWriter:
         self,
         history_queue: HistoryQueue,
         db_path: str,
-        shutdown_event: threading.Event | None = None,
+        shutdown_event: threading.Event,
     ):
         self._queue = history_queue
         self._db_path = db_path
-        self._shutdown = shutdown_event or threading.Event()
+        self._shutdown = shutdown_event
         self._db: SyncHistoryDB | None = None
         self._thread: threading.Thread | None = None
 

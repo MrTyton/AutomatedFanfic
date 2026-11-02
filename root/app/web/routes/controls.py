@@ -4,7 +4,6 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 lazy from parsers import url_patterns
-from web.services.dashboard_snapshot import invalidate_history_cache
 from web.services import queue_controller
 
 __all__ = ["router"]
@@ -97,34 +96,12 @@ async def add_url(request: Request, body: AddUrlRequest) -> AddUrlResponse:
 @router.post("/add-urls", response_model=AddUrlsResponse)
 async def add_urls(request: Request, body: AddUrlsRequest) -> AddUrlsResponse:
     """Add multiple fanfiction URLs to the processing queue."""
-    state = request.app.state.web_state
-    if state.ingress_queue is None:
-        return AddUrlsResponse(
-            results=[
-                AddUrlResponse(accepted=False, message="Ingress queue not available")
-                for _ in body.urls
-            ]
-        )
-
-    url_parsers = url_patterns.generate_url_parsers_from_fanficfare()
-    results = []
-    for raw_url in body.urls:
-        if not raw_url.strip():
-            continue
-        try:
-            accepted, message = queue_controller.ingest_single_url(
-                state,
-                raw_url,
-                url_parsers,
-                behavior_override=body.update_method,
-                duplicate_prefix="Already in queue",
-                added_suffix="",
-            )
-            results.append(AddUrlResponse(accepted=accepted, message=message))
-        except Exception as e:
-            results.append(AddUrlResponse(accepted=False, message=f"Error: {e}"))
-
-    return AddUrlsResponse(results=results)
+    raw_results = queue_controller.ingest_multiple_urls(
+        request.app.state.web_state, body.urls, update_method=body.update_method
+    )
+    return AddUrlsResponse(
+        results=[AddUrlResponse(accepted=acc, message=msg) for acc, msg in raw_results]
+    )
 
 
 @router.post("/cancel", response_model=ActionResponse)
@@ -172,27 +149,19 @@ async def redownload_scratch(
 @router.post("/check-emails", response_model=ActionResponse)
 async def check_emails_now(request: Request) -> ActionResponse:
     """Trigger an immediate check of monitored email accounts."""
-    state = request.app.state.web_state
-    if state.check_emails_event is None:
-        return ActionResponse(ok=False, message="Email check event not configured")
-    state.check_emails_event.set()
-    invalidate_history_cache()
-    return ActionResponse(ok=True, message="Email check triggered")
+    ok, message = queue_controller.trigger_email_check_action(
+        request.app.state.web_state
+    )
+    return ActionResponse(ok=ok, message=message)
 
 
 @router.post("/toggle-coordinator", response_model=ActionResponse)
 async def toggle_coordinator(request: Request) -> ActionResponse:
     """Toggle coordinator task assignment pause state."""
-    state = request.app.state.web_state
-    if state.coordinator_status is None:
-        return ActionResponse(ok=False, message="Coordinator status unavailable")
-    is_paused = bool(state.coordinator_status.get("paused", False))
-    new_state = not is_paused
-    state.coordinator_status["paused"] = new_state
-    return ActionResponse(
-        ok=True,
-        message="Coordinator paused" if new_state else "Coordinator resumed",
+    ok, message = queue_controller.toggle_coordinator_action(
+        request.app.state.web_state
     )
+    return ActionResponse(ok=ok, message=message)
 
 
 @router.post("/toggle-site", response_model=ActionResponse)

@@ -1,6 +1,6 @@
 """Configuration schema package exporting all model classes."""
 
-from config.schemas.app import AppConfig
+from config.schemas.app import AppConfig, toml_settings_context
 from config.schemas.calibre import (
     CalibreConfig,
     MetadataPreservationMode,
@@ -24,4 +24,5 @@ __all__ = [
     "ProcessConfig",
     "get_cpu_count",
     "WebConfig",
+    "toml_settings_context",
 ]

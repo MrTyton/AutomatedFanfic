@@ -69,11 +69,11 @@ def resolve_ini_path(path: str | None, default_filename: str) -> str:
 
 def resolve_state_personal_ini(state: Any) -> str:
     """Resolve the filesystem path to personal.ini from a WebState or similar state container."""
+    if getattr(state, "config_store", None):
+        return state.config_store.get_resolved_personal_ini()
     raw_personal = None
     if getattr(state, "config", None) and getattr(state.config, "calibre", None):
         raw_personal = state.config.calibre.personal_ini
-    elif getattr(state, "config_store", None):
-        raw_personal = state.config_store.get_resolved_personal_ini()
     return (
         resolve_ini_path(raw_personal, "personal.ini") if raw_personal else ""
     ) or ""
@@ -114,3 +114,13 @@ def build_fff_configuration(
             config.read(uncached_files)
 
     return config
+
+
+__all__ = [
+    "resolve_ini_path",
+    "resolve_state_personal_ini",
+    "get_packaged_defaults_ini_path",
+    "read_ini_file_cached",
+    "clear_ini_cache",
+    "build_fff_configuration",
+]

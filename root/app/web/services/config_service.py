@@ -4,7 +4,7 @@ from pathlib import Path
 import time
 from typing import Any
 
-from config.ini_resolver import resolve_ini_path
+from config.ini_resolver import resolve_ini_path, resolve_state_personal_ini
 from config.store import ConfigStore, ReloadBehavior
 from config.toml_writer import TomlWriter
 import ff_logging
@@ -20,6 +20,7 @@ lazy from config import (
     PushbulletConfig,
     RetryConfig,
     WebConfig,
+    toml_settings_context,
 )
 lazy from services import email_client
 lazy from web.services.calibre_lookup import get_calibre_client
@@ -100,7 +101,8 @@ def validate_config_changes(state: Any, values: dict) -> dict[str, Any]:
     try:
         current = state.config.model_dump()
         merged = merge_config_dict(current, values)
-        AppConfig(**merged)
+        with toml_settings_context(merged):
+            AppConfig(**merged)
         return {"valid": True, "errors": []}
     except Exception as e:
         return {"valid": False, "errors": [str(e)]}
@@ -128,7 +130,8 @@ def update_config_section_action(
     try:
         if isinstance(state.config, AppConfig):
             proposed = merge_config_dict(config_dict, {section: cleaned_values})
-            validated_config = AppConfig(**proposed)
+            with toml_settings_context(proposed):
+                validated_config = AppConfig(**proposed)
         else:
             section_models = {
                 "email": EmailConfig,
@@ -389,15 +392,15 @@ def resolve_config_ini_path(state: Any, ini_type: str) -> tuple[str | None, str 
     if state.config is None:
         return None, "No config loaded"
     if ini_type == "personal":
-        raw_path = state.config.calibre.personal_ini
-        default_filename = "personal.ini"
-        if not raw_path:
+        path = resolve_state_personal_ini(state)
+        if not path:
             return None, "No path configured for personal.ini"
-        path = resolve_ini_path(raw_path, default_filename)
     elif ini_type == "defaults":
-        raw_path = state.config.calibre.default_ini
-        default_filename = "defaults.ini"
-        path = resolve_ini_path(raw_path, default_filename)
+        if getattr(state, "config_store", None):
+            path = state.config_store.get_resolved_default_ini()
+        else:
+            raw_path = state.config.calibre.default_ini
+            path = resolve_ini_path(raw_path, "defaults.ini")
         if not path:
             return None, "No defaults.ini found in package or configuration"
     else:

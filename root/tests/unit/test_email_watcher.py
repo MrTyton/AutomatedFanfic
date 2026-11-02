@@ -675,6 +675,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
+                None,
             )
 
         # Verify URL was processed
@@ -719,6 +720,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
+                None,
             )
 
         queued = self.assert_ingress_has_item(fanfic)
@@ -755,6 +757,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
+                None,
             )
 
         # Verify notification was sent
@@ -808,6 +811,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
+                None,
             )
 
         # Verify each fanfic was added to the ingress queue (order may vary)
@@ -841,6 +845,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
+                None,
             )
 
         # Verify ingress queue remain empty
@@ -873,6 +878,7 @@ class TestEmailWatcher(unittest.TestCase):
                 mock_shutdown_event,
                 MagicMock(),
                 ConfigStore({}),
+                None,
             )
 
         # Verify shutdown_event.wait was called with correct timeout duration
@@ -903,6 +909,7 @@ class TestEmailWatcher(unittest.TestCase):
                 threading.Event(),
                 MagicMock(),
                 ConfigStore({}),
+                None,
             )
 
         self.mock_email_info._idle_wait_for_notification.assert_called_once()
@@ -926,10 +933,11 @@ class TestEmailWatcher(unittest.TestCase):
             shutdown_event,
             MagicMock(),
             ConfigStore({}),
+            None,
         )
 
         self.mock_email_info._idle_wait_for_notification.assert_called_once_with(
-            shutdown_event
+            shutdown_event, None
         )
 
     def test_email_watcher_manual_check_event(self):
@@ -991,7 +999,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn = mock_cls.return_value.__enter__.return_value
         mock_conn.search.return_value = [101]
 
-        result = self._make_email_info()._idle_wait_for_notification(threading.Event())
+        result = self._make_email_info()._idle_wait_for_notification(
+            threading.Event(), None
+        )
 
         self.assertTrue(result)
         mock_conn.search.assert_called_once_with("UNSEEN")
@@ -1003,7 +1013,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.return_value = [(12, b"EXISTS")]
 
-        result = self._make_email_info()._idle_wait_for_notification(threading.Event())
+        result = self._make_email_info()._idle_wait_for_notification(
+            threading.Event(), None
+        )
 
         self.assertTrue(result)
         mock_conn.idle.assert_called_once()
@@ -1015,7 +1027,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.return_value = [(5, b"RECENT")]
 
-        result = self._make_email_info()._idle_wait_for_notification(threading.Event())
+        result = self._make_email_info()._idle_wait_for_notification(
+            threading.Event(), None
+        )
 
         self.assertTrue(result)
 
@@ -1041,7 +1055,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         shutdown_event.set()
         mock_conn = self._setup_mock_conn(mock_cls)
 
-        result = self._make_email_info()._idle_wait_for_notification(shutdown_event)
+        result = self._make_email_info()._idle_wait_for_notification(
+            shutdown_event, None
+        )
 
         self.assertFalse(result)
         mock_conn.idle_check.assert_not_called()
@@ -1059,7 +1075,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.side_effect = idle_check_side_effect
 
-        result = self._make_email_info()._idle_wait_for_notification(shutdown_event)
+        result = self._make_email_info()._idle_wait_for_notification(
+            shutdown_event, None
+        )
 
         self.assertFalse(result)
         mock_conn.idle_done.assert_called_once()
@@ -1072,7 +1090,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         """Exception during IDLE is caught, logged, and True is returned so get_urls() runs."""
         mock_cls.return_value.__enter__.side_effect = Exception("Connection refused")
 
-        result = self._make_email_info()._idle_wait_for_notification(threading.Event())
+        result = self._make_email_info()._idle_wait_for_notification(
+            threading.Event(), None
+        )
 
         self.assertTrue(result)
         mock_log_failure.assert_called_once()
@@ -1086,7 +1106,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.return_value = []  # no mail signalled during IDLE
 
-        result = self._make_email_info()._idle_wait_for_notification(threading.Event())
+        result = self._make_email_info()._idle_wait_for_notification(
+            threading.Event(), None
+        )
 
         self.assertTrue(result)
         mock_conn.idle.assert_called_once()
@@ -1103,7 +1125,9 @@ class TestEmailInfoIdleWait(unittest.TestCase):
         mock_conn = self._setup_mock_conn(mock_cls)
         mock_conn.idle_check.return_value = []
 
-        result = self._make_email_info()._idle_wait_for_notification(threading.Event())
+        result = self._make_email_info()._idle_wait_for_notification(
+            threading.Event(), None
+        )
 
         self.assertTrue(result)
         mock_conn.idle_done.assert_called_once()
@@ -1173,6 +1197,7 @@ class TestEmailInfoIdleWait(unittest.TestCase):
                     threading.Event(),
                     MagicMock(),
                     store,
+                    None,
                 )
             except KeyboardInterrupt:
                 pass

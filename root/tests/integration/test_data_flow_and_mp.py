@@ -38,7 +38,7 @@ from services.coordinator import Coordinator
 from services.ff_waiter import wait_processor
 from services.email_client import EmailInfo
 from config.ini_resolver import get_packaged_defaults_ini_path
-from workers import fff_runner as command, handlers, pipeline
+from workers import fff_runner, handlers, pipeline
 
 
 def _child_verify_supervisor_process_boot(
@@ -152,7 +152,8 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
             db_path = os.path.join(tmp_dir, "history.db")
             history_q = Queue()
             recorder = HistoryRecorder(history_q)
-            writer = HistoryWriter(history_q, db_path)
+            shutdown_ev = threading.Event()
+            writer = HistoryWriter(history_q, db_path, shutdown_event=shutdown_ev)
             writer.start()
 
             try:
@@ -229,7 +230,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     patch("workers.common.get_path_or_url", return_value=story_url),
                     patch(
                         "workers.fff_runner.execute_fanficfare_direct",
-                        return_value=command.FanFicFareResult(
+                        return_value=fff_runner.FanFicFareResult(
                             failure_messages=["HTTP Error 503 Service Unavailable"]
                         ),
                     ),
@@ -308,7 +309,7 @@ class TestDataFlowAndMultiprocessingIntegration(unittest.TestCase):
                     patch("workers.common.get_path_or_url", return_value=story_url),
                     patch(
                         "workers.fff_runner.execute_fanficfare_direct",
-                        return_value=command.FanFicFareResult(),
+                        return_value=fff_runner.FanFicFareResult(),
                     ),
                 ):
                     mock_td.return_value.__enter__.return_value = tmp_dir

@@ -21,7 +21,7 @@ from typing import Dict, Any
 
 import fanficdownload
 from workers import handlers as worker_handlers
-from workers import fff_runner as worker_command
+from workers import fff_runner
 from parsers import regex_parsing
 from models import fanfic_info
 from models.context import WorkerContext
@@ -310,7 +310,7 @@ class TestFanficdownloadIntegration(unittest.TestCase):
         mock_fanfic.url = "http://test.site/story/123"
 
         # Test command argument construction
-        command = worker_command.build_argv(mock_cdb, mock_fanfic)
+        command = fff_runner.build_argv(mock_cdb, mock_fanfic)
 
         # Validate expected behaviors
         if expected_behavior == "normal_update":
