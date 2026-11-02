@@ -478,7 +478,22 @@ export function isStartupMessage(msg: string): boolean {
         lower.startsWith('processes running') ||
         lower.startsWith('supervisor: starting helper services') ||
         (lower.startsWith('worker ') && lower.includes('started')) ||
-        lower.startsWith('webserver: history database connection established')
+        lower.startsWith('webserver: history database connection established') ||
+        lower.startsWith('processmanager initialized') ||
+        lower.startsWith('signal handlers configured') ||
+        lower.startsWith('pushbullet device specified') ||
+        lower.startsWith('found device id') ||
+        lower.startsWith('automatically added pushbullet') ||
+        lower.startsWith('history recovery:') ||
+        lower.startsWith('registered process:') ||
+        lower.startsWith('started process:') ||
+        lower.startsWith('process monitoring started') ||
+        lower.startsWith('started process monitoring thread') ||
+        lower.startsWith('worker pool process using') ||
+        lower.startsWith('supervisor: started') ||
+        lower.startsWith('coordinator started') ||
+        lower.startsWith('webserver: using config-file') ||
+        lower.startsWith('webserver: log forwarder initialized')
     )
 }
 
@@ -506,7 +521,18 @@ export function categorizeSystemLog(entry: LogEntry, inStartupWindow: boolean): 
         return { category: 'shutdown', title: 'System Shutdown & Teardown' }
     }
 
-    // 2. Email Watcher & IMAP (IMAP errors, inbox checks, unread counts)
+    // 2. Application Startup
+    const isReboot = lower.startsWith('starting automatedfanfic')
+    if (
+        Boolean(entry.is_startup) ||
+        isReboot ||
+        inStartupWindow ||
+        isStartupMessage(msg)
+    ) {
+        return { category: 'startup', title: 'Application Startup & Lifecycle' }
+    }
+
+    // 3. Email Watcher & IMAP (IMAP errors, inbox checks, unread counts)
     if (
         lower.startsWith('emailwatcher:') ||
         lower.startsWith('urlingester:') ||
@@ -518,25 +544,6 @@ export function categorizeSystemLog(entry: LogEntry, inStartupWindow: boolean): 
         lower.includes('found unread email')
     ) {
         return { category: 'email', title: 'Email Watcher & IMAP' }
-    }
-
-    // 3. Application Startup
-    const isReboot = lower.startsWith('starting automatedfanfic')
-    if (
-        Boolean(entry.is_startup) ||
-        isReboot ||
-        (inStartupWindow && isStartupMessage(msg)) ||
-        (!inStartupWindow && (
-            lower.startsWith('for issues and updates') ||
-            lower.startsWith('using configuration file') ||
-            lower.startsWith('python version:') ||
-            lower.startsWith('os / platform:') ||
-            lower.startsWith('generating url parsers') ||
-            lower.startsWith('spawning ') ||
-            isStartupMessage(msg)
-        ))
-    ) {
-        return { category: 'startup', title: 'Application Startup & Lifecycle' }
     }
 
     // 4. Web Server & Configuration Management
@@ -683,6 +690,7 @@ export function buildLogAttemptBlocks(
     let currentSystemBlock: LogAttemptBlock | null = null
     let activeStartupBlock: LogAttemptBlock | null = null
     let startupCompleteSeen = false
+    let startupCompletionTime = 0
 
     for (const entry of chronological) {
         const site = extractEntrySite(entry)
@@ -821,7 +829,6 @@ export function buildLogAttemptBlocks(
         }
 
         if (targetBlock) {
-            activeStartupBlock = null
             currentSystemBlock = null
             targetBlock.lines.push(entry)
             targetBlock.endedAt = entry.timestamp
@@ -907,19 +914,36 @@ export function buildLogAttemptBlocks(
         } else {
             const isRebootMarker = msgLower.startsWith('starting automatedfanfic')
             if (isRebootMarker) {
-                activeStartupBlock = null
-                currentSystemBlock = null
-                startupCompleteSeen = false
+                const timeDiffSec = activeStartupBlock
+                    ? Math.abs(parseLogTimestamp(entry.timestamp) - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
+                    : 999999
+                if (!activeStartupBlock || timeDiffSec > 30 || startupCompleteSeen) {
+                    activeStartupBlock = null
+                    currentSystemBlock = null
+                    startupCompleteSeen = false
+                    startupCompletionTime = 0
+                }
             }
 
-            const inStartupWindow = (activeStartupBlock !== null && !startupCompleteSeen)
+            const entryTime = parseLogTimestamp(entry.timestamp)
+            const timeSinceLastStartup = activeStartupBlock
+                ? Math.abs(entryTime - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
+                : 999999
+            const timeSinceCompletion = startupCompleteSeen && startupCompletionTime > 0
+                ? Math.abs(entryTime - startupCompletionTime) / 1000
+                : 0
+
+            const inStartupWindow =
+                activeStartupBlock !== null &&
+                timeSinceLastStartup <= 60 &&
+                (!startupCompleteSeen || timeSinceCompletion <= 10)
             const sysCat = categorizeSystemLog(entry, inStartupWindow)
 
             let targetSystemBlock: LogAttemptBlock | null = null
 
             if (sysCat.category === 'startup') {
                 const timeDiffSec = activeStartupBlock
-                    ? Math.abs(parseLogTimestamp(entry.timestamp) - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
+                    ? Math.abs(entryTime - parseLogTimestamp(activeStartupBlock.endedAt)) / 1000
                     : 999999
 
                 if (!activeStartupBlock || timeDiffSec > 120) {
@@ -936,17 +960,28 @@ export function buildLogAttemptBlocks(
                     }
                     blocks.push(activeStartupBlock)
                     startupCompleteSeen = false
+                    startupCompletionTime = 0
                     currentSystemBlock = null
                 } else {
                     activeStartupBlock.lines.push(entry)
                     activeStartupBlock.endedAt = entry.timestamp
                 }
                 targetSystemBlock = activeStartupBlock
+
+                if (
+                    msgLower.includes('all processes started') ||
+                    msgLower.includes('processes running. press ctrl+c') ||
+                    msgLower.includes('webserver: history database connection established') ||
+                    msgLower.includes('entered imap idle mode')
+                ) {
+                    startupCompleteSeen = true
+                    startupCompletionTime = entryTime
+                }
             } else {
                 activeStartupBlock = null
 
                 const timeDiffSec = currentSystemBlock && currentSystemBlock.title === sysCat.title
-                    ? Math.abs(parseLogTimestamp(entry.timestamp) - parseLogTimestamp(currentSystemBlock.endedAt)) / 1000
+                    ? Math.abs(entryTime - parseLogTimestamp(currentSystemBlock.endedAt)) / 1000
                     : 999999
 
                 if (

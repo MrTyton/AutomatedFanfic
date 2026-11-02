@@ -902,3 +902,38 @@ test('buildLogAttemptBlocks ties multiple attempts for the same story URL togeth
     assert.ok(text.includes('Attempt #1'))
     assert.ok(text.includes('Connection reset by peer'))
 })
+test('buildLogAttemptBlocks does not fragment startup into multiple accordion blocks when interleaved with supervisor or webserver events', () => {
+    const burstStartupLogs = [
+        { seq: 1, timestamp: '2026-11-01 10:57:41 PM', level: 'info', message: 'Configuration loaded successfully from /config/config.toml' },
+        { seq: 2, timestamp: '2026-11-01 10:57:41 PM', level: 'info', message: 'Starting AutomatedFanfic v7.0.2' },
+        { seq: 3, timestamp: '2026-11-01 10:57:41 PM', level: 'debug', message: 'ProcessManager initialized' },
+        { seq: 4, timestamp: '2026-11-01 10:57:41 PM', level: 'debug', message: 'Signal handlers configured' },
+        { seq: 5, timestamp: '2026-11-01 10:57:42 PM', level: 'info', message: 'Generating URL parsers from fanficfare adapters...' },
+        { seq: 6, timestamp: '2026-11-01 10:57:42 PM', level: 'info', message: 'Generated 111 URL parsers for site recognition' },
+        { seq: 7, timestamp: '2026-11-01 10:57:42 PM', level: 'info', message: 'Spawning 1 Worker Pool Process with 15 threads (reserved 5 slots for support processes) to match max_workers=20' },
+        { seq: 8, timestamp: '2026-11-01 10:57:42 PM', level: 'debug', message: 'Pushbullet device specified: Foldly. Finding device ID...' },
+        { seq: 9, timestamp: '2026-11-01 10:57:42 PM', level: 'info', message: 'Apprise enabled with 1 notification target(s).' },
+        { seq: 10, timestamp: '2026-11-01 10:57:43 PM', level: 'info', message: 'HistoryWriter: started' },
+        { seq: 11, timestamp: '2026-11-01 10:57:43 PM', level: 'debug', message: 'Registered process: supervisor' },
+        { seq: 12, timestamp: '2026-11-01 10:57:43 PM', level: 'info', message: 'Web dashboard enabled on 0.0.0.0:8080' },
+        { seq: 13, timestamp: '2026-11-01 10:57:43 PM', level: 'info', message: 'Starting all processes...' },
+        { seq: 14, timestamp: '2026-11-01 10:57:43 PM', level: 'debug', message: 'Started process: supervisor (PID: 93)' },
+        { seq: 15, timestamp: '2026-11-01 10:57:43 PM', level: 'info', message: 'All processes started successfully' },
+        { seq: 16, timestamp: '2026-11-01 10:57:43 PM', level: 'info', message: 'Processes running. Press Ctrl+C to stop gracefully.' },
+        { seq: 17, timestamp: '2026-11-01 10:57:43 PM', level: 'info', message: 'Worker worker_0 started' },
+        { seq: 18, timestamp: '2026-11-01 10:57:43 PM', level: 'info', message: 'Supervisor: Starting helper services...' },
+        { seq: 19, timestamp: '2026-11-01 10:57:43 PM', level: 'debug', message: 'Supervisor: Started Coordinator' },
+        { seq: 20, timestamp: '2026-11-01 10:57:44 PM', level: 'info', message: 'WebServer: Starting on 0.0.0.0:8080' },
+        { seq: 21, timestamp: '2026-11-01 10:57:44 PM', level: 'debug', message: 'WebServer: using config-file host=0.0.0.0 port=8080' },
+        { seq: 22, timestamp: '2026-11-01 10:57:44 PM', level: 'info', message: 'Configuration loaded successfully from /config/config.toml' },
+        { seq: 23, timestamp: '2026-11-01 10:57:44 PM', level: 'info', message: 'WebServer: History database connection established' },
+        { seq: 24, timestamp: '2026-11-01 10:57:45 PM', level: 'debug', message: 'EmailWatcher: entered IMAP IDLE mode' },
+    ]
+
+    const blocks = buildLogAttemptBlocks(burstStartupLogs)
+    const startupBlocks = blocks.filter((b) => b.title === 'Application Startup & Lifecycle')
+    assert.equal(startupBlocks.length, 1)
+    assert.equal(startupBlocks[0].lines.length, 24)
+    assert.equal(startupBlocks[0].lines[0].message, 'Configuration loaded successfully from /config/config.toml')
+    assert.equal(startupBlocks[0].lines[23].message, 'EmailWatcher: entered IMAP IDLE mode')
+})
