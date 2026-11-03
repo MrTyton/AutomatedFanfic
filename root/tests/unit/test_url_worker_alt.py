@@ -371,14 +371,11 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         self.assertTrue(result.has_failure)
 
     def test_silent_failure_via_stdout_capture(self):
-        """A print() inside do_download with a failure string should be detected."""
+        """A print() inside do_download with a failure string should be detected cleanly without 'silent failure' wording."""
 
         def fake_do_download(path_or_url, options, **kwargs):
             print("story already contains 5 chapters.")
 
-        # Provide a fresh proxy for this test so sys.stdout state from other tests
-        # doesn't interfere.  We patch both _ensure_tl_stdout and sys.stdout so the
-        # print() call inside fake_do_download flows through the capture buffer.
         captured_base = io.StringIO()
         proxy = ThreadLocalStdout(captured_base)
 
@@ -388,6 +385,63 @@ class TestExecuteFanficfareDirect(unittest.TestCase):
         ):
             result = self._run_direct(do_download_side_effect=fake_do_download)
         self.assertTrue(result.has_failure)
+        self.assertNotIn("silent failure", result.failure_messages[0].lower())
+        self.assertEqual(
+            result.failure_messages[0], "story already contains 5 chapters."
+        )
+
+    def test_stdout_capture_multiline_extracts_only_failure_line_and_cleans_temp_path(
+        self,
+    ):
+        """When FFF prints informational and error lines, only the cleaned error line is appended to failure_messages."""
+
+        def fake_do_download(path_or_url, options, **kwargs):
+            print(
+                "Updating /tmp/tmp5klpub98/My Harem Academia - Leecifer_14024.epub, URL: https://example.com/story/1"
+            )
+            print(
+                "/tmp/tmp5klpub98/My Harem Academia - Leecifer_14024.epub already contains 175 chapters."
+            )
+
+        captured_base = io.StringIO()
+        proxy = ThreadLocalStdout(captured_base)
+
+        with (
+            patch("utils.thread_stdout.ensure_tl_stdout", return_value=proxy),
+            patch("sys.stdout", proxy),
+        ):
+            result = self._run_direct(do_download_side_effect=fake_do_download)
+        self.assertTrue(result.has_failure)
+        self.assertEqual(len(result.failure_messages), 1)
+        self.assertNotIn("silent failure", result.failure_messages[0].lower())
+        self.assertNotIn("Updating /tmp", result.failure_messages[0])
+        self.assertEqual(
+            result.failure_messages[0],
+            "My Harem Academia - Leecifer_14024.epub already contains 175 chapters.",
+        )
+
+    def test_stdout_capture_detects_forceable_from_stdout(self):
+        """When FFF prints a forceable condition to stdout, it is classified as forceable."""
+
+        def fake_do_download(path_or_url, options, **kwargs):
+            print("Updating /tmp/test.epub, URL: https://example.com/story/1")
+            print("/tmp/test.epub contains 10 chapters, more than source: 8.")
+
+        captured_base = io.StringIO()
+        proxy = ThreadLocalStdout(captured_base)
+
+        with (
+            patch("utils.thread_stdout.ensure_tl_stdout", return_value=proxy),
+            patch("sys.stdout", proxy),
+        ):
+            result = self._run_direct(do_download_side_effect=fake_do_download)
+        self.assertTrue(result.is_forceable)
+        self.assertFalse(result.has_failure)
+        self.assertEqual(len(result.forceable_messages), 1)
+        self.assertEqual(
+            result.forceable_messages[0],
+            "test.epub contains 10 chapters, more than source: 8.",
+        )
 
     def test_cookiejar_persisted_and_reused_across_downloads_for_same_site(self):
         """options.cookiejar populated by do_download on first call is reused on subsequent calls for the same site."""

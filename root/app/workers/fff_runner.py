@@ -149,6 +149,20 @@ def resolve_target_url(
     return ""
 
 
+def clean_fff_message(msg: str) -> str:
+    """
+    Clean up FanFicFare error/warning message strings for logging and user-facing display.
+
+    Removes absolute temporary directory paths (e.g. '/tmp/tmp.../story.epub already contains...')
+    so that only the epub basename and relevant error context are presented.
+    """
+    cleaned = msg.strip()
+    cleaned = re.sub(
+        r"^(?:[a-zA-Z]:[\\/]|/)(?:.*?[\\/])?([^\\/\n]+\.epub\b)", r"\1", cleaned
+    )
+    return cleaned
+
+
 def run_fanficfare_download(
     path_or_url: str,
     options: optparse.Values,
@@ -160,17 +174,20 @@ def run_fanficfare_download(
     result = FanFicFareResult()
 
     def warn_callback(msg: str) -> None:
-        msg_str = str(msg)
+        msg_str = clean_fff_message(str(msg))
         ff_logging.log(f"\tFanFicFare warn: {msg_str}")
         if regex_parsing.check_failure_from_message(msg_str):
-            result.failure_messages.append(msg_str)
+            if msg_str not in result.failure_messages:
+                result.failure_messages.append(msg_str)
         elif regex_parsing.check_forceable_from_message(msg_str):
-            result.forceable_messages.append(msg_str)
+            if msg_str not in result.forceable_messages:
+                result.forceable_messages.append(msg_str)
 
     def fail_callback(msg: str) -> None:
-        msg_str = str(msg)
+        msg_str = clean_fff_message(str(msg))
         ff_logging.log_failure(f"\tFanFicFare fail: {msg_str}")
-        result.failure_messages.append(msg_str)
+        if msg_str not in result.failure_messages:
+            result.failure_messages.append(msg_str)
 
     tl_stdout = thread_stdout.ensure_tl_stdout()
     impersonation.install_impersonated_session()
@@ -197,12 +214,40 @@ def run_fanficfare_download(
             cookies.set_site_cookiejar(site_key, updated_cookiejar)
 
     if captured_output:
-        ff_logging.log_debug(f"\tFanFicFare stdout: {captured_output}")
+        has_extracted_failure = False
+        has_extracted_forceable = False
+        for raw_line in captured_output.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            cleaned = clean_fff_message(line)
+            if regex_parsing.check_failure_from_message(line):
+                ff_logging.log_failure(f"\tFanFicFare error: {cleaned}")
+                if cleaned not in result.failure_messages:
+                    result.failure_messages.append(cleaned)
+                has_extracted_failure = True
+            elif regex_parsing.check_forceable_from_message(line):
+                ff_logging.log(f"\tFanFicFare forceable: {cleaned}")
+                if cleaned not in result.forceable_messages:
+                    result.forceable_messages.append(cleaned)
+                has_extracted_forceable = True
+            else:
+                ff_logging.log_debug(f"\tFanFicFare stdout: {line}")
 
-    if regex_parsing.check_failure_from_message(captured_output):
-        result.failure_messages.append(
-            f"FanFicFare silent failure: {captured_output.strip()}"
-        )
+        if not has_extracted_failure and regex_parsing.check_failure_from_message(
+            captured_output
+        ):
+            cleaned_full = clean_fff_message(captured_output.strip())
+            ff_logging.log_failure(f"\tFanFicFare error: {cleaned_full}")
+            if cleaned_full not in result.failure_messages:
+                result.failure_messages.append(cleaned_full)
+        elif not has_extracted_forceable and regex_parsing.check_forceable_from_message(
+            captured_output
+        ):
+            cleaned_full = clean_fff_message(captured_output.strip())
+            ff_logging.log(f"\tFanFicFare forceable: {cleaned_full}")
+            if cleaned_full not in result.forceable_messages:
+                result.forceable_messages.append(cleaned_full)
 
     return result, captured_output
 
