@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 
 const STORAGE_REPO_KEY = 'ff_github_issue_repo_v1'
-const DEFAULT_REPO = 'AutomatedFanfic/AutomatedFanfic'
+const DEFAULT_REPO = 'MrTyton/AutomatedFanfic'
 
 export interface GitHubIssueModalProps {
     block?: LogAttemptBlock | null
@@ -36,7 +36,11 @@ export default function GitHubIssueModal({
 }: GitHubIssueModalProps) {
     const [repo, setRepo] = useState<string>(() => {
         try {
-            return localStorage.getItem(STORAGE_REPO_KEY) || DEFAULT_REPO
+            const saved = localStorage.getItem(STORAGE_REPO_KEY)
+            if (saved && saved !== 'AutomatedFanfic/AutomatedFanfic') {
+                return saved
+            }
+            return DEFAULT_REPO
         } catch {
             return DEFAULT_REPO
         }

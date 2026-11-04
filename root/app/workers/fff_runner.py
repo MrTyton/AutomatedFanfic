@@ -10,6 +10,7 @@ import importlib.metadata
 import optparse
 from pathlib import Path
 import re
+import traceback
 from typing import cast
 
 lazy from fanficfare import adapters as fff_adapters
@@ -38,6 +39,7 @@ class FanFicFareResult:
     failure_messages: list[str] = field(default_factory=list)
     forceable_messages: list[str] = field(default_factory=list)
     exception: BaseException | None = None
+    traceback: str = ""
     target_url: str = ""
     effective_user_agent: str = ""
     captured_output: str = ""
@@ -207,6 +209,7 @@ def run_fanficfare_download(
                 captured_output = captured_buf.getvalue()
     except Exception as e:
         result.exception = e
+        result.traceback = traceback.format_exc()
         ff_logging.log_failure(f"\tFanFicFare raised exception: {e}")
     finally:
         updated_cookiejar = vars(options).get("cookiejar")

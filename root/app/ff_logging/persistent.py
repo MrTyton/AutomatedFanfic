@@ -15,6 +15,13 @@ _persistent_handler: logging.handlers.RotatingFileHandler | None = None
 _persistent_log_lock = threading.Lock()
 _persistent_log_path: str | None = None
 
+
+def get_persistent_log_path() -> str | None:
+    """Return the absolute path to the active persistent JSONL log file, if any."""
+    with _persistent_log_lock:
+        return _persistent_log_path
+
+
 _log_seq_lock = threading.Lock()
 _log_seq_counter = 0
 
@@ -53,6 +60,44 @@ def update_sequence_watermark(seq: int) -> None:
     with _log_seq_lock:
         if seq > _log_seq_counter:
             _log_seq_counter = seq
+
+
+def is_failure_entry(entry: dict) -> bool:
+    """Return True if an entry represents or contains a failure/warning/error.
+
+    Used by persistent disk logging to only record events that encountered
+    failures or errors, omitting routine successes that had no problems.
+    """
+    if not isinstance(entry, dict):
+        return False
+
+    level = str(entry.get("level", "")).lower()
+    if level in ("error", "failure", "warning", "warn", "critical"):
+        return True
+
+    msg = str(entry.get("message", "")).strip()
+    msg_lower = msg.lower()
+
+    if any(
+        kw in msg_lower
+        for kw in (
+            "fail",
+            "error",
+            "exception",
+            "crashed",
+            "retry",
+            "abandon",
+            "warning",
+            "warn:",
+            "fail:",
+            "forceable:",
+            "tab crashed",
+            "timeout",
+        )
+    ):
+        return True
+
+    return False
 
 
 def is_story_event(entry: dict) -> bool:
@@ -198,8 +243,12 @@ def close_persistent_logging() -> None:
 
 
 def write_persistent_entry(entry: dict) -> None:
-    """Write an entry to the persistent JSONL file handler if active."""
-    if _persistent_handler is not None:
+    """Write an entry to the persistent JSONL file handler if active and failure-related.
+
+    Only entries that have errors, failures, retries, warnings, or exceptions are persisted
+    to disk, omitting routine successes that had no problems.
+    """
+    if _persistent_handler is not None and is_failure_entry(entry):
         with _persistent_log_lock:
             if _persistent_handler is not None:
                 try:

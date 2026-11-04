@@ -308,9 +308,12 @@ class TestProcessFanficAdditionInstrumentation(unittest.TestCase):
             "test.epub",
         )
 
-        self.recorder.record_download_failed.assert_called_once_with(
-            "https://ao3.org/works/1", "Calibre failed", site="ao3"
-        )
+        self.recorder.record_download_failed.assert_called_once()
+        args, kwargs = self.recorder.record_download_failed.call_args
+        self.assertEqual(args[0], "https://ao3.org/works/1")
+        self.assertIn("Calibre failed", args[1])
+        self.assertIn("Traceback", args[1])
+        self.assertEqual(kwargs.get("site"), "ao3")
 
 
 class TestWaitProcessorInstrumentation(unittest.TestCase):

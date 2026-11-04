@@ -32,6 +32,7 @@ port = 8080
 | `inspect_coordinator_locks` | Coordinator worker domain locks and per-site backlogs | None |
 | `inspect_queues` | Partitions active downloads into queued, processing, and waiting | None |
 | `query_logs` | In-memory log buffer search and filtering | `level`, `component`, `search`, `limit` |
+| `clear_logs` | Clear in-memory application log buffers, optionally filtered by component | `component` |
 | `get_story_diagnostics` | Autopsy diagnostics for a URL (active status, history, Calibre, logs) | `url` |
 | `get_story_history` | Persistent SQLite lifecycle history of all attempts and retries for a story URL | `url` |
 | `query_download_history` | Query historical download events from SQLite history database | `search`, `site`, `status`, `limit`, `offset` |

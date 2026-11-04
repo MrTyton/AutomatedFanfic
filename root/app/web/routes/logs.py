@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/logs", tags=["logs"])
 
 
 @router.get("")
-async def get_logs(limit: int = Query(default=500, ge=1, le=2000)):
+async def get_logs(limit: int = Query(default=500, ge=1, le=5000)):
     """Return recent log entries from the in-memory ring buffer.
 
     Newest entries are returned first.
@@ -18,14 +18,14 @@ async def get_logs(limit: int = Query(default=500, ge=1, le=2000)):
 
 
 @router.get("/startup")
-async def get_startup_logs(limit: int = Query(default=500, ge=1, le=2000)):
+async def get_startup_logs(limit: int = Query(default=500, ge=1, le=5000)):
     """Return startup/initialization log entries from app boot."""
     entries = ff_logging.get_startup_logs(limit=limit)
     return {"items": entries, "count": len(entries)}
 
 
 @router.post("/clear")
-async def clear_logs():
-    """Clear all in-memory application log buffers."""
-    ff_logging.clear_logs()
+async def clear_logs(component: str = Query(default="")):
+    """Clear in-memory application log buffers, optionally filtered by component (e.g. 'email')."""
+    ff_logging.clear_logs(component=component)
     return {"ok": True}

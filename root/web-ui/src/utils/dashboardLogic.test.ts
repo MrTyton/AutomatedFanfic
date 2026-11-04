@@ -429,13 +429,13 @@ test('buildGitHubIssueDraft includes startup logs and supports story redaction',
     assert.equal(draft.body.includes('Supervisor: Starting AutomatedFanfic process tree...'), true)
 
     const { url, isTruncated } = buildGitHubIssueUrl({
-        repo: 'AutomatedFanfic/AutomatedFanfic',
+        repo: 'MrTyton/AutomatedFanfic',
         title: draft.title,
         body: draft.body,
         labels: ['bug'],
     })
     assert.equal(isTruncated, false)
-    assert.equal(url.startsWith('https://github.com/AutomatedFanfic/AutomatedFanfic/issues/new?'), true)
+    assert.equal(url.startsWith('https://github.com/MrTyton/AutomatedFanfic/issues/new?'), true)
     assert.equal(url.includes('labels=bug'), true)
 })
 

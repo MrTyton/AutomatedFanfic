@@ -63,6 +63,7 @@ class EmailInfo:
         self._geturls = None
         self._geturls_ini_mtime = 0.0
         self._last_ini_hash = ""
+        self._last_seen_unseen_uids: set[int] = set()
         if not lazy:
             self._build_geturls()
 
@@ -85,6 +86,8 @@ class EmailInfo:
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
+        if not hasattr(self, "_last_seen_unseen_uids"):
+            self._last_seen_unseen_uids = set()
         self._build_geturls()
 
     def update_from_config_store(self, config_store: ConfigStore) -> bool:
@@ -168,7 +171,7 @@ class EmailInfo:
 
         urls = set()
 
-        with set_timeout(55), suppress_logging():
+        with set_timeout(180), suppress_logging():
             try:
                 urls = set(
                     self._geturls.get_urls_from_imap(
@@ -177,9 +180,14 @@ class EmailInfo:
                 )
             except Exception as e:
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
-                if flaresolverr.is_flaresolverr_crash(e):
+                err_msg = str(e).lower()
+                if (
+                    flaresolverr.is_flaresolverr_crash(e)
+                    or "timed out" in err_msg
+                    or "timeout" in err_msg
+                ):
                     ff_logging.log(
-                        "EmailWatcher: Detected FlareSolverr crash during email URL extraction; attempting auto-recovery..."
+                        f"EmailWatcher: Detected FlareSolverr issue ({e}) during email URL extraction; attempting auto-recovery..."
                     )
                     recovered = flaresolverr.recover_flaresolverr_crashes(
                         target_site=None,
@@ -219,12 +227,17 @@ class EmailInfo:
                 client.login(self.email, self.password)
                 client.select_folder(self.mailbox)
 
-                unseen = client.search("UNSEEN")
-                if unseen:
+                unseen_list = client.search("UNSEEN")
+                unseen = set(unseen_list) if unseen_list else set()
+                new_unseen = unseen - self._last_seen_unseen_uids
+                if new_unseen:
                     ff_logging.log_debug(
-                        f"EmailWatcher: found {len(unseen)} unread email(s) before entering IDLE"
+                        f"EmailWatcher: found {len(new_unseen)} new unread email(s) before entering IDLE"
                     )
+                    self._last_seen_unseen_uids.update(unseen)
                     return True
+
+                self._last_seen_unseen_uids.intersection_update(unseen)
 
                 idle_start = time.monotonic()
                 client.idle()
@@ -263,8 +276,9 @@ class EmailInfo:
 
         except Exception as e:
             ff_logging.log_failure(
-                f"EmailWatcher: IMAP IDLE error ({e}), falling back to immediate check"
+                f"EmailWatcher: IMAP IDLE error ({e}), falling back to delayed check"
             )
+            shutdown_event.wait(timeout=min(float(self.sleep_time), 5.0))
             return True
 
 

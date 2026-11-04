@@ -303,12 +303,20 @@ class TestPersistentLogging(unittest.TestCase):
 
     def test_init_persistent_logging_and_append(self):
         ff_logging.init_persistent_logging(self.log_path)
-        ff_logging.log("test persistent message")
+        # Routine info message without failure is omitted from persistent disk log
+        ff_logging.log("routine info message")
+        with open(self.log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        self.assertEqual(len(lines), 0)
+
+        # Failure message is persisted to disk
+        ff_logging.log_failure("test failure message")
         with open(self.log_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         self.assertEqual(len(lines), 1)
         data = json.loads(lines[0])
-        self.assertEqual(data["message"], "test persistent message")
+        self.assertEqual(data["message"], "test failure message")
+        self.assertEqual(data["level"], "error")
 
     def test_rehydration_on_startup(self):
         entries = [

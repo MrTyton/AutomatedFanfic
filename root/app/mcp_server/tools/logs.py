@@ -21,6 +21,13 @@ async def query_logs(
     )
 
 
+async def clear_logs(component: str = "") -> dict[str, Any]:
+    """Clear in-memory application log buffers, optionally filtered by component (e.g. 'email')."""
+    client = get_client()
+    return await client.clear_logs(component=component)
+
+
 def register_tools(server: FastMCP, client: AutomatedFanficClient) -> None:
     """Register log inspection tools on the FastMCP server."""
     register_tool(server, client, query_logs)
+    register_tool(server, client, clear_logs)

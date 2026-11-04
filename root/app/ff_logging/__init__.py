@@ -44,6 +44,8 @@ from ff_logging.core import (
 )
 from ff_logging.persistent import (
     close_persistent_logging,
+    get_persistent_log_path,
+    is_failure_entry,
     is_story_event,
     resolve_log_file_path,
 )
@@ -74,7 +76,9 @@ __all__ = [
     "init_persistent_logging",
     "close_persistent_logging",
     "resolve_log_file_path",
+    "get_persistent_log_path",
     "is_story_event",
+    "is_failure_entry",
     "init_process_logging",
     "log",
     "log_failure",

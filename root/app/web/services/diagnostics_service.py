@@ -1,5 +1,6 @@
 """Diagnostic services for external services, anti-bot solver, story autopsy, and dry-runs."""
 
+import json
 from pathlib import Path
 import re
 import time
@@ -95,7 +96,7 @@ def query_filtered_logs(
 ) -> dict[str, object]:
     """Query recent logs with level, component, and message search filtering."""
     req_level = level.strip().upper()
-    raw_logs = ff_logging.get_recent_logs(limit=2000)
+    raw_logs = ff_logging.get_recent_logs(limit=5000)
 
     filtered: list[dict[str, object]] = []
     for entry in raw_logs:
@@ -307,7 +308,7 @@ async def build_story_diagnostics(
 
     recent_logs: list[dict[str, object]] = []
     try:
-        raw_logs = ff_logging.get_recent_logs(limit=2000)
+        raw_logs = ff_logging.get_recent_logs(limit=5000)
         for entry in raw_logs:
             msg = str(entry.get("message", ""))
             matched = norm_url in msg
@@ -318,6 +319,33 @@ async def build_story_diagnostics(
                         break
             if matched:
                 recent_logs.append(entry)
+
+        # Fallback to persistent log file on disk if in-memory buffer was cleared or rolled over
+        if not recent_logs:
+            log_path = ff_logging.get_persistent_log_path()
+            if log_path and Path(log_path).is_file():
+                try:
+                    with open(log_path, encoding="utf-8", errors="replace") as f:
+                        for line in f:
+                            line_str = line.strip()
+                            if not line_str:
+                                continue
+                            try:
+                                entry = json.loads(line_str)
+                                if isinstance(entry, dict) and "message" in entry:
+                                    msg = str(entry.get("message", ""))
+                                    matched = norm_url in msg
+                                    if not matched and candidate_titles:
+                                        for t in candidate_titles:
+                                            if t and t in msg:
+                                                matched = True
+                                                break
+                                    if matched:
+                                        recent_logs.append(entry)
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
     except Exception:
         recent_logs = []
 

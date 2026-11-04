@@ -1638,11 +1638,11 @@ export function buildGitHubIssueUrl(options: {
     body: string
     labels?: string[]
 }): { url: string; isTruncated: boolean } {
-    const cleanRepo = (options.repo || 'AutomatedFanfic/AutomatedFanfic')
+    const cleanRepo = (options.repo || 'MrTyton/AutomatedFanfic')
         .trim()
         .replace(/^https?:\/\/github\.com\//i, '')
         .replace(/\/+$/, '')
-    const repoPath = cleanRepo.includes('/') ? cleanRepo : 'AutomatedFanfic/AutomatedFanfic'
+    const repoPath = cleanRepo.includes('/') ? cleanRepo : 'MrTyton/AutomatedFanfic'
 
     const MAX_BODY_CHARS_FOR_URL = 5500
     let bodyForUrl = options.body

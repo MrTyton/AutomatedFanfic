@@ -317,3 +317,8 @@ class AutomatedFanficClient:
         return await self._request(
             "POST", "/api/debug/flaresolverr/recover", json=payload
         )
+
+    async def clear_logs(self, component: str = "") -> dict[str, Any]:
+        """Clear in-memory application log buffers, optionally filtered by component (e.g. 'email')."""
+        params = {"component": component} if component else None
+        return await self._request("POST", "/api/logs/clear", params=params)

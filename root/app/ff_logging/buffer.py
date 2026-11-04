@@ -10,11 +10,11 @@ from ff_logging.persistent import (
 )
 lazy from models.queue_types import LogQueue
 
-_LOG_BUFFER_MAX = 2000
+_LOG_BUFFER_MAX = 5000
 _log_buffer: collections.deque = collections.deque(maxlen=_LOG_BUFFER_MAX)
 _log_buffer_lock = threading.Lock()
 
-_STARTUP_LOG_BUFFER_MAX = 2000
+_STARTUP_LOG_BUFFER_MAX = 5000
 _startup_log_buffer: collections.deque = collections.deque(
     maxlen=_STARTUP_LOG_BUFFER_MAX
 )
@@ -181,11 +181,40 @@ def get_startup_logs(limit: int = 500) -> list[dict]:
     return entries[:limit]
 
 
-def clear_logs() -> None:
-    """Clear all in-memory runtime and startup log buffers."""
+def clear_logs(component: str = "") -> None:
+    """Clear in-memory runtime and startup log buffers.
+
+    If component is provided (e.g. 'email'), only logs associated with that component
+    are filtered out, leaving all other log entries intact. If component is empty,
+    all in-memory buffers are cleared.
+    """
     global _startup_capture_enabled
+    norm_comp = component.strip().lower()
     with _log_buffer_lock:
-        _log_buffer.clear()
-        _startup_log_buffer.clear()
-        _startup_capture_enabled = True
-        _reset_startup_subsystems()
+        if not norm_comp:
+            _log_buffer.clear()
+            _startup_log_buffer.clear()
+            _startup_capture_enabled = True
+            _reset_startup_subsystems()
+        else:
+
+            def _is_match(entry: dict) -> bool:
+                msg = str(entry.get("message", "")).lower()
+                site = str(entry.get("thread_site", "")).lower()
+                worker = str(entry.get("worker_id", "")).lower()
+                if norm_comp in ("email", "emailwatcher", "imap"):
+                    return (
+                        "email" in msg
+                        or "imap" in msg
+                        or "emailwatcher" in worker
+                        or norm_comp in site
+                    )
+                return norm_comp in msg or norm_comp in site or norm_comp in worker
+
+            retained_log = [e for e in _log_buffer if not _is_match(e)]
+            _log_buffer.clear()
+            _log_buffer.extend(retained_log)
+
+            retained_startup = [e for e in _startup_log_buffer if not _is_match(e)]
+            _startup_log_buffer.clear()
+            _startup_log_buffer.extend(retained_startup)

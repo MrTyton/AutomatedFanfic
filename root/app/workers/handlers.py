@@ -3,6 +3,7 @@ Failure and success handling logic for worker processes.
 """
 
 import config
+import traceback
 from models import retry_types
 from models import fanfic_info
 from models.context import WorkerContext
@@ -225,11 +226,13 @@ def process_fanfic_addition(
         return check_active_removal(fanfic)
 
     except Exception as e:
-        ff_logging.log_failure(f"Error processing additions to Calibre: {e}")
-        history_recorder.record_download_failed(fanfic.url, str(e), site=fanfic.site)
+        tb = traceback.format_exc()
+        ff_logging.log_failure(f"Error processing additions to Calibre: {e}\n{tb}")
+        full_err = f"{e}\n{tb}".strip()
+        history_recorder.record_download_failed(fanfic.url, full_err, site=fanfic.site)
         handle_failure(
             fanfic,
             ctx,
-            error_message=str(e),
+            error_message=full_err,
         )
         return check_active_removal(fanfic)

@@ -147,10 +147,11 @@ async def test_mcp_tools_registration(mock_client: AsyncMock):
         "retry_all_waiting",
         "toggle_site",
         "redownload_from_scratch",
+        "clear_logs",
     }
 
     assert expected_tools.issubset(tool_names)
-    assert len(tools) == 30
+    assert len(tools) == 31
 
     for tool in tools:
         assert tool.description, f"Tool {tool.name} missing docstring description"

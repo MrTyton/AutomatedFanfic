@@ -16,6 +16,7 @@ Worker-Coordinator Communication:
 from queue import Empty
 import threading
 import time
+import traceback
 from typing import cast
 
 lazy from fanficfare.fetchers.base_fetcher import LWPCookieJar
@@ -220,14 +221,22 @@ def _process_task(
 
         # 5. Evaluate result
         if fff_result.has_failure:
-            error_msg = (
+            if fff_result.traceback:
+                error_msg = f"{fff_result.exception}\n{fff_result.traceback}".strip()
+            elif fff_result.exception is not None:
+                error_msg = str(fff_result.exception)
+            else:
+                error_msg = (
+                    "; ".join(fff_result.failure_messages)
+                    or "FanFicFare reported a permanent failure condition."
+                )
+            summary_err = (
                 str(fff_result.exception)
                 if fff_result.exception is not None
-                else "; ".join(fff_result.failure_messages)
-                or "FanFicFare reported a permanent failure condition."
+                else error_msg
             )
             ff_logging.log_failure(
-                f"\t({site}) Failed to update {path_or_url}: {error_msg}"
+                f"\t({site}) Failed to update {path_or_url}: {summary_err}"
             )
             handlers.handle_failure(
                 fanfic,
@@ -421,14 +430,15 @@ def url_worker(
                 )
             except Exception as e:
                 last_task_failed = True
+                tb = traceback.format_exc()
                 ff_logging.log_failure(
-                    f"Worker {worker_id} crashed on task {fanfic.url}: {e}"
+                    f"Worker {worker_id} crashed on task {fanfic.url}: {e}\n{tb}"
                 )
                 # Ensure we retry even on deep crashes
                 handlers.handle_failure(
                     fanfic,
                     ctx,
-                    error_message=str(e),
+                    error_message=f"{e}\n{tb}".strip(),
                 )
                 should_remove = handlers.check_active_removal(fanfic)
             finally:
