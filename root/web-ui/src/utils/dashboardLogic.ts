@@ -170,6 +170,7 @@ export function aggregateRecentErrors(
 
 export interface LogAttemptBlock {
     id: string
+    task_id?: string
     kind: 'story_attempt' | 'system'
     url?: string
     title: string
@@ -686,6 +687,7 @@ export function buildLogAttemptBlocks(
 
     const blocks: LogAttemptBlock[] = []
     const activeBlockByAttemptId = new Map<string, LogAttemptBlock>()
+    const activeBlockByTaskId = new Map<string, LogAttemptBlock>()
     const activeBlockBySite = new Map<string, LogAttemptBlock>()
     const activeBlockByUrl = new Map<string, LogAttemptBlock>()
     const activeBlockByWorkerId = new Map<string, LogAttemptBlock>()
@@ -733,6 +735,13 @@ export function buildLogAttemptBlocks(
                 if (isPreWorkerBlock && existingForUrl) {
                     targetBlock = existingForUrl
                     targetBlock.id = entry.attempt_id
+                    if (entry.task_id && !targetBlock.task_id) {
+                        targetBlock.task_id = entry.task_id
+                    }
+                    const attMatch = entry.attempt_id.match(/-att-(\d+)$/)
+                    if (attMatch) {
+                        targetBlock.attemptNumber = parseInt(attMatch[1], 10)
+                    }
                     activeBlockByAttemptId.set(entry.attempt_id, targetBlock)
                     if (entry.worker_id) {
                         activeBlockByWorkerId.set(entry.worker_id, targetBlock)
@@ -745,8 +754,10 @@ export function buildLogAttemptBlocks(
                         targetBlock.title = entry.story_title.trim()
                     }
                 } else {
+                    const attMatch = entry.attempt_id.match(/-att-(\d+)$/)
+                    const explicitAttNum = attMatch ? parseInt(attMatch[1], 10) : undefined
                     const prevCount = url ? attemptCounterByUrl.get(url) || 0 : 0
-                    const nextAttempt = prevCount + 1
+                    const nextAttempt = explicitAttNum || prevCount + 1
                     if (url) attemptCounterByUrl.set(url, nextAttempt)
 
                     const resolvedSite = site || (url ? siteByUrl.get(url) : '') || ''
@@ -757,11 +768,12 @@ export function buildLogAttemptBlocks(
 
                     targetBlock = {
                         id: entry.attempt_id,
+                        task_id: entry.task_id,
                         kind: 'story_attempt',
                         url,
                         title: resolvedTitle,
                         site: resolvedSite || undefined,
-                        attemptNumber: (url && attemptByUrl.get(url)) || nextAttempt,
+                        attemptNumber: explicitAttNum || (url && attemptByUrl.get(url)) || nextAttempt,
                         status: 'processing',
                         isActive: true,
                         activeStage: 'processing',
@@ -772,6 +784,7 @@ export function buildLogAttemptBlocks(
                     }
                     blocks.push(targetBlock)
                     activeBlockByAttemptId.set(entry.attempt_id, targetBlock)
+                    if (entry.task_id) activeBlockByTaskId.set(entry.task_id, targetBlock)
                     if (url) activeBlockByUrl.set(url, targetBlock)
                     if (resolvedSite) activeBlockBySite.set(resolvedSite, targetBlock)
                     if (entry.worker_id) activeBlockByWorkerId.set(entry.worker_id, targetBlock)
@@ -819,6 +832,7 @@ export function buildLogAttemptBlocks(
 
                 targetBlock = {
                     id: `attempt-${url}-${nextAttempt}-${entry.timestamp}`,
+                    task_id: entry.task_id,
                     kind: 'story_attempt',
                     url,
                     title: resolvedTitle,
@@ -856,6 +870,10 @@ export function buildLogAttemptBlocks(
 
         if (targetBlock) {
             currentSystemBlock = null
+            if (entry.task_id && !targetBlock.task_id) {
+                targetBlock.task_id = entry.task_id
+                activeBlockByTaskId.set(entry.task_id, targetBlock)
+            }
             targetBlock.lines.push(entry)
             targetBlock.endedAt = entry.timestamp
 
@@ -949,9 +967,13 @@ export function buildLogAttemptBlocks(
                 msgLower.includes('signaling worker')
 
             if (isClosed) {
+                if (targetBlock.task_id) activeBlockByTaskId.delete(targetBlock.task_id)
                 if (targetBlock.url) activeBlockByUrl.delete(targetBlock.url)
                 if (targetBlock.site) activeBlockBySite.delete(targetBlock.site)
                 if (entry.worker_id) activeBlockByWorkerId.delete(entry.worker_id)
+                if (targetBlock.status === 'success' && targetBlock.url) {
+                    attemptCounterByUrl.delete(targetBlock.url)
+                }
             }
         } else {
             const entryTime = parseLogTimestamp(entry.timestamp)
@@ -1150,27 +1172,47 @@ export function buildLogAttemptBlocks(
         }
     }
 
-    // Tie all attempts for the same story URL together and combine them into a single primary card
-    const attemptsByUrl = new Map<string, LogAttemptBlock[]>()
-    for (const b of blocks) {
-        if (b.kind === 'story_attempt' && b.url) {
-            const list = attemptsByUrl.get(b.url) || []
-            list.push(b)
-            attemptsByUrl.set(b.url, list)
+    // Tie attempts for the same story together into primary cards.
+    // 1. If task_id is present, attempts sharing the same task_id belong together.
+    // 2. If task_id is absent, attempts for the same URL in the same retry sequence
+    //    (i.e. not separated by a successful completion) belong together.
+    const nonPrimaryBlockIds = new Set<string>()
+    const storyBlocks = blocks.filter((b) => b.kind === 'story_attempt' && b.url)
+
+    const attemptGroups: LogAttemptBlock[][] = []
+    const currentGroupByTaskId = new Map<string, LogAttemptBlock[]>()
+    const activeGroupByUrl = new Map<string, LogAttemptBlock[]>()
+
+    for (const b of storyBlocks) {
+        if (b.task_id) {
+            let group = currentGroupByTaskId.get(b.task_id)
+            if (!group) {
+                group = []
+                currentGroupByTaskId.set(b.task_id, group)
+                attemptGroups.push(group)
+            }
+            group.push(b)
+        } else if (b.url) {
+            let group = activeGroupByUrl.get(b.url)
+            if (!group || group.some((prev) => prev.status === 'success')) {
+                group = []
+                activeGroupByUrl.set(b.url, group)
+                attemptGroups.push(group)
+            }
+            group.push(b)
         }
     }
 
-    const nonPrimaryBlockIds = new Set<string>()
-    for (const urlBlocks of attemptsByUrl.values()) {
-        if (urlBlocks.length > 1) {
-            urlBlocks.sort((a, b) => a.attemptNumber - b.attemptNumber)
-            for (const b of urlBlocks) {
-                b.attempts = urlBlocks
+    for (const group of attemptGroups) {
+        if (group.length > 1) {
+            group.sort((a, b) => a.attemptNumber - b.attemptNumber)
+            for (const b of group) {
+                b.attempts = group
             }
-            // Retain only 1 combined card per story URL:
+            // Retain only 1 combined card per story task:
             // Prefer the active in-flight attempt if one exists; otherwise the latest attempt.
-            const primary = urlBlocks.find((b) => b.isActive) || urlBlocks[urlBlocks.length - 1]
-            for (const b of urlBlocks) {
+            const primary = group.find((b) => b.isActive) || group[group.length - 1]
+            for (const b of group) {
                 if (b !== primary) {
                     nonPrimaryBlockIds.add(b.id)
                 }

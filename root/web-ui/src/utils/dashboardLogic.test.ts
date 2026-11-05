@@ -1238,3 +1238,155 @@ test('buildGitHubIssueDraft omits startup logs when includeStartupLogs is false 
     assert.equal(isTruncated, false)
     assert.ok(url.includes('https://github.com/MrTyton/AutomatedFanfic/issues/new'))
 })
+
+
+test('two separate successful email updates for the same story URL produce two distinct cards rather than collapsing', () => {
+    const separateUpdateLogs = [
+        // Update 1 (Email 1) - succeeds
+        {
+            seq: 1,
+            timestamp: '2026-11-05 08:00:00 AM',
+            level: 'info',
+            message: 'Adding forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204 to the ingestion queue (site: spacebattles)',
+            task_id: 'task-email-1',
+        },
+        {
+            seq: 2,
+            timestamp: '2026-11-05 08:00:01 AM',
+            level: 'info',
+            message: '(spacebattles) Processing forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204',
+            thread_site: 'spacebattles',
+            story_url: 'https://forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204',
+            story_title: 'Light Dragon',
+            worker_id: 'worker_0',
+            attempt_id: 'task-email-1-att-1',
+            task_id: 'task-email-1',
+        },
+        {
+            seq: 3,
+            timestamp: '2026-11-05 08:00:10 AM',
+            level: 'info',
+            message: '(spacebattles) Successfully processed Light Dragon',
+            thread_site: 'spacebattles',
+            story_url: 'https://forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204',
+            story_title: 'Light Dragon',
+            worker_id: 'worker_0',
+            attempt_id: 'task-email-1-att-1',
+            task_id: 'task-email-1',
+        },
+        // Update 2 (Email 2) - arrives later and succeeds
+        {
+            seq: 20,
+            timestamp: '2026-11-05 09:30:00 AM',
+            level: 'info',
+            message: 'Adding forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204 to the ingestion queue (site: spacebattles)',
+            task_id: 'task-email-2',
+        },
+        {
+            seq: 21,
+            timestamp: '2026-11-05 09:30:01 AM',
+            level: 'info',
+            message: '(spacebattles) Processing forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204',
+            thread_site: 'spacebattles',
+            story_url: 'https://forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204',
+            story_title: 'Light Dragon',
+            worker_id: 'worker_0',
+            attempt_id: 'task-email-2-att-1',
+            task_id: 'task-email-2',
+        },
+        {
+            seq: 22,
+            timestamp: '2026-11-05 09:30:10 AM',
+            level: 'info',
+            message: '(spacebattles) Successfully processed Light Dragon',
+            thread_site: 'spacebattles',
+            story_url: 'https://forums.spacebattles.com/threads/twi-light-dragon-warcraft-wow.1151204',
+            story_title: 'Light Dragon',
+            worker_id: 'worker_0',
+            attempt_id: 'task-email-2-att-1',
+            task_id: 'task-email-2',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(separateUpdateLogs)
+    const storyBlocks = blocks.filter((b) => b.kind === 'story_attempt')
+
+    // Must NOT be collapsed into 1 card! Each successful email update is its own card
+    assert.equal(storyBlocks.length, 2)
+
+    const [card1, card2] = storyBlocks
+    assert.equal(card1.attemptNumber, 1)
+    assert.equal(card1.status, 'success')
+    assert.equal(card2.attemptNumber, 1)
+    assert.equal(card2.status, 'success')
+})
+
+test('multiple retry attempts with the same task_id are grouped into a single card with attempts', () => {
+    const retryLogs = [
+        {
+            seq: 1,
+            timestamp: '2026-11-05 08:00:00 AM',
+            level: 'info',
+            message: '(fanfiction) Processing https://www.fanfiction.net/s/1111/1/',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/1111/1/',
+            worker_id: 'worker_0',
+            attempt_id: 'task-retry-1-att-1',
+            task_id: 'task-retry-1',
+        },
+        {
+            seq: 2,
+            timestamp: '2026-11-05 08:00:05 AM',
+            level: 'error',
+            message: '(fanfiction) Failed to download https://www.fanfiction.net/s/1111/1/: Network error',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/1111/1/',
+            worker_id: 'worker_0',
+            attempt_id: 'task-retry-1-att-1',
+            task_id: 'task-retry-1',
+        },
+        {
+            seq: 3,
+            timestamp: '2026-11-05 08:00:06 AM',
+            level: 'warning',
+            message: 'Waiting ~1.00 minutes for https://www.fanfiction.net/s/1111/1/ in queue fanfiction (retry #1)',
+            task_id: 'task-retry-1',
+        },
+        {
+            seq: 4,
+            timestamp: '2026-11-05 08:01:06 AM',
+            level: 'info',
+            message: '(fanfiction) Processing https://www.fanfiction.net/s/1111/1/',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/1111/1/',
+            worker_id: 'worker_1',
+            attempt_id: 'task-retry-1-att-2',
+            task_id: 'task-retry-1',
+        },
+        {
+            seq: 5,
+            timestamp: '2026-11-05 08:01:10 AM',
+            level: 'info',
+            message: '(fanfiction) Successfully processed Good Fic',
+            thread_site: 'fanfiction',
+            story_url: 'https://www.fanfiction.net/s/1111/1/',
+            story_title: 'Good Fic',
+            worker_id: 'worker_1',
+            attempt_id: 'task-retry-1-att-2',
+            task_id: 'task-retry-1',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(retryLogs)
+    const storyBlocks = blocks.filter((b) => b.kind === 'story_attempt')
+
+    // Same task_id must be grouped into 1 card with 2 attempts
+    assert.equal(storyBlocks.length, 1)
+    const card = storyBlocks[0]
+    assert.ok(card.attempts)
+    assert.equal(card.attempts.length, 2)
+    assert.equal(card.attempts[0].attemptNumber, 1)
+    assert.equal(card.attempts[0].status, 'failed')
+    assert.equal(card.attempts[1].attemptNumber, 2)
+    assert.equal(card.attempts[1].status, 'success')
+})

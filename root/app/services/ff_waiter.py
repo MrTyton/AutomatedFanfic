@@ -54,25 +54,35 @@ def _log_retry_decision(
         fanfic: The fanfiction metadata object.
         decision: The retry decision containing action and delay info.
     """
-    if decision.action == retry_types.FailureAction.HAIL_MARY:
-        ff_logging.log(
-            f"Hail-Mary attempt: Waiting {decision.delay_minutes} minutes for {fanfic.url} "
-            f"in queue {fanfic.site}",
-            "WARNING",
-        )
-    elif decision.action == retry_types.FailureAction.RETRY:
-        retry_count = fanfic.repeats or 0
-        ff_logging.log(
-            f"Waiting ~{decision.delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
-            f"(retry #{retry_count})",
-            "WARNING",
-        )
-    else:
-        ff_logging.log(
-            f"Unexpected {decision.action.value} action in waiting queue for {fanfic.url}. "
-            f"Abandoning processing.",
-            "ERROR",
-        )
+    task_id = getattr(fanfic, "task_id", None)
+    ff_logging.set_thread_task(
+        site=fanfic.site,
+        story_url=fanfic.url,
+        story_title=getattr(fanfic, "title", None),
+        task_id=task_id,
+    )
+    try:
+        if decision.action == retry_types.FailureAction.HAIL_MARY:
+            ff_logging.log(
+                f"Hail-Mary attempt: Waiting {decision.delay_minutes} minutes for {fanfic.url} "
+                f"in queue {fanfic.site}",
+                "WARNING",
+            )
+        elif decision.action == retry_types.FailureAction.RETRY:
+            retry_count = fanfic.repeats or 0
+            ff_logging.log(
+                f"Waiting ~{decision.delay_minutes:.2f} minutes for {fanfic.url} in queue {fanfic.site} "
+                f"(retry #{retry_count})",
+                "WARNING",
+            )
+        else:
+            ff_logging.log(
+                f"Unexpected {decision.action.value} action in waiting queue for {fanfic.url}. "
+                f"Abandoning processing.",
+                "ERROR",
+            )
+    finally:
+        ff_logging.clear_thread_task()
 
 
 def _get_delay_seconds(fanfic: fanfic_info.FanficInfo) -> int | None:

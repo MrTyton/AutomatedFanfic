@@ -31,6 +31,26 @@ class TestFanficInfo(unittest.TestCase):
         self.assertIsNone(fanfic_info_default.behavior)
         self.assertIsNone(fanfic_info_default.title)
         self.assertIsNone(fanfic_info_default.retry_decision)
+        self.assertTrue(fanfic_info_default.task_id.startswith("task-"))
+
+    def test_task_id_auto_generated(self):
+        f1 = FanficInfo(url="https://example.com/1", site="ao3")
+        f2 = FanficInfo(url="https://example.com/1", site="ao3")
+        self.assertTrue(f1.task_id.startswith("task-"))
+        self.assertTrue(f2.task_id.startswith("task-"))
+        self.assertNotEqual(f1.task_id, f2.task_id)
+
+    def test_task_id_explicit(self):
+        f = FanficInfo(
+            url="https://example.com/1", site="ao3", task_id="task-custom123"
+        )
+        self.assertEqual(f.task_id, "task-custom123")
+
+    def test_task_id_preserved_on_increment_repeat(self):
+        f = FanficInfo(url="https://example.com/1", site="ao3", task_id="task-xyz")
+        f.increment_repeat()
+        self.assertEqual(f.task_id, "task-xyz")
+        self.assertEqual(f.repeats, 1)
 
     def test_increment_repeat(self):
         self.fanfic_info.increment_repeat()

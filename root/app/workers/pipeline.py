@@ -16,6 +16,7 @@ Worker-Coordinator Communication:
 from queue import Empty
 import threading
 import time
+import uuid
 import traceback
 from typing import cast
 
@@ -403,14 +404,23 @@ def url_worker(
 
             # Track which site we're processing
             current_site = fanfic.site
-            attempt_id = f"{worker_id}-{fanfic.url}-{int(time.time() * 1000)}"
+            task_id = getattr(fanfic, "task_id", None)
+            if not task_id or not isinstance(task_id, str):
+                task_id = f"task-{uuid.uuid4().hex[:10]}"
+            repeats = getattr(fanfic, "repeats", 0)
+            if not isinstance(repeats, int):
+                repeats = 0
+            attempt_id = f"{task_id}-att-{repeats + 1}"
             story_title = getattr(fanfic, "title", None)
+            if not isinstance(story_title, str):
+                story_title = None
             ff_logging.set_thread_task(
                 site=fanfic.site,
                 story_url=fanfic.url,
-                story_title=story_title if story_title else None,
+                story_title=story_title,
                 worker_id=worker_id,
                 attempt_id=attempt_id,
+                task_id=task_id,
             )
 
             # Mark as actively being processed by this worker thread

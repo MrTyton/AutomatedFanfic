@@ -20,6 +20,8 @@ processes in the multiprocessing architecture, maintaining all necessary state
 for fanfiction download, update, retry, and Calibre integration workflows.
 """
 
+import uuid
+
 from models import retry_types
 from utils import url_utils
 
@@ -51,6 +53,8 @@ class FanficInfo:
         based on the current state stored here.
     """
 
+    task_id: str
+
     def __init__(
         self,
         url: str,
@@ -61,6 +65,7 @@ class FanficInfo:
         title: str | None = None,
         retry_decision: retry_types.RetryDecision | None = None,
         from_email: bool = False,
+        task_id: str | None = None,
     ):
         """Initializes a FanficInfo object with story metadata and current state.
 
@@ -104,6 +109,7 @@ class FanficInfo:
         self.title = title
         self.retry_decision = retry_decision
         self.from_email = from_email
+        self.task_id = task_id or f"task-{uuid.uuid4().hex[:10]}"
 
     @property
     def download_url(self) -> str:

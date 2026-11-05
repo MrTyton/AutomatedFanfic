@@ -120,6 +120,7 @@ export interface LogEntry {
     story_title?: string
     worker_id?: string
     attempt_id?: string
+    task_id?: string
     is_startup?: boolean
 }
 

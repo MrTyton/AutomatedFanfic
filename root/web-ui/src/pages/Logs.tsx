@@ -228,18 +228,28 @@ export default function Logs() {
 
         return rawBlocks
             .map((block) => {
-                const visibleLines = block.lines.filter((line) => {
-                    const lvl = line.level.toLowerCase()
-                    if (allowedLevels && !allowedLevels.has(lvl)) return false
-                    return true
-                })
+                const filterLines = (lines: LogEntry[]) =>
+                    lines.filter((line) => {
+                        const lvl = line.level.toLowerCase()
+                        if (allowedLevels && !allowedLevels.has(lvl)) return false
+                        return true
+                    })
+
+                const visibleLines = filterLines(block.lines)
+                const visibleAttempts = block.attempts?.map((att) => ({
+                    ...att,
+                    lines: filterLines(att.lines),
+                }))
+
                 return {
                     ...block,
                     lines: visibleLines,
+                    attempts: visibleAttempts,
                 }
             })
             .filter((block) => {
-                if (block.lines.length === 0) return false
+                const hasVisibleAttemptLines = block.attempts?.some((att) => att.lines.length > 0)
+                if (block.lines.length === 0 && !hasVisibleAttemptLines) return false
                 if (siteFilter && block.site !== siteFilter) return false
                 if (blockStatusFilter === 'failed' && block.status !== 'failed') return false
                 if (blockStatusFilter === 'active' && !block.isActive) return false
@@ -249,9 +259,16 @@ export default function Logs() {
                         (block.url && block.url.toLowerCase().includes(q)) ||
                         (block.site && block.site.toLowerCase().includes(q)) ||
                         (block.traceback && block.traceback.toLowerCase().includes(q))
-                    const matchesLine = block.lines.some(
-                        (l) => l.message.toLowerCase().includes(q) || l.level.toLowerCase().includes(q)
-                    )
+                    const matchesLine =
+                        block.lines.some(
+                            (l) => l.message.toLowerCase().includes(q) || l.level.toLowerCase().includes(q)
+                        ) ||
+                        (block.attempts &&
+                            block.attempts.some((att) =>
+                                att.lines.some(
+                                    (l) => l.message.toLowerCase().includes(q) || l.level.toLowerCase().includes(q)
+                                )
+                            ))
                     if (!matchesHeader && !matchesLine) return false
                 }
                 return true

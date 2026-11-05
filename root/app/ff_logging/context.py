@@ -62,6 +62,7 @@ def set_thread_site(site: str | None) -> None:
         _thread_local.story_title = None
         _thread_local.worker_id = None
         _thread_local.attempt_id = None
+        _thread_local.task_id = None
 
 
 def set_thread_task(
@@ -70,6 +71,7 @@ def set_thread_task(
     story_title: str | None = None,
     worker_id: str | None = None,
     attempt_id: str | None = None,
+    task_id: str | None = None,
 ) -> None:
     """Sets the execution task context for the current worker thread's log output."""
     _thread_local.site = site
@@ -77,6 +79,7 @@ def set_thread_task(
     _thread_local.story_title = story_title
     _thread_local.worker_id = worker_id
     _thread_local.attempt_id = attempt_id
+    _thread_local.task_id = task_id
 
 
 def set_thread_story_title(title: str | None) -> None:
@@ -91,6 +94,7 @@ def clear_thread_task() -> None:
     _thread_local.story_title = None
     _thread_local.worker_id = None
     _thread_local.attempt_id = None
+    _thread_local.task_id = None
 
 
 def get_thread_context() -> dict[str, object]:
@@ -108,4 +112,6 @@ def get_thread_context() -> dict[str, object]:
         ctx["worker_id"] = _thread_local.worker_id
     if getattr(_thread_local, "attempt_id", None) is not None:
         ctx["attempt_id"] = _thread_local.attempt_id
+    if getattr(_thread_local, "task_id", None) is not None:
+        ctx["task_id"] = _thread_local.task_id
     return ctx
