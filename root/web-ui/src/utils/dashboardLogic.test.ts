@@ -453,6 +453,27 @@ test('diagnoseErrorSignature identifies Cloudflare, 404, Auth, and Calibre error
 
     const ch = diagnoseErrorSignature('Failed: Chapter count mismatch between existing (20) and online (18)')
     assert.equal(ch?.category, 'Chapter Count Mismatch')
+
+    // Story already contains chapters (e.g. Save Scumming with Calibre ID 14043)
+    const upToDate = diagnoseErrorSignature('Save Scumming - RavensDagger_14043.epub already contains 220 chapters.')
+    assert.equal(upToDate?.category, 'Already Up to Date')
+    assert.equal(upToDate?.summary, 'The story already contains all chapters available online.')
+
+    // Must NOT false-positive on 404 just because a Calibre ID contains '404' (e.g. 14043)
+    const not404 = diagnoseErrorSignature('Save Scumming - RavensDagger_14043.epub: Connection timed out')
+    assert.equal(not404, null)
+
+    // Must NOT false-positive on 503, 401, or 403 due to Calibre IDs like 15034, 14012, 14035
+    assert.equal(diagnoseErrorSignature('Story_15034.epub: Connection error'), null)
+    assert.equal(diagnoseErrorSignature('Story_14012.epub: Connection error'), null)
+    assert.equal(diagnoseErrorSignature('Story_14035.epub: Connection error'), null)
+
+    // Chapter differences & newer timestamp skipping
+    const chDiff = diagnoseErrorSignature('contains 25 chapters, more than source: 20.')
+    assert.equal(chDiff?.category, 'Chapter Count Mismatch')
+
+    const newerFile = diagnoseErrorSignature('File(story.epub) Updated(2026-11-04) more recently than Story(2026-11-03) - Skipping')
+    assert.equal(newerFile?.category, 'File Newer Than Source')
 })
 
 test('computeIniLineDiff and extractIniSections parse INI changes and headers', () => {
@@ -965,4 +986,64 @@ test('updateStartupTracker enforces AND condition across all expected subsystems
     // 4. EmailWatcher finishes - now ALL expected systems are ready (AND satisfied!)
     assert.equal(updateStartupTracker(tracker, 'EmailWatcher: entered IMAP IDLE mode'), true)
     assert.equal(tracker.emailReady, true)
+})
+
+test('buildLogAttemptBlocks gathers retry wait logs and ingestion logs into story attempt blocks rather than system activity blocks', () => {
+    const logs = [
+        {
+            timestamp: '2026-11-04 05:17:32 PM',
+            level: 'info',
+            message: 'Executing FanFicFare directly: /tmp/tmp1iok1j5n/Save Scumming - RavensDagger_14043.epub',
+            attempt_id: 'worker_0-royalroad.com/fiction/127120-1793841452673',
+            worker_id: 'worker_0',
+            story_url: 'royalroad.com/fiction/127120',
+            thread_site: 'royalroad',
+        },
+        {
+            timestamp: '2026-11-04 05:19:09 PM',
+            level: 'error',
+            message: 'FanFicFare error: Save Scumming - RavensDagger_14043.epub already contains 220 chapters.',
+            attempt_id: 'worker_0-royalroad.com/fiction/127120-1793841452673',
+            worker_id: 'worker_0',
+            story_url: 'royalroad.com/fiction/127120',
+            thread_site: 'royalroad',
+        },
+        {
+            timestamp: '2026-11-04 05:19:09 PM',
+            level: 'error',
+            message: 'Sending Save Scumming - RavensDagger_14043 to waiting queue for retry. Attempt 31, delay 27.1 min',
+            attempt_id: 'worker_0-royalroad.com/fiction/127120-1793841452673',
+            worker_id: 'worker_0',
+            story_url: 'royalroad.com/fiction/127120',
+            thread_site: 'royalroad',
+        },
+        {
+            timestamp: '2026-11-04 05:19:09 PM',
+            level: 'warning',
+            message: 'Waiting ~27.14 minutes for royalroad.com/fiction/127120 in queue royalroad (retry #31)',
+        },
+        {
+            timestamp: '2026-11-04 06:32:08 PM',
+            level: 'info',
+            message: 'Adding royalroad.com/fiction/164248 to the ingestion queue (Site: royalroad)',
+        },
+    ]
+
+    const blocks = buildLogAttemptBlocks(logs)
+
+    // No meaningless standalone System Activity blocks for story retries or ingestion
+    assert.equal(blocks.some((b) => b.kind === 'system'), false)
+
+    const story127120 = blocks.find((b) => b.url?.includes('127120'))
+    assert.ok(story127120)
+    assert.equal(story127120.status, 'failed')
+    assert.equal(story127120.attemptNumber, 31)
+    assert.equal(story127120.lines.length, 4)
+    assert.equal(story127120.lines[3].message, 'Waiting ~27.14 minutes for royalroad.com/fiction/127120 in queue royalroad (retry #31)')
+
+    const story164248 = blocks.find((b) => b.url?.includes('164248'))
+    assert.ok(story164248)
+    assert.equal(story164248.kind, 'story_attempt')
+    assert.equal(story164248.site, 'royalroad')
+    assert.equal(story164248.lines.length, 1)
 })

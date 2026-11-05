@@ -185,7 +185,7 @@ export interface LogAttemptBlock {
     attempts?: LogAttemptBlock[]
 }
 
-const URL_EXTRACT_RE = /(https?:\/\/[^\s<>"')]+?)(?=[.,;:]?(?:\s|$))/
+const URL_EXTRACT_RE = /((?:https?:\/\/|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\/)[^\s<>"')]+?)(?=[.,;:]?(?:\s|$))/
 const SITE_PREFIX_RE = /^\(([\w.-]+)\)/
 const RETRY_NUM_RE = /retry #(\d+)/i
 
@@ -574,8 +574,13 @@ export function categorizeSystemLog(entry: LogEntry, inStartupWindow: boolean): 
 
 function extractEntrySite(entry: LogEntry): string {
     if (entry.thread_site) return entry.thread_site
-    const m = entry.message.match(SITE_PREFIX_RE)
-    return m ? m[1] : ''
+    const prefixMatch = entry.message.match(SITE_PREFIX_RE)
+    if (prefixMatch) return prefixMatch[1]
+    const siteTagMatch = entry.message.match(/\(Site:\s*([a-zA-Z0-9_.-]+)\)/i)
+    if (siteTagMatch) return siteTagMatch[1]
+    const queueMatch = entry.message.match(/\bin queue\s+([a-zA-Z0-9_.-]+)/i)
+    if (queueMatch) return queueMatch[1]
+    return ''
 }
 
 function inferTitleFromUrl(url: string): string {
@@ -766,18 +771,34 @@ export function buildLogAttemptBlocks(
                 }
             }
         } else if (url) {
-            const existingForUrl = activeBlockByUrl.get(url)
+            let existingForUrl = activeBlockByUrl.get(url)
+            const isRetryWait =
+                /waiting\s+~?[\d.]+\s+minutes?\s+for/i.test(entry.message) ||
+                (msgLower.includes('waiting ') && msgLower.includes('minutes for'))
+
+            if (isRetryWait && !existingForUrl) {
+                for (let i = blocks.length - 1; i >= 0; i--) {
+                    if (blocks[i].url === url && blocks[i].kind === 'story_attempt') {
+                        existingForUrl = blocks[i]
+                        break
+                    }
+                }
+            }
+
             const isStartTrigger =
                 msgLower.includes('processing ') ||
                 (msgLower.includes('queued ') && !msgLower.includes('queued retry')) ||
                 msgLower.includes('immediate retry') ||
-                msgLower.includes('scratch redownload')
+                msgLower.includes('scratch redownload') ||
+                msgLower.includes('to the ingestion queue')
 
             const hasProcessingStarted =
                 existingForUrl &&
                 existingForUrl.lines.some((l) => l.message.toLowerCase().includes('processing '))
 
-            if (existingForUrl && (!isStartTrigger || !hasProcessingStarted)) {
+            if (isRetryWait && existingForUrl) {
+                targetBlock = existingForUrl
+            } else if (existingForUrl && (!isStartTrigger || !hasProcessingStarted)) {
                 targetBlock = existingForUrl
             } else {
                 const prevCount = attemptCounterByUrl.get(url) || 0
@@ -875,14 +896,20 @@ export function buildLogAttemptBlocks(
                 msgLower.includes('story is in calibre with story id') ||
                 msgLower.includes('added book ids:')
 
+            const isRetryWait =
+                /waiting\s+~?[\d.]+\s+minutes?\s+for/i.test(entry.message) ||
+                (msgLower.includes('waiting ') && msgLower.includes('minutes for'))
+
             const isFailure =
                 lvl === 'error' ||
                 lvl === 'critical' ||
+                isRetryWait ||
                 msgLower.includes('failed to download') ||
                 msgLower.includes('download failed') ||
                 msgLower.includes('failed to process') ||
                 msgLower.includes('failed to update') ||
                 msgLower.includes('queued retry') ||
+                msgLower.includes('to waiting queue for retry') ||
                 msgLower.includes('moving to hail-mary') ||
                 msgLower.includes('giving up on') ||
                 msgLower.includes('retry exhausted')
@@ -893,10 +920,20 @@ export function buildLogAttemptBlocks(
                 targetBlock.status = 'success'
             }
 
+            const retryNumMatch = entry.message.match(RETRY_NUM_RE)
+            if (retryNumMatch) {
+                const rNum = parseInt(retryNumMatch[1], 10)
+                if (!isNaN(rNum) && (!targetBlock.attemptNumber || rNum > targetBlock.attemptNumber)) {
+                    targetBlock.attemptNumber = rNum
+                }
+            }
+
             // If this line closes out the attempt, release active site/url/worker pointers
             const isClosed =
                 isSuccess ||
+                isRetryWait ||
                 msgLower.includes('queued retry') ||
+                msgLower.includes('to waiting queue for retry') ||
                 msgLower.includes('moving to hail-mary') ||
                 msgLower.includes('giving up on') ||
                 msgLower.includes('retry exhausted') ||
@@ -1204,12 +1241,53 @@ export function diagnoseErrorSignature(errorText?: string | null): ErrorDiagnosi
     if (!errorText) return null
     const lower = errorText.toLowerCase()
 
+    // 1. Story already contains all available chapters (e.g. "already contains 220 chapters")
+    if (
+        /already contains \d+ chapters/i.test(errorText) ||
+        lower.includes('already contains')
+    ) {
+        return {
+            category: 'Already Up to Date',
+            summary: 'The story already contains all chapters available online.',
+            hint: 'The local EPUB already has all chapters present on the source site. Retrying will not fetch new content until the author publishes additional chapters, or use "From Scratch" (Force Overwrite) to re-download completely.',
+        }
+    }
+
+    // 2. Chapter count mismatch or recognizable chapters missing
+    if (
+        lower.includes('chapter count mismatch') ||
+        /contains \d+ chapters, more than source/i.test(errorText) ||
+        lower.includes('more than source') ||
+        lower.includes("doesn't contain any recognizable chapters")
+    ) {
+        return {
+            category: 'Chapter Count Mismatch',
+            summary: 'The chapter count in Calibre does not match the online story chapters.',
+            hint: 'The story was likely re-indexed, or chapters were merged/deleted online. Use "From Scratch" (Force Overwrite) to re-download the story from Chapter 1.',
+        }
+    }
+
+    // 3. Local file updated more recently than online story
+    if (
+        lower.includes('updated more recently than story') ||
+        /updated\(.*\) more recently than story/i.test(errorText)
+    ) {
+        return {
+            category: 'File Newer Than Source',
+            summary: 'The local EPUB has a newer timestamp than the online story.',
+            hint: 'FanFicFare skipped updating because the local file timestamp is newer than the source site. Use "From Scratch" (Force Overwrite) to force an update.',
+        }
+    }
+
+    // 4. Anti-bot / Cloudflare Challenge (must not trigger on Calibre IDs like 15034)
     if (
         lower.includes('cloudflare') ||
         lower.includes('anubis') ||
-        lower.includes('503') ||
+        lower.includes('flaresolverr') ||
+        lower.includes('cf_clearance') ||
         lower.includes('challenge') ||
-        lower.includes('flaresolverr')
+        /(?:http\s*|status\s*|code\s*|error\s*|server\s*error:\s*)503\b/i.test(errorText) ||
+        /\b503\s+(?:service\s+unavailable|error|server\s+error)\b/i.test(errorText)
     ) {
         return {
             category: 'Anti-Bot / Cloudflare Challenge',
@@ -1220,11 +1298,17 @@ export function diagnoseErrorSignature(errorText?: string | null): ErrorDiagnosi
         }
     }
 
+    // 5. Story Removed or Restricted (404)
+    // Avoid bare substring '404' which matches book IDs like 14043!
     if (
-        lower.includes('404') ||
+        /(?:http\s*|status\s*|code\s*|error\s*|returned\s*)404\b/i.test(errorText) ||
+        /\b404\s+(?:not\s+found|error|client\s+error)\b/i.test(errorText) ||
         lower.includes('not found') ||
-        lower.includes('removed') ||
-        lower.includes('deleted')
+        lower.includes('story does not exist') ||
+        lower.includes('removed or restricted') ||
+        lower.includes('has been removed') ||
+        lower.includes('has been deleted') ||
+        lower.includes('story deleted')
     ) {
         return {
             category: 'Story Removed or Restricted (404)',
@@ -1233,12 +1317,16 @@ export function diagnoseErrorSignature(errorText?: string | null): ErrorDiagnosi
         }
     }
 
+    // 6. Auth / Adult Content Gate (401 / 403)
     if (
+        lower.includes('adult check') ||
         lower.includes('adult') ||
+        lower.includes('login failed') ||
         lower.includes('login') ||
-        lower.includes('401') ||
-        lower.includes('403') ||
-        lower.includes('unauthorized')
+        lower.includes('unauthorized') ||
+        lower.includes('forbidden') ||
+        /(?:http\s*|status\s*|code\s*|error\s*|client\s*error:\s*)(?:401|403)\b/i.test(errorText) ||
+        /\b(?:401|403)\s+(?:forbidden|unauthorized|client\s+error|error)\b/i.test(errorText)
     ) {
         return {
             category: 'Auth / Adult Content Gate',
@@ -1249,14 +1337,7 @@ export function diagnoseErrorSignature(errorText?: string | null): ErrorDiagnosi
         }
     }
 
-    if (lower.includes('chapter count mismatch')) {
-        return {
-            category: 'Chapter Count Mismatch',
-            summary: 'The chapter count in Calibre does not match the online story chapters.',
-            hint: 'The story was likely re-indexed, or chapters were merged/deleted online. Use "From Scratch" (Force Overwrite) to re-download the story from Chapter 1.',
-        }
-    }
-
+    // 7. Calibre Library Target Error
     if (
         lower.includes('calibredb') ||
         (lower.includes('calibre') &&

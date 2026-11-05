@@ -146,11 +146,21 @@ export default function AttemptBlockCard({
         })
     }, [activeBlock.lines])
 
-    const errorContextText =
-        activeBlock.traceback ||
-        displayLines.find((l) => l.level.toLowerCase() === 'error' || l.level.toLowerCase() === 'critical')?.message ||
-        null
-    const diagnosticHint = activeBlock.status === 'failed' ? diagnoseErrorSignature(errorContextText) : null
+    const diagnosticHint = useMemo(() => {
+        if (activeBlock.status !== 'failed') return null
+        if (activeBlock.traceback) {
+            const hint = diagnoseErrorSignature(activeBlock.traceback)
+            if (hint) return hint
+        }
+        const errorLines = displayLines.filter(
+            (l) => l.level.toLowerCase() === 'error' || l.level.toLowerCase() === 'critical'
+        )
+        for (const line of errorLines) {
+            const hint = diagnoseErrorSignature(line.message)
+            if (hint) return hint
+        }
+        return null
+    }, [activeBlock.status, activeBlock.traceback, displayLines])
 
     const borderColor = isHighlighted
         ? 'var(--accent)'
@@ -607,7 +617,7 @@ export default function AttemptBlockCard({
                     )}
 
                     {/* Stack Trace / Diagnostic Exception Section */}
-                    {block.traceback && (
+                    {activeBlock.traceback && (
                         <div
                             style={{
                                 padding: '0.75rem 0.9rem',
