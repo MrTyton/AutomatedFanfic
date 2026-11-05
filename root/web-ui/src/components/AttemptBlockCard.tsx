@@ -5,6 +5,7 @@ import {
     diagnoseErrorSignature,
     ensureExternalUrl,
     formatBlockTimeRange,
+    sortLogsChronologically,
     type LogAttemptBlock,
 } from '../utils/dashboardLogic'
 import { getSiteBadgeInfo, statusBadgeClass } from '../statusColors'
@@ -122,28 +123,7 @@ export default function AttemptBlockCard({
 
     const siteInfo = activeBlock.site ? getSiteBadgeInfo(activeBlock.site) : null
     const displayLines = useMemo(() => {
-        if (!activeBlock.lines || activeBlock.lines.length <= 1) return activeBlock.lines || []
-        const first = activeBlock.lines[0]
-        const last = activeBlock.lines[activeBlock.lines.length - 1]
-        const isReversed =
-            (first.seq !== undefined && last.seq !== undefined && first.seq > last.seq) ||
-            (() => {
-                const t1 = new Date(first.timestamp).getTime()
-                const t2 = new Date(last.timestamp).getTime()
-                return !isNaN(t1) && !isNaN(t2) && t1 > t2
-            })()
-        const base = isReversed ? [...activeBlock.lines].reverse() : [...activeBlock.lines]
-        return base.sort((a, b) => {
-            if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
-                return a.seq - b.seq
-            }
-            const tA = new Date(a.timestamp).getTime()
-            const tB = new Date(b.timestamp).getTime()
-            if (!isNaN(tA) && !isNaN(tB) && tA !== tB) {
-                return tA - tB
-            }
-            return 0
-        })
+        return sortLogsChronologically(activeBlock.lines || [])
     }, [activeBlock.lines])
 
     const diagnosticHint = useMemo(() => {

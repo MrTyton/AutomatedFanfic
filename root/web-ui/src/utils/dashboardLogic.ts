@@ -258,6 +258,48 @@ export function formatBlockTimeRange(startedAt?: string | null, endedAt?: string
     return `${shortStart} → ${shortEnd}`
 }
 
+/**
+ * Normalizes an array of LogEntry objects to top-down chronological order (oldest at index 0, newest at end).
+ * Detects whether the input is newest-first (via sequence numbers, timestamps, or API contract) and reverses/sorts accordingly.
+ */
+export function sortLogsChronologically(entries: LogEntry[]): LogEntry[] {
+    if (!entries || entries.length <= 1) return entries ? [...entries] : []
+
+    const isNewestFirst = (() => {
+        // 1. Check sequence number first if present across distinct items
+        for (let i = 0; i < entries.length - 1; i++) {
+            const aSeq = entries[i].seq
+            const bSeq = entries[i + 1].seq
+            if (aSeq !== undefined && bSeq !== undefined && aSeq !== bSeq) {
+                return aSeq > bSeq
+            }
+        }
+        // 2. Check timestamps if seq didn't distinguish
+        for (let i = 0; i < entries.length - 1; i++) {
+            const tA = parseLogTimestamp(entries[i].timestamp)
+            const tB = parseLogTimestamp(entries[i + 1].timestamp)
+            if (tA > 0 && tB > 0 && tA !== tB) {
+                return tA > tB
+            }
+        }
+        // 3. Fallback: by contract, GET /api/logs and /api/logs/startup return newest first
+        return true
+    })()
+
+    const baseList = isNewestFirst ? [...entries].reverse() : [...entries]
+    return baseList.sort((a, b) => {
+        if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
+            return a.seq - b.seq
+        }
+        const tA = parseLogTimestamp(a.timestamp)
+        const tB = parseLogTimestamp(b.timestamp)
+        if (tA > 0 && tB > 0 && tA !== tB) {
+            return tA - tB
+        }
+        return 0
+    })
+}
+
 export function ensureExternalUrl(raw?: string | null): string {
     if (!raw) return '#'
     const trimmed = raw.trim()
@@ -619,42 +661,7 @@ export function buildLogAttemptBlocks(
     if (entries.length === 0) return []
 
     // Normalize to chronological order (oldest -> newest):
-    // By API contract, GET /api/logs and /api/logs/startup return newest-first.
-    // Determine whether incoming entries are newest-first so we can reverse them.
-    const isNewestFirst = (() => {
-        if (entries.length < 2) return false
-        // 1. Check timestamps if they differ anywhere in the list
-        for (let i = 0; i < entries.length - 1; i++) {
-            const tA = parseLogTimestamp(entries[i].timestamp)
-            const tB = parseLogTimestamp(entries[i + 1].timestamp)
-            if (tA > 0 && tB > 0 && tA !== tB) {
-                return tA > tB
-            }
-        }
-        // 2. Check seq if timestamps are identical
-        for (let i = 0; i < entries.length - 1; i++) {
-            const aSeq = entries[i].seq
-            const bSeq = entries[i + 1].seq
-            if (aSeq !== undefined && bSeq !== undefined && aSeq !== bSeq) {
-                return aSeq > bSeq
-            }
-        }
-        // 3. Fallback: by contract, GET /api/logs returns newest first.
-        return true
-    })()
-
-    const baseList = isNewestFirst ? [...entries].reverse() : [...entries]
-    const chronological = baseList.sort((a, b) => {
-        const tA = parseLogTimestamp(a.timestamp)
-        const tB = parseLogTimestamp(b.timestamp)
-        if (tA > 0 && tB > 0 && tA !== tB) {
-            return tA - tB
-        }
-        if (a.seq !== undefined && b.seq !== undefined && a.seq !== b.seq) {
-            return a.seq - b.seq
-        }
-        return 0
-    })
+    const chronological = sortLogsChronologically(entries)
 
     const titleByUrl = new Map<string, string>()
     const errorByUrl = new Map<string, string>()
@@ -1206,7 +1213,8 @@ export function formatAttemptBlockAsText(block: LogAttemptBlock): string {
     const header = `=== ${block.title} (${block.site || 'system'}) — Attempt #${block.attemptNumber} [${block.status.toUpperCase()}] ===`
     const urlLine = block.url ? `URL: ${block.url}` : ''
     const windowLine = `Time: ${block.startedAt} -> ${block.endedAt}`
-    const logLines = block.lines.map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`).join('\n')
+    const sortedLines = sortLogsChronologically(block.lines || [])
+    const logLines = sortedLines.map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`).join('\n')
     const tracePart = block.traceback ? `\n--- Stack Trace / Diagnostic Output ---\n${block.traceback}` : ''
 
     const mainBlockText = [header, urlLine, windowLine, '--- Execution Log ---', logLines, tracePart]
@@ -1218,7 +1226,8 @@ export function formatAttemptBlockAsText(block: LogAttemptBlock): string {
         if (otherAttempts.length > 0) {
             const historyParts = otherAttempts.map((other) => {
                 const subHeader = `--- Attempt #${other.attemptNumber} [${other.status.toUpperCase()}] (${other.startedAt} -> ${other.endedAt}) ---`
-                const subLogs = other.lines.map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`).join('\n')
+                const subSorted = sortLogsChronologically(other.lines || [])
+                const subLogs = subSorted.map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`).join('\n')
                 const subTrace = other.traceback ? `\nStack Trace / Diagnostic Output:\n${other.traceback}` : ''
                 return [subHeader, subLogs, subTrace].filter(Boolean).join('\n')
             })
@@ -1378,6 +1387,24 @@ export function scrubPiiFromLogText(input: string, options?: PiiScrubOptions): P
     let text = input
     let redactionCount = 0
     const detectedTypes = new Set<string>()
+    const discoveredIdentities = new Map<string, string>()
+
+    const IGNORED_IDENTITIES = new Set([
+        'none',
+        'not',
+        'not specified',
+        'true',
+        'false',
+        'null',
+        'undefined',
+        'device',
+        'email',
+        'app',
+        'system',
+        'target',
+        'account',
+        'default',
+    ])
 
     // 1. Email addresses
     text = text.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, () => {
@@ -1386,7 +1413,135 @@ export function scrubPiiFromLogText(input: string, options?: PiiScrubOptions): P
         return '[REDACTED_EMAIL]'
     })
 
-    // 2. Pushbullet tokens (o.xxxx) or Bearer tokens
+    // 2. Email accounts without @ (e.g. "Email Account: vavoysh.fanfiction" or config "email = 'vavoysh.fanfiction'")
+    text = text.replace(
+        /\b(Email\s+Account:\s*)([^\r\n]+)/gi,
+        (_match, prefix: string, account: string) => {
+            const trimmed = account.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_EMAIL]')
+            redactionCount++
+            detectedTypes.add('email account')
+            return `${prefix}[REDACTED_EMAIL]`
+        }
+    )
+    text = text.replace(
+        /\b(email(?:_account)?\s*=\s*["'])([^"'\r\n]+)(["'])/gi,
+        (_match, prefix: string, val: string, suffix: string) => {
+            const trimmed = val.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_EMAIL]')
+            redactionCount++
+            detectedTypes.add('email account')
+            return `${prefix}[REDACTED_EMAIL]${suffix}`
+        }
+    )
+    text = text.replace(
+        /\b(email_account\s*:\s*)([^\r\n\s]+)/gi,
+        (_match, prefix: string, val: string) => {
+            const trimmed = val.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_EMAIL]')
+            redactionCount++
+            detectedTypes.add('email account')
+            return `${prefix}[REDACTED_EMAIL]`
+        }
+    )
+
+    // 3. Notification device names and device IDs (e.g. "Pushbullet Device: Foldly", "device = 'Foldly'", "pbul://.../device")
+    text = text.replace(
+        /\b(Pushbullet\s+Device:\s*)([^\r\n]+)/gi,
+        (_match, prefix: string, device: string) => {
+            const trimmed = device.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_DEVICE]')
+            redactionCount++
+            detectedTypes.add('device name')
+            return `${prefix}[REDACTED_DEVICE]`
+        }
+    )
+    text = text.replace(
+        /\b(Pushbullet\s+device\s+specified:\s*)([^\r\n.]+)(\.\s*Finding\s+device\s+ID)/gi,
+        (_match, prefix: string, device: string, suffix: string) => {
+            const trimmed = device.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_DEVICE]')
+            redactionCount++
+            detectedTypes.add('device name')
+            return `${prefix}[REDACTED_DEVICE]${suffix}`
+        }
+    )
+    text = text.replace(
+        /\b(Pushbullet\s+device\s+['"])([^'"]+)(['"]\s+not\s+found)/gi,
+        (_match, prefix: string, device: string, suffix: string) => {
+            const trimmed = device.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_DEVICE]')
+            redactionCount++
+            detectedTypes.add('device name')
+            return `${prefix}[REDACTED_DEVICE]${suffix}`
+        }
+    )
+    text = text.replace(
+        /\b(Found\s+device\s+ID:\s*)([^\r\n\s]+)/gi,
+        (_match, prefix: string, id: string) => {
+            const trimmed = id.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            redactionCount++
+            detectedTypes.add('device ID')
+            return `${prefix}[REDACTED_DEVICE_ID]`
+        }
+    )
+    text = text.replace(
+        /(?<!Pushbullet\s)\b(device\s*=\s*["'])([^"'\r\n]+)(["'])/gi,
+        (_match, prefix: string, val: string, suffix: string) => {
+            const trimmed = val.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_DEVICE]')
+            redactionCount++
+            detectedTypes.add('device name')
+            return `${prefix}[REDACTED_DEVICE]${suffix}`
+        }
+    )
+    text = text.replace(
+        /(?<!Pushbullet\s)\b(device\s*:\s*)([^\r\n\s]+)/gi,
+        (_match, prefix: string, val: string) => {
+            const trimmed = val.trim()
+            if (!trimmed || IGNORED_IDENTITIES.has(trimmed.toLowerCase()) || trimmed.startsWith('[REDACTED')) {
+                return _match
+            }
+            discoveredIdentities.set(trimmed, '[REDACTED_DEVICE]')
+            redactionCount++
+            detectedTypes.add('device name')
+            return `${prefix}[REDACTED_DEVICE]`
+        }
+    )
+    text = text.replace(
+        /\b(pbul:\/\/[^\s/]+)\/(?!(\[REDACTED))([^\/\s?#\r\n]+)/gi,
+        (_match, prefix: string, _bracket: string, _device: string) => {
+            redactionCount++
+            detectedTypes.add('device name')
+            return `${prefix}/[REDACTED_DEVICE]`
+        }
+    )
+
+    // 4. Pushbullet tokens (o.xxxx) or Bearer tokens
     text = text.replace(/\bo\.[A-Za-z0-9]{12,}\b/g, () => {
         redactionCount++
         detectedTypes.add('Pushbullet token')
@@ -1398,7 +1553,7 @@ export function scrubPiiFromLogText(input: string, options?: PiiScrubOptions): P
         return 'Bearer [REDACTED_TOKEN]'
     })
 
-    // 3. Key-value secrets (password, token, cf_clearance, cookie, api_key, secret)
+    // 5. Key-value secrets (password, token, cf_clearance, cookie, api_key, secret)
     text = text.replace(
         /\b(password|passwd|secret|api_key|apikey|access_token|auth_token|cf_clearance|session_id|phpbb3_[a-z0-9_]+)\s*([=:])\s*([^\s,;'"&\])}]+)/gi,
         (_match, key: string, sep: string) => {
@@ -1408,7 +1563,7 @@ export function scrubPiiFromLogText(input: string, options?: PiiScrubOptions): P
         }
     )
 
-    // 4. Local user filesystem paths (/Users/name/, /home/name/, C:\Users\name\)
+    // 6. Local user filesystem paths (/Users/name/, /home/name/, C:\Users\name\)
     text = text.replace(/(\/Users\/|\/home\/)([^/\s:'"]+)/g, (_match, prefix: string, user: string) => {
         if (user === '[REDACTED_USER]' || user === 'app') return _match
         redactionCount++
@@ -1422,7 +1577,7 @@ export function scrubPiiFromLogText(input: string, options?: PiiScrubOptions): P
         return `${prefix}[REDACTED_USER]`
     })
 
-    // 5. IPv4 addresses (excluding 127.0.0.1 and 0.0.0.0)
+    // 7. IPv4 addresses (excluding 127.0.0.1 and 0.0.0.0)
     text = text.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, (ip) => {
         if (ip === '127.0.0.1' || ip === '0.0.0.0') return ip
         redactionCount++
@@ -1430,7 +1585,7 @@ export function scrubPiiFromLogText(input: string, options?: PiiScrubOptions): P
         return '[REDACTED_IP]'
     })
 
-    // 6. Optional: Redact story URLs and story title
+    // 8. Optional: Redact story URLs and story title
     if (options?.redactStoryUrls) {
         text = text.replace(/https?:\/\/[^\s<>"')`\]]+/gi, (url) => {
             if (url.includes('github.com')) return url
@@ -1447,6 +1602,20 @@ export function scrubPiiFromLogText(input: string, options?: PiiScrubOptions): P
                 redactionCount++
                 detectedTypes.add('story title')
                 return '[REDACTED_STORY_TITLE]'
+            })
+        }
+    }
+
+    // 9. Scrub any discovered custom identity names (e.g. account username, device nickname) throughout the text
+    for (const [identity, replacement] of discoveredIdentities.entries()) {
+        if (identity.length < 3 || IGNORED_IDENTITIES.has(identity.toLowerCase())) continue
+        const escaped = identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const re = new RegExp(`\\b${escaped}\\b`, 'gi')
+        if (re.test(text)) {
+            text = text.replace(re, () => {
+                redactionCount++
+                detectedTypes.add(replacement === '[REDACTED_DEVICE]' ? 'device name' : 'email account')
+                return replacement
             })
         }
     }
@@ -1507,6 +1676,7 @@ export function buildGitHubIssueDraft(options: {
     block?: LogAttemptBlock | null
     rawLogsText?: string
     startupLogs?: LogEntry[]
+    includeStartupLogs?: boolean
     systemVersions?: Partial<SystemVersionInfo> | null
     mode?: 'runtime' | 'startup'
     scrubPii?: boolean
@@ -1516,6 +1686,7 @@ export function buildGitHubIssueDraft(options: {
         block,
         rawLogsText,
         startupLogs = [],
+        includeStartupLogs = true,
         systemVersions = null,
         mode = 'runtime',
         scrubPii = false,
@@ -1525,9 +1696,10 @@ export function buildGitHubIssueDraft(options: {
     let rawTitle = ''
     let rawBody = ''
 
+    const sortedStartupLogs = sortLogsChronologically(startupLogs)
     const startupLinesText =
-        startupLogs.length > 0
-            ? startupLogs
+        sortedStartupLogs.length > 0
+            ? sortedStartupLogs
                   .map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`)
                   .join('\n')
             : ''
@@ -1570,7 +1742,9 @@ export function buildGitHubIssueDraft(options: {
         const statusLabel = block.status === 'failed' ? 'Download failure' : `Log report (${block.status})`
         rawTitle = `[Bug] (${siteLabel}) ${statusLabel}: ${block.title}`
 
-        const logLinesText = block.lines
+        const sortedBlockLines = sortLogsChronologically(block.lines || [])
+
+        const logLinesText = sortedBlockLines
             .map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`)
             .join('\n')
 
@@ -1603,12 +1777,12 @@ export function buildGitHubIssueDraft(options: {
             )
         }
 
-        if (startupLinesText) {
+        if (includeStartupLogs && startupLinesText) {
             sections.push(
                 '',
                 '### Startup Log & Environment Context',
                 '<details>',
-                '<summary> Startup & Supervisor Initialization Logs</summary>',
+                '<summary>Startup & Supervisor Initialization Logs</summary>',
                 '',
                 '```text',
                 startupLinesText,
@@ -1636,7 +1810,7 @@ export function buildGitHubIssueDraft(options: {
             '```',
         ]
 
-        if (startupLinesText && mode !== 'startup') {
+        if (includeStartupLogs && startupLinesText && mode !== 'startup') {
             sections.push(
                 '',
                 '### Startup Log & Environment Context',

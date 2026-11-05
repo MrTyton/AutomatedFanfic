@@ -24,6 +24,7 @@ import {
     formatBlockTimeRange,
     categorizeSystemLog,
     updateStartupTracker,
+    sortLogsChronologically,
 } from './dashboardLogic.ts'
 import { STATUS_COLORS, getSiteBadgeInfo } from '../statusColors.ts'
 
@@ -1046,4 +1047,194 @@ test('buildLogAttemptBlocks gathers retry wait logs and ingestion logs into stor
     assert.equal(story164248.kind, 'story_attempt')
     assert.equal(story164248.site, 'royalroad')
     assert.equal(story164248.lines.length, 1)
+})
+
+test('sortLogsChronologically orders newest-first logs top-down (oldest at top, newest at bottom)', () => {
+    const burstLogsNewestFirst = [
+        { seq: 3, timestamp: '2026-11-05 01:02:03 AM', level: 'info', message: 'Third startup line' },
+        { seq: 2, timestamp: '2026-11-05 01:02:03 AM', level: 'info', message: 'Second startup line' },
+        { seq: 1, timestamp: '2026-11-05 01:02:03 AM', level: 'info', message: 'First startup line' },
+    ]
+
+    const sorted = sortLogsChronologically(burstLogsNewestFirst)
+    assert.equal(sorted[0].message, 'First startup line')
+    assert.equal(sorted[1].message, 'Second startup line')
+    assert.equal(sorted[2].message, 'Third startup line')
+})
+
+test('scrubPiiFromLogText auto-redacts email accounts without @ and device names across messages', () => {
+    const raw = [
+        '2026-11-05 01:02:03 AM [INFO]  Calibre Path: http://192.168.1.50:8195/#Fanfiction',
+        '2026-11-05 01:02:03 AM [INFO]  Email Server: imap.gmail.com',
+        '2026-11-05 01:02:03 AM [INFO]  Email Account: vavoysh.fanfiction',
+        '2026-11-05 01:02:03 AM [INFO]  Pushbullet Notifications: Enabled',
+        '2026-11-05 01:02:03 AM [INFO]  Pushbullet Device: Foldly',
+        '2026-11-05 01:02:04 AM [DEBUG] Pushbullet device specified: Foldly. Finding device ID...',
+        '2026-11-05 01:02:04 AM [DEBUG] Found device ID: u1bX987654321',
+        '2026-11-05 01:02:04 AM [DEBUG] Automatically added Pushbullet URL to Apprise: pbul://o.AbCdEfGhIjKlMnOpQrSt1234/u1bX987654321',
+        '2026-11-05 01:02:05 AM [DEBUG] Logging in to imap.gmail.com as vavoysh.fanfiction',
+        '2026-11-05 01:02:05 AM [DEBUG] Notification delivered to Foldly successfully',
+        '2026-11-05 01:02:06 AM [INFO]  Email Account: Not Specified',
+        '2026-11-05 01:02:06 AM [INFO]  Pushbullet Device: Not Specified',
+        'config = { device = "Foldly", email = "vavoysh.fanfiction" }',
+    ].join('\n')
+
+    const res = scrubPiiFromLogText(raw)
+
+    // vavoysh.fanfiction should be redacted everywhere
+    assert.equal(res.text.includes('vavoysh.fanfiction'), false)
+    assert.equal(res.text.includes('Email Account: [REDACTED_EMAIL]'), true)
+    assert.equal(res.text.includes('Logging in to imap.gmail.com as [REDACTED_EMAIL]'), true)
+    assert.equal(res.text.includes('email = "[REDACTED_EMAIL]"'), true)
+
+    // Foldly should be redacted everywhere
+    assert.equal(res.text.includes('Foldly'), false)
+    assert.equal(res.text.includes('Pushbullet Device: [REDACTED_DEVICE]'), true)
+    assert.equal(res.text.includes('Pushbullet device specified: [REDACTED_DEVICE]. Finding device ID...'), true)
+    assert.equal(res.text.includes('Notification delivered to [REDACTED_DEVICE] successfully'), true)
+    assert.equal(res.text.includes('device = "[REDACTED_DEVICE]"'), true)
+
+    // Device ID and Pushbullet token
+    assert.equal(res.text.includes('Found device ID: [REDACTED_DEVICE_ID]'), true)
+    assert.equal(res.text.includes('pbul://o.[REDACTED_TOKEN]/[REDACTED_DEVICE]'), true)
+
+    // "Not Specified" should NOT be redacted
+    assert.equal(res.text.includes('Email Account: Not Specified'), true)
+    assert.equal(res.text.includes('Pushbullet Device: Not Specified'), true)
+})
+
+test('buildGitHubIssueDraft puts startup logs in top-down chronological order and redacts email account & device name', () => {
+    // getStartupLogs returns logs newest-first
+    const newestFirstStartupLogs = [
+        {
+            seq: 6,
+            timestamp: '2026-11-05 01:02:03 AM',
+            level: 'info',
+            message: 'Calibre Path: http://192.168.1.100:8195/#Fanfiction',
+        },
+        {
+            seq: 5,
+            timestamp: '2026-11-05 01:02:03 AM',
+            level: 'info',
+            message: 'Pushbullet Device: Foldly',
+        },
+        {
+            seq: 4,
+            timestamp: '2026-11-05 01:02:03 AM',
+            level: 'info',
+            message: 'Email Account: vavoysh.fanfiction',
+        },
+        {
+            seq: 3,
+            timestamp: '2026-11-05 01:02:03 AM',
+            level: 'info',
+            message: '--- Configuration Details ---',
+        },
+        {
+            seq: 2,
+            timestamp: '2026-11-05 01:02:03 AM',
+            level: 'info',
+            message: 'Using configuration file: /config/config.toml',
+        },
+        {
+            seq: 1,
+            timestamp: '2026-11-05 01:02:03 AM',
+            level: 'info',
+            message: 'For issues and updates, please go to https://github.com/MrTyton/AutomatedFanfic',
+        },
+    ]
+
+    const draft = buildGitHubIssueDraft({
+        block: {
+            id: 'block-1',
+            kind: 'story_attempt',
+            site: 'spacebattles',
+            url: 'https://forums.spacebattles.com/threads/123',
+            title: 'Light Dragon',
+            attemptNumber: 1,
+            status: 'success',
+            isActive: false,
+            startedAt: '2026-11-05 01:02:04 AM',
+            endedAt: '2026-11-05 01:02:10 AM',
+            lines: [
+                {
+                    seq: 10,
+                    timestamp: '2026-11-05 01:02:04 AM',
+                    level: 'info',
+                    message: '(spacebattles) Processing Light Dragon',
+                },
+            ],
+        },
+        startupLogs: newestFirstStartupLogs,
+        scrubPii: true,
+    })
+
+    // Assert top-down reading order in startup block (first line at top, last line at bottom)
+    const startupIndex = draft.body.indexOf('Startup & Supervisor Initialization Logs')
+    assert.ok(startupIndex > 0)
+    const startupSnippet = draft.body.slice(startupIndex)
+
+    const forIssuesIdx = startupSnippet.indexOf('For issues and updates')
+    const configDetailsIdx = startupSnippet.indexOf('--- Configuration Details ---')
+    const emailAccountIdx = startupSnippet.indexOf('Email Account: [REDACTED_EMAIL]')
+    const pbDeviceIdx = startupSnippet.indexOf('Pushbullet Device: [REDACTED_DEVICE]')
+    const calibrePathIdx = startupSnippet.indexOf('Calibre Path: http://[REDACTED_IP]:8195/#Fanfiction')
+
+    // Top-down verification: earlier lines MUST appear before later lines!
+    assert.ok(forIssuesIdx < configDetailsIdx, 'For issues and updates must appear before Configuration Details')
+    assert.ok(configDetailsIdx < emailAccountIdx, 'Configuration Details must appear before Email Account')
+    assert.ok(emailAccountIdx < pbDeviceIdx, 'Email Account must appear before Pushbullet Device')
+    assert.ok(pbDeviceIdx < calibrePathIdx, 'Pushbullet Device must appear before Calibre Path')
+
+    // Redaction verification: raw PII must not appear
+    assert.equal(draft.body.includes('vavoysh.fanfiction'), false)
+    assert.equal(draft.body.includes('Foldly'), false)
+    assert.equal(draft.body.includes('192.168.1.100'), false)
+    assert.ok(draft.detectedPiiCount >= 3)
+})
+
+test('buildGitHubIssueDraft omits startup logs when includeStartupLogs is false while keeping environment versions', () => {
+    const startupLogs = [
+        { seq: 1, timestamp: '2026-11-05 01:02:03 AM', level: 'info', message: 'Starting AutomatedFanfic v7.2.0' },
+        { seq: 2, timestamp: '2026-11-05 01:02:03 AM', level: 'info', message: 'Python version: 3.15.2 (CPython)' },
+        { seq: 3, timestamp: '2026-11-05 01:02:03 AM', level: 'info', message: 'Email Account: vavoysh.fanfiction' },
+    ]
+
+    const draft = buildGitHubIssueDraft({
+        block: {
+            id: 'block-2',
+            kind: 'story_attempt',
+            site: 'spacebattles',
+            url: 'https://forums.spacebattles.com/threads/123',
+            title: 'Light Dragon',
+            attemptNumber: 1,
+            status: 'failed',
+            isActive: false,
+            startedAt: '2026-11-05 01:02:04 AM',
+            endedAt: '2026-11-05 01:02:10 AM',
+            lines: [
+                { seq: 10, timestamp: '2026-11-05 01:02:04 AM', level: 'error', message: 'Story download error' },
+            ],
+        },
+        startupLogs,
+        includeStartupLogs: false,
+    })
+
+    // Environment versions are still extracted and included
+    assert.ok(draft.body.includes('### Environment & Component Versions'))
+    assert.ok(draft.body.includes('- **AutomatedFanfic**: `v7.2.0`'))
+    assert.ok(draft.body.includes('- **Python**: `3.15.2 (CPython)`'))
+
+    // But the raw startup log block is omitted to keep the issue body concise and avoid URL truncation
+    assert.equal(draft.body.includes('Startup & Supervisor Initialization Logs'), false)
+    assert.equal(draft.body.includes('Email Account:'), false)
+
+    // Verify it easily fits within GitHub URL limit without truncation
+    const { url, isTruncated } = buildGitHubIssueUrl({
+        repo: 'MrTyton/AutomatedFanfic',
+        title: draft.title,
+        body: draft.body,
+    })
+    assert.equal(isTruncated, false)
+    assert.ok(url.includes('https://github.com/MrTyton/AutomatedFanfic/issues/new'))
 })

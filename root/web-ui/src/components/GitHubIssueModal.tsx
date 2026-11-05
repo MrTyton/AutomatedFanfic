@@ -3,6 +3,7 @@ import {
     buildGitHubIssueDraft,
     buildGitHubIssueUrl,
     scrubPiiFromLogText,
+    sortLogsChronologically,
     type LogAttemptBlock,
 } from '../utils/dashboardLogic'
 import { getStartupLogs, getSystemVersion, type LogEntry, type SystemVersionInfo } from '../api'
@@ -47,6 +48,7 @@ export default function GitHubIssueModal({
     })
     const [autoScrub, setAutoScrub] = useState<boolean>(true)
     const [redactStoryUrls, setRedactStoryUrls] = useState<boolean>(false)
+    const [includeStartupLogs, setIncludeStartupLogs] = useState<boolean>(false)
     const [startupLogs, setStartupLogs] = useState<LogEntry[]>([])
     const [systemVersions, setSystemVersions] = useState<SystemVersionInfo | null>(null)
 
@@ -60,7 +62,7 @@ export default function GitHubIssueModal({
 
     useEffect(() => {
         getStartupLogs(100)
-            .then((res) => setStartupLogs(res.items || []))
+            .then((res) => setStartupLogs(sortLogsChronologically(res.items || [])))
             .catch(() => {})
         getSystemVersion()
             .then((v) => setSystemVersions(v))
@@ -73,12 +75,13 @@ export default function GitHubIssueModal({
                 block,
                 rawLogsText,
                 startupLogs,
+                includeStartupLogs,
                 systemVersions,
                 mode,
                 scrubPii: autoScrub,
                 redactStoryUrls,
             }),
-        [block, rawLogsText, startupLogs, systemVersions, mode, autoScrub, redactStoryUrls]
+        [block, rawLogsText, startupLogs, includeStartupLogs, systemVersions, mode, autoScrub, redactStoryUrls]
     )
 
     const [title, setTitle] = useState(initialDraft.title)
@@ -316,6 +319,27 @@ export default function GitHubIssueModal({
                                     />
                                     <span>Also redact story URLs & title</span>
                                 </label>
+
+                                {mode !== 'startup' && startupLogs.length > 0 && (
+                                    <label
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            cursor: 'pointer',
+                                            color: '#6ee7b7',
+                                            fontWeight: 500,
+                                        }}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={includeStartupLogs}
+                                            onChange={(e) => setIncludeStartupLogs(e.target.checked)}
+                                            style={{ width: 'auto', margin: 0, flexShrink: 0 }}
+                                        />
+                                        <span>Include startup logs</span>
+                                    </label>
+                                )}
                             </div>
 
                             <span style={{ color: '#fcd34d', fontFamily: 'var(--font-mono)', fontSize: '0.73rem' }}>
