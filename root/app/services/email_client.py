@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 
 from config import EmailConfig
@@ -30,15 +31,58 @@ def set_timeout(timeout_duration):
         socket.setdefaulttimeout(old_timeout)
 
 
+class _GetUrlsLogCaptureHandler(logging.Handler):
+    """Capture ERROR logs and Royal Road click-through diagnostics from fanficfare.geturls."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.messages: list[str] = []
+        self.saw_royalroad_clickthrough: bool = False
+        self.royalroad_redirects: list[str] = []
+        self.on_error_callbacks: list[Callable[[], None]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = record.getMessage()
+        if record.levelno >= logging.ERROR:
+            self.messages.append(msg)
+            for callback in self.on_error_callbacks:
+                callback()
+        elif "Doing royalroad click through link workaround" in msg:
+            self.saw_royalroad_clickthrough = True
+        elif msg.startswith("Royalroad redirect to:"):
+            self.royalroad_redirects.append(
+                msg.removeprefix("Royalroad redirect to:").strip()
+            )
+
+    def reset(self) -> None:
+        """Clear captured messages and Royal Road click-through state before a retry."""
+        self.messages.clear()
+        self.saw_royalroad_clickthrough = False
+        self.royalroad_redirects.clear()
+
+
 @contextmanager
 def suppress_logging():
-    """Temporarily suppress all logging output during URL extraction."""
-    old_level = logging.root.manager.disable
-    logging.disable(logging.CRITICAL)
+    """Suppress general logging output while capturing fanficfare.geturls errors and Royal Road diagnostics."""
+    old_disable = logging.root.manager.disable
+    old_root_level = logging.root.level
+    geturls_logger = logging.getLogger("fanficfare.geturls")
+    old_geturls_level = geturls_logger.level
+    old_propagate = geturls_logger.propagate
+    handler = _GetUrlsLogCaptureHandler()
+    geturls_logger.addHandler(handler)
+    geturls_logger.setLevel(logging.DEBUG)
+    geturls_logger.propagate = False
+    logging.disable(logging.NOTSET)
+    logging.root.setLevel(logging.CRITICAL + 1)
     try:
-        yield
+        yield handler
     finally:
-        logging.disable(old_level)
+        logging.root.setLevel(old_root_level)
+        logging.disable(old_disable)
+        geturls_logger.removeHandler(handler)
+        geturls_logger.setLevel(old_geturls_level)
+        geturls_logger.propagate = old_propagate
 
 
 class EmailInfo:
@@ -157,6 +201,26 @@ class EmailInfo:
         self._geturls_ini_mtime = self._ini_mtime()
         self._last_ini_hash = self._current_ini_hash()
 
+    def _reset_geturls_state(self) -> None:
+        """Reset cached Royal Road adapter, BasicCache, and CookieJar on _geturls."""
+        if self._geturls is None:
+            return
+        self._geturls.saved_royalroad_adapter = None
+        cfg = getattr(self._geturls, "configuration", None)
+        if cfg is not None:
+            try:
+                basic_cache = cfg.get_basic_cache()
+                if basic_cache is not None and hasattr(basic_cache, "basic_cache"):
+                    basic_cache.basic_cache.clear()
+            except Exception:
+                pass
+            try:
+                cookiejar = cfg.get_cookiejar()
+                if cookiejar is not None and hasattr(cookiejar, "clear"):
+                    cookiejar.clear()
+            except Exception:
+                pass
+
     def get_urls(self) -> set[str]:
         """Extract fanfiction URLs from the configured email mailbox."""
         current_hash = self._current_ini_hash()
@@ -169,9 +233,12 @@ class EmailInfo:
             self._build_geturls()
         assert self._geturls is not None
 
-        urls = set()
+        urls: set[str] = set()
+        self._reset_geturls_state()
 
-        with set_timeout(180), suppress_logging():
+        with set_timeout(180), suppress_logging() as log_capture:
+            log_capture.on_error_callbacks.append(self._reset_geturls_state)
+            errors_to_check: list[str] = []
             try:
                 urls = set(
                     self._geturls.get_urls_from_imap(
@@ -180,33 +247,65 @@ class EmailInfo:
                 )
             except Exception as e:
                 ff_logging.log_failure(f"Failed to get URLs: {e}")
-                err_msg = str(e).lower()
-                if (
-                    flaresolverr.is_flaresolverr_crash(e)
-                    or "timed out" in err_msg
-                    or "timeout" in err_msg
-                ):
-                    ff_logging.log(
-                        f"EmailWatcher: Detected FlareSolverr issue ({e}) during email URL extraction; attempting auto-recovery..."
-                    )
-                    recovered = flaresolverr.recover_flaresolverr_crashes(
-                        target_site=None,
-                        personal_ini_path=self.personal_ini,
-                    )
-                    if recovered > 0:
-                        ff_logging.log(
-                            f"EmailWatcher: Recovered {recovered} FlareSolverr session(s); retrying URL extraction..."
+                errors_to_check.append(str(e))
+
+            for err_msg in log_capture.messages:
+                ff_logging.log_failure(f"EmailWatcher: {err_msg}")
+                errors_to_check.append(err_msg)
+
+            flaresolverr_err = next(
+                (
+                    err
+                    for err in errors_to_check
+                    if flaresolverr.is_flaresolverr_crash(err)
+                    or "timed out" in err.lower()
+                    or "timeout" in err.lower()
+                ),
+                None,
+            )
+
+            has_royalroad_url = any("royalroad" in u.lower() for u in urls)
+            if (
+                flaresolverr_err is None
+                and log_capture.saw_royalroad_clickthrough
+                and not has_royalroad_url
+                and not errors_to_check
+            ):
+                redirects_str = (
+                    ", ".join(log_capture.royalroad_redirects)
+                    if log_capture.royalroad_redirects
+                    else "none"
+                )
+                flaresolverr_err = f"Royal Road email click-through failed to resolve any story URLs (redirects: {redirects_str})"
+                ff_logging.log_failure(f"EmailWatcher: {flaresolverr_err}")
+
+            if flaresolverr_err is not None:
+                ff_logging.log(
+                    f"EmailWatcher: Detected FlareSolverr issue ({flaresolverr_err}) during email URL extraction; attempting auto-recovery..."
+                )
+                self._reset_geturls_state()
+                recovered = flaresolverr.recover_flaresolverr_crashes(
+                    target_site=None,
+                    personal_ini_path=self.personal_ini,
+                )
+                ff_logging.log(
+                    f"EmailWatcher: FlareSolverr recovery completed ({recovered} session(s) destroyed); retrying URL extraction..."
+                )
+                log_capture.reset()
+                try:
+                    urls.update(
+                        self._geturls.get_urls_from_imap(
+                            self.server, self.email, self.password, self.mailbox
                         )
-                        try:
-                            urls = set(
-                                self._geturls.get_urls_from_imap(
-                                    self.server, self.email, self.password, self.mailbox
-                                )
-                            )
-                        except Exception as retry_err:
-                            ff_logging.log_failure(
-                                f"EmailWatcher: Retry after FlareSolverr recovery failed: {retry_err}"
-                            )
+                    )
+                    for retry_err_msg in log_capture.messages:
+                        ff_logging.log_failure(
+                            f"EmailWatcher: Retry after FlareSolverr recovery failed: {retry_err_msg}"
+                        )
+                except Exception as retry_err:
+                    ff_logging.log_failure(
+                        f"EmailWatcher: Retry after FlareSolverr recovery failed: {retry_err}"
+                    )
 
         if urls:
             system_utils.reclaim_memory()

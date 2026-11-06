@@ -27,6 +27,23 @@ class TestFlareSolverrCrashDetection:
         exc = RuntimeError("Error solving the challenge. Message: tab crashed")
         assert flaresolverr.is_flaresolverr_crash(exc) is True
 
+    def test_detects_missing_session_and_flaresolverr_errors(self):
+        assert (
+            flaresolverr.is_flaresolverr_crash(
+                "FlareSolverr says: Error: The session doesn't exist."
+            )
+            is True
+        )
+        assert (
+            flaresolverr.is_flaresolverr_crash("Error: session does not exist") is True
+        )
+        assert (
+            flaresolverr.is_flaresolverr_crash(
+                "FlareSolverr says: Error: Error solving the challenge."
+            )
+            is True
+        )
+
     def test_returns_false_for_none(self):
         assert flaresolverr.is_flaresolverr_crash(None) is False
 
@@ -180,3 +197,30 @@ flaresolverr_proxy: http://192.168.1.161:8191/v1
             )
             assert recovered == 2
             assert mock_destroy.call_count == 2
+
+    def test_recover_clears_cached_site_cookiejars(self, tmp_path: Path):
+        ini_content = """
+[www.royalroad.com]
+use_flaresolverr_proxy: true
+flaresolverr_proxy: http://192.168.1.161:8191/v1
+flaresolverr_session: FanFicFareSession_www_royalroad_com
+"""
+        ini_file = tmp_path / "personal.ini"
+        ini_file.write_text(ini_content, encoding="utf-8")
+
+        with (
+            patch.object(
+                flaresolverr,
+                "list_flaresolverr_sessions",
+                return_value=["FanFicFareSession_www_royalroad_com"],
+            ),
+            patch.object(
+                flaresolverr, "destroy_flaresolverr_session", return_value=True
+            ),
+            patch("antibot.cookies.clear_site_cookiejars") as mock_clear_jars,
+        ):
+            flaresolverr.recover_flaresolverr_crashes(
+                target_site="royalroad",
+                personal_ini_path=ini_file,
+            )
+            mock_clear_jars.assert_called_once()

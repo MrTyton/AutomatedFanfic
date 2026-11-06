@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import tempfile
@@ -150,6 +151,189 @@ class TestUrlIngester(unittest.TestCase):
         assert urls == {"https://www.royalroad.com/fiction/123/story"}
         mock_recover.assert_called_once()
         assert mock_instance.get_urls_from_imap.call_count == 2
+
+    @patch("antibot.flaresolverr.recover_flaresolverr_crashes", return_value=1)
+    @patch("services.email_client.geturls.GetURLs")
+    def test_email_info_get_urls_captures_swallowed_geturls_logger_error_and_recovers(
+        self, mock_get_urls_class, mock_recover
+    ):
+        """When FanFicFare's get_urls_from_imap catches a cleanup_url exception internally
+        and logs it to fanficfare.geturls logger without raising, EmailInfo.get_urls()
+        must capture the logged error, log it via ff_logging.log_failure, reset
+        saved_royalroad_adapter, trigger FlareSolverr recovery, and retry."""
+        mock_instance = MagicMock()
+        mock_instance.saved_royalroad_adapter = MagicMock()
+        mock_get_urls_class.return_value = mock_instance
+
+        call_count = 0
+
+        def fake_get_urls_from_imap(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                logging.getLogger("fanficfare.geturls").error(
+                    "Failed to read email content: FlareSolverr says: Error: The session doesn't exist."
+                )
+                return []
+            return ["https://www.royalroad.com/fiction/39408/story"]
+
+        mock_instance.get_urls_from_imap.side_effect = fake_get_urls_from_imap
+
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            mailbox="test_mailbox",
+        )
+        email_info = EmailInfo(email_config, ConfigStore({}))
+
+        with patch("services.email_client.ff_logging.log_failure") as mock_log_failure:
+            urls = email_info.get_urls()
+
+        assert urls == {"https://www.royalroad.com/fiction/39408/story"}
+        mock_recover.assert_called_once()
+        assert mock_instance.get_urls_from_imap.call_count == 2
+        assert mock_instance.saved_royalroad_adapter is None
+        mock_log_failure.assert_called_once()
+        assert "The session doesn't exist" in mock_log_failure.call_args[0][0]
+
+    @patch("services.email_client.geturls.GetURLs")
+    def test_email_info_get_urls_resets_saved_royalroad_adapter_before_poll(
+        self, mock_get_urls_class
+    ):
+        """EmailInfo.get_urls() resets saved_royalroad_adapter to None before each poll
+        so stale/unauthenticated adapters or expired FlareSolverr sessions do not persist forever.
+        """
+        mock_instance = MagicMock()
+        mock_instance.saved_royalroad_adapter = MagicMock(name="stale_rr_adapter")
+        mock_get_urls_class.return_value = mock_instance
+
+        observed_adapter_at_call = "not_checked"
+
+        def fake_get_urls_from_imap(*args, **kwargs):
+            nonlocal observed_adapter_at_call
+            observed_adapter_at_call = mock_instance.saved_royalroad_adapter
+            return ["https://www.royalroad.com/fiction/164248/story"]
+
+        mock_instance.get_urls_from_imap.side_effect = fake_get_urls_from_imap
+
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            mailbox="test_mailbox",
+        )
+        email_info = EmailInfo(email_config, ConfigStore({}))
+        urls = email_info.get_urls()
+
+        assert urls == {"https://www.royalroad.com/fiction/164248/story"}
+        assert observed_adapter_at_call is None
+
+    @patch("antibot.flaresolverr.recover_flaresolverr_crashes", return_value=0)
+    @patch("services.email_client.geturls.GetURLs")
+    def test_email_info_get_urls_clears_basic_cache_and_cookiejar_and_resets_mid_email_on_error(
+        self, mock_get_urls_class, mock_recover
+    ):
+        """EmailInfo.get_urls() clears BasicCache and CookieJar before polling, resets
+        saved_royalroad_adapter immediately when a MIME part logs an error, and retries
+        even when recover_flaresolverr_crashes returns 0 (session already gone)."""
+        mock_instance = MagicMock()
+        mock_basic_cache = MagicMock()
+        mock_basic_cache.basic_cache = {
+            "https://www.royalroad.com/account/login": (b"stale_html", "url")
+        }
+        mock_cookiejar = MagicMock()
+        mock_instance.configuration.get_basic_cache.return_value = mock_basic_cache
+        mock_instance.configuration.get_cookiejar.return_value = mock_cookiejar
+        mock_get_urls_class.return_value = mock_instance
+
+        adapter_after_part1_error = "not_checked"
+        cache_at_call1 = None
+        call_count = 0
+
+        def fake_get_urls_from_imap(*args, **kwargs):
+            nonlocal call_count, adapter_after_part1_error, cache_at_call1
+            call_count += 1
+            if call_count == 1:
+                cache_at_call1 = dict(mock_basic_cache.basic_cache)
+                # Simulate geturls.py line 176 setting saved_royalroad_adapter before performLogin() fails
+                mock_instance.saved_royalroad_adapter = MagicMock(
+                    name="half_initialized_adapter"
+                )
+                logging.getLogger("fanficfare.geturls").error(
+                    "Failed to read email content: FlareSolverr says: Error: The session doesn't exist."
+                )
+                # Immediately after logger.error in part 1 (text/plain), saved_royalroad_adapter must be None for part 2 (text/html)
+                adapter_after_part1_error = mock_instance.saved_royalroad_adapter
+                return []
+            return ["https://www.royalroad.com/fiction/118891/story"]
+
+        mock_instance.get_urls_from_imap.side_effect = fake_get_urls_from_imap
+
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            mailbox="test_mailbox",
+        )
+        email_info = EmailInfo(email_config, ConfigStore({}))
+        urls = email_info.get_urls()
+
+        assert urls == {"https://www.royalroad.com/fiction/118891/story"}
+        assert cache_at_call1 == {}
+        mock_cookiejar.clear.assert_called()
+        assert adapter_after_part1_error is None
+        assert mock_instance.get_urls_from_imap.call_count == 2
+
+    @patch("antibot.flaresolverr.recover_flaresolverr_crashes", return_value=1)
+    @patch("services.email_client.geturls.GetURLs")
+    def test_email_info_get_urls_recovers_on_silent_royalroad_tos_redirect(
+        self, mock_get_urls_class, mock_recover
+    ):
+        """When Royal Road click-through silently redirects to /tos (HTTP 200, no exception),
+        EmailInfo.get_urls() detects the failed click-through via fanficfare.geturls debug logs,
+        logs a failure, recovers FlareSolverr, and retries."""
+        mock_instance = MagicMock()
+        mock_get_urls_class.return_value = mock_instance
+
+        call_count = 0
+
+        def fake_get_urls_from_imap(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            logger = logging.getLogger("fanficfare.geturls")
+            if call_count == 1:
+                logger.debug(
+                    "Doing royalroad click through link workaround(https://email-click.royalroad.com/ls/click?upn=abc)"
+                )
+                logger.debug("Royalroad redirect to: https://www.royalroad.com/tos")
+                return []
+            logger.debug(
+                "Doing royalroad click through link workaround(https://email-click.royalroad.com/ls/click?upn=abc)"
+            )
+            logger.debug(
+                "Royalroad redirect to: https://www.royalroad.com/fiction/129182/story/chapter/1"
+            )
+            return ["https://www.royalroad.com/fiction/129182/story"]
+
+        mock_instance.get_urls_from_imap.side_effect = fake_get_urls_from_imap
+
+        email_config = EmailConfig(
+            email="testuser",
+            password="test_password",
+            server="test_server",
+            mailbox="test_mailbox",
+        )
+        email_info = EmailInfo(email_config, ConfigStore({}))
+
+        with patch("services.email_client.ff_logging.log_failure") as mock_log_failure:
+            urls = email_info.get_urls()
+
+        assert urls == {"https://www.royalroad.com/fiction/129182/story"}
+        mock_recover.assert_called_once()
+        assert mock_instance.get_urls_from_imap.call_count == 2
+        mock_log_failure.assert_called_once()
+        assert "https://www.royalroad.com/tos" in mock_log_failure.call_args[0][0]
 
     @patch("services.email_client.geturls.GetURLs")
     def test_email_info_get_urls_exception_handling(self, mock_get_urls_class):

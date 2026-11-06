@@ -7,6 +7,7 @@ import time
 
 import requests
 
+from antibot import cookies
 from config.ini_resolver import resolve_ini_path
 import ff_logging
 
@@ -16,6 +17,9 @@ CRASH_INDICATORS: tuple[str, ...] = (
     "detachfromtarget",
     "page crash",
     "session deleted because of page crash",
+    "the session doesn't exist",
+    "session does not exist",
+    "flaresolverr says: error",
 )
 
 
@@ -222,6 +226,7 @@ def recover_flaresolverr_crashes(
     personal_ini_path: str | Path,
 ) -> int:
     """Recover from FlareSolverr tab crashes by destroying dead sessions."""
+    cookies.clear_site_cookiejars()
     configs = get_flaresolverr_configs(personal_ini_path)
     if not configs:
         ff_logging.log_debug(
