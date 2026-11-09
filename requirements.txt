@@ -3,7 +3,7 @@
 
 # Core notification and configuration libraries
 apprise==2.1.0
-pydantic==2.14.2
+pydantic==2.14.3
 pydantic-settings==2.16.2
 
 # HTTP requests and web scraping
@@ -16,7 +16,7 @@ curl-cffi>=0.17.0
 beautifulsoup4==4.15.0
 html2text==2025.4.15
 html5lib==1.1
-soupsieve==3.0.4
+soupsieve==4.0.1
 
 # Text encoding and character detection
 chardet==7.7.0
@@ -37,13 +37,13 @@ pillow==13.0.0
 Brotli==1.2.1
 
 # Date/time handling and utilities
-python-dateutil==3.0.0
+python-dateutil==4.0.0
 pyparsing==3.3.3
 
 # Web server and API
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
-websockets==17.3
+websockets==17.4
 httpx>=0.28.0
 
 # Model Context Protocol (MCP) server
