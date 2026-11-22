@@ -173,3 +173,45 @@ port = 8080
 
 # Path to the SQLite history database file
 history_db_path = "/data/history.db"
+
+# ============================================================================
+# LIBRARY POLLER CONFIGURATION
+# Adaptive polling for existing Calibre stories when email updates are unavailable
+# ============================================================================
+# [library_poller]
+# # Whether the adaptive Calibre library update poller is enabled
+# enabled = false
+#
+# # Interval in hours between full Calibre library sync scans
+# library_sync_interval_hours = 6.0
+#
+# # Scheduler tick interval in seconds for dispatching due checks
+# tick_interval_seconds = 60.0
+#
+# [library_poller.sites.fanfiction]
+# # Whether polling is enabled for this site
+# enabled = true
+#
+# # Calibre tags required / excluded when selecting stories to poll
+# include_tags = ["In-Progress"]
+# exclude_tags = ["Completed", "Oneshot", "Abandoned"]
+#
+# # Optional custom Calibre search query overriding include/exclude tags
+# calibre_search_override = ""
+#
+# # Daily rate budget and minimum cooldown between checks on this site
+# max_checks_per_day = 24
+# min_interval_minutes = 30.0
+#
+# # Adaptive cadence tiers based on days since last story update
+# hot_max_age_days = 14
+# hot_interval_days = 1.5
+# warm_max_age_days = 90
+# warm_interval_days = 7.0
+# cool_max_age_days = 365
+# cool_interval_days = 21.0
+# dormant_interval_days = 60.0
+#
+# # Random jitter ratio (0.0-0.5) and max error backoff in days
+# jitter_ratio = 0.15
+# max_error_backoff_days = 30.0

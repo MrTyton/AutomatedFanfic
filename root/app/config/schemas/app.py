@@ -19,6 +19,7 @@ from pydantic_settings import (
 from config.schemas.calibre import CalibreConfig
 from config.schemas.email import EmailConfig
 from config.schemas.notifications import AppriseConfig, PushbulletConfig
+from config.schemas.poller import LibraryPollerConfig
 from config.schemas.process import ProcessConfig
 from config.schemas.retry import RetryConfig
 from config.schemas.web import WebConfig
@@ -145,6 +146,7 @@ class AppConfig(BaseSettings):
     retry: RetryConfig = Field(default_factory=RetryConfig)
     process: ProcessConfig = Field(default_factory=ProcessConfig)
     web: WebConfig = Field(default_factory=WebConfig)
+    library_poller: LibraryPollerConfig = Field(default_factory=LibraryPollerConfig)
 
     # Application settings
     version: str = Field(default=__version__, description="Application version")

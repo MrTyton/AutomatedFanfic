@@ -8,6 +8,7 @@ from config.schemas.calibre import (
 )
 from config.schemas.email import EmailConfig
 from config.schemas.notifications import AppriseConfig, PushbulletConfig
+from config.schemas.poller import LibraryPollerConfig, SitePollerConfig
 from config.schemas.process import ProcessConfig, get_cpu_count
 from config.schemas.retry import RetryConfig
 from config.schemas.web import WebConfig
@@ -20,6 +21,8 @@ __all__ = [
     "UpdateMethod",
     "PushbulletConfig",
     "AppriseConfig",
+    "LibraryPollerConfig",
+    "SitePollerConfig",
     "RetryConfig",
     "ProcessConfig",
     "get_cpu_count",
