@@ -66,6 +66,41 @@ CREATE TABLE IF NOT EXISTS notification_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_notification_events_sent_at ON notification_events(sent_at);
+
+CREATE TABLE IF NOT EXISTS poll_tracked_stories (
+    url                     TEXT    PRIMARY KEY,
+    site                    TEXT    NOT NULL,
+    calibre_id              TEXT    NOT NULL,
+    title                   TEXT,
+    last_update_date        TEXT,
+    update_date_exact       INTEGER NOT NULL DEFAULT 0,
+    known_chapters          INTEGER,
+    remote_status           TEXT,
+    last_checked_at         TEXT,
+    next_check_at           TEXT    NOT NULL,
+    consecutive_no_change   INTEGER NOT NULL DEFAULT 0,
+    consecutive_errors      INTEGER NOT NULL DEFAULT 0,
+    last_error              TEXT,
+    active                  INTEGER NOT NULL DEFAULT 1,
+    deleted_remotely        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_poll_tracked_site_active_next
+    ON poll_tracked_stories(site, active, next_check_at);
+
+CREATE TABLE IF NOT EXISTS poll_events (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    url                     TEXT    NOT NULL,
+    site                    TEXT    NOT NULL,
+    checked_at              TEXT    NOT NULL,
+    outcome                 TEXT    NOT NULL,
+    remote_chapters         INTEGER,
+    remote_updated_at       TEXT,
+    error_message           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_poll_events_site_checked
+    ON poll_events(site, checked_at);
 """
 
 
