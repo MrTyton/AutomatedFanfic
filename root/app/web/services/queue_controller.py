@@ -12,7 +12,7 @@ from models.active_urls import (
     mark_url_queued,
     remove_active_url,
 )
-from models.fanfic_info import FanficInfo
+from models.fanfic_info import DownloadSource, FanficInfo
 lazy from parsers import regex_parsing, url_patterns
 from web.services.calibre_lookup import _LockFactory
 from web.services.dashboard_snapshot import invalidate_history_cache
@@ -183,11 +183,12 @@ def enqueue_fanfic(state: Any, fanfic: FanficInfo) -> None:
         site=fanfic.site,
         title=fanfic.title,
         calibre_id=fanfic.calibre_id,
+        source=fanfic.source,
     )
     state.ingress_queue.put(fanfic)
     if state.history_recorder:
         state.history_recorder.record_download_created(
-            fanfic.url, fanfic.site, fanfic.behavior
+            fanfic.url, fanfic.site, fanfic.behavior, source=fanfic.source
         )
 
 
@@ -221,11 +222,15 @@ def ingest_single_url(
     *,
     force: bool = False,
     behavior_override: str | None = None,
+    source: DownloadSource = "manual",
     duplicate_prefix: str = "URL already in queue",
     added_suffix: str = " to processing queue",
 ) -> tuple[bool, str]:
     """Normalize, parse, deduplicate, mark queued, and enqueue a single URL."""
     fanfic = regex_parsing.generate_FanficInfo_from_url(raw_url, url_parsers)
+    fanfic.source = source
+    if source == "email":
+        fanfic.from_email = True
     if behavior_override:
         fanfic.behavior = behavior_override
     elif force:
@@ -235,13 +240,17 @@ def ingest_single_url(
         return False, f"{duplicate_prefix}: {fanfic.url}"
 
     mark_url_queued(
-        state.active_urls, fanfic.url, site=fanfic.site, behavior=fanfic.behavior
+        state.active_urls,
+        fanfic.url,
+        site=fanfic.site,
+        behavior=fanfic.behavior,
+        source=fanfic.source,
     )
     state.ingress_queue.put(fanfic)
 
     if state.history_recorder:
         state.history_recorder.record_download_created(
-            fanfic.url, fanfic.site, fanfic.behavior
+            fanfic.url, fanfic.site, fanfic.behavior, source=fanfic.source
         )
 
     return True, f"Added {fanfic.url} (site: {fanfic.site}){added_suffix}"
@@ -360,12 +369,14 @@ async def retry_now_action(
     if resolved_calibre_id and not fanfic.calibre_id:
         fanfic.calibre_id = resolved_calibre_id
 
+    existing_source = existing_meta.get("source")
     mark_url_queued(
         state.active_urls,
         fanfic.url,
         site=fanfic.site,
         title=fanfic.title,
         calibre_id=fanfic.calibre_id,
+        source=str(existing_source) if existing_source else fanfic.source,
     )
     state.ingress_queue.put(fanfic)
     if state.history_recorder:
@@ -506,12 +517,14 @@ def retry_all_action(state: Any) -> tuple[bool, str]:
         if calibre_id:
             fanfic.calibre_id = calibre_id
         if state.active_urls is not None:
+            meta_source = meta.get("source")
             mark_url_queued(
                 state.active_urls,
                 url,
                 site=site,
                 title=title,
                 calibre_id=calibre_id,
+                source=str(meta_source) if meta_source else None,
             )
         state.ingress_queue.put(fanfic)
         count += 1
@@ -643,6 +656,7 @@ def add_single_url_action(
     url: str,
     force: bool = False,
     update_method: str | None = None,
+    source: DownloadSource = "manual",
 ) -> tuple[bool, str]:
     """Ingest a single fanfiction URL into the processing queue."""
     if state.ingress_queue is None:
@@ -655,6 +669,7 @@ def add_single_url_action(
         parsers_map,
         force=force,
         behavior_override=update_method,
+        source=source,
         duplicate_prefix="URL already in queue",
         added_suffix=" to processing queue",
     )
@@ -664,6 +679,7 @@ def ingest_multiple_urls(
     state: Any,
     urls: list[str],
     update_method: str | None = None,
+    source: DownloadSource = "manual",
 ) -> list[tuple[bool, str]]:
     """Ingest multiple fanfiction URLs into the processing queue."""
     if state.ingress_queue is None:
@@ -680,6 +696,7 @@ def ingest_multiple_urls(
                 raw_url,
                 parsers_map,
                 behavior_override=update_method,
+                source=source,
                 duplicate_prefix="Already in queue",
                 added_suffix="",
             )

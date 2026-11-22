@@ -80,6 +80,7 @@ async def add_url(request: Request, body: AddUrlRequest) -> AddUrlResponse:
         body.url,
         force=body.force,
         update_method=body.update_method,
+        source="manual",
     )
     return AddUrlResponse(accepted=accepted, message=message)
 
@@ -88,7 +89,10 @@ async def add_url(request: Request, body: AddUrlRequest) -> AddUrlResponse:
 async def add_urls(request: Request, body: AddUrlsRequest) -> AddUrlsResponse:
     """Add multiple fanfiction URLs to the processing queue."""
     raw_results = queue_controller.ingest_multiple_urls(
-        request.app.state.web_state, body.urls, update_method=body.update_method
+        request.app.state.web_state,
+        body.urls,
+        update_method=body.update_method,
+        source="manual",
     )
     return AddUrlsResponse(
         results=[AddUrlResponse(accepted=acc, message=msg) for acc, msg in raw_results]

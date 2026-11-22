@@ -342,12 +342,21 @@ class Coordinator:
                     repeats=0,  # Individual stories start fresh, never inherit series repeats
                     retry_decision=task.retry_decision,
                     from_email=task.from_email,
+                    source=task.source,
                 )
-                mark_url_queued(self.active_urls, story_task.url, site=story_task.site)
+                mark_url_queued(
+                    self.active_urls,
+                    story_task.url,
+                    site=story_task.site,
+                    source=story_task.source,
+                )
                 if self.history_recorder is not None:
                     try:
                         self.history_recorder.record_download_created(
-                            story_task.url, story_task.site, story_task.behavior
+                            story_task.url,
+                            story_task.site,
+                            story_task.behavior,
+                            source=story_task.source,
                         )
                     except Exception as e:
                         ff_logging.log_debug(

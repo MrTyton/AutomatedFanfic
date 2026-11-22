@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS download_events (
     title           TEXT,
     calibre_id      TEXT,
     behavior        TEXT,
+    source          TEXT    NOT NULL DEFAULT 'unknown',
     status          TEXT    NOT NULL DEFAULT 'pending',
     error_message   TEXT,
     started_at      TEXT    NOT NULL,
@@ -99,6 +100,12 @@ def ensure_schema_sync(conn: sqlite3.Connection) -> None:
         pass
     try:
         conn.execute(
+            "ALTER TABLE download_events ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'"
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute(
             "ALTER TABLE email_events ADD COLUMN trigger TEXT NOT NULL DEFAULT 'poll'"
         )
     except sqlite3.OperationalError:
@@ -111,6 +118,12 @@ async def ensure_schema_async(conn: aiosqlite.Connection) -> None:
     await conn.executescript(_SCHEMA)
     try:
         await conn.execute("ALTER TABLE download_events ADD COLUMN updated_at TEXT")
+    except Exception:
+        pass
+    try:
+        await conn.execute(
+            "ALTER TABLE download_events ADD COLUMN source TEXT NOT NULL DEFAULT 'unknown'"
+        )
     except Exception:
         pass
     try:

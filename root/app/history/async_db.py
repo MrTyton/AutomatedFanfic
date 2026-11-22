@@ -339,7 +339,7 @@ class AsyncHistoryDB:
         async with self._connection() as conn:
             cursor = await conn.execute(
                 """WITH ranked_downloads AS (
-                       SELECT id, url, site, title, calibre_id, status,
+                       SELECT id, url, site, title, calibre_id, source, status,
                               error_message, started_at, completed_at,
                               COALESCE(completed_at, started_at) as timestamp,
                               ROW_NUMBER() OVER (
@@ -348,7 +348,7 @@ class AsyncHistoryDB:
                               ) as rn
                        FROM download_events
                    )
-                   SELECT id, url, site, title, calibre_id, status,
+                   SELECT id, url, site, title, calibre_id, source, status,
                           error_message, started_at, completed_at, timestamp
                    FROM ranked_downloads
                    WHERE rn = 1
@@ -361,14 +361,14 @@ class AsyncHistoryDB:
     async def get_uncompleted_downloads(self) -> list[dict]:
         async with self._connection() as conn:
             cursor = await conn.execute("""WITH ranked_downloads AS (
-                       SELECT id, url, site, title, calibre_id, behavior, status, error_message, started_at,
+                       SELECT id, url, site, title, calibre_id, behavior, source, status, error_message, started_at,
                               ROW_NUMBER() OVER (
                                   PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
                                   ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
                               ) as rn
                        FROM download_events
                    )
-                   SELECT id, url, site, title, calibre_id, behavior, status, error_message
+                   SELECT id, url, site, title, calibre_id, behavior, source, status, error_message
                    FROM ranked_downloads
                    WHERE rn = 1 AND status IN ('pending', 'processing', 'waiting')
                    ORDER BY started_at ASC, id ASC""")
@@ -378,7 +378,7 @@ class AsyncHistoryDB:
     async def get_waiting_urls(self) -> list[dict]:
         async with self._connection() as conn:
             cursor = await conn.execute("""WITH ranked_downloads AS (
-                       SELECT id, url, site, title, calibre_id, status, updated_at, error_message,
+                       SELECT id, url, site, title, calibre_id, source, status, updated_at, error_message,
                               ROW_NUMBER() OVER (
                                   PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
                                   ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
@@ -393,7 +393,7 @@ class AsyncHistoryDB:
                               ) as rn_re
                        FROM retry_events
                    )
-                   SELECT d.url, d.site, d.title, d.calibre_id, d.updated_at, d.error_message,
+                   SELECT d.url, d.site, d.title, d.calibre_id, d.source, d.updated_at, d.error_message,
                           r.attempt_number, r.action, r.delay_minutes, r.scheduled_at
                    FROM ranked_downloads d
                    LEFT JOIN latest_retries r ON (r.download_event_id = d.id OR REPLACE(REPLACE(r.url, 'https://', ''), 'http://', '') = REPLACE(REPLACE(d.url, 'https://', ''), 'http://', '')) AND r.rn_re = 1
@@ -410,7 +410,7 @@ class AsyncHistoryDB:
         )
         async with self._connection() as conn:
             cursor = await conn.execute(
-                """SELECT id, url, site, title, calibre_id, status, behavior,
+                """SELECT id, url, site, title, calibre_id, source, status, behavior,
                           error_message, started_at, completed_at, updated_at
                    FROM download_events
                    WHERE url = ? OR url = ? OR url = ?

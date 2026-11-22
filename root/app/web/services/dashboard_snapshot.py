@@ -70,21 +70,23 @@ async def _collect_active_and_waiting_urls(
             att_num = meta.get("retry_count") or w_meta.get("attempt_number") or 1
             action_val = meta.get("action") or w_meta.get("action") or "RETRY"
 
-            waiting_urls.append(
-                {
-                    "url": u,
-                    "updated_at": w_meta.get("updated_at", ""),
-                    "scheduled_at": sched_at,
-                    "attempt_number": att_num,
-                    "action": action_val,
-                    "site": meta.get("site") or w_meta.get("site"),
-                    "title": meta.get("title") or w_meta.get("title"),
-                    "calibre_id": meta.get("calibre_id") or w_meta.get("calibre_id"),
-                    "error_message": meta.get("error_message")
-                    or w_meta.get("error_message"),
-                    **meta,
-                }
-            )
+            source_val = meta.get("source") or w_meta.get("source")
+            waiting_entry: dict[str, object] = {
+                "url": u,
+                "updated_at": w_meta.get("updated_at", ""),
+                "scheduled_at": sched_at,
+                "attempt_number": att_num,
+                "action": action_val,
+                "site": meta.get("site") or w_meta.get("site"),
+                "title": meta.get("title") or w_meta.get("title"),
+                "calibre_id": meta.get("calibre_id") or w_meta.get("calibre_id"),
+                "error_message": meta.get("error_message")
+                or w_meta.get("error_message"),
+                **meta,
+            }
+            if source_val:
+                waiting_entry["source"] = source_val
+            waiting_urls.append(waiting_entry)
         elif meta.get("status") == "processing":
             active_urls_list.append({"url": u, **meta})
         else:

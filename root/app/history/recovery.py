@@ -65,6 +65,12 @@ def recover_uncompleted_downloads(
         title = row.get("title")
         calibre_id = row.get("calibre_id")
         behavior = row.get("behavior")
+        raw_source = row.get("source")
+        source = (
+            raw_source
+            if raw_source in ("email", "poller", "manual", "unknown")
+            else "unknown"
+        )
         status = row.get("status")
 
         is_interrupted = status == "processing"
@@ -87,6 +93,7 @@ def recover_uncompleted_downloads(
             repeats=0,
             behavior=behavior,
             title=title,
+            source=source,
         )
 
         mark_url_queued(
@@ -96,6 +103,7 @@ def recover_uncompleted_downloads(
             title=fanfic.title,
             calibre_id=fanfic.calibre_id,
             behavior=fanfic.behavior,
+            source=fanfic.source,
         )
 
         ingress_queue.put(fanfic)
