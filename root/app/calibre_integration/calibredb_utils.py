@@ -20,8 +20,19 @@ from subprocess import (
 )
 
 from . import calibre_info
-from .client_interface import CalibreClient, CalibreMetadata, build_url_search_query
-from .models import AddedBook, BookExport, CalibreOperationError, MetadataUpdateReport
+from .client_interface import (
+    CalibreClient,
+    CalibreMetadata,
+    build_story_summary,
+    build_url_search_query,
+)
+from .models import (
+    AddedBook,
+    BookExport,
+    CalibreOperationError,
+    CalibreStorySummary,
+    MetadataUpdateReport,
+)
 from config.store import ConfigStore
 from models import fanfic_info
 import ff_logging
@@ -528,3 +539,41 @@ class CalibreDBClient(CalibreClient):
             updated_fields=tuple(updated_fields),
             failed_fields=tuple(failed_fields),
         )
+
+    def list_stories_by_query(self, query: str) -> list[CalibreStorySummary]:
+        """List Calibre story summaries matching `query` via `calibredb list`."""
+        output = self._execute_command_with_output(
+            [
+                "list",
+                "--search",
+                query,
+                "--fields",
+                "id,title,identifiers,tags,last_modified",
+                "--for-machine",
+            ]
+        )
+        if not output.strip():
+            return []
+
+        try:
+            records = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise CalibreOperationError(
+                f"Invalid JSON output from calibredb list: {exc}"
+            ) from exc
+
+        if not isinstance(records, list):
+            return []
+
+        summaries: list[CalibreStorySummary] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            raw_id = record.get("id")
+            if raw_id is None:
+                continue
+            summary = build_story_summary(raw_id, record)
+            if summary is not None:
+                summaries.append(summary)
+
+        return summaries

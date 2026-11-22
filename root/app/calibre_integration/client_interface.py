@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from datetime import date, datetime
 import functools
 import re
 from urllib.parse import urlsplit
@@ -9,7 +10,12 @@ from urllib.parse import urlsplit
 lazy import fanficfare.adapters as fff_adapters
 
 from calibre_integration import calibre_info
-from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
+from calibre_integration.models import (
+    AddedBook,
+    BookExport,
+    CalibreStorySummary,
+    MetadataUpdateReport,
+)
 from config.store import ConfigStore
 from models.fanfic_info import FanficInfo
 import ff_logging
@@ -100,6 +106,163 @@ def build_url_search_query(url: str) -> str:
     return f'identifiers:"~(//|^)(www\\d*\\.|m\\.)?{pattern}([/&?#].*)?$"'
 
 
+_EXACT_UPDATE_TAG_RE = re.compile(
+    r"^Last Update:\s*(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", re.IGNORECASE
+)
+_YEAR_MONTH_UPDATE_TAG_RE = re.compile(
+    r"^Last Update Year/Month:\s*(\d{4})[/-](\d{1,2})$", re.IGNORECASE
+)
+_SCHEME_PREFIX_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+
+def parse_calibre_update_date(
+    tags: list[str], last_modified: datetime | None
+) -> tuple[date | None, bool]:
+    """Extract the story's last update date from FanFicFare Calibre tags.
+
+    Checks for an exact ``Last Update: YYYY/MM/DD`` tag first, then falls back
+    to ``Last Update Year/Month: YYYY/MM`` (using day 1), and finally to
+    ``last_modified.date()`` when available.
+
+    Returns:
+        Tuple of ``(parsed_date, is_exact)`` where ``is_exact`` is True only
+        when derived from an exact ``Last Update:`` tag.
+    """
+    year_month_fallback: date | None = None
+
+    for tag in tags:
+        stripped = tag.strip()
+        exact_match = _EXACT_UPDATE_TAG_RE.match(stripped)
+        if exact_match:
+            try:
+                return (
+                    date(
+                        int(exact_match.group(1)),
+                        int(exact_match.group(2)),
+                        int(exact_match.group(3)),
+                    ),
+                    True,
+                )
+            except ValueError:
+                continue
+
+        if year_month_fallback is None:
+            ym_match = _YEAR_MONTH_UPDATE_TAG_RE.match(stripped)
+            if ym_match:
+                try:
+                    year_month_fallback = date(
+                        int(ym_match.group(1)), int(ym_match.group(2)), 1
+                    )
+                except ValueError:
+                    continue
+
+    if year_month_fallback is not None:
+        return (year_month_fallback, False)
+
+    if last_modified is not None:
+        return (last_modified.date(), False)
+
+    return (None, False)
+
+
+def build_site_poll_query(
+    site_domain: str,
+    include_tags: list[str],
+    exclude_tags: list[str],
+    override: str = "",
+) -> str:
+    """Build a Calibre search query for polling in-progress stories on a site.
+
+    When ``override`` is non-empty, returns ``override`` verbatim.
+    """
+    if override:
+        return override
+
+    escaped_domain = site_domain.replace('"', r"\"")
+    parts: list[str] = [f'identifiers:"{escaped_domain}"']
+
+    for tag in include_tags:
+        clean_tag = tag.strip()
+        if clean_tag:
+            escaped_tag = clean_tag.replace('"', r"\"")
+            parts.append(f'tags:"={escaped_tag}"')
+
+    for tag in exclude_tags:
+        clean_tag = tag.strip()
+        if clean_tag:
+            escaped_tag = clean_tag.replace('"', r"\"")
+            parts.append(f'not tags:"={escaped_tag}"')
+
+    return " and ".join(parts)
+
+
+def _is_valid_story_url(url: str) -> bool:
+    """Return True if `url` is a valid HTTP(S) URL or domain-like story URL."""
+    if not url or any(ch.isspace() for ch in url):
+        return False
+    if "://" in url or _SCHEME_PREFIX_RE.match(url):
+        parsed = urlsplit(url)
+        return parsed.scheme.lower() in ("http", "https") and "." in parsed.netloc
+    parsed = urlsplit(f"https://{url}")
+    return "." in parsed.netloc and not parsed.netloc.startswith(".")
+
+
+def _parse_last_modified(raw_value: object) -> datetime | None:
+    """Parse a Calibre `last_modified` value (datetime or ISO 8601 string)."""
+    if isinstance(raw_value, datetime):
+        return raw_value
+    if isinstance(raw_value, str):
+        text = raw_value.strip()
+        if text:
+            try:
+                return datetime.fromisoformat(text)
+            except ValueError:
+                return None
+    return None
+
+
+def build_story_summary(
+    book_id: str | int, raw: Mapping[str, object]
+) -> CalibreStorySummary | None:
+    """Build a `CalibreStorySummary` from a raw Calibre book metadata record.
+
+    Returns None (and logs at debug level) if the book has no valid
+    HTTP(S) or domain-like `identifiers.url`.
+    """
+    calibre_id = str(book_id)
+    title = str(raw.get("title") or "")
+
+    identifiers = raw.get("identifiers")
+    raw_url = identifiers.get("url") if isinstance(identifiers, Mapping) else None
+    url = raw_url.strip() if isinstance(raw_url, str) else ""
+
+    if not _is_valid_story_url(url):
+        ff_logging.log_debug(
+            f"Skipping Calibre book ID {calibre_id} ('{title}'): "
+            f"missing or invalid identifiers.url ({raw_url!r})"
+        )
+        return None
+
+    raw_tags = raw.get("tags")
+    tags = (
+        [str(t) for t in raw_tags if t is not None]
+        if isinstance(raw_tags, list)
+        else []
+    )
+    last_modified = _parse_last_modified(raw.get("last_modified"))
+    last_update_date, update_date_exact = parse_calibre_update_date(tags, last_modified)
+
+    return CalibreStorySummary(
+        calibre_id=calibre_id,
+        title=title,
+        url=url,
+        tags=tags,
+        last_modified=last_modified,
+        last_update_date=last_update_date,
+        update_date_exact=update_date_exact,
+    )
+
+
 class CalibreClient(ABC):
     """Common interface for interacting with Calibre databases and Content Servers."""
 
@@ -165,6 +328,10 @@ class CalibreClient(ABC):
     @abstractmethod
     def get_version(self) -> str:
         """Return the Calibre version string."""
+
+    @abstractmethod
+    def list_stories_by_query(self, query: str) -> list[CalibreStorySummary]:
+        """Return story summaries matching a Calibre search query."""
 
     def log_metadata_comparison(
         self,

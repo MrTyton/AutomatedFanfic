@@ -1,6 +1,7 @@
 """Domain models and exceptions for Calibre operations."""
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -33,6 +34,19 @@ class MetadataUpdateReport:
     def is_success(self) -> bool:
         """Return True if all targeted metadata fields were updated without errors."""
         return len(self.failed_fields) == 0
+
+
+@dataclass(frozen=True)
+class CalibreStorySummary:
+    """Summary metadata for a Calibre story returned by bulk query listing."""
+
+    calibre_id: str
+    title: str
+    url: str
+    tags: list[str]
+    last_modified: datetime | None
+    last_update_date: date | None
+    update_date_exact: bool
 
 
 class CalibreError(OSError):
