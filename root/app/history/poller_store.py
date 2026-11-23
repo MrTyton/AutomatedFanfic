@@ -142,12 +142,24 @@ class PollerStore:
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = Path(db_path)
+        self._schema_ready = False
+
+    def _ensure_initialized(self) -> None:
+        if self._schema_ready:
+            return
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        conn = sqlite3.connect(self._db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            setup_sync_connection(conn)
             ensure_schema_sync(conn)
+        finally:
+            conn.close()
+        self._schema_ready = True
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
+        self._ensure_initialized()
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         try:
