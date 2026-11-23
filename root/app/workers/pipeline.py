@@ -13,7 +13,7 @@ Worker-Coordinator Communication:
     where ff_waiter applies exponential backoff before re-submitting.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from queue import Empty
 import random
 import threading
@@ -245,6 +245,7 @@ def _handle_poll_check(
         if probe.title and not fanfic.title:
             fanfic.title = probe.title
         _worker_local.probed_chapters = probe.num_chapters
+        _worker_local.probed_date_updated = probe.date_updated
 
         if ctx.active_urls is not None:
             mark_url_queued(
@@ -288,6 +289,7 @@ def _process_task(
     """
     _worker_local.last_task_failed = False
     _worker_local.probed_chapters = None
+    _worker_local.probed_date_updated = None
     site = fanfic.site
     calibre_client = ctx.calibre_client
     ingress_queue = ctx.ingress_queue
@@ -376,7 +378,17 @@ def _process_task(
         if fanfic.source == "poller" and handlers.is_poller_equal_chapters_noop(
             fanfic, fff_result
         ):
-            return handlers.handle_poller_equal_chapters(fanfic, ctx, fff_result)
+            probed_date_updated: date | None = getattr(
+                _worker_local, "probed_date_updated", None
+            )
+            _worker_local.probed_chapters = None
+            _worker_local.probed_date_updated = None
+            return handlers.handle_poller_equal_chapters(
+                fanfic,
+                ctx,
+                fff_result,
+                remote_updated_at=probed_date_updated,
+            )
 
         # Reactive Anubis check: if download failed, probe whether site serves an Anubis challenge
         if fff_result.has_failure and fff_result.target_url:
@@ -468,6 +480,8 @@ def _process_task(
 
         # 6. Integrate with Calibre (Process Addition)
         probed_chapters: int | None = getattr(_worker_local, "probed_chapters", None)
+        _worker_local.probed_chapters = None
+        _worker_local.probed_date_updated = None
         if probed_chapters is not None:
             result = handlers.process_fanfic_addition(
                 fanfic,
@@ -675,8 +689,9 @@ def url_worker(
                     )
                     should_remove = handlers.check_active_removal(fanfic)
             finally:
-                # Update active_urls
-                if active_urls is not None:
+                # Update active_urls (skip for un-handed-off poll_check probes so we
+                # never delete a concurrent download's active_urls entry)
+                if fanfic.behavior != "poll_check" and active_urls is not None:
                     try:
                         if should_remove:
                             if fanfic.url in active_urls:

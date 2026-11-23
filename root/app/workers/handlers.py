@@ -2,7 +2,7 @@
 Failure and success handling logic for worker processes.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import random
 import traceback
 
@@ -76,6 +76,8 @@ def handle_poller_equal_chapters(
     fanfic: fanfic_info.FanficInfo,
     ctx: WorkerContext,
     fff_result: fff_runner.FanFicFareResult,
+    *,
+    remote_updated_at: date | None = None,
 ) -> bool:
     """Treat a poller download that hit equal_chapters as a silent no-op."""
     chapter_count: int | None = None
@@ -100,7 +102,7 @@ def handle_poller_equal_chapters(
                 fanfic.url,
                 now - timedelta(days=site_cfg.cool_max_age_days),
             )
-            effective_update_date = (
+            effective_update_date = remote_updated_at or (
                 tracked.last_update_date if tracked is not None else None
             )
             interval_days = poller_scheduler.compute_effective_interval_days(
@@ -122,7 +124,7 @@ def handle_poller_equal_chapters(
                 checked_at=now,
                 next_check_at=next_check_at,
                 remote_chapters=chapter_count,
-                remote_updated_at=None,
+                remote_updated_at=remote_updated_at,
                 remote_status=None,
                 error_message=None,
                 advance_baseline=True,

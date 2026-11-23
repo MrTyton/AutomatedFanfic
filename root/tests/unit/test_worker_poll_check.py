@@ -629,3 +629,122 @@ def test_url_worker_poll_check_unchanged_never_touches_active_urls_or_history(
     h.history_recorder.record_download_processing.assert_not_called()
     h.waiting_queue.put.assert_not_called()
     h.notification_info.send_notification.assert_not_called()
+
+
+def test_url_worker_poll_check_preserves_existing_active_urls_entry(
+    tmp_path: Path,
+) -> None:
+    url = "https://archiveofourown.org/works/88888"
+    site = "archiveofourown"
+    store = _make_store_with_story(
+        tmp_path,
+        url=url,
+        site=site,
+        last_update_date=date(2026, 10, 1),
+        update_date_exact=True,
+        known_chapters=10,
+    )
+    active_polls: dict[str, object] = {site: url}
+    h = _make_worker_harness(store, active_polls=active_polls)
+    # Pre-existing concurrent download entry for the same URL
+    h.ctx.active_urls[url] = {
+        "status": "queued",
+        "site": site,
+        "source": "email",
+    }
+    fanfic = FanficInfo(
+        url=url,
+        site=site,
+        calibre_id="42",
+        behavior="poll_check",
+        title="Test Story",
+        source="poller",
+    )
+
+    worker_q: stdlib_queue.Queue = stdlib_queue.Queue()
+    worker_q.put(fanfic)
+    worker_q.put(None)
+
+    probe = MetadataProbeResult(
+        num_chapters=10,
+        date_updated=date(2026, 10, 1),
+        status="In-Progress",
+        title="Test Story",
+    )
+
+    with patch("workers.pipeline.fff_runner.probe_story_metadata", return_value=probe):
+        pipeline.url_worker(worker_q, h.ctx, "worker_0", verbose=False)  # type: ignore[arg-type]
+
+    assert site not in active_polls
+    assert url in h.ctx.active_urls
+    assert h.ctx.active_urls[url]["status"] == "queued"
+    assert h.ctx.active_urls[url].get("source") == "email"
+
+
+def test_poll_check_date_only_update_equal_chapters_advances_last_update_date(
+    tmp_path: Path,
+) -> None:
+    url = "https://archiveofourown.org/works/66666"
+    site = "archiveofourown"
+    store = _make_store_with_story(
+        tmp_path,
+        url=url,
+        site=site,
+        last_update_date=date(2026, 10, 1),
+        update_date_exact=True,
+        known_chapters=10,
+    )
+    active_polls: dict[str, object] = {site: url}
+    h = _make_worker_harness(store, active_polls=active_polls)
+    fanfic = FanficInfo(
+        url=url,
+        site=site,
+        calibre_id="42",
+        behavior="poll_check",
+        title="Test Story",
+        source="poller",
+    )
+
+    # Author edited an existing chapter: date_updated advanced, num_chapters unchanged
+    probe = MetadataProbeResult(
+        num_chapters=10,
+        date_updated=date(2026, 11, 20),
+        status="In-Progress",
+        title="Test Story",
+    )
+    fff_res = FanFicFareResult(
+        failure_messages=["Test Story-42.epub already contains 10 chapters."],
+    )
+
+    with (
+        patch("workers.pipeline.fff_runner.probe_story_metadata", return_value=probe),
+        patch(
+            "workers.pipeline.common.get_path_or_url",
+            return_value="/tmp/Test Story-42.epub",
+        ),
+        patch(
+            "workers.pipeline.fff_runner.execute_fanficfare_direct",
+            return_value=fff_res,
+        ),
+        patch("workers.pipeline.system_utils.temporary_directory") as mock_tmp,
+    ):
+        mock_tmp.return_value.__enter__.return_value = "/tmp"
+        should_remove = pipeline._process_task(fanfic, h.ctx)
+
+    assert should_remove is True
+    tracked = store.get_tracked_story(url)
+    assert tracked is not None
+    assert tracked.last_update_date == date(2026, 11, 20)
+    assert tracked.known_chapters == 10
+
+    # Subsequent poll with the same remote metadata must NOT trigger another download
+    next_fanfic = FanficInfo(
+        url=url,
+        site=site,
+        calibre_id="42",
+        behavior="poll_check",
+        title="Test Story",
+        source="poller",
+    )
+    with patch("workers.pipeline.fff_runner.probe_story_metadata", return_value=probe):
+        assert pipeline._handle_poll_check(next_fanfic, h.ctx) is False
