@@ -452,11 +452,13 @@ def test_weekly_saturday_schedule_uses_after_buffer_and_handles_late_author() ->
     )
 
 
-def test_tier_ceiling_clamps_long_predictive_interval() -> None:
-    cfg = SitePollerConfig()  # hot_interval_days=1.5, warm_interval_days=7.0
+def test_dormant_ceiling_clamps_extreme_predictive_interval_while_honoring_weekly_and_monthly() -> (
+    None
+):
+    cfg = SitePollerConfig()  # dormant_interval_days=60.0
     rng = random.Random(99)
 
-    # Monthly author (~30d interval)
+    # Monthly author (~30d interval): trusted directly without being clamped to hot 1.5d
     monthly_downloads = [
         datetime(2026, 8, 22, 14, 0, tzinfo=timezone.utc),
         datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc),
@@ -467,20 +469,26 @@ def test_tier_ceiling_clamps_long_predictive_interval() -> None:
     assert est is not None
     assert est.label == "Monthly (~30d)"
 
-    # Hot story (updated 2 days ago): 30-day predicted date must be capped at hot ceiling_dt
     now_hot = datetime(2026, 11, 22, 14, 0, tzinfo=timezone.utc)
-    hot_ceiling = now_hot + timedelta(days=cfg.hot_interval_days)
-    hot_check = compute_predictive_next_check(
+    expected_monthly = datetime(2026, 12, 20, 20, 0, tzinfo=timezone.utc)
+    monthly_check = compute_predictive_next_check(
         now_hot, date(2026, 11, 20), monthly_downloads, cfg, rng
     )
-    assert hot_check <= hot_ceiling
-    assert hot_check == hot_ceiling
-
-    # Warm story (updated 20 days ago): remaining ~10d still exceeds 7d warm ceiling -> capped
-    now_warm = datetime(2026, 12, 10, 14, 0, tzinfo=timezone.utc)
-    warm_ceiling = now_warm + timedelta(days=cfg.warm_interval_days)
-    warm_check = compute_predictive_next_check(
-        now_warm, date(2026, 11, 20), monthly_downloads, cfg, rng
+    assert (
+        expected_monthly - timedelta(hours=1)
+        <= monthly_check
+        <= expected_monthly + timedelta(hours=1)
     )
-    assert warm_check <= warm_ceiling
-    assert warm_check == warm_ceiling
+
+    # Extreme 90-day regular interval -> capped at dormant_interval_days (60d)
+    quarterly_downloads = [
+        datetime(2026, 2, 22, 14, 0, tzinfo=timezone.utc),
+        datetime(2026, 5, 23, 14, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 21, 14, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 19, 14, 0, tzinfo=timezone.utc),
+    ]
+    dormant_ceiling = now_hot + timedelta(days=cfg.dormant_interval_days)
+    quarterly_check = compute_predictive_next_check(
+        now_hot, date(2026, 11, 19), quarterly_downloads, cfg, rng
+    )
+    assert quarterly_check == dormant_ceiling

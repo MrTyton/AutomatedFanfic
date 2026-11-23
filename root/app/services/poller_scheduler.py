@@ -264,10 +264,9 @@ def compute_predictive_next_check(
     cfg: SitePollerConfig,
     rng: random.Random,
 ) -> datetime:
-    """Compute next check time using predictive schedule when regular, bounded by tier ceiling."""
+    """Compute next check time using predictive schedule when regular, bounded by dormant ceiling."""
     now_utc = _to_utc(now)
-    _, tier_interval_days = classify_tier(last_update_date, now_utc.date(), cfg)
-    ceiling_dt = now_utc + timedelta(days=tier_interval_days)
+    ceiling_dt = now_utc + timedelta(days=cfg.dormant_interval_days)
 
     if last_update_date is not None:
         estimate = estimate_update_cadence(recent_downloads)
