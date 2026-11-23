@@ -2,13 +2,183 @@
 Failure and success handling logic for worker processes.
 """
 
-import config
+from datetime import date, datetime, timedelta, timezone
+import random
 import traceback
-from models import retry_types
-from models import fanfic_info
-from models.context import WorkerContext
-import ff_logging
+
 from calibre_integration import update_strategies
+import config
+from config.schemas.poller import LibraryPollerConfig, SitePollerConfig
+from config.store import ConfigStore
+import ff_logging
+from models import fanfic_info
+from models import retry_types
+from models.context import WorkerContext
+from parsers import regex_parsing
+from services import poller_scheduler
+from workers import fff_runner
+
+
+def resolve_site_poller_config(
+    config_store: ConfigStore | None,
+    site: str,
+) -> SitePollerConfig:
+    """Resolve the SitePollerConfig for a site from ConfigStore, falling back to defaults."""
+    if config_store is None:
+        return SitePollerConfig()
+
+    site_key = site.strip().lower()
+    raw_sites = config_store.get("library_poller.sites")
+    if isinstance(raw_sites, dict):
+        raw_cfg = raw_sites.get(site_key) or raw_sites.get(site)
+        if isinstance(raw_cfg, SitePollerConfig):
+            return raw_cfg
+        if isinstance(raw_cfg, dict):
+            try:
+                return SitePollerConfig.model_validate(raw_cfg)
+            except Exception:
+                return SitePollerConfig()
+
+    raw_poller = config_store.get("library_poller")
+    if isinstance(raw_poller, LibraryPollerConfig):
+        return raw_poller.sites.get(site_key, SitePollerConfig())
+    if isinstance(raw_poller, dict):
+        nested_sites = raw_poller.get("sites")
+        if isinstance(nested_sites, dict):
+            raw_cfg = nested_sites.get(site_key) or nested_sites.get(site)
+            if isinstance(raw_cfg, SitePollerConfig):
+                return raw_cfg
+            if isinstance(raw_cfg, dict):
+                try:
+                    return SitePollerConfig.model_validate(raw_cfg)
+                except Exception:
+                    return SitePollerConfig()
+
+    return SitePollerConfig()
+
+
+def is_poller_equal_chapters_noop(
+    fanfic: fanfic_info.FanficInfo,
+    fff_result: fff_runner.FanFicFareResult,
+) -> bool:
+    """Return True when a poller-triggered download failed solely due to equal_chapters."""
+    if fanfic.source != "poller":
+        return False
+    if fff_result.exception is not None or not fff_result.failure_messages:
+        return False
+    return all(
+        regex_parsing.equal_chapters.search(msg) is not None
+        for msg in fff_result.failure_messages
+    )
+
+
+def handle_poller_equal_chapters(
+    fanfic: fanfic_info.FanficInfo,
+    ctx: WorkerContext,
+    fff_result: fff_runner.FanFicFareResult,
+    *,
+    remote_updated_at: date | None = None,
+    mark_completed: bool = False,
+) -> bool:
+    """Treat a poller download that hit equal_chapters as a silent no-op."""
+    chapter_count: int | None = None
+    for msg in fff_result.failure_messages:
+        match = regex_parsing.equal_chapters.search(msg)
+        if match is not None:
+            chapter_count = int(match.group(1))
+            break
+
+    ff_logging.log(
+        f"\t({fanfic.site}) Poller download for {fanfic.url} is already up to date "
+        f"(equal chapters: {chapter_count if chapter_count is not None else 'unknown'}) — "
+        f"treating as silent no-op"
+    )
+
+    if ctx.poller_store is not None:
+        try:
+            now = datetime.now(timezone.utc)
+            site_cfg = resolve_site_poller_config(ctx.config_store, fanfic.site)
+            tracked = ctx.poller_store.get_tracked_story(fanfic.url)
+            recent_downloads = ctx.poller_store.get_recent_download_timestamps(
+                fanfic.url,
+                now - timedelta(days=site_cfg.cool_max_age_days),
+            )
+            effective_update_date = remote_updated_at or (
+                tracked.last_update_date if tracked is not None else None
+            )
+            next_check_at = poller_scheduler.compute_predictive_next_check(
+                now,
+                effective_update_date,
+                recent_downloads,
+                site_cfg,
+                random.Random(),
+            )
+            ctx.poller_store.record_probe_outcome(
+                url=fanfic.url,
+                site=fanfic.site,
+                outcome="unchanged",
+                checked_at=now,
+                next_check_at=next_check_at,
+                remote_chapters=chapter_count,
+                remote_updated_at=remote_updated_at,
+                remote_status="Completed" if mark_completed else None,
+                error_message=None,
+                advance_baseline=True,
+                mark_completed=mark_completed,
+            )
+        except Exception as e:
+            ff_logging.log(
+                f"\t({fanfic.site}) Failed to update poller store on equal_chapters no-op for {fanfic.url}: {e}",
+                "WARNING",
+            )
+
+    fanfic.retry_decision = None
+    ctx.history_recorder.record_download_success(
+        url=fanfic.url,
+        title=fanfic.title,
+        calibre_id=fanfic.calibre_id,
+        site=fanfic.site,
+    )
+    return True
+
+
+def _refresh_poller_after_download(
+    fanfic: fanfic_info.FanficInfo,
+    ctx: WorkerContext,
+    known_chapters: int | None,
+    *,
+    mark_completed: bool = False,
+) -> None:
+    """Refresh poller tracking state after any successful Calibre download."""
+    poller_store = ctx.poller_store
+    if poller_store is None:
+        return
+    try:
+        now = datetime.now(timezone.utc)
+        site_cfg = resolve_site_poller_config(ctx.config_store, fanfic.site)
+        recent_downloads = poller_store.get_recent_download_timestamps(
+            fanfic.url,
+            now - timedelta(days=site_cfg.cool_max_age_days),
+        )
+        new_next_check_at = poller_scheduler.compute_predictive_next_check(
+            now,
+            now.date(),
+            [*recent_downloads, now],
+            site_cfg,
+            random.Random(),
+        )
+        poller_store.mark_story_downloaded(
+            url=fanfic.url,
+            downloaded_at=now,
+            new_next_check_at=new_next_check_at,
+            known_chapters=known_chapters,
+            mark_completed=mark_completed,
+        )
+    except Exception as e:
+        ff_logging.log(
+            f"\t({fanfic.site}) Failed to refresh poller schedule after download of {fanfic.url}: {e}",
+            "WARNING",
+        )
 
 
 def handle_failure(
@@ -141,6 +311,9 @@ def process_fanfic_addition(
     ctx: WorkerContext,
     temp_dir: str,
     path_or_url: str,
+    *,
+    known_chapters: int | None = None,
+    mark_completed: bool = False,
 ) -> bool:
     """
     Integrate downloaded fanfic with Calibre library.
@@ -209,6 +382,14 @@ def process_fanfic_addition(
                 calibre_id=fanfic.calibre_id,
                 site=fanfic.site,
             )
+
+            if ctx.poller_store is not None:
+                _refresh_poller_after_download(
+                    fanfic,
+                    ctx,
+                    known_chapters,
+                    mark_completed=mark_completed,
+                )
 
             ff_logging.log_debug(
                 f"\t({site}) Sending success notification for {fanfic.title}"

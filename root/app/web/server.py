@@ -34,6 +34,7 @@ from web.routes import (
     history,
     logs,
     monitoring,
+    poller,
     stats,
     websocket,
     widget,
@@ -126,6 +127,7 @@ def create_app(web_state: WebState) -> FastAPI:
     app.include_router(history.router)
     app.include_router(logs.router)
     app.include_router(monitoring.router)
+    app.include_router(poller.router)
     app.include_router(controls.router)
     app.include_router(config.router)
     app.include_router(websocket.router)
@@ -228,6 +230,10 @@ def run_web_server(
         check_emails_event=ipc.check_emails_event,
         verbose=ipc.verbose,
         coordinator_status=ipc.coordinator_status,
+        sync_poller_event=ipc.sync_poller_event,
+        active_polls=ipc.active_polls,
+        poller_last_sync=ipc.poller_last_sync,
+        poller_store=ipc.poller_store,
     )
 
     app = create_app(web_state)

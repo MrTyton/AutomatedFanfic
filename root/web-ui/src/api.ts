@@ -6,12 +6,15 @@ import {
     type LogAttemptBlock,
 } from './utils/dashboardLogic'
 
+export type DownloadSource = 'email' | 'poller' | 'manual' | 'unknown'
+
 export interface DownloadRow {
     url: string
     site: string
     title: string | null
     calibre_id: string | null
     status: string
+    source?: DownloadSource
     error_message: string | null
     started_at: string
     completed_at: string | null
@@ -190,6 +193,7 @@ export interface ActiveDownload {
     url: string
     site?: string
     title?: string
+    source?: DownloadSource
     started_at?: string
 }
 
@@ -199,6 +203,7 @@ export interface WaitingDownload {
     site?: string
     title?: string
     calibre_id?: string
+    source?: DownloadSource
     error_message?: string
     attempt_number?: number
     action?: string
@@ -591,4 +596,143 @@ export async function getHistoricalStoryDetails(url: string): Promise<Historical
     } catch {
         return null
     }
+}
+
+// ── Library Update Poller Types & Endpoints ────────────────────
+
+export interface ActivePollInfo {
+    url: string
+    title?: string | null
+    started_at?: string | null
+}
+
+export interface PollerTierRule {
+    max_age_days: number | null
+    interval_days: number
+}
+
+export interface PollerTierConfigMap {
+    hot: PollerTierRule
+    warm: PollerTierRule
+    cool: PollerTierRule
+    dormant: PollerTierRule
+}
+
+export interface PollerTierCounts {
+    hot: number
+    warm: number
+    cool: number
+    dormant: number
+}
+
+export type PollerTier = 'hot' | 'warm' | 'cool' | 'dormant'
+
+export interface SitePollerConfigValues {
+    enabled: boolean
+    include_tags: string[]
+    exclude_tags: string[]
+    calibre_search_override: string
+    max_checks_per_day: number
+    min_interval_minutes: number
+    hot_max_age_days: number
+    hot_interval_days: number
+    warm_max_age_days: number
+    warm_interval_days: number
+    cool_max_age_days: number
+    cool_interval_days: number
+    dormant_interval_days: number
+    jitter_ratio: number
+    max_error_backoff_days: number
+}
+
+export interface PollerUpNextItem {
+    url: string
+    title: string | null
+    calibre_id: string | null
+    next_check_at: string
+    last_checked_at: string | null
+    last_update_date: string | null
+    known_chapters: number | null
+    consecutive_no_change: number
+    consecutive_errors: number
+    tier: PollerTier
+    cadence_days?: number | null
+    schedule_label?: string | null
+}
+
+export type PollOutcome =
+    | 'unchanged'
+    | 'update_found'
+    | 'completed'
+    | 'deleted'
+    | 'error'
+
+export interface PollEventItem {
+    id: number
+    url: string
+    site: string
+    title: string | null
+    checked_at: string
+    outcome: PollOutcome | string
+    remote_chapters: number | null
+    remote_updated_at: string | null
+    error_message: string | null
+}
+
+export interface SitePollerStatus {
+    enabled: boolean
+    max_checks_per_day: number
+    min_interval_minutes: number
+    checks_last_24h: number
+    tracked_count: number
+    active_poll: ActivePollInfo | null
+    last_sync_at: string | null
+    tiers?: PollerTierConfigMap
+    tier_counts: PollerTierCounts
+    up_next: PollerUpNextItem[]
+    recent_events: PollEventItem[]
+}
+
+export interface PollerStatusResponse {
+    enabled: boolean
+    library_sync_interval_hours: number
+    tick_interval_seconds: number
+    sites: Record<string, SitePollerStatus>
+}
+
+export interface PollerSyncResponse {
+    ok: boolean
+    message: string
+}
+
+export interface SupportedPollerSite {
+    id: string
+    domain: string
+    label: string
+}
+
+export interface PollerSitesCatalogResponse {
+    history_sites: string[]
+    supported_sites: SupportedPollerSite[]
+}
+
+export function fetchPollerStatus(
+    site?: string,
+    upNextLimit?: number,
+    recentLimit?: number
+): Promise<PollerStatusResponse> {
+    const params = new URLSearchParams()
+    if (site) params.set('site', site)
+    if (upNextLimit !== undefined) params.set('up_next_limit', String(upNextLimit))
+    if (recentLimit !== undefined) params.set('recent_limit', String(recentLimit))
+    const query = params.toString()
+    return apiFetch<PollerStatusResponse>(`/api/poller/status${query ? `?${query}` : ''}`)
+}
+
+export function fetchPollerSites(): Promise<PollerSitesCatalogResponse> {
+    return apiFetch<PollerSitesCatalogResponse>('/api/poller/sites')
+}
+
+export function triggerPollerSync(): Promise<PollerSyncResponse> {
+    return apiFetch<PollerSyncResponse>('/api/poller/sync', { method: 'POST' })
 }

@@ -22,6 +22,7 @@ class ActiveUrlEntry(TypedDict, total=False):
     title: NotRequired[str]
     calibre_id: NotRequired[str]
     behavior: NotRequired[str]
+    source: NotRequired[str]
     error: NotRequired[str]
     heap_gen: NotRequired[int]
     queued_at: NotRequired[float]
@@ -63,6 +64,7 @@ def mark_url_queued(
     title: str | None = None,
     calibre_id: str | None = None,
     behavior: str | None = None,
+    source: str | None = None,
     merge: bool = False,
     pop_keys: tuple[str, ...] = (),
 ) -> None:
@@ -84,6 +86,8 @@ def mark_url_queued(
             entry["calibre_id"] = calibre_id
         if behavior is not None:
             entry["behavior"] = behavior
+        if source is not None:
+            entry["source"] = source
         entry.setdefault("queued_at", time.time())
         entry["status"] = "queued"
         active_urls[url] = cast(ActiveUrlEntry, entry)

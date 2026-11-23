@@ -15,6 +15,7 @@ import {
     computeDirtySections,
 } from '../utils/dashboardLogic'
 import { IniEditor } from '../components/IniEditor'
+import { PollerSitesEditor } from '../components/PollerSitesEditor'
 import {
     Settings,
     Save,
@@ -62,6 +63,11 @@ const SECTION_META: Record<string, { label: string; description: string; testabl
     web: {
         label: 'Web Server & DB',
         description: 'FastAPI server host, port, and SQLite history database path.',
+    },
+    library_poller: {
+        label: 'Library Poller',
+        description:
+            'Periodically checks In-Progress stories in Calibre for sites whose email alerts are broken, using adaptive tiers and detected update schedules.',
     },
 }
 
@@ -117,6 +123,14 @@ const FIELD_DESCRIPTIONS: Record<string, Record<string, string>> = {
         port: 'TCP port for the web dashboard and API server (default: 8080).',
         history_db_path: 'Filesystem path to the SQLite database file storing download, retry, and notification history.',
     },
+    library_poller: {
+        enabled: 'Enable background Calibre library polling for configured sites.',
+        library_sync_interval_hours:
+            'How often (in hours) to bulk-sync In-Progress stories from Calibre for enabled sites.',
+        tick_interval_seconds:
+            'How often (in seconds) the poller wakes up to check whether a site is idle and has a due story.',
+        sites: 'Per-site polling budgets, adaptive tier intervals, and optional Calibre tag overrides.',
+    },
 }
 
 const ENUM_OPTIONS: Record<string, string[]> = {
@@ -140,7 +154,9 @@ export default function Config() {
     const [config, setConfig] = useState<Record<string, unknown> | null>(null)
     const [initialConfig, setInitialConfig] = useState<Record<string, unknown> | null>(null)
     const [reloadMap, setReloadMap] = useState<Record<string, Record<string, ReloadBehavior>>>({})
-    const [activeTab, setActiveTab] = useState<string>(() => searchParams.get('tab') || 'email')
+    const [activeTab, setActiveTab] = useState<string>(
+        () => searchParams.get('section') || searchParams.get('tab') || 'email'
+    )
     const [personalIni, setPersonalIni] = useState<string>('')
     const [initialPersonalIni, setInitialPersonalIni] = useState<string>('')
     const [defaultsIni, setDefaultsIni] = useState<string>('')
@@ -170,7 +186,7 @@ export default function Config() {
     }
 
     useEffect(() => {
-        const paramTab = searchParams.get('tab')
+        const paramTab = searchParams.get('section') || searchParams.get('tab')
         if (paramTab) {
             setActiveTab(paramTab)
         }
@@ -693,11 +709,19 @@ export default function Config() {
                                     const fieldId = `${activeTab}.${key}`
                                     const showSecret = !!revealed[fieldId]
                                     const enumChoices = ENUM_OPTIONS[fieldId]
+                                    const isPollerSites = activeTab === 'library_poller' && key === 'sites'
+                                    const isPlainObject =
+                                        typeof val === 'object' && val !== null && !Array.isArray(val)
 
                                     return (
                                         <div
                                             key={key}
                                             className={`config-field-row ${isDirty ? 'dirty' : ''}`}
+                                            style={
+                                                isPollerSites
+                                                    ? { gridTemplateColumns: 'minmax(0, 1fr)', alignItems: 'stretch' }
+                                                    : undefined
+                                            }
                                         >
                                             <div style={{ minWidth: 0 }}>
                                                 <div
@@ -732,13 +756,19 @@ export default function Config() {
                                                             }}
                                                         >
                                                             <span>
-                                                                (was:{' '}
-                                                                {isSecret
-                                                                    ? '••••••'
-                                                                    : JSON.stringify(
-                                                                          (initialConfig[activeTab] as Record<string, unknown>)?.[key]
-                                                                      )}
-                                                                )
+                                                                {isPlainObject
+                                                                    ? '(modified)'
+                                                                    : `(was: ${
+                                                                          isSecret
+                                                                              ? '••••••'
+                                                                              : JSON.stringify(
+                                                                                    (
+                                                                                        initialConfig[
+                                                                                            activeTab
+                                                                                        ] as Record<string, unknown>
+                                                                                    )?.[key]
+                                                                                )
+                                                                      })`}
                                                             </span>
                                                             <button
                                                                 type="button"
@@ -779,7 +809,18 @@ export default function Config() {
                                             </div>
 
                                             <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', minWidth: 0, width: '100%' }}>
-                                                {typeof val === 'boolean' ? (
+                                                {isPollerSites ? (
+                                                    <PollerSitesEditor
+                                                        sites={
+                                                            isPlainObject
+                                                                ? (val as Record<string, unknown>)
+                                                                : {}
+                                                        }
+                                                        onChange={(nextSites) =>
+                                                            handleFieldChange(activeTab, key, nextSites)
+                                                        }
+                                                    />
+                                                ) : typeof val === 'boolean' ? (
                                                     <label
                                                         style={{
                                                             display: 'inline-flex',

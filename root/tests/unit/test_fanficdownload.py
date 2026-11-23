@@ -68,6 +68,10 @@ class TestFanficDownloadMain(unittest.TestCase):
         self.mock_config.web.enabled = False
         self.mock_config.web.history_db_path = "/data/history.db"
 
+        # Set up library_poller config
+        self.mock_config.library_poller = MagicMock()
+        self.mock_config.library_poller.enabled = False
+
         # Set up top-level config
         self.mock_config.max_workers = 4
 
@@ -541,8 +545,8 @@ class TestFanficDownloadMain(unittest.TestCase):
             with patch("services.bootstrap.mp.Event") as mock_native_event:
                 fanficdownload.main()
                 self.assertEqual(mock_native_queue.call_count, 5)
-                # 4 native mp.Event calls: web_restart_event, supervisor_restart_event, worker_restart_event, check_emails_event
-                self.assertEqual(mock_native_event.call_count, 4)
+                # 5 native mp.Event calls: web_restart_event, supervisor_restart_event, worker_restart_event, check_emails_event, sync_poller_event
+                self.assertEqual(mock_native_event.call_count, 5)
                 mock_set_web_enabled.assert_called_with(True)
 
     def test_python_version_guard_raises_on_unsupported_python(self):

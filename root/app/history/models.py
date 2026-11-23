@@ -46,6 +46,7 @@ class DownloadEvent(BaseModel):
     title: str | None = None
     calibre_id: str | None = None
     behavior: str | None = None
+    source: str = "unknown"
     status: DownloadStatus = DownloadStatus.PENDING
     error_message: str | None = None
     started_at: datetime = Field(default_factory=_utcnow)

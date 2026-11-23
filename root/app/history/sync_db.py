@@ -71,15 +71,16 @@ class SyncHistoryDB:
         assert self._conn is not None
         cur = self._conn.execute(
             """INSERT INTO download_events
-               (url, site, title, calibre_id, behavior, status,
+               (url, site, title, calibre_id, behavior, source, status,
                 error_message, started_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 event.url,
                 event.site,
                 event.title,
                 event.calibre_id,
                 event.behavior,
+                event.source,
                 event.status.value,
                 event.error_message,
                 _dt_to_str(event.started_at),
@@ -288,14 +289,14 @@ class SyncHistoryDB:
         """Get latest uncompleted download rows synchronously."""
         assert self._conn is not None
         cur = self._conn.execute("""WITH ranked_downloads AS (
-                   SELECT id, url, site, title, calibre_id, behavior, status, error_message, started_at,
+                   SELECT id, url, site, title, calibre_id, behavior, source, status, error_message, started_at,
                           ROW_NUMBER() OVER (
                               PARTITION BY REPLACE(REPLACE(url, 'https://', ''), 'http://', '')
                               ORDER BY COALESCE(completed_at, started_at) DESC, id DESC
                           ) as rn
                    FROM download_events
                )
-               SELECT id, url, site, title, calibre_id, behavior, status, error_message
+               SELECT id, url, site, title, calibre_id, behavior, source, status, error_message
                FROM ranked_downloads
                WHERE rn = 1 AND status IN ('pending', 'processing', 'waiting')
                ORDER BY started_at ASC, id ASC""")

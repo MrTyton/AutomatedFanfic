@@ -47,12 +47,13 @@ class TestSupervisor(unittest.TestCase):
             self.url_parsers,
         )
 
-        self.assertEqual(mock_thread.call_count, 3)
+        self.assertEqual(mock_thread.call_count, 4)
 
         targets = [call_args[1]["target"] for call_args in mock_thread.call_args_list]
         self.assertTrue(any("email_watcher" in str(t) for t in targets))
         self.assertTrue(any("wait_processor" in str(t) for t in targets))
         self.assertTrue(any("start_coordinator" in str(t) for t in targets))
+        self.assertTrue(any("run_library_poller" in str(t) for t in targets))
 
         for thread_mock in (mock_thread.return_value,):
             thread_mock.start.assert_called()
@@ -122,11 +123,13 @@ class TestSupervisor(unittest.TestCase):
         t1 = MagicMock()
         t2 = MagicMock()
         t3 = MagicMock()
-        mock_thread.side_effect = [t1, t2, t3]
+        t4 = MagicMock()
+        mock_thread.side_effect = [t1, t2, t3, t4]
 
         t1.is_alive.return_value = False
         t2.is_alive.return_value = True
         t3.is_alive.return_value = True
+        t4.is_alive.return_value = True
 
         self.shutdown_event.is_set.return_value = False
 

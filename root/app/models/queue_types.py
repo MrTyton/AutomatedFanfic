@@ -66,3 +66,4 @@ ShutdownEvent = EventProtocol
 CheckEmailsEvent = EventProtocol
 SupervisorRestartEvent = EventProtocol
 WorkerRestartEvent = EventProtocol
+SyncPollerEvent = EventProtocol

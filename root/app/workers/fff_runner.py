@@ -5,6 +5,7 @@ FanFicFare execution engine and configuration bridge.
 import configparser
 import copy
 from dataclasses import dataclass, field
+from datetime import date, datetime
 import functools
 import importlib.metadata
 import optparse
@@ -15,6 +16,7 @@ from typing import cast
 
 lazy from fanficfare import adapters as fff_adapters
 lazy from fanficfare import cli as fff_cli
+lazy from fanficfare import exceptions as fff_exceptions
 lazy from fanficfare.fetchers.base_fetcher import LWPCookieJar
 from calibre_integration import calibre_info
 from config.ini_resolver import read_ini_file_cached
@@ -51,6 +53,70 @@ class FanFicFareResult:
     @property
     def is_forceable(self) -> bool:
         return bool(self.forceable_messages)
+
+
+@dataclass
+class MetadataProbeResult:
+    """Structured result from a metadata-only FanFicFare story probe."""
+
+    num_chapters: int | None = None
+    date_updated: date | None = None
+    status: str | None = None
+    title: str | None = None
+    story_deleted: bool = False
+    error: str | None = None
+    exception: BaseException | None = None
+
+    @property
+    def has_error(self) -> bool:
+        return (
+            self.story_deleted or self.error is not None or self.exception is not None
+        )
+
+
+_PROBE_DATE_FORMATS: tuple[str, ...] = (
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y/%m/%d %H:%M:%S",
+    "%m/%d/%Y",
+    "%d/%m/%Y",
+    "%b %d, %Y",
+    "%B %d, %Y",
+)
+
+
+def _parse_probe_chapters(value: object) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip().replace(",", "")
+        if cleaned and cleaned.isdigit():
+            return int(cleaned)
+    return None
+
+
+def _parse_probe_date(value: object) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        try:
+            return datetime.fromisoformat(cleaned).date()
+        except ValueError:
+            pass
+        for fmt in _PROBE_DATE_FORMATS:
+            try:
+                return datetime.strptime(cleaned, fmt).date()
+            except ValueError:
+                continue
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -260,31 +326,8 @@ def run_fanficfare_download(
 # ---------------------------------------------------------------------------
 
 
-def execute_fanficfare_direct(
-    cdb: calibre_info.CalibreInfo,
-    fanfic: fanfic_info.FanficInfo,
-    path_or_url: str,
-    temp_dir: str,
-) -> FanFicFareResult:
-    """
-    Execute a FanFicFare download/update directly via the Python API.
-
-    Replaces the subprocess-based execute_command() approach for lower
-    per-download overhead. Uses fanficfare.cli.do_download() with custom
-    warn/fail callbacks to intercept structured error conditions, and a
-    thread-local stdout proxy to catch print()-based messages
-    (equal_chapters, failed_login).
-
-    Args:
-        cdb: Calibre configuration (update_method, ini file paths, etc.).
-        fanfic: Fanfiction task being processed.
-        path_or_url: Epub file path for updates, or story URL for new downloads.
-        temp_dir: Temporary working directory; epub output is directed here.
-
-    Returns:
-        FanFicFareResult containing classified failure, forceable messages,
-        target_url, effective_user_agent, and captured stdout.
-    """
+def _load_ini_files(cdb: calibre_info.CalibreInfo) -> tuple[str | None, str]:
+    """Load defaults.ini and personal.ini contents using the shared cache."""
     passed_defaultsini: str | None = None
     if not cdb.default_ini:
         ff_logging.log_debug("\tdefaults.ini: path not configured")
@@ -339,6 +382,150 @@ def execute_fanficfare_direct(
             ff_logging.log(
                 f"Could not read personal.ini ({cdb.personal_ini}): {e}", "WARNING"
             )
+
+    return passed_defaultsini, personal_ini_base
+
+
+def probe_story_metadata(
+    cdb: calibre_info.CalibreInfo,
+    fanfic: fanfic_info.FanficInfo,
+) -> MetadataProbeResult:
+    """
+    Fetch only story metadata via FanFicFare without downloading chapters or
+    exporting any EPUB from Calibre.
+
+    Reuses the user's defaults.ini/personal.ini, site cookies, Anubis session,
+    and impersonated HTTP session, while forcing ``meta_from_last_chapter`` and
+    ``check_next_chapter`` to ``false`` in ``[overrides]`` so unchanged checks
+    only fetch the story header page.
+    """
+    target_url = resolve_target_url(fanfic, fanfic.url, "")
+    if not target_url:
+        return MetadataProbeResult(error="No target URL provided for metadata probe")
+
+    passed_defaultsini, personal_ini_base = _load_ini_files(cdb)
+    default_ua_fallback = f"[defaults]\nuser_agent: {antibot.DEFAULT_USER_AGENT}\n\n"
+    passed_personalini = default_ua_fallback + personal_ini_base
+
+    argv = ["--non-interactive"]
+    if ff_logging.is_verbose():
+        argv.append("--debug")
+    parser = fff_cli.mkParser(calibre=False)
+    options, _ = parser.parse_args(argv)
+    fff_cli.expandOptions(options)
+
+    site_key = getattr(fanfic, "site", "") or ""
+    cached_cookiejar = cookies.get_site_cookiejar(site_key, personal_ini_base)
+
+    if antibot.is_site_anubis_protected(site_key):
+        effective_user_agent = resolve_fanficfare_user_agent(
+            target_url,
+            passed_defaultsini,
+            passed_personalini,
+            options,
+        )
+        cookiejar = antibot.ensure_anubis_session(
+            site=site_key,
+            url=target_url,
+            user_agent=effective_user_agent,
+            cookiejar=cast(LWPCookieJar | None, cached_cookiejar),
+        )
+        options.cookiejar = cookiejar
+        cookies.set_site_cookiejar(site_key, cookiejar)
+    elif cached_cookiejar is not None:
+        options.cookiejar = cached_cookiejar
+
+    impersonation.install_impersonated_session()
+    try:
+        configuration = fff_cli.get_configuration(
+            target_url,
+            passed_defaultsini=passed_defaultsini,
+            passed_personalini=passed_personalini,
+            options=options,
+        )
+        if not configuration.has_section("overrides"):
+            configuration.add_section("overrides")
+        configuration.set("overrides", "meta_from_last_chapter", "false")
+        configuration.set("overrides", "check_next_chapter", "false")
+
+        adapter = fff_adapters.getAdapter(configuration, target_url)
+        story = adapter.getStoryMetadataOnly()
+
+        num_chapters = _parse_probe_chapters(story.getMetadata("numChapters"))
+        if num_chapters is None:
+            num_chapters = _parse_probe_chapters(story.getMetadataRaw("numChapters"))
+
+        date_updated = _parse_probe_date(story.getMetadata("dateUpdated"))
+        if date_updated is None:
+            date_updated = _parse_probe_date(story.getMetadataRaw("dateUpdated"))
+
+        raw_status = story.getMetadata("status")
+        status = (
+            raw_status.strip()
+            if isinstance(raw_status, str) and raw_status.strip()
+            else None
+        )
+
+        raw_title = story.getMetadata("title")
+        title = (
+            raw_title.strip()
+            if isinstance(raw_title, str) and raw_title.strip()
+            else None
+        )
+
+        return MetadataProbeResult(
+            num_chapters=num_chapters,
+            date_updated=date_updated,
+            status=status,
+            title=title,
+        )
+    except fff_exceptions.StoryDoesNotExist as exc:
+        ff_logging.log_debug(
+            f"\tMetadata probe: story does not exist ({target_url}): {exc}"
+        )
+        return MetadataProbeResult(
+            story_deleted=True,
+            error=str(exc) or "Story does not exist",
+            exception=exc,
+        )
+    except Exception as exc:
+        ff_logging.log_debug(f"\tMetadata probe failed for {target_url}: {exc}")
+        return MetadataProbeResult(
+            error=str(exc) or type(exc).__name__,
+            exception=exc,
+        )
+    finally:
+        updated_cookiejar = vars(options).get("cookiejar")
+        if updated_cookiejar is not None and site_key:
+            cookies.set_site_cookiejar(site_key, updated_cookiejar)
+
+
+def execute_fanficfare_direct(
+    cdb: calibre_info.CalibreInfo,
+    fanfic: fanfic_info.FanficInfo,
+    path_or_url: str,
+    temp_dir: str,
+) -> FanFicFareResult:
+    """
+    Execute a FanFicFare download/update directly via the Python API.
+
+    Replaces the subprocess-based execute_command() approach for lower
+    per-download overhead. Uses fanficfare.cli.do_download() with custom
+    warn/fail callbacks to intercept structured error conditions, and a
+    thread-local stdout proxy to catch print()-based messages
+    (equal_chapters, failed_login).
+
+    Args:
+        cdb: Calibre configuration (update_method, ini file paths, etc.).
+        fanfic: Fanfiction task being processed.
+        path_or_url: Epub file path for updates, or story URL for new downloads.
+        temp_dir: Temporary working directory; epub output is directed here.
+
+    Returns:
+        FanFicFareResult containing classified failure, forceable messages,
+        target_url, effective_user_agent, and captured stdout.
+    """
+    passed_defaultsini, personal_ini_base = _load_ini_files(cdb)
 
     output_dir = Path(temp_dir).as_posix()
     _filename_template = extract_output_filename_template(

@@ -3,6 +3,7 @@
 import argparse
 import multiprocessing as mp
 from multiprocessing.managers import SyncManager
+from pathlib import Path
 
 from calibre_integration import calibre_info, calibredb_utils
 from calibre_integration import factory as calibre_factory
@@ -11,6 +12,7 @@ from config import AppConfig
 from config.ini_resolver import resolve_ini_path
 from config.store import ConfigStore
 import ff_logging
+from history.poller_store import PollerStore
 from history.recorder import HistoryRecorder
 from history.writer import HistoryWriter
 from history.recovery import recover_uncompleted_downloads
@@ -110,6 +112,12 @@ def log_configuration_details(
         ff_logging.log(
             f"  Auto Restart: {'Enabled' if config.process.auto_restart else 'Disabled'}"
         )
+        poller_status = "Enabled" if config.library_poller.enabled else "Disabled"
+        poller_sites = list(config.library_poller.sites.keys())
+        ff_logging.log(
+            f"  Library Poller: {poller_status}"
+            + (f" (sites: {poller_sites})" if poller_sites else "")
+        )
 
     except Exception as e:
         ff_logging.log_failure(f"  Error accessing specific configuration details: {e}")
@@ -145,6 +153,8 @@ def register_processes(
     scale_queue = mp.Queue()
     active_urls = manager.dict()
     coordinator_status = manager.dict()
+    active_polls = manager.dict()
+    poller_last_sync = manager.dict()
 
     ff_logging.set_web_enabled(is_web_enabled)
     log_queue = mp.Queue() if is_web_enabled else None
@@ -170,13 +180,15 @@ def register_processes(
         if resolved_log_path:
             ff_logging.init_persistent_logging(resolved_log_path)
 
+    resolved_history_db_path = history_db_path or "/data/history.db"
     history_writer = HistoryWriter(
         history_queue,
-        history_db_path or "/data/history.db",
+        resolved_history_db_path,
         shutdown_event=process_manager._shutdown_event,
     )
     history_writer.start()
     process_manager._history_writer = history_writer
+    poller_store = PollerStore(Path(resolved_history_db_path))
 
     email_info = EmailInfo(
         config.email,
@@ -194,6 +206,7 @@ def register_processes(
     supervisor_restart_event = mp.Event()
     worker_restart_event = mp.Event()
     check_emails_event = mp.Event()
+    sync_poller_event = mp.Event()
 
     process_manager.set_config_store(config_store)
     process_manager.set_web_restart_event(web_restart_event)
@@ -219,6 +232,10 @@ def register_processes(
         check_emails_event=check_emails_event,
         verbose=args.verbose,
         coordinator_status=coordinator_status,
+        sync_poller_event=sync_poller_event,
+        active_polls=active_polls,
+        poller_last_sync=poller_last_sync,
+        poller_store=poller_store,
     )
 
     if config.retry.resume_uncompleted_on_startup and history_db_path:
@@ -237,6 +254,7 @@ def register_processes(
             email_info,
             notification_info,
             url_parsers,
+            calibre_client,
         ),
     )
 

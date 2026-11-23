@@ -8,6 +8,7 @@ from dataclasses import dataclass
 lazy from calibre_integration import calibre_info
 lazy from calibre_integration.client_interface import CalibreClient
 lazy from config.store import ConfigStore
+lazy from history.poller_store import PollerStore
 lazy from history.recorder import HistoryRecorder
 lazy import config
 lazy from models.active_urls import ActiveUrlsDict
@@ -18,6 +19,7 @@ lazy from models.queue_types import (
     ScaleQueue,
     ShutdownEvent,
     SupervisorRestartEvent,
+    SyncPollerEvent,
     WaitingQueue,
     WorkerQueues,
     WorkerRestartEvent,
@@ -37,6 +39,9 @@ class WorkerContext:
         retry_config (RetryConfig): Configuration governing retry counts and Hail-Mary backoff.
         history_recorder (HistoryRecorder): Recorder for persisting history events.
         active_urls (ActiveUrlsDict): Shared map of active URLs.
+        poller_store (PollerStore | None): Optional SQLite store for adaptive library polling.
+        active_polls (MutableMapping[str, object] | None): Optional shared map tracking in-flight poll probes per site.
+        config_store (ConfigStore | None): Optional shared ConfigStore for hot-reloaded site poller settings.
     """
 
     calibre_client: CalibreClient
@@ -46,6 +51,9 @@ class WorkerContext:
     retry_config: config.RetryConfig
     history_recorder: HistoryRecorder
     active_urls: ActiveUrlsDict
+    poller_store: PollerStore | None = None
+    active_polls: MutableMapping[str, object] | None = None
+    config_store: ConfigStore | None = None
 
     @property
     def cdb_info(self) -> calibre_info.CalibreInfo:
@@ -92,3 +100,7 @@ class SharedIPCContext:
     log_queue: LogQueue | None = None
     verbose: bool = False
     coordinator_status: MutableMapping[str, object] | None = None
+    sync_poller_event: SyncPollerEvent | None = None
+    active_polls: MutableMapping[str, object] | None = None
+    poller_last_sync: MutableMapping[str, str] | None = None
+    poller_store: PollerStore | None = None

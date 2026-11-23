@@ -10,6 +10,7 @@ from multiprocessing.synchronize import Event
 
 from config.store import ConfigStore
 from history.async_db import AsyncHistoryDB
+from history.poller_store import PollerStore
 from history.recorder import HistoryRecorder
 from models.active_urls import ActiveUrlsDict
 from config import AppConfig
@@ -17,6 +18,7 @@ from models.queue_types import (
     CheckEmailsEvent,
     IngressQueue,
     SupervisorRestartEvent,
+    SyncPollerEvent,
     WaitingQueue,
     WorkerQueues,
     WorkerRestartEvent,
@@ -68,6 +70,12 @@ class WebState:
 
     # Coordinator status (shared dict for assignments, backlogs, worker states)
     coordinator_status: MutableMapping[str, object] | None = None
+
+    # Adaptive library update poller IPC & SQLite store
+    sync_poller_event: SyncPollerEvent | None = None
+    active_polls: MutableMapping[str, object] | None = None
+    poller_last_sync: MutableMapping[str, str] | None = None
+    poller_store: PollerStore | None = None
 
     # Dismissed error URLs (set of URLs whose 24h error alerts were cleared by the user)
     dismissed_error_urls: set[str] = field(default_factory=set)

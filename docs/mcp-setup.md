@@ -59,6 +59,8 @@ port = 8080
 | `retry_all_waiting` | Requeue all downloads currently in waiting/backoff state for immediate retry | None |
 | `toggle_site` | Toggle site domain between enabled and disabled in email watcher configuration | `site` |
 | `redownload_from_scratch` | Redownload a story completely from scratch, removing existing EPUB and cached state | `url` |
+| `get_poller_status` | Get adaptive library update poller status, daily budgets, tier counts, and queued checks | `site` |
+| `trigger_library_sync` | Trigger an immediate Calibre library sync scan in the library update poller | None |
 
 ---
 

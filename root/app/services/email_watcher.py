@@ -58,6 +58,7 @@ def email_watcher(
         for url in urls:
             fanfic = regex_parsing.generate_FanficInfo_from_url(url, url_parsers)
             fanfic.from_email = True
+            fanfic.source = "email"
 
             if fanfic.url in processed_in_batch:
                 continue
@@ -80,14 +81,16 @@ def email_watcher(
 
             urls_new += 1
             fics_to_add.add(fanfic)
-            mark_url_queued(active_urls, fanfic.url, site=fanfic.site)
+            mark_url_queued(active_urls, fanfic.url, site=fanfic.site, source="email")
 
         for fic in fics_to_add:
             ff_logging.log(
                 f"Adding {fic.url} to the ingestion queue (Site: {fic.site})"
             )
             ingress_queue.put(fic)
-            history_recorder.record_download_created(fic.url, fic.site, fic.behavior)
+            history_recorder.record_download_created(
+                fic.url, fic.site, fic.behavior, source="email"
+            )
 
         trigger = (
             "manual" if is_manual else ("idle" if email_info.imap_idle else "poll")

@@ -337,6 +337,47 @@ test('computeDirtySections tracks unsaved changes across all config sections and
     assert.deepEqual(dirty['personal.ini'], ['content'])
 })
 
+test('computeDirtySections compares nested library_poller.sites deeply and ignores key order', () => {
+    const initCfg = {
+        library_poller: {
+            enabled: true,
+            sites: {
+                fanfiction: { enabled: true, max_checks_per_day: 24, include_tags: [] },
+            },
+        },
+    }
+    const reorderedSame = {
+        library_poller: {
+            enabled: true,
+            sites: {
+                fanfiction: { include_tags: [], max_checks_per_day: 24, enabled: true },
+            },
+        },
+    }
+    assert.equal(computeDirtySections(reorderedSame, initCfg, '', '').library_poller, undefined)
+
+    const modifiedNested = {
+        library_poller: {
+            enabled: true,
+            sites: {
+                fanfiction: { enabled: true, max_checks_per_day: 36, include_tags: [] },
+            },
+        },
+    }
+    assert.deepEqual(computeDirtySections(modifiedNested, initCfg, '', '').library_poller, ['sites'])
+
+    const addedSite = {
+        library_poller: {
+            enabled: true,
+            sites: {
+                fanfiction: { enabled: true, max_checks_per_day: 24, include_tags: [] },
+                royalroad: { enabled: true, max_checks_per_day: 24, include_tags: [] },
+            },
+        },
+    }
+    assert.deepEqual(computeDirtySections(addedSite, initCfg, '', '').library_poller, ['sites'])
+})
+
 test('getStatusColor maps semantic statuses to canonical hex colors', () => {
     assert.equal(getStatusColor('success'), STATUS_COLORS.success)
     assert.equal(getStatusColor('failed'), STATUS_COLORS.failed)

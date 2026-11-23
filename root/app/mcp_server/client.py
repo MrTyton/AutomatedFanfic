@@ -322,3 +322,22 @@ class AutomatedFanficClient:
         """Clear in-memory application log buffers, optionally filtered by component (e.g. 'email')."""
         params = {"component": component} if component else None
         return await self._request("POST", "/api/logs/clear", params=params)
+
+    async def get_poller_status(
+        self,
+        site: str = "",
+        up_next_limit: int = 10,
+        recent_limit: int = 15,
+    ) -> dict[str, Any]:
+        """Fetch adaptive library update poller status, daily budgets, tiers, and upcoming checks."""
+        params: dict[str, Any] = {
+            "up_next_limit": up_next_limit,
+            "recent_limit": recent_limit,
+        }
+        if site:
+            params["site"] = site
+        return await self._request("GET", "/api/poller/status", params=params)
+
+    async def trigger_library_sync(self) -> dict[str, Any]:
+        """Trigger an immediate Calibre library sync scan in the library update poller."""
+        return await self._request("POST", "/api/poller/sync")

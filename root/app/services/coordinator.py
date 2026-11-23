@@ -268,94 +268,104 @@ class Coordinator:
                 f"reached for {task.url} (possible circular series reference)"
             )
             return
-        # Check if the task was cancelled before routing or expanding
-        if self.active_urls is not None:
-            try:
-                meta = dict(self.active_urls.get(task.url, {}))
-                if meta.get("status") == "cancelled":
-                    remove_active_url(self.active_urls, task.url)
-                    ff_logging.log_debug(
-                        f"Coordinator: Dropped cancelled task {task.url}"
-                    )
-                    return
-            except Exception as e:
-                ff_logging.log_debug(
-                    f"Coordinator: Suppressed active_urls read error in _handle_new_task: {e}"
-                )
-
         site = task.site
 
-        # Check if this is a series/collection URL
-        expansion_result = series.process_url(
-            task.url,
-            config_store=self.config_store,
-        )
+        if task.behavior != "poll_check":
+            # Check if the task was cancelled before routing or expanding
+            if self.active_urls is not None:
+                try:
+                    meta = dict(self.active_urls.get(task.url, {}))
+                    if meta.get("status") == "cancelled":
+                        remove_active_url(self.active_urls, task.url)
+                        ff_logging.log_debug(
+                            f"Coordinator: Dropped cancelled task {task.url}"
+                        )
+                        return
+                except Exception as e:
+                    ff_logging.log_debug(
+                        f"Coordinator: Suppressed active_urls read error in _handle_new_task: {e}"
+                    )
 
-        if expansion_result["is_series"]:
-            if expansion_result["count"] > 1 or (
-                expansion_result["count"] == 1
-                and expansion_result["urls"]
-                and expansion_result["urls"][0] != task.url
-            ):
-                # Expand series into individual story tasks
-                ff_logging.log(
-                    f"Coordinator: Expanding series ({expansion_result['count']} stories): {task.url}"
-                )
+            # Check if this is a series/collection URL
+            expansion_result = series.process_url(
+                task.url,
+                config_store=self.config_store,
+            )
 
-                # Remove the parent series URL from active_urls since workers only
-                # process and clean up the individual child story URLs.
-                remove_active_url(self.active_urls, task.url)
-            elif expansion_result["count"] == 0:
-                # Detected as series, but expansion produced 0 stories (e.g. 403 or network error)
-                ff_logging.log_failure(
-                    f"Coordinator: Failed to expand series {task.url} into story URLs"
-                )
-                mark_url_failed(
-                    self.active_urls,
-                    task.url,
-                    "Failed to expand series (check credentials/login in personal.ini or network)",
-                )
+            if expansion_result["is_series"]:
+                if expansion_result["count"] > 1 or (
+                    expansion_result["count"] == 1
+                    and expansion_result["urls"]
+                    and expansion_result["urls"][0] != task.url
+                ):
+                    # Expand series into individual story tasks
+                    ff_logging.log(
+                        f"Coordinator: Expanding series ({expansion_result['count']} stories): {task.url}"
+                    )
+
+                    # Remove the parent series URL from active_urls since workers only
+                    # process and clean up the individual child story URLs.
+                    remove_active_url(self.active_urls, task.url)
+                elif expansion_result["count"] == 0:
+                    # Detected as series, but expansion produced 0 stories (e.g. 403 or network error)
+                    ff_logging.log_failure(
+                        f"Coordinator: Failed to expand series {task.url} into story URLs"
+                    )
+                    mark_url_failed(
+                        self.active_urls,
+                        task.url,
+                        "Failed to expand series (check credentials/login in personal.ini or network)",
+                    )
+                    return
+
+                for story_url in expansion_result["urls"]:
+                    child_url = story_url
+                    child_site = site
+                    if self.url_parsers:
+                        try:
+                            parsed = regex_parsing.generate_FanficInfo_from_url(
+                                story_url, self.url_parsers
+                            )
+                            child_url = parsed.url
+                            if parsed.site and parsed.site != "other":
+                                child_site = parsed.site
+                        except Exception as e:
+                            ff_logging.log_debug(
+                                f"Coordinator: Suppressed URL parser error for {story_url}: {e}"
+                            )
+
+                    story_task = FanficInfo(
+                        url=child_url,
+                        site=child_site,
+                        calibre_id=task.calibre_id,
+                        behavior=task.behavior,
+                        title=None,
+                        repeats=0,  # Individual stories start fresh, never inherit series repeats
+                        retry_decision=task.retry_decision,
+                        from_email=task.from_email,
+                        source=task.source,
+                    )
+                    mark_url_queued(
+                        self.active_urls,
+                        story_task.url,
+                        site=story_task.site,
+                        source=story_task.source,
+                    )
+                    if self.history_recorder is not None:
+                        try:
+                            self.history_recorder.record_download_created(
+                                story_task.url,
+                                story_task.site,
+                                story_task.behavior,
+                                source=story_task.source,
+                            )
+                        except Exception as e:
+                            ff_logging.log_debug(
+                                f"Coordinator: Suppressed history recorder error for {story_task.url}: {e}"
+                            )
+                    self._handle_new_task(story_task, depth + 1)
+
                 return
-
-            for story_url in expansion_result["urls"]:
-                child_url = story_url
-                child_site = site
-                if self.url_parsers:
-                    try:
-                        parsed = regex_parsing.generate_FanficInfo_from_url(
-                            story_url, self.url_parsers
-                        )
-                        child_url = parsed.url
-                        if parsed.site and parsed.site != "other":
-                            child_site = parsed.site
-                    except Exception as e:
-                        ff_logging.log_debug(
-                            f"Coordinator: Suppressed URL parser error for {story_url}: {e}"
-                        )
-
-                story_task = FanficInfo(
-                    url=child_url,
-                    site=child_site,
-                    calibre_id=task.calibre_id,
-                    behavior=task.behavior,
-                    title=None,
-                    repeats=0,  # Individual stories start fresh, never inherit series repeats
-                    retry_decision=task.retry_decision,
-                    from_email=task.from_email,
-                )
-                mark_url_queued(self.active_urls, story_task.url, site=story_task.site)
-                if self.history_recorder is not None:
-                    try:
-                        self.history_recorder.record_download_created(
-                            story_task.url, story_task.site, story_task.behavior
-                        )
-                    except Exception as e:
-                        ff_logging.log_debug(
-                            f"Coordinator: Suppressed history recorder error for {story_task.url}: {e}"
-                        )
-                self._handle_new_task(story_task, depth + 1)
-
-            return
 
         # 1. If site is already assigned to a worker, push directly
         if site in self.state.assignments:
@@ -439,7 +449,7 @@ class Coordinator:
         tasks_pushed = []
         while self.state.backlog[site]:
             task = self.state.backlog[site].popleft()
-            if self.active_urls is not None:
+            if task.behavior != "poll_check" and self.active_urls is not None:
                 try:
                     meta = dict(self.active_urls.get(task.url, {}))
                     if meta.get("status") == "cancelled":

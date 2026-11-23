@@ -39,7 +39,11 @@ class HistoryRecorder:
     # -- convenience methods --
 
     def record_download_created(
-        self, url: str, site: str, behavior: str | None = None
+        self,
+        url: str,
+        site: str,
+        behavior: str | None = None,
+        source: str = "manual",
     ) -> None:
         self._put(
             HistoryMessage(
@@ -48,6 +52,7 @@ class HistoryRecorder:
                     url=url,
                     site=site,
                     behavior=behavior,
+                    source=source,
                 ).model_dump(mode="json"),
             )
         )

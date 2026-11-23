@@ -11,6 +11,7 @@ from mcp_server.tools import (
     diagnostics,
     history,
     logs,
+    poller,
     queues,
     story,
     system,
@@ -32,6 +33,7 @@ def register_all_tools(server: FastMCP, client: AutomatedFanficClient) -> None:
     config.register_tools(server, client)
     diagnostics.register_tools(server, client)
     controls.register_tools(server, client)
+    poller.register_tools(server, client)
 
 
 __all__ = ["FastMCP", "register_all_tools"]

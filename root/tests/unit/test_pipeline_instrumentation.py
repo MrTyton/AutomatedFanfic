@@ -103,7 +103,7 @@ class TestEmailWatcherInstrumentation(unittest.TestCase):
         )
 
         self.recorder.record_download_created.assert_called_once_with(
-            "https://archiveofourown.org/works/123", "ao3", None
+            "https://archiveofourown.org/works/123", "ao3", None, source="email"
         )
 
     @patch("services.email_watcher.regex_parsing.generate_FanficInfo_from_url")

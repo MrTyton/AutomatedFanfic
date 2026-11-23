@@ -60,6 +60,11 @@ FIELD_RELOAD_MAP: dict[str, ReloadBehavior] = {
     "process.shutdown_timeout": ReloadBehavior.HOT,
     "process.health_check_interval": ReloadBehavior.HOT,
     "process.max_restart_attempts": ReloadBehavior.HOT,
+    # Library poller — LibraryPoller and workers read these each tick/probe
+    "library_poller.enabled": ReloadBehavior.HOT,
+    "library_poller.library_sync_interval_hours": ReloadBehavior.HOT,
+    "library_poller.tick_interval_seconds": ReloadBehavior.HOT,
+    "library_poller.sites": ReloadBehavior.HOT,
     # ── Service restart (web server auto-restarts) ───────────────
     "web.enabled": ReloadBehavior.SERVICE_RESTART,
     "web.host": ReloadBehavior.SERVICE_RESTART,
@@ -124,6 +129,18 @@ class ConfigStore:
             config.process.max_restart_attempts
         )
         self._store["process.max_workers"] = config.process.max_workers
+
+        self._store["library_poller.enabled"] = config.library_poller.enabled
+        self._store["library_poller.library_sync_interval_hours"] = (
+            config.library_poller.library_sync_interval_hours
+        )
+        self._store["library_poller.tick_interval_seconds"] = (
+            config.library_poller.tick_interval_seconds
+        )
+        self._store["library_poller.sites"] = {
+            site: site_cfg.model_dump()
+            for site, site_cfg in config.library_poller.sites.items()
+        }
         self._store["__version__"] = 1
 
     def get(self, key: str, default: object = None) -> object:

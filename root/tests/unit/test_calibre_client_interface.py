@@ -10,7 +10,12 @@ from calibre_integration.client_interface import (
     build_url_search_query,
     extract_story_base_url,
 )
-from calibre_integration.models import AddedBook, BookExport, MetadataUpdateReport
+from calibre_integration.models import (
+    AddedBook,
+    BookExport,
+    CalibreStorySummary,
+    MetadataUpdateReport,
+)
 from config.store import ConfigStore
 from helpers.log_capture import LogCapture
 from models.fanfic_info import FanficInfo
@@ -53,6 +58,9 @@ class _DummyCalibreClient(CalibreClient):
     def get_version(self) -> str:
         return "9.16.0"
 
+    def list_stories_by_query(self, query: str) -> list[CalibreStorySummary]:
+        return []
+
 
 def test_calibre_client_is_abstract() -> None:
     with pytest.raises(TypeError):
@@ -74,6 +82,7 @@ def test_calibre_client_abstract_methods() -> None:
         "get_metadata",
         "set_metadata_fields",
         "get_version",
+        "list_stories_by_query",
         "set_config_store",
         "refresh_if_changed",
         "log_metadata_comparison",

@@ -36,7 +36,7 @@ async def query_recent_events(
 
     cursor = await conn.execute(
         """SELECT 'download' as event_type, id, url, site, title,
-                  calibre_id, status, error_message,
+                  calibre_id, source, status, error_message,
                   started_at as timestamp, completed_at
            FROM download_events
            ORDER BY started_at DESC LIMIT ?""",

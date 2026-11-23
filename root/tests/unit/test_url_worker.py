@@ -610,6 +610,7 @@ class TestUrlWorkerMainLoop(unittest.TestCase):
         self.test_fanfic.url = "http://example.com/story"
         self.test_fanfic.behavior = "update"
         self.test_fanfic.max_repeats = None
+        self.test_fanfic.source = "manual"
 
         # Counter to track calls and exit after processing one item
         self.call_count = 0

@@ -16,6 +16,7 @@ from calibre_integration import calibre_info
 from calibre_integration.client_interface import (
     CalibreClient,
     CalibreMetadata,
+    build_story_summary,
     build_url_search_query,
 )
 from calibre_integration.models import (
@@ -24,6 +25,7 @@ from calibre_integration.models import (
     CalibreAuthError,
     CalibreConnectionError,
     CalibreOperationError,
+    CalibreStorySummary,
     MetadataUpdateReport,
 )
 from config.store import ConfigStore
@@ -33,6 +35,7 @@ import ff_logging
 
 CALIBRE_CANARY_KEY = "jPoAv3zOyHvQ5JFNYg4hJ9"
 DEFAULT_HTTP_TIMEOUT = 60
+AJAX_BOOKS_BATCH_SIZE = 200
 
 
 def _calibre_json_object_hook(obj: dict[str, object]) -> object:
@@ -525,3 +528,42 @@ class CalibreHttpClient(CalibreClient):
             updated_fields=tuple(updated_fields),
             failed_fields=tuple(failed_fields),
         )
+
+    def list_stories_by_query(self, query: str) -> list[CalibreStorySummary]:
+        """Search Calibre Content Server and fetch bulk story summaries in batches."""
+        search_response = self._request(
+            "POST",
+            "/cdb/cmd/search/0",
+            params=self._library_query_params(),
+            json_body=[query],
+        )
+        search_payload = self._decode_json(search_response)
+        raw_ids = (
+            search_payload.get("result") if isinstance(search_payload, dict) else None
+        )
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return []
+
+        book_ids = [str(bid) for bid in raw_ids]
+        summaries: list[CalibreStorySummary] = []
+
+        for start in range(0, len(book_ids), AJAX_BOOKS_BATCH_SIZE):
+            batch = book_ids[start : start + AJAX_BOOKS_BATCH_SIZE]
+            books_response = self._request(
+                "GET",
+                "/ajax/books",
+                params={"ids": ",".join(batch), **self._library_query_params()},
+            )
+            books_payload = self._decode_json(books_response)
+            if not isinstance(books_payload, dict):
+                continue
+
+            for bid in batch:
+                raw_book = books_payload.get(bid)
+                if not isinstance(raw_book, dict):
+                    continue
+                summary = build_story_summary(bid, raw_book)
+                if summary is not None:
+                    summaries.append(summary)
+
+        return summaries
