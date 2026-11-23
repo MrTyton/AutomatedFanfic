@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from config.schemas.poller import LibraryPollerConfig
+from parsers.site_catalog import get_supported_sites_catalog
 from services.library_poller import load_poller_config
 from web.dependencies import WebState
 
@@ -130,6 +131,31 @@ async def get_poller_status(
         "library_sync_interval_hours": poller_cfg.library_sync_interval_hours,
         "tick_interval_seconds": poller_cfg.tick_interval_seconds,
         "sites": sites_payload,
+    }
+
+
+@router.get("/sites")
+async def get_poller_sites(request: Request) -> dict[str, Any]:
+    """Return sites seen in download history and the full FanFicFare supported sites catalog."""
+    state: WebState = request.app.state.web_state
+    history_sites = (
+        state.poller_store.get_history_sites() if state.poller_store is not None else []
+    )
+    catalog = get_supported_sites_catalog()
+    supported_sites = sorted(
+        (
+            {
+                "id": entry.get("site") or site_id,
+                "domain": entry.get("domain", ""),
+                "label": entry.get("display_name") or site_id,
+            }
+            for site_id, entry in catalog.items()
+        ),
+        key=lambda item: (item["label"].lower(), item["id"].lower()),
+    )
+    return {
+        "history_sites": history_sites,
+        "supported_sites": supported_sites,
     }
 
 

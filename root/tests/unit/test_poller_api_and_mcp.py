@@ -192,7 +192,12 @@ def test_get_poller_status_endpoint_returns_sites_tiers_and_queues(
     assert len(ff["up_next"]) == 3
     assert ff["up_next"][0]["url"] == "https://www.fanfiction.net/s/100/1/"
     assert ff["up_next"][0]["cadence_days"] == 7.0
+    expected_weekday_label = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[
+        (now - timedelta(days=1)).weekday()
+    ]
+    assert ff["up_next"][0]["schedule_label"] == expected_weekday_label
     assert ff["up_next"][1]["cadence_days"] is None
+    assert ff["up_next"][1]["schedule_label"] is None
     assert len(ff["recent_events"]) == 1
     assert ff["recent_events"][0]["outcome"] == "unchanged"
 
@@ -201,6 +206,73 @@ def test_get_poller_status_endpoint_returns_sites_tiers_and_queues(
     assert filtered.status_code == 200
     filtered_data = filtered.json()
     assert list(filtered_data["sites"].keys()) == ["fanfiction"]
+
+
+def test_get_poller_sites_returns_history_ordered_and_supported_catalog(
+    tmp_path: Path,
+) -> None:
+    """Verify GET /api/poller/sites returns history_sites ordered by count DESC and sorted supported_sites."""
+    store = PollerStore(tmp_path / "history.db")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    with store._connect() as conn:
+        for idx, site_name in enumerate(
+            [
+                "royalroad",
+                "royalroad",
+                "royalroad",
+                "archiveofourown",
+                "fanfiction",
+                "fanfiction",
+                "fanfiction",
+                "fanfiction",
+                "fanfiction",
+                "",
+                "   ",
+            ]
+        ):
+            conn.execute(
+                """INSERT INTO download_events (url, site, status, started_at, completed_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    f"https://example.com/story/{idx}",
+                    site_name,
+                    DownloadStatus.SUCCESS.value,
+                    now_iso,
+                    now_iso,
+                ),
+            )
+
+    app = create_app(WebState(poller_store=store))
+    client = TestClient(app)
+
+    resp = client.get("/api/poller/sites")
+    assert resp.status_code == 200
+    payload = resp.json()
+
+    assert payload["history_sites"] == [
+        "fanfiction",
+        "royalroad",
+        "archiveofourown",
+    ]
+    supported = payload["supported_sites"]
+    assert isinstance(supported, list)
+    assert len(supported) > 0
+    for item in supported:
+        assert set(item.keys()) == {"id", "domain", "label"}
+        assert isinstance(item["id"], str) and item["id"]
+        assert isinstance(item["domain"], str)
+        assert isinstance(item["label"], str) and item["label"]
+
+    # Verify alphabetical sorting by (label.lower(), id.lower())
+    sort_keys = [(item["label"].lower(), item["id"].lower()) for item in supported]
+    assert sort_keys == sorted(sort_keys)
+
+    # Verify graceful empty history_sites when poller_store is None
+    app_no_store = create_app(WebState(poller_store=None))
+    resp_no_store = TestClient(app_no_store).get("/api/poller/sites")
+    assert resp_no_store.status_code == 200
+    assert resp_no_store.json()["history_sites"] == []
+    assert len(resp_no_store.json()["supported_sites"]) > 0
 
 
 def test_post_poller_sync_sets_event() -> None:

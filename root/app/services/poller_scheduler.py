@@ -1,7 +1,9 @@
 """Pure, deterministic adaptive scheduling and candidate scoring for library polling."""
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+import math
 import random
 import statistics
 from typing import Literal
@@ -10,26 +12,37 @@ from config.schemas.poller import SitePollerConfig
 from history.poller_store import TrackedStory
 
 PollTier = Literal["hot", "warm", "cool", "dormant"]
+CadenceKind = Literal["weekday", "interval"]
 
 _SECONDS_PER_DAY = 86400.0
 _MIN_CADENCE_INTERVAL_DAYS = 0.5
 _CADENCE_SAFETY_FACTOR = 0.8
 _HOT_STAGGER_MAX_DAYS = 1.0
 _DEDUP_WINDOW_SECONDS = 12 * 3600.0
-_MIN_REGULAR_MEDIAN_GAP_DAYS = 2.0
-_MAX_REGULAR_MAD_RATIO = 0.30
-_PREDICTIVE_EARLY_BUFFER_HOURS = 6.0
-_PREDICTIVE_JITTER_HOURS = 2.0
+_WEEKDAY_COVERAGE_THRESHOLD = 0.80
+_WEEKDAY_SINGLE_MIN_SPAN_DAYS = 12
+_WEEKDAY_MULTI_MIN_SPAN_DAYS = 10
+_MIN_INTERVAL_MEDIAN_GAP_DAYS = 10.0
+_MAX_INTERVAL_MAD_RATIO = 0.25
+_MONTHLY_MIN_GAP_DAYS = 26.0
+_MONTHLY_MAX_GAP_DAYS = 35.0
+_PREDICTIVE_AFTER_BUFFER_HOURS = 6.0
+_PREDICTIVE_JITTER_HOURS = 1.0
 _PREDICTIVE_MIN_DELAY_HOURS = 1.0
+_WEEKDAY_NAMES: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
 @dataclass(frozen=True)
 class CadenceEstimate:
     """Estimated update cadence derived from recent download timestamps."""
 
+    kind: CadenceKind
+    weekdays: tuple[int, ...]
+    typical_hour_utc: float
     median_gap_days: float
     is_regular: bool
     sample_count: int
+    label: str
 
 
 def _to_utc(dt: datetime) -> datetime:
@@ -96,14 +109,60 @@ def compute_next_check(
     return now + timedelta(days=interval_days * multiplier)
 
 
+def _circular_mean_hour_utc(timestamps: list[datetime]) -> float:
+    """Compute circular mean hour-of-day in [0.0, 24.0) from UTC timestamps."""
+    if not timestamps:
+        return 12.0
+    sin_sum = 0.0
+    cos_sum = 0.0
+    for dt in timestamps:
+        hour_val = dt.hour + dt.minute / 60.0
+        angle = hour_val * 2.0 * math.pi / 24.0
+        sin_sum += math.sin(angle)
+        cos_sum += math.cos(angle)
+    if math.isclose(sin_sum, 0.0, abs_tol=1e-12) and math.isclose(
+        cos_sum, 0.0, abs_tol=1e-12
+    ):
+        return 12.0
+    mean_angle = math.atan2(sin_sum, cos_sum)
+    if mean_angle < 0.0:
+        mean_angle += 2.0 * math.pi
+    return (mean_angle * 24.0 / (2.0 * math.pi)) % 24.0
+
+
+def _next_weekday_dt(
+    base_date: date,
+    weekdays: tuple[int, ...],
+    typical_hour_utc: float,
+) -> datetime:
+    """Return the strictly next calendar date matching `weekdays` at `typical_hour_utc`."""
+    for day_offset in range(1, 8):
+        candidate_date = base_date + timedelta(days=day_offset)
+        if candidate_date.weekday() in weekdays:
+            return datetime(
+                candidate_date.year,
+                candidate_date.month,
+                candidate_date.day,
+                tzinfo=timezone.utc,
+            ) + timedelta(hours=typical_hour_utc)
+    # Unreachable when weekdays is non-empty with values in 0..6
+    return datetime(
+        base_date.year,
+        base_date.month,
+        base_date.day,
+        tzinfo=timezone.utc,
+    ) + timedelta(days=7, hours=typical_hour_utc)
+
+
 def estimate_update_cadence(
     recent_downloads: list[datetime],
 ) -> CadenceEstimate | None:
     """Estimate a story's update cadence from recent successful download timestamps.
 
     Deduplicates timestamps within 12 hours of each other so retries or repeated
-    downloads do not skew inter-update gaps. Requires at least 3 distinct updates
-    (>= 2 positive gaps).
+    downloads do not skew patterns. Detects:
+    1. Weekday-set schedules (1 to 3 recurring weekdays, e.g. Sat, Tue/Thu, Mon/Wed/Fri)
+    2. Multi-week fixed-interval cadences (e.g. bi-weekly ~14d, monthly ~30d)
     """
     if len(recent_downloads) < 3:
         return None
@@ -114,7 +173,8 @@ def estimate_update_cadence(
         if not deduped or (ts - deduped[-1]).total_seconds() >= _DEDUP_WINDOW_SECONDS:
             deduped.append(ts)
 
-    if len(deduped) < 3:
+    n = len(deduped)
+    if n < 3:
         return None
 
     gaps = [
@@ -126,15 +186,74 @@ def estimate_update_cadence(
         return None
 
     median_gap = statistics.median(gaps)
+    typical_hour_utc = _circular_mean_hour_utc(deduped)
+    span_days = (deduped[-1] - deduped[0]).days
+
+    # Primary detector: Weekday-set schedule (1 to 3 recurring weekdays per week)
+    if median_gap < _MIN_INTERVAL_MEDIAN_GAP_DAYS:
+        counts = Counter(dt.weekday() for dt in deduped)
+        ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        for size in (1, 2, 3):
+            if len(ranked) < size:
+                continue
+            candidate = tuple(sorted(day for day, _cnt in ranked[:size]))
+            hits = sum(counts[d] for d in candidate)
+            coverage = hits / n
+            if size == 1:
+                valid = (
+                    n >= 3
+                    and coverage >= _WEEKDAY_COVERAGE_THRESHOLD
+                    and hits >= 3
+                    and span_days >= _WEEKDAY_SINGLE_MIN_SPAN_DAYS
+                )
+            else:
+                valid = (
+                    n >= 4
+                    and coverage >= _WEEKDAY_COVERAGE_THRESHOLD
+                    and all(counts[d] >= 2 for d in candidate)
+                    and span_days >= _WEEKDAY_MULTI_MIN_SPAN_DAYS
+                )
+            if valid:
+                label = "/".join(_WEEKDAY_NAMES[d] for d in candidate)
+                return CadenceEstimate(
+                    kind="weekday",
+                    weekdays=candidate,
+                    typical_hour_utc=typical_hour_utc,
+                    median_gap_days=median_gap,
+                    is_regular=True,
+                    sample_count=n,
+                    label=label,
+                )
+
+    # Secondary detector: Multi-week fixed-interval cadence (e.g. bi-weekly, monthly)
     mad = statistics.median([abs(g - median_gap) for g in gaps])
-    is_regular = (
-        median_gap >= _MIN_REGULAR_MEDIAN_GAP_DAYS
-        and (mad / median_gap) <= _MAX_REGULAR_MAD_RATIO
-    )
+    if (
+        median_gap >= _MIN_INTERVAL_MEDIAN_GAP_DAYS
+        and (mad / median_gap) <= _MAX_INTERVAL_MAD_RATIO
+    ):
+        label = (
+            "Monthly (~30d)"
+            if _MONTHLY_MIN_GAP_DAYS <= median_gap <= _MONTHLY_MAX_GAP_DAYS
+            else f"Every ~{round(median_gap)}d"
+        )
+        return CadenceEstimate(
+            kind="interval",
+            weekdays=(),
+            typical_hour_utc=typical_hour_utc,
+            median_gap_days=median_gap,
+            is_regular=True,
+            sample_count=n,
+            label=label,
+        )
+
     return CadenceEstimate(
+        kind="interval",
+        weekdays=(),
+        typical_hour_utc=typical_hour_utc,
         median_gap_days=median_gap,
-        is_regular=is_regular,
-        sample_count=len(deduped),
+        is_regular=False,
+        sample_count=n,
+        label="",
     )
 
 
@@ -145,24 +264,46 @@ def compute_predictive_next_check(
     cfg: SitePollerConfig,
     rng: random.Random,
 ) -> datetime:
-    """Compute next check time using predictive cadence when regular, else adaptive tiers."""
+    """Compute next check time using predictive schedule when regular, bounded by tier ceiling."""
     now_utc = _to_utc(now)
+    _, tier_interval_days = classify_tier(last_update_date, now_utc.date(), cfg)
+    ceiling_dt = now_utc + timedelta(days=tier_interval_days)
+
     if last_update_date is not None:
         estimate = estimate_update_cadence(recent_downloads)
         if estimate is not None and estimate.is_regular:
-            predicted_dt = datetime(
-                last_update_date.year,
-                last_update_date.month,
-                last_update_date.day,
-                tzinfo=timezone.utc,
-            ) + timedelta(days=estimate.median_gap_days)
-            target = predicted_dt - timedelta(hours=_PREDICTIVE_EARLY_BUFFER_HOURS)
+            latest_download_utc = max(_to_utc(ts) for ts in recent_downloads)
+            if latest_download_utc.date() >= last_update_date:
+                base_dt = latest_download_utc
+            else:
+                base_dt = datetime(
+                    last_update_date.year,
+                    last_update_date.month,
+                    last_update_date.day,
+                    tzinfo=timezone.utc,
+                ) + timedelta(hours=estimate.typical_hour_utc)
+
+            if estimate.kind == "weekday":
+                predicted_dt = _next_weekday_dt(
+                    base_dt.date(),
+                    estimate.weekdays,
+                    estimate.typical_hour_utc,
+                )
+            else:
+                predicted_dt = base_dt + timedelta(days=estimate.median_gap_days)
+
+            target = predicted_dt + timedelta(hours=_PREDICTIVE_AFTER_BUFFER_HOURS)
             if target > now_utc:
                 jitter_hours = rng.uniform(
                     -_PREDICTIVE_JITTER_HOURS, _PREDICTIVE_JITTER_HOURS
                 )
                 min_next = now_utc + timedelta(hours=_PREDICTIVE_MIN_DELAY_HOURS)
-                return max(target + timedelta(hours=jitter_hours), min_next)
+                if ceiling_dt < min_next:
+                    return ceiling_dt
+                return min(
+                    max(target + timedelta(hours=jitter_hours), min_next), ceiling_dt
+                )
+
             return compute_next_check(
                 now_utc,
                 min(1.0, cfg.hot_interval_days),

@@ -537,6 +537,16 @@ class PollerStore:
         with self._connect() as conn:
             return self._query_recent_download_timestamps(conn, url, since)
 
+    def get_history_sites(self) -> list[str]:
+        """Return distinct non-empty site names from download_events ordered by download count DESC."""
+        with self._connect() as conn:
+            rows = conn.execute("""SELECT site, COUNT(*) AS cnt
+                   FROM download_events
+                   WHERE site IS NOT NULL AND TRIM(site) != ''
+                   GROUP BY site
+                   ORDER BY cnt DESC, site ASC""").fetchall()
+        return [str(row["site"]) for row in rows]
+
     def get_site_status(
         self,
         site: str,
@@ -580,16 +590,18 @@ class PollerStore:
 
             active_stories = [_row_to_tracked_story(row) for row in active_rows]
             up_next_cadence: dict[str, float | None] = {}
+            up_next_schedule_label: dict[str, str | None] = {}
             for story in active_stories[:up_next_limit]:
                 recent_ts = self._query_recent_download_timestamps(
                     conn, story.url, since_180d
                 )
                 estimate = poller_scheduler.estimate_update_cadence(recent_ts)
-                up_next_cadence[story.url] = (
-                    round(estimate.median_gap_days, 1)
-                    if estimate is not None and estimate.is_regular
-                    else None
-                )
+                if estimate is not None and estimate.is_regular:
+                    up_next_cadence[story.url] = round(estimate.median_gap_days, 1)
+                    up_next_schedule_label[story.url] = estimate.label
+                else:
+                    up_next_cadence[story.url] = None
+                    up_next_schedule_label[story.url] = None
 
         tier_counts: dict[str, int] = {
             "hot": 0,
@@ -622,6 +634,7 @@ class PollerStore:
                 "consecutive_errors": story.consecutive_errors,
                 "tier": _classify_tier(story.last_update_date, cfg, today),
                 "cadence_days": up_next_cadence.get(story.url),
+                "schedule_label": up_next_schedule_label.get(story.url),
             }
             for story in active_stories[:up_next_limit]
         ]

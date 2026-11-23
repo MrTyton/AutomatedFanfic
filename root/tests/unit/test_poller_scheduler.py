@@ -241,7 +241,7 @@ def test_error_backoff_exponential_and_capped() -> None:
 
 
 def test_estimate_update_cadence_regular_irregular_and_dedup() -> None:
-    base = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)  # Thursday
 
     # Fewer than 3 distinct updates -> None
     assert estimate_update_cadence([]) is None
@@ -254,7 +254,7 @@ def test_estimate_update_cadence_regular_irregular_and_dedup() -> None:
         is None
     )
 
-    # Regular weekly cadence (7d) with a retry 3h after one download -> deduplicated
+    # Regular weekly Thursday cadence (7d) with a retry 3h after one download -> deduplicated
     weekly = [
         base,
         base + timedelta(days=7),
@@ -264,11 +264,30 @@ def test_estimate_update_cadence_regular_irregular_and_dedup() -> None:
     ]
     est_weekly = estimate_update_cadence(weekly)
     assert isinstance(est_weekly, CadenceEstimate)
+    assert est_weekly.kind == "weekday"
+    assert est_weekly.weekdays == (3,)
+    assert est_weekly.label == "Thu"
+    assert est_weekly.typical_hour_utc == pytest.approx(12.0, abs=0.1)
     assert est_weekly.median_gap_days == pytest.approx(7.0)
     assert est_weekly.is_regular is True
     assert est_weekly.sample_count == 4
 
-    # Regular bi-weekly cadence with slight variance (13d, 14d, 15d -> MAD=1, 1/14=0.071 <= 0.30)
+    # Regular bi-weekly cadence (14d exact on same weekday -> interval, not weekly weekday)
+    biweekly_exact = [
+        base,
+        base + timedelta(days=14),
+        base + timedelta(days=28),
+        base + timedelta(days=42),
+    ]
+    est_biweekly_exact = estimate_update_cadence(biweekly_exact)
+    assert est_biweekly_exact is not None
+    assert est_biweekly_exact.kind == "interval"
+    assert est_biweekly_exact.weekdays == ()
+    assert est_biweekly_exact.is_regular is True
+    assert est_biweekly_exact.median_gap_days == pytest.approx(14.0)
+    assert est_biweekly_exact.label == "Every ~14d"
+
+    # Regular bi-weekly cadence with slight variance (13d, 14d, 15d -> MAD=1, 1/14=0.071 <= 0.25)
     biweekly = [
         base,
         base + timedelta(days=13),
@@ -277,9 +296,24 @@ def test_estimate_update_cadence_regular_irregular_and_dedup() -> None:
     ]
     est_biweekly = estimate_update_cadence(biweekly)
     assert est_biweekly is not None
+    assert est_biweekly.kind == "interval"
     assert est_biweekly.is_regular is True
     assert est_biweekly.median_gap_days == pytest.approx(14.0)
+    assert est_biweekly.label == "Every ~14d"
     assert est_biweekly.sample_count == 4
+
+    # Monthly cadence (~30d) -> Monthly (~30d)
+    monthly = [
+        base,
+        base + timedelta(days=30),
+        base + timedelta(days=61),
+        base + timedelta(days=90),
+    ]
+    est_monthly = estimate_update_cadence(monthly)
+    assert est_monthly is not None
+    assert est_monthly.kind == "interval"
+    assert est_monthly.is_regular is True
+    assert est_monthly.label == "Monthly (~30d)"
 
     # Irregular cadence (2d, 25d, 3d, 30d) -> is_regular is False
     irregular = [
@@ -293,66 +327,160 @@ def test_estimate_update_cadence_regular_irregular_and_dedup() -> None:
     assert est_irregular is not None
     assert est_irregular.is_regular is False
 
-    # Fast daily cadence (median_gap = 1.0 < 2.0) -> is_regular is False
+    # Fast daily cadence (span < 10d and median_gap < 10d) -> is_regular is False
     daily = [base, base + timedelta(days=1), base + timedelta(days=2)]
     est_daily = estimate_update_cadence(daily)
     assert est_daily is not None
     assert est_daily.is_regular is False
 
 
-def test_compute_predictive_next_check_skips_midweek_and_handles_late_author() -> None:
+def test_weekday_set_schedules_mon_wed_fri_and_tue_thu() -> None:
     cfg = SitePollerConfig()
     rng = random.Random(42)
 
-    # Weekly Sunday author: updated Nov 1, 8, 15, 22
-    weekly_downloads = [
-        datetime(2026, 11, 1, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 11, 8, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 11, 15, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 11, 22, 18, 0, tzinfo=timezone.utc),
+    # Mon/Wed/Fri at 18:00 UTC (Nov 2, 2026 is Monday)
+    mwf_downloads = [
+        datetime(2026, 11, 2, 18, 0, tzinfo=timezone.utc),  # Mon
+        datetime(2026, 11, 4, 18, 0, tzinfo=timezone.utc),  # Wed
+        datetime(2026, 11, 6, 18, 0, tzinfo=timezone.utc),  # Fri
+        datetime(2026, 11, 9, 18, 0, tzinfo=timezone.utc),  # Mon
+        datetime(2026, 11, 11, 18, 0, tzinfo=timezone.utc),  # Wed
+        datetime(2026, 11, 13, 18, 0, tzinfo=timezone.utc),  # Fri
+        datetime(2026, 11, 16, 18, 0, tzinfo=timezone.utc),  # Mon
+        datetime(2026, 11, 18, 18, 0, tzinfo=timezone.utc),  # Wed
+        datetime(2026, 11, 20, 18, 0, tzinfo=timezone.utc),  # Fri
     ]
+    est_mwf = estimate_update_cadence(mwf_downloads)
+    assert est_mwf is not None
+    assert est_mwf.kind == "weekday"
+    assert est_mwf.weekdays == (0, 2, 4)
+    assert est_mwf.label == "Mon/Wed/Fri"
+    assert est_mwf.is_regular is True
+    assert est_mwf.typical_hour_utc == pytest.approx(18.0, abs=0.05)
 
-    # Checked on Monday Nov 23 -> should skip Mon-Fri and target ~Nov 28 18:00 ± 2h
-    now_monday = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+    # Checked Sun Nov 22 18:00 UTC -> next slot is Mon Nov 23 18:00 + 6h = Tue Nov 24 00:00 ± 1h
+    now_sun = datetime(2026, 11, 22, 18, 0, tzinfo=timezone.utc)
     next_check = compute_predictive_next_check(
-        now_monday, date(2026, 11, 22), weekly_downloads, cfg, rng
+        now_sun, date(2026, 11, 20), mwf_downloads, cfg, rng
     )
-    expected_target = datetime(2026, 11, 29, 0, 0, tzinfo=timezone.utc) - timedelta(
-        hours=6
+    expected_mwf_target = datetime(2026, 11, 24, 0, 0, tzinfo=timezone.utc)
+    assert (
+        expected_mwf_target - timedelta(hours=1)
+        <= next_check
+        <= expected_mwf_target + timedelta(hours=1)
+    )
+
+    # Tue/Thu at 15:30 UTC (Nov 3, 2026 is Tuesday)
+    tt_downloads = [
+        datetime(2026, 11, 3, 15, 30, tzinfo=timezone.utc),  # Tue
+        datetime(2026, 11, 5, 15, 30, tzinfo=timezone.utc),  # Thu
+        datetime(2026, 11, 10, 15, 30, tzinfo=timezone.utc),  # Tue
+        datetime(2026, 11, 12, 15, 30, tzinfo=timezone.utc),  # Thu
+        datetime(2026, 11, 17, 15, 30, tzinfo=timezone.utc),  # Tue
+        datetime(2026, 11, 19, 15, 30, tzinfo=timezone.utc),  # Thu
+    ]
+    est_tt = estimate_update_cadence(tt_downloads)
+    assert est_tt is not None
+    assert est_tt.kind == "weekday"
+    assert est_tt.weekdays == (1, 3)
+    assert est_tt.label == "Tue/Thu"
+    assert est_tt.is_regular is True
+    assert est_tt.typical_hour_utc == pytest.approx(15.5, abs=0.05)
+
+
+def test_weekly_saturday_schedule_uses_after_buffer_and_handles_late_author() -> None:
+    cfg = SitePollerConfig()
+    rng = random.Random(42)
+
+    # Weekly Saturday author at noon UTC: Oct 31, Nov 7, Nov 14, Nov 21
+    sat_downloads = [
+        datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc),
+    ]
+    est_sat = estimate_update_cadence(sat_downloads)
+    assert est_sat is not None
+    assert est_sat.kind == "weekday"
+    assert est_sat.weekdays == (5,)
+    assert est_sat.label == "Sat"
+    assert est_sat.typical_hour_utc == pytest.approx(12.0, abs=0.05)
+
+    # Expected target is Sat Nov 28 12:00 + 6h = Sat Nov 28 18:00 UTC (~6pm Sat)
+    expected_target = datetime(2026, 11, 28, 18, 0, tzinfo=timezone.utc)
+
+    # Checked on Fri Nov 27 12:00 UTC (30h away, within 1.5d hot ceiling) -> ~6pm Sat ± 1h
+    now_friday = datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc)
+    next_check = compute_predictive_next_check(
+        now_friday, date(2026, 11, 21), sat_downloads, cfg, rng
     )
     assert (
-        expected_target - timedelta(hours=2)
+        expected_target - timedelta(hours=1)
         <= next_check
-        <= expected_target + timedelta(hours=2)
+        <= expected_target + timedelta(hours=1)
     )
-    assert (next_check - now_monday).total_seconds() / 86400.0 > cfg.hot_interval_days
 
     # Target very close to now (30m away) -> clamped to >= now + 1h
     near_target_now = expected_target - timedelta(minutes=30)
     clamped = compute_predictive_next_check(
-        near_target_now, date(2026, 11, 22), weekly_downloads, cfg, random.Random(1)
+        near_target_now, date(2026, 11, 21), sat_downloads, cfg, random.Random(1)
     )
     assert clamped >= near_target_now + timedelta(hours=1)
 
-    # Late author: now is Nov 30 (past Nov 28 18:00 target) -> checks promptly (~1.0d ± jitter)
-    now_late = datetime(2026, 11, 30, 12, 0, tzinfo=timezone.utc)
+    # Missed-slot fallback: now is Sun Nov 29 12:00 (past Sat Nov 28 18:00 target)
+    # -> checks promptly within min(1.0, hot_interval_days) ± jitter
+    now_late = datetime(2026, 11, 29, 12, 0, tzinfo=timezone.utc)
     late_check = compute_predictive_next_check(
-        now_late, date(2026, 11, 22), weekly_downloads, cfg, random.Random(7)
+        now_late, date(2026, 11, 21), sat_downloads, cfg, random.Random(7)
     )
     late_delta_days = (late_check - now_late).total_seconds() / 86400.0
     assert (
-        1.0 * (1.0 - cfg.jitter_ratio)
+        min(1.0, cfg.hot_interval_days) * (1.0 - cfg.jitter_ratio)
         <= late_delta_days
-        <= 1.0 * (1.0 + cfg.jitter_ratio)
+        <= min(1.0, cfg.hot_interval_days) * (1.0 + cfg.jitter_ratio)
     )
 
     # Irregular / insufficient downloads -> falls back to tier interval
     fallback_check = compute_predictive_next_check(
-        now_monday, date(2026, 11, 22), [], cfg, random.Random(7)
+        now_friday, date(2026, 11, 21), [], cfg, random.Random(7)
     )
-    fallback_delta_days = (fallback_check - now_monday).total_seconds() / 86400.0
+    fallback_delta_days = (fallback_check - now_friday).total_seconds() / 86400.0
     assert (
         cfg.hot_interval_days * (1.0 - cfg.jitter_ratio)
         <= fallback_delta_days
         <= cfg.hot_interval_days * (1.0 + cfg.jitter_ratio)
     )
+
+
+def test_tier_ceiling_clamps_long_predictive_interval() -> None:
+    cfg = SitePollerConfig()  # hot_interval_days=1.5, warm_interval_days=7.0
+    rng = random.Random(99)
+
+    # Monthly author (~30d interval)
+    monthly_downloads = [
+        datetime(2026, 8, 22, 14, 0, tzinfo=timezone.utc),
+        datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc),
+        datetime(2026, 10, 21, 14, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 20, 14, 0, tzinfo=timezone.utc),
+    ]
+    est = estimate_update_cadence(monthly_downloads)
+    assert est is not None
+    assert est.label == "Monthly (~30d)"
+
+    # Hot story (updated 2 days ago): 30-day predicted date must be capped at hot ceiling_dt
+    now_hot = datetime(2026, 11, 22, 14, 0, tzinfo=timezone.utc)
+    hot_ceiling = now_hot + timedelta(days=cfg.hot_interval_days)
+    hot_check = compute_predictive_next_check(
+        now_hot, date(2026, 11, 20), monthly_downloads, cfg, rng
+    )
+    assert hot_check <= hot_ceiling
+    assert hot_check == hot_ceiling
+
+    # Warm story (updated 20 days ago): remaining ~10d still exceeds 7d warm ceiling -> capped
+    now_warm = datetime(2026, 12, 10, 14, 0, tzinfo=timezone.utc)
+    warm_ceiling = now_warm + timedelta(days=cfg.warm_interval_days)
+    warm_check = compute_predictive_next_check(
+        now_warm, date(2026, 11, 20), monthly_downloads, cfg, rng
+    )
+    assert warm_check <= warm_ceiling
+    assert warm_check == warm_ceiling
