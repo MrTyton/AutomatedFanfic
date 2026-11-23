@@ -581,3 +581,19 @@ def test_pool_runner_wires_poller_dependencies_into_worker_context(
     assert worker_ctx.poller_store is poller_store
     assert worker_ctx.active_polls is active_polls
     assert worker_ctx.config_store is config_store
+
+
+def test_tick_clears_sync_event_when_disabled(tmp_path: Path) -> None:
+    """tick() clears sync_poller_event when library_poller.enabled is False to prevent busy-spin."""
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
+    cfg_store = _make_config_store(enabled=False)
+    poller, _store, ingress_q, _polls, _last_sync, sync_ev, client = _make_poller(
+        tmp_path,
+        config_store=cfg_store,
+    )
+    sync_ev.set()
+
+    assert poller.tick(now) == []
+    assert not sync_ev.is_set()
+    client.list_stories_by_query.assert_not_called()
+    assert ingress_q.empty()

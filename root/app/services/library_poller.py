@@ -7,7 +7,6 @@ import re
 from types import MappingProxyType
 
 from calibre_integration.client_interface import CalibreClient, build_site_poll_query
-from calibre_integration.models import CalibreConnectionError, CalibreOperationError
 from config.schemas.poller import LibraryPollerConfig, SitePollerConfig
 from config.store import ConfigStore
 import ff_logging
@@ -240,7 +239,7 @@ class LibraryPoller:
 
         try:
             stories = self.calibre_client.list_stories_by_query(query)
-        except (CalibreOperationError, CalibreConnectionError, Exception) as exc:
+        except Exception as exc:
             ff_logging.log(
                 f"LibraryPoller: Calibre sync failed for '{site}': {exc}",
                 "WARNING",
@@ -267,6 +266,8 @@ class LibraryPoller:
         now_utc = _to_utc(now if now is not None else datetime.now(timezone.utc))
         poller_cfg = load_poller_config(self.config_store)
         if not poller_cfg.enabled:
+            if self.sync_poller_event.is_set():
+                self.sync_poller_event.clear()
             return []
 
         force_sync = self.sync_poller_event.is_set()
