@@ -44,7 +44,7 @@ def _classify_tier(
 ) -> str:
     """Classify a story into hot/warm/cool/dormant based on update recency."""
     if last_update_date is None:
-        return "warm"
+        return "dormant"
     age_days = max(0, (today - last_update_date).days)
     if age_days <= cfg.hot_max_age_days:
         return "hot"
