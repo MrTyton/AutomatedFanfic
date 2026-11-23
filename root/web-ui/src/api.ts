@@ -657,6 +657,7 @@ export interface PollerUpNextItem {
     consecutive_errors: number
     tier: PollerTier
     cadence_days?: number | null
+    schedule_label?: string | null
 }
 
 export type PollOutcome =
@@ -704,6 +705,17 @@ export interface PollerSyncResponse {
     message: string
 }
 
+export interface SupportedPollerSite {
+    id: string
+    domain: string
+    label: string
+}
+
+export interface PollerSitesCatalogResponse {
+    history_sites: string[]
+    supported_sites: SupportedPollerSite[]
+}
+
 export function fetchPollerStatus(
     site?: string,
     upNextLimit?: number,
@@ -715,6 +727,10 @@ export function fetchPollerStatus(
     if (recentLimit !== undefined) params.set('recent_limit', String(recentLimit))
     const query = params.toString()
     return apiFetch<PollerStatusResponse>(`/api/poller/status${query ? `?${query}` : ''}`)
+}
+
+export function fetchPollerSites(): Promise<PollerSitesCatalogResponse> {
+    return apiFetch<PollerSitesCatalogResponse>('/api/poller/sites')
 }
 
 export function triggerPollerSync(): Promise<PollerSyncResponse> {

@@ -1,16 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
     AlertTriangle,
     ChevronDown,
     ChevronRight,
     Plus,
+    Search,
     Trash2,
     X,
 } from 'lucide-react'
-import type { SitePollerConfigValues } from '../api'
+import {
+    fetchPollerSites,
+    type SitePollerConfigValues,
+    type SupportedPollerSite,
+} from '../api'
 import { getSiteBadgeInfo } from '../statusColors'
 
-const QUICK_ADD_SITES = ['fanfiction', 'royalroad', 'archiveofourown'] as const
+const MAX_DROPDOWN_OPTIONS = 50
 
 const TIER_COLORS = {
     hot: { label: 'Hot', color: '#f87171', bg: 'rgba(239, 68, 68, 0.14)', border: 'rgba(239, 68, 68, 0.28)' },
@@ -192,13 +197,102 @@ interface PollerSitesEditorProps {
 export function PollerSitesEditor({ sites, onChange }: PollerSitesEditorProps) {
     const [newSiteName, setNewSiteName] = useState('')
     const [expandedAdvanced, setExpandedAdvanced] = useState<Record<string, boolean>>({})
+    const [historySites, setHistorySites] = useState<string[]>([])
+    const [supportedSites, setSupportedSites] = useState<SupportedPollerSite[]>([])
+    const [dropdownOpen, setDropdownOpen] = useState(false)
+    const [highlightedIndex, setHighlightedIndex] = useState(0)
+    const comboboxRef = useRef<HTMLDivElement>(null)
 
-    const normalizedSites: Record<string, SitePollerConfigValues> = {}
-    for (const [k, v] of Object.entries(sites || {})) {
-        normalizedSites[k] = normalizeSiteConfig(v)
-    }
+    useEffect(() => {
+        let cancelled = false
+        fetchPollerSites()
+            .then((res) => {
+                if (cancelled) return
+                setHistorySites(Array.isArray(res.history_sites) ? res.history_sites : [])
+                setSupportedSites(Array.isArray(res.supported_sites) ? res.supported_sites : [])
+            })
+            .catch(() => {
+                if (cancelled) return
+                setHistorySites([])
+                setSupportedSites([])
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [])
 
-    const siteKeys = Object.keys(normalizedSites)
+    useEffect(() => {
+        if (!dropdownOpen) return
+        const handleOutsideClick = (event: MouseEvent) => {
+            if (comboboxRef.current && !comboboxRef.current.contains(event.target as Node)) {
+                setDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleOutsideClick)
+        return () => document.removeEventListener('mousedown', handleOutsideClick)
+    }, [dropdownOpen])
+
+    const normalizedSites = useMemo(() => {
+        const result: Record<string, SitePollerConfigValues> = {}
+        for (const [k, v] of Object.entries(sites || {})) {
+            result[k] = normalizeSiteConfig(v)
+        }
+        return result
+    }, [sites])
+
+    const siteKeys = useMemo(() => Object.keys(normalizedSites), [normalizedSites])
+
+    const supportedById = useMemo(() => {
+        const map = new Map<string, SupportedPollerSite>()
+        for (const site of supportedSites) {
+            map.set(site.id.toLowerCase(), site)
+        }
+        return map
+    }, [supportedSites])
+
+    const unconfiguredHistorySites = useMemo(() => {
+        const seen = new Set<string>()
+        const list: string[] = []
+        for (const raw of historySites) {
+            const key = raw.trim().toLowerCase()
+            if (!key || key in normalizedSites || seen.has(key)) continue
+            seen.add(key)
+            list.push(key)
+        }
+        return list
+    }, [historySites, normalizedSites])
+
+    const filteredSupportedSites = useMemo(() => {
+        const query = newSiteName.trim().toLowerCase()
+        const available = supportedSites.filter((s) => !(s.id.toLowerCase() in normalizedSites))
+        if (!query) {
+            return available
+        }
+        const matched = available.filter(
+            (s) =>
+                s.id.toLowerCase().includes(query) ||
+                s.domain.toLowerCase().includes(query) ||
+                s.label.toLowerCase().includes(query)
+        )
+        return matched.sort((a, b) => {
+            const aId = a.id.toLowerCase()
+            const bId = b.id.toLowerCase()
+            const aLabel = a.label.toLowerCase()
+            const bLabel = b.label.toLowerCase()
+            const aExact = aId === query || aLabel === query ? 0 : 1
+            const bExact = bId === query || bLabel === query ? 0 : 1
+            if (aExact !== bExact) return aExact - bExact
+            const aPrefix = aId.startsWith(query) || aLabel.startsWith(query) ? 0 : 1
+            const bPrefix = bId.startsWith(query) || bLabel.startsWith(query) ? 0 : 1
+            if (aPrefix !== bPrefix) return aPrefix - bPrefix
+            return aLabel.localeCompare(bLabel)
+        })
+    }, [supportedSites, normalizedSites, newSiteName])
+
+    const visibleDropdownSites = useMemo(
+        () => filteredSupportedSites.slice(0, MAX_DROPDOWN_OPTIONS),
+        [filteredSupportedSites]
+    )
 
     const updateSiteField = <K extends keyof SitePollerConfigValues>(
         siteKey: string,
@@ -228,6 +322,8 @@ export function PollerSitesEditor({ sites, onChange }: PollerSitesEditorProps) {
             [key]: createDefaultSitePollerConfig(),
         })
         setNewSiteName('')
+        setDropdownOpen(false)
+        setHighlightedIndex(0)
     }
 
     const parseNumber = (raw: string, fallback: number, isInt = false): number => {
@@ -394,15 +490,7 @@ export function PollerSitesEditor({ sites, onChange }: PollerSitesEditorProps) {
 
                             {/* Adaptive Tiers Grid */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        flexWrap: 'wrap',
-                                        gap: '0.4rem',
-                                    }}
-                                >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
                                     <span
                                         style={{
                                             fontSize: '0.75rem',
@@ -415,7 +503,7 @@ export function PollerSitesEditor({ sites, onChange }: PollerSitesEditorProps) {
                                         Adaptive Tiers
                                     </span>
                                     <span style={{ fontSize: '0.72rem', color: 'var(--text-faint)' }}>
-                                        Stories with regular history auto-use their detected cadence
+                                        Fallback schedule &amp; maximum check ceiling when no posting schedule is detected.
                                     </span>
                                 </div>
 
@@ -914,19 +1002,233 @@ export function PollerSitesEditor({ sites, onChange }: PollerSitesEditorProps) {
                 }}
             >
                 <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
-                    <input
-                        type="text"
-                        value={newSiteName}
-                        placeholder="Add site identifier (e.g. fanfiction, royalroad, archiveofourown)"
-                        onChange={(e) => setNewSiteName(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault()
-                                handleAddSite(newSiteName)
-                            }
-                        }}
-                        style={{ fontFamily: 'var(--font-mono)', flex: 1, minWidth: 200 }}
-                    />
+                    <div ref={comboboxRef} style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+                        <Search
+                            size={14}
+                            style={{
+                                position: 'absolute',
+                                left: '0.65rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                color: 'var(--text-faint)',
+                                pointerEvents: 'none',
+                            }}
+                        />
+                        <input
+                            type="text"
+                            role="combobox"
+                            aria-expanded={dropdownOpen}
+                            aria-autocomplete="list"
+                            aria-label="Search or enter site identifier"
+                            value={newSiteName}
+                            placeholder="Search supported sites or enter custom site key…"
+                            onFocus={() => setDropdownOpen(true)}
+                            onChange={(e) => {
+                                setNewSiteName(e.target.value)
+                                setDropdownOpen(true)
+                                setHighlightedIndex(0)
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'ArrowDown') {
+                                    e.preventDefault()
+                                    if (!dropdownOpen) {
+                                        setDropdownOpen(true)
+                                        setHighlightedIndex(0)
+                                    } else if (visibleDropdownSites.length > 0) {
+                                        setHighlightedIndex((prev) =>
+                                            prev + 1 < visibleDropdownSites.length ? prev + 1 : 0
+                                        )
+                                    }
+                                } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault()
+                                    if (visibleDropdownSites.length > 0) {
+                                        setHighlightedIndex((prev) =>
+                                            prev - 1 >= 0 ? prev - 1 : visibleDropdownSites.length - 1
+                                        )
+                                    }
+                                } else if (e.key === 'Escape') {
+                                    setDropdownOpen(false)
+                                } else if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    if (
+                                        dropdownOpen &&
+                                        visibleDropdownSites.length > 0 &&
+                                        highlightedIndex >= 0 &&
+                                        highlightedIndex < visibleDropdownSites.length
+                                    ) {
+                                        handleAddSite(visibleDropdownSites[highlightedIndex].id)
+                                    } else if (newSiteName.trim()) {
+                                        handleAddSite(newSiteName)
+                                    }
+                                }
+                            }}
+                            style={{
+                                width: '100%',
+                                paddingLeft: '2rem',
+                                fontFamily: 'var(--font-mono)',
+                            }}
+                        />
+
+                        {dropdownOpen && (visibleDropdownSites.length > 0 || newSiteName.trim().length > 0) && (
+                            <div
+                                role="listbox"
+                                style={{
+                                    position: 'absolute',
+                                    top: 'calc(100% + 4px)',
+                                    left: 0,
+                                    right: 0,
+                                    maxHeight: 260,
+                                    overflowY: 'auto',
+                                    background: 'var(--surface)',
+                                    border: '1px solid var(--border-light)',
+                                    borderRadius: 'var(--radius-md)',
+                                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
+                                    zIndex: 50,
+                                    padding: '0.25rem',
+                                }}
+                            >
+                                {visibleDropdownSites.map((site, idx) => {
+                                    const badge = getSiteBadgeInfo(site.id)
+                                    const isHighlighted = idx === highlightedIndex
+                                    return (
+                                        <div
+                                            key={site.id}
+                                            role="option"
+                                            aria-selected={isHighlighted}
+                                            onMouseEnter={() => setHighlightedIndex(idx)}
+                                            onMouseDown={(e) => {
+                                                e.preventDefault()
+                                                handleAddSite(site.id)
+                                            }}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                gap: '0.6rem',
+                                                padding: '0.45rem 0.6rem',
+                                                borderRadius: 'var(--radius-sm)',
+                                                cursor: 'pointer',
+                                                background: isHighlighted ? 'var(--surface2)' : 'transparent',
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '0.45rem',
+                                                    minWidth: 0,
+                                                    flex: 1,
+                                                }}
+                                            >
+                                                <span
+                                                    className="site-dot"
+                                                    style={{ background: badge.color, width: 7, height: 7, flexShrink: 0 }}
+                                                />
+                                                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                                                    <span
+                                                        style={{
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: 600,
+                                                            color: 'var(--text)',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap',
+                                                        }}
+                                                    >
+                                                        {site.label}
+                                                    </span>
+                                                    <span
+                                                        style={{
+                                                            fontSize: '0.7rem',
+                                                            color: 'var(--text-faint)',
+                                                            fontFamily: 'var(--font-mono)',
+                                                            overflow: 'hidden',
+                                                            textOverflow: 'ellipsis',
+                                                            whiteSpace: 'nowrap',
+                                                        }}
+                                                    >
+                                                        {site.domain}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <code
+                                                style={{
+                                                    fontSize: '0.7rem',
+                                                    fontFamily: 'var(--font-mono)',
+                                                    color: 'var(--text-muted)',
+                                                    background: 'var(--bg)',
+                                                    border: '1px solid var(--border)',
+                                                    borderRadius: 4,
+                                                    padding: '0.08rem 0.35rem',
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                {site.id}
+                                            </code>
+                                        </div>
+                                    )
+                                })}
+
+                                {filteredSupportedSites.length > MAX_DROPDOWN_OPTIONS && (
+                                    <div
+                                        style={{
+                                            padding: '0.35rem 0.6rem',
+                                            fontSize: '0.71rem',
+                                            color: 'var(--text-faint)',
+                                            borderTop: '1px solid var(--border)',
+                                            marginTop: '0.2rem',
+                                        }}
+                                    >
+                                        Showing {MAX_DROPDOWN_OPTIONS} of {filteredSupportedSites.length} matching sites — keep typing to narrow
+                                    </div>
+                                )}
+
+                                {visibleDropdownSites.length === 0 && newSiteName.trim().length > 0 && (
+                                    <div
+                                        role="option"
+                                        aria-selected={false}
+                                        onMouseDown={(e) => {
+                                            e.preventDefault()
+                                            handleAddSite(newSiteName)
+                                        }}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: '0.5rem',
+                                            padding: '0.45rem 0.6rem',
+                                            borderRadius: 'var(--radius-sm)',
+                                            cursor:
+                                                newSiteName.trim().toLowerCase() in normalizedSites
+                                                    ? 'not-allowed'
+                                                    : 'pointer',
+                                            fontSize: '0.78rem',
+                                            color: 'var(--text-muted)',
+                                        }}
+                                    >
+                                        {newSiteName.trim().toLowerCase() in normalizedSites ? (
+                                            <span>
+                                                <code style={{ fontFamily: 'var(--font-mono)' }}>
+                                                    {newSiteName.trim().toLowerCase()}
+                                                </code>{' '}
+                                                is already configured
+                                            </span>
+                                        ) : (
+                                            <>
+                                                <span>
+                                                    Add custom site{' '}
+                                                    <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>
+                                                        {newSiteName.trim().toLowerCase()}
+                                                    </code>
+                                                </span>
+                                                <Plus size={12} />
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                     <button
                         type="button"
                         className="secondary btn-sm"
@@ -937,36 +1239,49 @@ export function PollerSitesEditor({ sites, onChange }: PollerSitesEditorProps) {
                     </button>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.73rem', color: 'var(--text-faint)' }}>Quick add:</span>
-                    {QUICK_ADD_SITES.map((preset) => {
-                        const alreadyAdded = preset in normalizedSites
-                        const info = getSiteBadgeInfo(preset)
-                        return (
-                            <button
-                                key={preset}
-                                type="button"
-                                className="secondary btn-sm"
-                                disabled={alreadyAdded}
-                                onClick={() => handleAddSite(preset)}
-                                style={{
-                                    padding: '0.18rem 0.55rem',
-                                    minHeight: 26,
-                                    fontSize: '0.73rem',
-                                    fontFamily: 'var(--font-mono)',
-                                }}
-                                title={alreadyAdded ? `${preset} is already configured` : `Add ${info.name}`}
-                            >
-                                <span
-                                    className="site-dot"
-                                    style={{ background: info.color, width: 6, height: 6 }}
-                                />
-                                <span>{preset}</span>
-                                {!alreadyAdded && <Plus size={11} />}
-                            </button>
-                        )
-                    })}
-                </div>
+                {unconfiguredHistorySites.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.73rem', color: 'var(--text-faint)' }}>Quick add:</span>
+                        {unconfiguredHistorySites.map((siteId) => {
+                            const meta = supportedById.get(siteId)
+                            const info = getSiteBadgeInfo(siteId)
+                            const displayLabel = meta?.label || info.name
+                            const showId = displayLabel.toLowerCase() !== siteId.toLowerCase()
+                            return (
+                                <button
+                                    key={siteId}
+                                    type="button"
+                                    className="secondary btn-sm"
+                                    onClick={() => handleAddSite(siteId)}
+                                    style={{
+                                        padding: '0.18rem 0.55rem',
+                                        minHeight: 26,
+                                        fontSize: '0.73rem',
+                                    }}
+                                    title={`Add ${displayLabel} (${siteId})`}
+                                >
+                                    <span
+                                        className="site-dot"
+                                        style={{ background: info.color, width: 6, height: 6 }}
+                                    />
+                                    <span>{displayLabel}</span>
+                                    {showId && (
+                                        <span
+                                            style={{
+                                                fontFamily: 'var(--font-mono)',
+                                                fontSize: '0.68rem',
+                                                color: 'var(--text-faint)',
+                                            }}
+                                        >
+                                            {siteId}
+                                        </span>
+                                    )}
+                                    <Plus size={11} />
+                                </button>
+                            )
+                        })}
+                    </div>
+                )}
             </div>
         </div>
     )
