@@ -106,16 +106,11 @@ def handle_poller_equal_chapters(
             effective_update_date = remote_updated_at or (
                 tracked.last_update_date if tracked is not None else None
             )
-            interval_days = poller_scheduler.compute_effective_interval_days(
+            next_check_at = poller_scheduler.compute_predictive_next_check(
+                now,
                 effective_update_date,
                 recent_downloads,
-                now.date(),
                 site_cfg,
-            )
-            next_check_at = poller_scheduler.compute_next_check(
-                now,
-                interval_days,
-                site_cfg.jitter_ratio,
                 random.Random(),
             )
             ctx.poller_store.record_probe_outcome(
@@ -165,16 +160,11 @@ def _refresh_poller_after_download(
             fanfic.url,
             now - timedelta(days=site_cfg.cool_max_age_days),
         )
-        interval_days = poller_scheduler.compute_effective_interval_days(
-            now.date(),
-            recent_downloads,
-            now.date(),
-            site_cfg,
-        )
-        new_next_check_at = poller_scheduler.compute_next_check(
+        new_next_check_at = poller_scheduler.compute_predictive_next_check(
             now,
-            interval_days,
-            site_cfg.jitter_ratio,
+            now.date(),
+            [*recent_downloads, now],
+            site_cfg,
             random.Random(),
         )
         poller_store.mark_story_downloaded(

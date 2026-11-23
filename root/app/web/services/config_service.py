@@ -19,6 +19,7 @@ lazy from config import (
     CalibreConfig,
     ConfigManager,
     EmailConfig,
+    LibraryPollerConfig,
     ProcessConfig,
     PushbulletConfig,
     RetryConfig,
@@ -141,6 +142,7 @@ def update_config_section_action(
                 "retry": RetryConfig,
                 "process": ProcessConfig,
                 "web": WebConfig,
+                "library_poller": LibraryPollerConfig,
             }
             if section in section_models:
                 model_cls = section_models[section]
@@ -149,6 +151,19 @@ def update_config_section_action(
                     model_cls.__pydantic_validator__.validate_assignment(dummy, k, v)
     except Exception as e:
         return {"applied": False, "error": f"Validation error: {e}"}
+
+    if (
+        section == "library_poller"
+        and "sites" in cleaned_values
+        and validated_config is not None
+    ):
+        cleaned_values = {
+            **cleaned_values,
+            "sites": {
+                site_key: site_cfg.model_dump()
+                for site_key, site_cfg in validated_config.library_poller.sites.items()
+            },
+        }
 
     classified = ConfigStore.classify_changes(section, cleaned_values)
     results = {"hot": [], "service_restart": [], "app_restart": []}
@@ -359,6 +374,7 @@ def test_config_section_action(
         "process": ProcessConfig,
         "retry": RetryConfig,
         "web": WebConfig,
+        "library_poller": LibraryPollerConfig,
     }
     if norm_section in section_models:
         try:

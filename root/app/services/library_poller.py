@@ -12,6 +12,7 @@ from calibre_integration.client_interface import (
     build_site_poll_query,
     extract_story_base_url,
 )
+from config.ini_resolver import resolve_status_tags_from_ini
 from config.schemas.poller import LibraryPollerConfig, SitePollerConfig
 from config.store import ConfigStore
 import ff_logging
@@ -345,10 +346,24 @@ class LibraryPoller:
         """
         now_utc = _to_utc(now)
         domain = resolve_site_domain(site, self.url_parsers)
+        include_tags = site_cfg.include_tags
+        exclude_tags = site_cfg.exclude_tags
+        if not site_cfg.calibre_search_override and (
+            not include_tags or not exclude_tags
+        ):
+            detected_include, detected_exclude = resolve_status_tags_from_ini(
+                personal_ini_path=self.config_store.get_resolved_personal_ini(),
+                default_ini_path=self.config_store.get_resolved_default_ini() or None,
+                site=domain,
+            )
+            if not include_tags:
+                include_tags = detected_include
+            if not exclude_tags:
+                exclude_tags = detected_exclude
         query = build_site_poll_query(
             domain,
-            site_cfg.include_tags,
-            site_cfg.exclude_tags,
+            include_tags,
+            exclude_tags,
             site_cfg.calibre_search_override,
         )
 

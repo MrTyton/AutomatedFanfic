@@ -196,16 +196,11 @@ def _handle_poll_check(
                 fanfic.url,
                 now - timedelta(days=site_cfg.cool_max_age_days),
             )
-            interval_days = poller_scheduler.compute_effective_interval_days(
+            next_check_at = poller_scheduler.compute_predictive_next_check(
+                now,
                 effective_update_date,
                 recent_downloads,
-                now.date(),
                 site_cfg,
-            )
-            next_check_at = poller_scheduler.compute_next_check(
-                now,
-                interval_days,
-                site_cfg.jitter_ratio,
                 random.Random(),
             )
             poller_store.record_probe_outcome(
@@ -234,16 +229,11 @@ def _handle_poll_check(
             fanfic.url,
             now - timedelta(days=site_cfg.cool_max_age_days),
         )
-        interval_days = poller_scheduler.compute_effective_interval_days(
+        handoff_next_check_at = poller_scheduler.compute_predictive_next_check(
+            now,
             effective_update_date,
             recent_downloads,
-            now.date(),
             site_cfg,
-        )
-        handoff_next_check_at = poller_scheduler.compute_next_check(
-            now,
-            interval_days,
-            site_cfg.jitter_ratio,
             random.Random(),
         )
         poller_store.record_probe_outcome(

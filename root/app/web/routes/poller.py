@@ -102,6 +102,24 @@ async def get_poller_status(
             "tracked_count": store_status["tracked_count"],
             "active_poll": active_poll,
             "last_sync_at": last_sync_at,
+            "tiers": {
+                "hot": {
+                    "max_age_days": site_cfg.hot_max_age_days,
+                    "interval_days": site_cfg.hot_interval_days,
+                },
+                "warm": {
+                    "max_age_days": site_cfg.warm_max_age_days,
+                    "interval_days": site_cfg.warm_interval_days,
+                },
+                "cool": {
+                    "max_age_days": site_cfg.cool_max_age_days,
+                    "interval_days": site_cfg.cool_interval_days,
+                },
+                "dormant": {
+                    "max_age_days": None,
+                    "interval_days": site_cfg.dormant_interval_days,
+                },
+            },
             "tier_counts": store_status["tier_counts"],
             "up_next": store_status["up_next"],
             "recent_events": store_status["recent_events"],

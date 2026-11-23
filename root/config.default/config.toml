@@ -192,9 +192,9 @@ history_db_path = "/data/history.db"
 # # Whether polling is enabled for this site
 # enabled = true
 #
-# # Calibre tags required / excluded when selecting stories to poll
-# include_tags = ["In-Progress"]
-# exclude_tags = ["Completed", "Oneshot", "Abandoned"]
+# # Optional Calibre tag overrides (leave empty/omitted to auto-detect from FanFicFare INI)
+# # include_tags = ["In-Progress"]
+# # exclude_tags = ["Completed", "Oneshot"]
 #
 # # Optional custom Calibre search query overriding include/exclude tags
 # calibre_search_override = ""

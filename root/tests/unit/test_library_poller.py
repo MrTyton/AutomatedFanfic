@@ -783,3 +783,62 @@ def test_tick_evicts_stale_active_poll_when_coordinator_idle(tmp_path: Path) -> 
         if len(call.args) >= 2 and call.args[1] == "WARNING"
     ]
     assert warning_calls, "Expected WARNING log when evicting stale active_polls entry"
+
+
+def test_sync_site_auto_detects_ini_tags_and_respects_overrides(
+    tmp_path: Path,
+) -> None:
+    """Empty include/exclude_tags auto-detect from FanFicFare INI; non-empty lists override."""
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
+    defaults_ini = tmp_path / "defaults.ini"
+    defaults_ini.write_text(
+        "[defaults]\ninclude_subject_tags: genre, status\n",
+        encoding="utf-8",
+    )
+    personal_ini = tmp_path / "personal.ini"
+    personal_ini.write_text(
+        "[defaults]\n"
+        "include_subject_tags: genre\n"
+        "add_to_replace_metadata:\n"
+        " status=>^Completed$=>Finished\n",
+        encoding="utf-8",
+    )
+
+    cfg_store = _make_config_store(enabled=True)
+    cfg_store.update_many(
+        {
+            "calibre.default_ini": str(defaults_ini),
+            "calibre.personal_ini": str(personal_ini),
+        }
+    )
+    client = MagicMock()
+    client.list_stories_by_query.return_value = []
+    poller, _store, _ingress_q, _polls, _last_sync, _ev, _client = _make_poller(
+        tmp_path,
+        config_store=cfg_store,
+        calibre_client=client,
+    )
+
+    # Empty include_tags & exclude_tags -> auto-detected from INI
+    poller.sync_site("fanfiction", SitePollerConfig(enabled=True), now)
+    query_auto = client.list_stories_by_query.call_args.args[0]
+    assert 'identifiers:"fanfiction.net"' in query_auto
+    assert 'tags:"=In-Progress"' not in query_auto
+    assert 'not tags:"=Completed"' in query_auto
+    assert 'not tags:"=Oneshot"' in query_auto
+    assert 'not tags:"=Finished"' in query_auto
+
+    # Explicit overrides take precedence over INI auto-detection
+    poller.sync_site(
+        "fanfiction",
+        SitePollerConfig(
+            enabled=True,
+            include_tags=["Ongoing"],
+            exclude_tags=["Dropped"],
+        ),
+        now,
+    )
+    query_override = client.list_stories_by_query.call_args.args[0]
+    assert 'tags:"=Ongoing"' in query_override
+    assert 'not tags:"=Dropped"' in query_override
+    assert 'not tags:"=Finished"' not in query_override

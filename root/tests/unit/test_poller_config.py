@@ -12,6 +12,7 @@ from config import (
     LibraryPollerConfig,
     SitePollerConfig,
 )
+from config.ini_resolver import resolve_status_tags_from_ini
 from config.schemas import (
     LibraryPollerConfig as SchemasLibraryPollerConfig,
     SitePollerConfig as SchemasSitePollerConfig,
@@ -49,8 +50,8 @@ def test_site_poller_config_defaults() -> None:
     site = SitePollerConfig()
 
     assert site.enabled is True
-    assert site.include_tags == ["In-Progress"]
-    assert site.exclude_tags == ["Completed", "Oneshot", "Abandoned"]
+    assert site.include_tags == []
+    assert site.exclude_tags == []
     assert site.calibre_search_override == ""
     assert site.max_checks_per_day == 24
     assert site.min_interval_minutes == 30.0
@@ -236,3 +237,87 @@ def test_positive_interval_bounds() -> None:
     ):
         with pytest.raises(ValidationError):
             SitePollerConfig.model_validate({field_name: 0.0})
+
+
+def test_resolve_status_tags_from_ini(tmp_path: Path) -> None:
+    """Auto-detects include/exclude status tags from defaults.ini + personal.ini."""
+    defaults_ini = tmp_path / "defaults.ini"
+    defaults_ini.write_text(
+        "[defaults]\n" "include_subject_tags: extratags, genre, category, status\n",
+        encoding="utf-8",
+    )
+
+    # 1. Default behavior with no personal.ini
+    inc, exc = resolve_status_tags_from_ini(
+        personal_ini_path=str(tmp_path / "missing_personal.ini"),
+        default_ini_path=str(defaults_ini),
+    )
+    assert inc == ["In-Progress"]
+    assert exc == ["Completed", "Oneshot"]
+
+    # 2. User removes status from include_subject_tags in personal.ini
+    personal_no_status = tmp_path / "personal_no_status.ini"
+    personal_no_status.write_text(
+        "[defaults]\n" "include_subject_tags: extratags, genre, category\n",
+        encoding="utf-8",
+    )
+    inc, exc = resolve_status_tags_from_ini(
+        personal_ini_path=str(personal_no_status),
+        default_ini_path=str(defaults_ini),
+    )
+    assert inc == []
+    assert exc == ["Completed", "Oneshot"]
+
+    # 3. Custom replace_metadata / add_to_replace_metadata mappings
+    personal_custom = tmp_path / "personal_custom.ini"
+    personal_custom.write_text(
+        "[defaults]\n"
+        "add_to_replace_metadata:\n"
+        " oneshot=>Completed=>Completed\\,Oneshot\\,Standalone\n"
+        " status=>^Completed$=>Finished\n"
+        " status=>^In-Progress$=>WIP\n",
+        encoding="utf-8",
+    )
+    inc, exc = resolve_status_tags_from_ini(
+        personal_ini_path=str(personal_custom),
+        default_ini_path=str(defaults_ini),
+    )
+    assert inc == ["WIP"]
+    assert exc == ["Completed", "Oneshot", "Standalone", "Finished"]
+
+    # 4. Site-specific section override
+    personal_site = tmp_path / "personal_site.ini"
+    personal_site.write_text(
+        "[fanfiction.net]\n" "include_subject_tags: genre, category\n",
+        encoding="utf-8",
+    )
+    inc_ff, exc_ff = resolve_status_tags_from_ini(
+        personal_ini_path=str(personal_site),
+        default_ini_path=str(defaults_ini),
+        site="fanfiction",
+    )
+    assert inc_ff == []
+    assert exc_ff == ["Completed", "Oneshot"]
+
+    inc_ao3, exc_ao3 = resolve_status_tags_from_ini(
+        personal_ini_path=str(personal_site),
+        default_ini_path=str(defaults_ini),
+        site="archiveofourown",
+    )
+    assert inc_ao3 == ["In-Progress"]
+    assert exc_ao3 == ["Completed", "Oneshot"]
+
+    # 5. [overrides] section takes highest precedence
+    personal_overrides = tmp_path / "personal_overrides.ini"
+    personal_overrides.write_text(
+        "[defaults]\n"
+        "include_subject_tags: genre, status\n"
+        "[overrides]\n"
+        "include_subject_tags: genre\n",
+        encoding="utf-8",
+    )
+    inc_ov, _exc_ov = resolve_status_tags_from_ini(
+        personal_ini_path=str(personal_overrides),
+        default_ini_path=str(defaults_ini),
+    )
+    assert inc_ov == []

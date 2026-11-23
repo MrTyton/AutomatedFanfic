@@ -8,12 +8,15 @@ import pytest
 from config.schemas.poller import SitePollerConfig
 from history.poller_store import TrackedStory
 from services.poller_scheduler import (
+    CadenceEstimate,
     PollTier,
     classify_tier,
     compute_effective_interval_days,
     compute_error_backoff,
     compute_initial_staggered_check,
     compute_next_check,
+    compute_predictive_next_check,
+    estimate_update_cadence,
     select_next_candidate,
 )
 
@@ -235,3 +238,121 @@ def test_error_backoff_exponential_and_capped() -> None:
     assert compute_error_backoff(now, 2, max_backoff) == now + timedelta(days=2.0)
     assert compute_error_backoff(now, 3, max_backoff) == now + timedelta(days=4.0)
     assert compute_error_backoff(now, 10, max_backoff) == now + timedelta(days=30.0)
+
+
+def test_estimate_update_cadence_regular_irregular_and_dedup() -> None:
+    base = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+
+    # Fewer than 3 distinct updates -> None
+    assert estimate_update_cadence([]) is None
+    assert estimate_update_cadence([base, base + timedelta(days=7)]) is None
+    # 3 timestamps within 12h collapse to 1 -> None
+    assert (
+        estimate_update_cadence(
+            [base, base + timedelta(hours=2), base + timedelta(hours=5)]
+        )
+        is None
+    )
+
+    # Regular weekly cadence (7d) with a retry 3h after one download -> deduplicated
+    weekly = [
+        base,
+        base + timedelta(days=7),
+        base + timedelta(days=7, hours=3),  # duplicate retry within 12h
+        base + timedelta(days=14),
+        base + timedelta(days=21),
+    ]
+    est_weekly = estimate_update_cadence(weekly)
+    assert isinstance(est_weekly, CadenceEstimate)
+    assert est_weekly.median_gap_days == pytest.approx(7.0)
+    assert est_weekly.is_regular is True
+    assert est_weekly.sample_count == 4
+
+    # Regular bi-weekly cadence with slight variance (13d, 14d, 15d -> MAD=1, 1/14=0.071 <= 0.30)
+    biweekly = [
+        base,
+        base + timedelta(days=13),
+        base + timedelta(days=27),
+        base + timedelta(days=42),
+    ]
+    est_biweekly = estimate_update_cadence(biweekly)
+    assert est_biweekly is not None
+    assert est_biweekly.is_regular is True
+    assert est_biweekly.median_gap_days == pytest.approx(14.0)
+    assert est_biweekly.sample_count == 4
+
+    # Irregular cadence (2d, 25d, 3d, 30d) -> is_regular is False
+    irregular = [
+        base,
+        base + timedelta(days=2),
+        base + timedelta(days=27),
+        base + timedelta(days=30),
+        base + timedelta(days=60),
+    ]
+    est_irregular = estimate_update_cadence(irregular)
+    assert est_irregular is not None
+    assert est_irregular.is_regular is False
+
+    # Fast daily cadence (median_gap = 1.0 < 2.0) -> is_regular is False
+    daily = [base, base + timedelta(days=1), base + timedelta(days=2)]
+    est_daily = estimate_update_cadence(daily)
+    assert est_daily is not None
+    assert est_daily.is_regular is False
+
+
+def test_compute_predictive_next_check_skips_midweek_and_handles_late_author() -> None:
+    cfg = SitePollerConfig()
+    rng = random.Random(42)
+
+    # Weekly Sunday author: updated Nov 1, 8, 15, 22
+    weekly_downloads = [
+        datetime(2026, 11, 1, 18, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 8, 18, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 15, 18, 0, tzinfo=timezone.utc),
+        datetime(2026, 11, 22, 18, 0, tzinfo=timezone.utc),
+    ]
+
+    # Checked on Monday Nov 23 -> should skip Mon-Fri and target ~Nov 28 18:00 ± 2h
+    now_monday = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+    next_check = compute_predictive_next_check(
+        now_monday, date(2026, 11, 22), weekly_downloads, cfg, rng
+    )
+    expected_target = datetime(2026, 11, 29, 0, 0, tzinfo=timezone.utc) - timedelta(
+        hours=6
+    )
+    assert (
+        expected_target - timedelta(hours=2)
+        <= next_check
+        <= expected_target + timedelta(hours=2)
+    )
+    assert (next_check - now_monday).total_seconds() / 86400.0 > cfg.hot_interval_days
+
+    # Target very close to now (30m away) -> clamped to >= now + 1h
+    near_target_now = expected_target - timedelta(minutes=30)
+    clamped = compute_predictive_next_check(
+        near_target_now, date(2026, 11, 22), weekly_downloads, cfg, random.Random(1)
+    )
+    assert clamped >= near_target_now + timedelta(hours=1)
+
+    # Late author: now is Nov 30 (past Nov 28 18:00 target) -> checks promptly (~1.0d ± jitter)
+    now_late = datetime(2026, 11, 30, 12, 0, tzinfo=timezone.utc)
+    late_check = compute_predictive_next_check(
+        now_late, date(2026, 11, 22), weekly_downloads, cfg, random.Random(7)
+    )
+    late_delta_days = (late_check - now_late).total_seconds() / 86400.0
+    assert (
+        1.0 * (1.0 - cfg.jitter_ratio)
+        <= late_delta_days
+        <= 1.0 * (1.0 + cfg.jitter_ratio)
+    )
+
+    # Irregular / insufficient downloads -> falls back to tier interval
+    fallback_check = compute_predictive_next_check(
+        now_monday, date(2026, 11, 22), [], cfg, random.Random(7)
+    )
+    fallback_delta_days = (fallback_check - now_monday).total_seconds() / 86400.0
+    assert (
+        cfg.hot_interval_days * (1.0 - cfg.jitter_ratio)
+        <= fallback_delta_days
+        <= cfg.hot_interval_days * (1.0 + cfg.jitter_ratio)
+    )

@@ -12,8 +12,10 @@ from mcp.types import CallToolResult, TextContent
 import pytest
 
 from calibre_integration.models import CalibreStorySummary
+from config import ConfigManager
 from config.schemas.poller import LibraryPollerConfig, SitePollerConfig
 from config.store import ConfigStore
+from history.models import DownloadStatus
 from history.poller_store import PollerStore, _classify_tier
 from mcp_server.client import AutomatedFanficClient
 from mcp_server.server import create_mcp_server
@@ -97,6 +99,21 @@ def test_get_poller_status_endpoint_returns_sites_tiers_and_queues(
         error_message=None,
         advance_baseline=True,
     )
+    # Seed 4 regular weekly downloads for Hot Story -> cadence_days == 7.0
+    with store._connect() as conn:
+        for weeks_ago in (3, 2, 1, 0):
+            ts = (now - timedelta(days=weeks_ago * 7 + 1)).isoformat()
+            conn.execute(
+                """INSERT INTO download_events (url, site, status, started_at, completed_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    "https://www.fanfiction.net/s/100/1/",
+                    "fanfiction",
+                    DownloadStatus.SUCCESS.value,
+                    ts,
+                    ts,
+                ),
+            )
 
     poller_cfg = LibraryPollerConfig(
         enabled=True,
@@ -165,9 +182,17 @@ def test_get_poller_status_endpoint_returns_sites_tiers_and_queues(
         "title": "Hot Story",
     }
     assert ff["last_sync_at"] == "2026-11-22T20:00:00+00:00"
+    assert ff["tiers"] == {
+        "hot": {"max_age_days": 14, "interval_days": 1.5},
+        "warm": {"max_age_days": 90, "interval_days": 7.0},
+        "cool": {"max_age_days": 365, "interval_days": 21.0},
+        "dormant": {"max_age_days": None, "interval_days": 60.0},
+    }
     assert ff["tier_counts"] == {"hot": 1, "warm": 1, "cool": 0, "dormant": 1}
     assert len(ff["up_next"]) == 3
     assert ff["up_next"][0]["url"] == "https://www.fanfiction.net/s/100/1/"
+    assert ff["up_next"][0]["cadence_days"] == 7.0
+    assert ff["up_next"][1]["cadence_days"] is None
     assert len(ff["recent_events"]) == 1
     assert ff["recent_events"][0]["outcome"] == "unchanged"
 
@@ -243,3 +268,86 @@ async def test_mcp_poller_tools_delegate_to_api() -> None:
         assert await get_poller_status(site="fanfiction") == status_payload
         assert await trigger_library_sync() == sync_payload
         assert mock_req.await_count == 4
+
+
+def test_put_config_library_poller_persists_nested_sites(tmp_path: Path) -> None:
+    """PUT /api/config/library_poller validates, hot-reloads, and persists nested sites dicts to TOML."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(
+        '[email]\nemail = "user@example.com"\npassword = "secret"\nserver = "imap.example.com"\n\n'
+        '[calibre]\npath = "http://localhost:8080"\n',
+        encoding="utf-8",
+    )
+
+    ConfigManager.clear_cache()
+    try:
+        app_config = ConfigManager.load_config(config_file, force_reload=True)
+        config_store = ConfigStore({})
+        config_store.initialize_from_config(app_config)
+        state = WebState(
+            config=app_config,
+            config_store=config_store,
+            config_path=str(config_file),
+        )
+        app = create_app(state)
+        client = TestClient(app)
+
+        resp = client.put(
+            "/api/config/library_poller",
+            json={
+                "values": {
+                    "enabled": True,
+                    "library_sync_interval_hours": 12.0,
+                    "sites": {
+                        "FanFiction": {
+                            "enabled": True,
+                            "max_checks_per_day": 16,
+                            "hot_interval_days": 2.0,
+                        },
+                        "archiveofourown": {
+                            "enabled": False,
+                            "max_checks_per_day": 10,
+                        },
+                    },
+                }
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["applied"] is True
+        assert set(body["results"]["hot"]) >= {
+            "enabled",
+            "library_sync_interval_hours",
+            "sites",
+        }
+
+        # Verify hot-reloaded ConfigStore has normalized keys
+        stored_sites = config_store.get("library_poller.sites")
+        assert isinstance(stored_sites, dict)
+        assert set(stored_sites.keys()) == {"fanfiction", "archiveofourown"}
+        assert stored_sites["fanfiction"]["max_checks_per_day"] == 16
+
+        # Verify TOML file reloads cleanly with nested [library_poller.sites.*]
+        reloaded = ConfigManager.load_config(config_file, force_reload=True)
+        assert reloaded.library_poller.enabled is True
+        assert reloaded.library_poller.library_sync_interval_hours == 12.0
+        assert set(reloaded.library_poller.sites.keys()) == {
+            "fanfiction",
+            "archiveofourown",
+        }
+        assert reloaded.library_poller.sites["fanfiction"].max_checks_per_day == 16
+        assert reloaded.library_poller.sites["fanfiction"].hot_interval_days == 2.0
+        assert reloaded.library_poller.sites["archiveofourown"].enabled is False
+
+        # Verify removing a site persists cleanly
+        resp2 = client.put(
+            "/api/config/library_poller",
+            json={"values": {"sites": {"fanfiction": {"max_checks_per_day": 20}}}},
+        )
+        assert resp2.status_code == 200
+        assert resp2.json()["applied"] is True
+        reloaded2 = ConfigManager.load_config(config_file, force_reload=True)
+        assert list(reloaded2.library_poller.sites.keys()) == ["fanfiction"]
+        assert reloaded2.library_poller.sites["fanfiction"].max_checks_per_day == 20
+    finally:
+        ConfigManager.clear_cache()

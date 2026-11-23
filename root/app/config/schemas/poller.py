@@ -11,12 +11,18 @@ class SitePollerConfig(BaseModel):
         description="Whether adaptive polling is enabled for this site",
     )
     include_tags: list[str] = Field(
-        default_factory=lambda: ["In-Progress"],
-        description="Calibre tags required for a story to be eligible for polling",
+        default_factory=list,
+        description=(
+            "Calibre tags required for a story to be eligible for polling "
+            "(empty list auto-detects from FanFicFare defaults.ini / personal.ini)"
+        ),
     )
     exclude_tags: list[str] = Field(
-        default_factory=lambda: ["Completed", "Oneshot", "Abandoned"],
-        description="Calibre tags that exclude a story from polling",
+        default_factory=list,
+        description=(
+            "Calibre tags that exclude a story from polling "
+            "(empty list auto-detects from FanFicFare defaults.ini / personal.ini)"
+        ),
     )
     calibre_search_override: str = Field(
         default="",

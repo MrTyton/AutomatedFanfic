@@ -12,6 +12,8 @@ from config.schemas.poller import SitePollerConfig
 from history.models import DownloadStatus
 from history.schema import ensure_schema_sync, setup_sync_connection
 
+lazy from services import poller_scheduler
+
 
 def _to_utc(dt: datetime) -> datetime:
     """Normalize a datetime to timezone-aware UTC."""
@@ -499,29 +501,27 @@ class PollerStore:
                     ),
                 )
 
-    def get_recent_download_timestamps(
-        self, url: str, since: datetime
+    def _query_recent_download_timestamps(
+        self, conn: sqlite3.Connection, url: str, since: datetime
     ) -> list[datetime]:
-        """Return completed_at timestamps of successful download_events since `since`."""
+        """Query completed_at timestamps of successful download_events on an open connection."""
         since_str = _format_dt(since)
         url_candidates = _url_scheme_variants(url)
-
-        with self._connect() as conn:
-            rows = conn.execute(
-                """SELECT completed_at FROM download_events
-                   WHERE (url = ? OR url = ? OR url = ?)
-                     AND status = ?
-                     AND completed_at IS NOT NULL
-                     AND completed_at >= ?
-                   ORDER BY completed_at ASC""",
-                (
-                    url_candidates[0],
-                    url_candidates[1],
-                    url_candidates[2],
-                    DownloadStatus.SUCCESS.value,
-                    since_str,
-                ),
-            ).fetchall()
+        rows = conn.execute(
+            """SELECT completed_at FROM download_events
+               WHERE (url = ? OR url = ? OR url = ?)
+                 AND status = ?
+                 AND completed_at IS NOT NULL
+                 AND completed_at >= ?
+               ORDER BY completed_at ASC""",
+            (
+                url_candidates[0],
+                url_candidates[1],
+                url_candidates[2],
+                DownloadStatus.SUCCESS.value,
+                since_str,
+            ),
+        ).fetchall()
 
         timestamps: list[datetime] = []
         for row in rows:
@@ -529,6 +529,13 @@ class PollerStore:
             if parsed is not None:
                 timestamps.append(parsed)
         return timestamps
+
+    def get_recent_download_timestamps(
+        self, url: str, since: datetime
+    ) -> list[datetime]:
+        """Return completed_at timestamps of successful download_events since `since`."""
+        with self._connect() as conn:
+            return self._query_recent_download_timestamps(conn, url, since)
 
     def get_site_status(
         self,
@@ -541,6 +548,7 @@ class PollerStore:
         """Build a status summary for a site including budget, tiers, queue, and events."""
         now_utc = _to_utc(now)
         since_24h_str = _format_dt(now_utc - timedelta(hours=24))
+        since_180d = now_utc - timedelta(days=180)
         today = now_utc.date()
 
         with self._connect() as conn:
@@ -570,13 +578,25 @@ class PollerStore:
                 (site, recent_limit),
             ).fetchall()
 
+            active_stories = [_row_to_tracked_story(row) for row in active_rows]
+            up_next_cadence: dict[str, float | None] = {}
+            for story in active_stories[:up_next_limit]:
+                recent_ts = self._query_recent_download_timestamps(
+                    conn, story.url, since_180d
+                )
+                estimate = poller_scheduler.estimate_update_cadence(recent_ts)
+                up_next_cadence[story.url] = (
+                    round(estimate.median_gap_days, 1)
+                    if estimate is not None and estimate.is_regular
+                    else None
+                )
+
         tier_counts: dict[str, int] = {
             "hot": 0,
             "warm": 0,
             "cool": 0,
             "dormant": 0,
         }
-        active_stories = [_row_to_tracked_story(row) for row in active_rows]
         for story in active_stories:
             tier = _classify_tier(story.last_update_date, cfg, today)
             tier_counts[tier] += 1
@@ -601,6 +621,7 @@ class PollerStore:
                 "consecutive_no_change": story.consecutive_no_change,
                 "consecutive_errors": story.consecutive_errors,
                 "tier": _classify_tier(story.last_update_date, cfg, today),
+                "cadence_days": up_next_cadence.get(story.url),
             }
             for story in active_stories[:up_next_limit]
         ]
