@@ -13,7 +13,9 @@ Worker-Coordinator Communication:
     where ff_waiter applies exponential backoff before re-submitting.
 """
 
+from datetime import datetime, timedelta, timezone
 from queue import Empty
+import random
 import threading
 import time
 import uuid
@@ -32,6 +34,7 @@ from models import fanfic_info
 from models.active_urls import ActiveUrlEntry
 from models.context import WorkerContext
 from models.queue_types import IngressQueue, WorkerQueue
+from services import poller_scheduler
 import ff_logging
 import antibot
 from antibot import cookies
@@ -78,6 +81,195 @@ def _signal_worker_idle(
     ff_logging.clear_thread_task()
 
 
+def _handle_poll_check(
+    fanfic: fanfic_info.FanficInfo,
+    ctx: WorkerContext,
+) -> bool:
+    """Execute a lightweight metadata-only poll probe and decide whether to download.
+
+    Returns:
+        bool: True if an update or completion was detected and the task has been
+            handed off to the standard download pipeline; False otherwise.
+    """
+    site = fanfic.site
+    try:
+        poller_store = ctx.poller_store
+        if poller_store is None:
+            ff_logging.log(
+                f"({site}) Poller probe skipped for {fanfic.url}: poller_store is not configured",
+                "WARNING",
+            )
+            return False
+
+        probe = fff_runner.probe_story_metadata(ctx.cdb_info, fanfic)
+        now = datetime.now(timezone.utc)
+        site_cfg = handlers.resolve_site_poller_config(ctx.config_store, site)
+        tracked = poller_store.get_tracked_story(fanfic.url)
+
+        if probe.story_deleted:
+            error_msg = (
+                probe.error
+                or (str(probe.exception) if probe.exception is not None else None)
+                or "Story deleted"
+            )
+            poller_store.record_probe_outcome(
+                url=fanfic.url,
+                site=site,
+                outcome="deleted",
+                checked_at=now,
+                next_check_at=None,
+                remote_chapters=probe.num_chapters,
+                remote_updated_at=probe.date_updated,
+                remote_status=probe.status,
+                error_message=error_msg,
+                advance_baseline=False,
+                mark_deleted=True,
+            )
+            ff_logging.log(
+                f"({site}) Poller probe: story deleted remotely ({fanfic.url}): {error_msg}",
+                "WARNING",
+            )
+            return False
+
+        if probe.has_error:
+            if flaresolverr.is_flaresolverr_crash(
+                probe.error
+            ) or flaresolverr.is_flaresolverr_crash(probe.exception):
+                flaresolverr.recover_flaresolverr_crashes(
+                    target_site=site,
+                    personal_ini_path=ctx.cdb_info.personal_ini,
+                )
+            next_consecutive_errors = (
+                (tracked.consecutive_errors + 1) if tracked is not None else 1
+            )
+            next_check_at = poller_scheduler.compute_error_backoff(
+                now,
+                next_consecutive_errors,
+                site_cfg.max_error_backoff_days,
+            )
+            error_msg = (
+                probe.error
+                or (str(probe.exception) if probe.exception is not None else None)
+                or "Metadata probe failed"
+            )
+            poller_store.record_probe_outcome(
+                url=fanfic.url,
+                site=site,
+                outcome="error",
+                checked_at=now,
+                next_check_at=next_check_at,
+                remote_chapters=probe.num_chapters,
+                remote_updated_at=probe.date_updated,
+                remote_status=probe.status,
+                error_message=error_msg,
+                advance_baseline=False,
+            )
+            ff_logging.log(
+                f"({site}) Poller probe error for {fanfic.url}: {error_msg} "
+                f"(backing off until {next_check_at.isoformat()})",
+                "WARNING",
+            )
+            return False
+
+        is_completed = (
+            probe.status is not None and probe.status.strip().lower() == "completed"
+        )
+        chapters_increased = (
+            tracked is not None
+            and tracked.known_chapters is not None
+            and probe.num_chapters is not None
+            and probe.num_chapters > tracked.known_chapters
+        )
+        exact_date_advanced = (
+            tracked is not None
+            and tracked.update_date_exact
+            and tracked.last_update_date is not None
+            and probe.date_updated is not None
+            and probe.date_updated > tracked.last_update_date
+        )
+
+        if not (chapters_increased or exact_date_advanced or is_completed):
+            effective_update_date = probe.date_updated or (
+                tracked.last_update_date if tracked is not None else None
+            )
+            recent_downloads = poller_store.get_recent_download_timestamps(
+                fanfic.url,
+                now - timedelta(days=site_cfg.cool_max_age_days),
+            )
+            interval_days = poller_scheduler.compute_effective_interval_days(
+                effective_update_date,
+                recent_downloads,
+                now.date(),
+                site_cfg,
+            )
+            next_check_at = poller_scheduler.compute_next_check(
+                now,
+                interval_days,
+                site_cfg.jitter_ratio,
+                random.Random(),
+            )
+            poller_store.record_probe_outcome(
+                url=fanfic.url,
+                site=site,
+                outcome="unchanged",
+                checked_at=now,
+                next_check_at=next_check_at,
+                remote_chapters=probe.num_chapters,
+                remote_updated_at=probe.date_updated,
+                remote_status=probe.status,
+                error_message=None,
+                advance_baseline=True,
+            )
+            ff_logging.log(
+                f"({site}) Poller probe: no update for {fanfic.url} "
+                f"(next check {next_check_at.isoformat()})"
+            )
+            return False
+
+        outcome = "completed" if is_completed else "update_found"
+        poller_store.record_probe_outcome(
+            url=fanfic.url,
+            site=site,
+            outcome=outcome,
+            checked_at=now,
+            next_check_at=None,
+            remote_chapters=probe.num_chapters,
+            remote_updated_at=probe.date_updated,
+            remote_status=probe.status,
+            error_message=None,
+            advance_baseline=False,
+        )
+
+        fanfic.behavior = None
+        fanfic.source = "poller"
+        if probe.title and not fanfic.title:
+            fanfic.title = probe.title
+        _worker_local.probed_chapters = probe.num_chapters
+
+        if ctx.active_urls is not None:
+            mark_url_queued(
+                ctx.active_urls,
+                fanfic.url,
+                site=site,
+                title=fanfic.title,
+                calibre_id=fanfic.calibre_id,
+                source="poller",
+            )
+        ctx.history_recorder.record_download_created(
+            fanfic.url,
+            site,
+            behavior=None,
+            source="poller",
+        )
+        ff_logging.log(
+            f"({site}) Poller probe: {outcome} for {fanfic.url} — handing off to download pipeline"
+        )
+        return True
+    finally:
+        if ctx.active_polls is not None:
+            ctx.active_polls.pop(site, None)
+
+
 def _process_task(
     fanfic: fanfic_info.FanficInfo,
     ctx: WorkerContext,
@@ -95,11 +287,20 @@ def _process_task(
             for retry or re-queued for force update).
     """
     _worker_local.last_task_failed = False
+    _worker_local.probed_chapters = None
     site = fanfic.site
     calibre_client = ctx.calibre_client
     ingress_queue = ctx.ingress_queue
     history_recorder = ctx.history_recorder
     active_urls = ctx.active_urls
+
+    if fanfic.behavior == "poll_check":
+        should_download = _handle_poll_check(fanfic, ctx)
+        if not should_download:
+            return True
+        if active_urls is not None:
+            mark_url_processing(active_urls, fanfic.url, site=site)
+        history_recorder.record_download_processing(fanfic.url, site=site)
 
     # Create temporary directory for processing
     with system_utils.temporary_directory() as temp_dir:
@@ -170,6 +371,12 @@ def _process_task(
         fff_result = fff_runner.execute_fanficfare_direct(
             calibre_client.cdb_info, fanfic, path_or_url, temp_dir
         )
+
+        # Silent no-op when a poller-triggered download finds equal chapters
+        if fanfic.source == "poller" and handlers.is_poller_equal_chapters_noop(
+            fanfic, fff_result
+        ):
+            return handlers.handle_poller_equal_chapters(fanfic, ctx, fff_result)
 
         # Reactive Anubis check: if download failed, probe whether site serves an Anubis challenge
         if fff_result.has_failure and fff_result.target_url:
@@ -260,12 +467,22 @@ def _process_task(
             return False  # Keep in active_urls; re-queued for force retry
 
         # 6. Integrate with Calibre (Process Addition)
-        result = handlers.process_fanfic_addition(
-            fanfic,
-            ctx,
-            temp_dir,
-            path_or_url,
-        )
+        probed_chapters: int | None = getattr(_worker_local, "probed_chapters", None)
+        if probed_chapters is not None:
+            result = handlers.process_fanfic_addition(
+                fanfic,
+                ctx,
+                temp_dir,
+                path_or_url,
+                known_chapters=probed_chapters,
+            )
+        else:
+            result = handlers.process_fanfic_addition(
+                fanfic,
+                ctx,
+                temp_dir,
+                path_or_url,
+            )
         if getattr(fanfic, "retry_decision", None) is not None:
             _worker_local.last_task_failed = True
 
@@ -389,8 +606,10 @@ def url_worker(
                 )
                 time.sleep(FAILURE_COOLDOWN_SECONDS)
 
+            is_poll_check = fanfic.behavior == "poll_check"
+
             # If the task was cancelled while queued, drop it immediately
-            if active_urls is not None:
+            if not is_poll_check and active_urls is not None:
                 try:
                     meta = dict(active_urls.get(fanfic.url, {}))
                     if meta.get("status") == "cancelled":
@@ -424,11 +643,12 @@ def url_worker(
             )
 
             # Mark as actively being processed by this worker thread
-            if active_urls is not None:
-                mark_url_processing(active_urls, fanfic.url, site=fanfic.site)
-            ctx.history_recorder.record_download_processing(
-                fanfic.url, site=fanfic.site
-            )
+            if not is_poll_check:
+                if active_urls is not None:
+                    mark_url_processing(active_urls, fanfic.url, site=fanfic.site)
+                ctx.history_recorder.record_download_processing(
+                    fanfic.url, site=fanfic.site
+                )
 
             # Process Task
             should_remove = True
@@ -444,13 +664,16 @@ def url_worker(
                 ff_logging.log_failure(
                     f"Worker {worker_id} crashed on task {fanfic.url}: {e}\n{tb}"
                 )
-                # Ensure we retry even on deep crashes
-                handlers.handle_failure(
-                    fanfic,
-                    ctx,
-                    error_message=f"{e}\n{tb}".strip(),
-                )
-                should_remove = handlers.check_active_removal(fanfic)
+                if fanfic.behavior == "poll_check":
+                    should_remove = True
+                else:
+                    # Ensure we retry even on deep crashes
+                    handlers.handle_failure(
+                        fanfic,
+                        ctx,
+                        error_message=f"{e}\n{tb}".strip(),
+                    )
+                    should_remove = handlers.check_active_removal(fanfic)
             finally:
                 # Update active_urls
                 if active_urls is not None:
