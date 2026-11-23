@@ -227,12 +227,31 @@ def _handle_poll_check(
             return False
 
         outcome = "completed" if is_completed else "update_found"
+        effective_update_date = probe.date_updated or (
+            tracked.last_update_date if tracked is not None else None
+        )
+        recent_downloads = poller_store.get_recent_download_timestamps(
+            fanfic.url,
+            now - timedelta(days=site_cfg.cool_max_age_days),
+        )
+        interval_days = poller_scheduler.compute_effective_interval_days(
+            effective_update_date,
+            recent_downloads,
+            now.date(),
+            site_cfg,
+        )
+        handoff_next_check_at = poller_scheduler.compute_next_check(
+            now,
+            interval_days,
+            site_cfg.jitter_ratio,
+            random.Random(),
+        )
         poller_store.record_probe_outcome(
             url=fanfic.url,
             site=site,
             outcome=outcome,
             checked_at=now,
-            next_check_at=None,
+            next_check_at=handoff_next_check_at,
             remote_chapters=probe.num_chapters,
             remote_updated_at=probe.date_updated,
             remote_status=probe.status,
@@ -246,6 +265,7 @@ def _handle_poll_check(
             fanfic.title = probe.title
         _worker_local.probed_chapters = probe.num_chapters
         _worker_local.probed_date_updated = probe.date_updated
+        _worker_local.probed_completed = is_completed
 
         if ctx.active_urls is not None:
             mark_url_queued(
@@ -290,6 +310,7 @@ def _process_task(
     _worker_local.last_task_failed = False
     _worker_local.probed_chapters = None
     _worker_local.probed_date_updated = None
+    _worker_local.probed_completed = False
     site = fanfic.site
     calibre_client = ctx.calibre_client
     ingress_queue = ctx.ingress_queue
@@ -381,13 +402,18 @@ def _process_task(
             probed_date_updated: date | None = getattr(
                 _worker_local, "probed_date_updated", None
             )
+            probed_completed: bool = bool(
+                getattr(_worker_local, "probed_completed", False)
+            )
             _worker_local.probed_chapters = None
             _worker_local.probed_date_updated = None
+            _worker_local.probed_completed = False
             return handlers.handle_poller_equal_chapters(
                 fanfic,
                 ctx,
                 fff_result,
                 remote_updated_at=probed_date_updated,
+                mark_completed=probed_completed,
             )
 
         # Reactive Anubis check: if download failed, probe whether site serves an Anubis challenge
@@ -480,15 +506,18 @@ def _process_task(
 
         # 6. Integrate with Calibre (Process Addition)
         probed_chapters: int | None = getattr(_worker_local, "probed_chapters", None)
+        probed_completed = bool(getattr(_worker_local, "probed_completed", False))
         _worker_local.probed_chapters = None
         _worker_local.probed_date_updated = None
-        if probed_chapters is not None:
+        _worker_local.probed_completed = False
+        if probed_chapters is not None or probed_completed:
             result = handlers.process_fanfic_addition(
                 fanfic,
                 ctx,
                 temp_dir,
                 path_or_url,
                 known_chapters=probed_chapters,
+                mark_completed=probed_completed,
             )
         else:
             result = handlers.process_fanfic_addition(

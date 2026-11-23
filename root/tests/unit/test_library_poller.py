@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from queue import Empty, Queue
 import random
+import re
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -597,3 +598,188 @@ def test_tick_clears_sync_event_when_disabled(tmp_path: Path) -> None:
     assert not sync_ev.is_set()
     client.list_stories_by_query.assert_not_called()
     assert ingress_q.empty()
+
+
+def test_sync_site_normalizes_urls_with_url_parsers(tmp_path: Path) -> None:
+    """sync_site normalizes Calibre URLs via url_parsers to canonical FanficInfo format."""
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
+    cfg_store = _make_config_store(enabled=True)
+    client = MagicMock()
+    client.list_stories_by_query.return_value = [
+        CalibreStorySummary(
+            calibre_id="7001",
+            title="FFNet Fic",
+            url="https://www.fanfiction.net/s/12345/7/Some-Slug",
+            tags=["In-Progress"],
+            last_modified=now - timedelta(days=1),
+            last_update_date=date(2026, 11, 21),
+            update_date_exact=True,
+        ),
+        CalibreStorySummary(
+            calibre_id="7002",
+            title="AO3 Fic",
+            url="https://archiveofourown.org/works/99999/chapters/123",
+            tags=["In-Progress"],
+            last_modified=now - timedelta(days=1),
+            last_update_date=date(2026, 11, 21),
+            update_date_exact=True,
+        ),
+    ]
+    url_parsers: dict[str, tuple[object, str]] = {
+        "fanfiction": (
+            re.compile(
+                r"(?:https?://(?:www\.)?fanfiction\.net(/s/\d+/\d+/?).*|https?://(?:www\.)?fanfiction\.net(/s/\d+)/?$)"
+            ),
+            "www.fanfiction.net",
+        ),
+        "archiveofourown": (
+            re.compile(r"https?://(archiveofourown\.org/(?:works|series)/\d+)/?.*"),
+            "",
+        ),
+    }
+    store = PollerStore(tmp_path / "norm.db")
+    poller = LibraryPoller(
+        calibre_client=client,
+        poller_store=store,
+        ingress_queue=Queue(),
+        active_urls={},
+        config_store=cfg_store,
+        coordinator_status={"assignments": {}, "backlog": {}},
+        active_polls={},
+        poller_last_sync={},
+        sync_poller_event=threading.Event(),
+        url_parsers=url_parsers,
+        rng=random.Random(42),
+    )
+
+    summary = poller.sync_site("fanfiction", SitePollerConfig(enabled=True), now)
+    assert summary == {"added": 2, "updated": 0, "deactivated": 0}
+    assert store.get_tracked_story("www.fanfiction.net/s/12345/1/") is not None
+    assert store.get_tracked_story("archiveofourown.org/works/99999") is not None
+    assert (
+        store.get_tracked_story("https://www.fanfiction.net/s/12345/7/Some-Slug")
+        is None
+    )
+
+
+def test_is_story_active_matches_scheme_and_base_url_variants(tmp_path: Path) -> None:
+    """_is_story_active catches scheme-stripped and extract_story_base_url equivalents, ignoring cancelled."""
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
+    cfg_store = _make_config_store(enabled=True)
+    active_urls: dict[str, ActiveUrlEntry] = {
+        "www.fanfiction.net/s/12345/1/": {"status": "processing"},
+        "https://m.fanfiction.net/s/54321/5/Some-Slug": {"status": "queued"},
+        "www.fanfiction.net/s/77777/1/": {"status": "cancelled"},
+    }
+    poller, store, ingress_q, _polls, _last_sync, _ev, _client = _make_poller(
+        tmp_path,
+        config_store=cfg_store,
+        active_urls=active_urls,
+        poller_last_sync={"fanfiction": (now - timedelta(minutes=5)).isoformat()},
+    )
+    assert poller._is_story_active("https://www.fanfiction.net/s/12345/1/") is True
+    assert poller._is_story_active("https://www.fanfiction.net/s/54321/1/") is True
+    assert poller._is_story_active("https://www.fanfiction.net/s/77777/1/") is False
+
+    _seed_due_story(
+        store,
+        url="https://www.fanfiction.net/s/54321/1/",
+        calibre_id="54321",
+        next_check_at=now - timedelta(hours=2),
+    )
+    assert poller.tick(now) == []
+    assert ingress_q.empty()
+
+
+def test_is_site_disabled_matches_www_and_scheme_prefixed_domains(
+    tmp_path: Path,
+) -> None:
+    """disabled_sites entries like 'www.fanfiction.net' and 'https://www.fanfiction.net' disable 'fanfiction'."""
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
+    for disabled_entry in (
+        "www.fanfiction.net",
+        "https://www.fanfiction.net",
+        "fanfiction.net",
+        "fanfiction",
+    ):
+        cfg_store = _make_config_store(
+            enabled=True,
+            sites={"fanfiction": SitePollerConfig(enabled=True)},
+            disabled_sites=[disabled_entry],
+        )
+        poller, store, ingress_q, _polls, _last_sync, _ev, _client = _make_poller(
+            tmp_path / disabled_entry.replace("://", "_").replace(".", "_"),
+            config_store=cfg_store,
+            poller_last_sync={"fanfiction": (now - timedelta(minutes=5)).isoformat()},
+        )
+        _seed_due_story(
+            store,
+            url="www.fanfiction.net/s/8888/1/",
+            next_check_at=now - timedelta(hours=1),
+        )
+        assert poller.tick(now) == []
+        assert ingress_q.empty()
+
+
+def test_tick_evicts_stale_active_poll_when_coordinator_idle(tmp_path: Path) -> None:
+    """active_polls entry older than 15 minutes is evicted when coordinator is idle, self-healing polling."""
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
+    cfg_store = _make_config_store(enabled=True)
+    coord_status: dict[str, object] = {"assignments": {}, "backlog": {}}
+    polls: dict[str, object] = {
+        "fanfiction": {
+            "url": "www.fanfiction.net/s/old/1/",
+            "title": "Stuck Story",
+            "started_at": (now - timedelta(minutes=16)).isoformat(),
+        }
+    }
+    poller, store, ingress_q, polls_ref, _last_sync, _ev, _client = _make_poller(
+        tmp_path,
+        config_store=cfg_store,
+        coordinator_status=coord_status,
+        active_polls=polls,
+        poller_last_sync={"fanfiction": (now - timedelta(minutes=5)).isoformat()},
+    )
+    _seed_due_story(
+        store,
+        url="www.fanfiction.net/s/9001/1/",
+        calibre_id="9001",
+        title="Fresh Story",
+        next_check_at=now - timedelta(hours=1),
+    )
+
+    # Fresh entry (< 15 min) must NOT be evicted
+    polls_ref["fanfiction"] = {
+        "url": "www.fanfiction.net/s/old/1/",
+        "started_at": (now - timedelta(minutes=10)).isoformat(),
+    }
+    assert poller.tick(now) == []
+    assert ingress_q.empty()
+
+    # Stale entry (> 15 min) while coordinator is busy must NOT be evicted
+    polls_ref["fanfiction"] = {
+        "url": "www.fanfiction.net/s/old/1/",
+        "started_at": (now - timedelta(minutes=20)).isoformat(),
+    }
+    coord_status["assignments"] = {"fanfiction": "worker_0"}
+    assert poller.tick(now) == []
+    assert "fanfiction" in polls_ref
+
+    # Stale entry (> 15 min) while coordinator is idle MUST be evicted and re-dispatched
+    coord_status["assignments"] = {}
+    with patch("services.library_poller.ff_logging") as mock_logging:
+        dispatched = poller.tick(now)
+
+    assert len(dispatched) == 1
+    assert dispatched[0].url == "www.fanfiction.net/s/9001/1/"
+    assert polls_ref["fanfiction"] == {
+        "url": "www.fanfiction.net/s/9001/1/",
+        "title": "Fresh Story",
+        "started_at": now.isoformat(),
+    }
+    warning_calls = [
+        call
+        for call in mock_logging.log.call_args_list
+        if len(call.args) >= 2 and call.args[1] == "WARNING"
+    ]
+    assert warning_calls, "Expected WARNING log when evicting stale active_polls entry"

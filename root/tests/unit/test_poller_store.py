@@ -549,3 +549,73 @@ def test_get_recent_download_timestamps(tmp_path: Path) -> None:
     since = datetime(2026, 10, 1, 0, 0, tzinfo=timezone.utc)
     timestamps = store.get_recent_download_timestamps(url, since)
     assert timestamps == [t_recent_1, t_recent_2]
+
+
+def test_mark_story_downloaded_scheme_variants_clears_none_chapters_and_completes(
+    tmp_path: Path,
+) -> None:
+    """mark_story_downloaded matches scheme variants, clears known_chapters when None, and deactivates completed stories."""
+    db_path = tmp_path / "history.db"
+    store = PollerStore(db_path)
+    initial_next = datetime(2026, 11, 22, 10, 0, tzinfo=timezone.utc)
+    stored_url = "https://www.fanfiction.net/s/12345/1/"
+
+    store.sync_site_stories(
+        "fanfiction",
+        [_story(stored_url, calibre_id="12", title="Long Fic")],
+        lambda _s: initial_next,
+    )
+    store.record_probe_outcome(
+        url=stored_url,
+        site="fanfiction",
+        outcome="unchanged",
+        checked_at=datetime(2026, 11, 21, 10, 0, tzinfo=timezone.utc),
+        next_check_at=initial_next,
+        remote_chapters=25,
+        remote_updated_at=date(2026, 11, 10),
+        remote_status="In-Progress",
+        error_message=None,
+        advance_baseline=True,
+    )
+
+    # Call mark_story_downloaded with schemeless URL and known_chapters=None (external download/retry)
+    downloaded_at = datetime(2026, 11, 22, 15, 0, tzinfo=timezone.utc)
+    next_check = datetime(2026, 11, 24, 15, 0, tzinfo=timezone.utc)
+    store.mark_story_downloaded(
+        url="www.fanfiction.net/s/12345/1/",
+        downloaded_at=downloaded_at,
+        new_next_check_at=next_check,
+        known_chapters=None,
+    )
+
+    story = store.get_tracked_story(stored_url)
+    assert story is not None
+    assert story.known_chapters is None
+    assert story.last_update_date == date(2026, 11, 22)
+    assert story.next_check_at == next_check
+    assert story.active is True
+
+    # Now mark completed -> sets remote_status='Completed' and active=0
+    store.mark_story_downloaded(
+        url="http://www.fanfiction.net/s/12345/1/",
+        downloaded_at=downloaded_at,
+        new_next_check_at=next_check,
+        known_chapters=26,
+        mark_completed=True,
+    )
+    completed_story = store.get_tracked_story(stored_url)
+    assert completed_story is not None
+    assert completed_story.known_chapters == 26
+    assert completed_story.remote_status == "Completed"
+    assert completed_story.active is False
+
+    # Subsequent Calibre sync (e.g. under add_format where Calibre still has In-Progress tag) must NOT re-activate
+    store.sync_site_stories(
+        "fanfiction",
+        [_story(stored_url, calibre_id="12", title="Long Fic")],
+        lambda _s: next_check,
+    )
+    after_sync = store.get_tracked_story(stored_url)
+    assert after_sync is not None
+    assert after_sync.remote_status == "Completed"
+    assert after_sync.active is False

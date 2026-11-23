@@ -78,6 +78,7 @@ def handle_poller_equal_chapters(
     fff_result: fff_runner.FanFicFareResult,
     *,
     remote_updated_at: date | None = None,
+    mark_completed: bool = False,
 ) -> bool:
     """Treat a poller download that hit equal_chapters as a silent no-op."""
     chapter_count: int | None = None
@@ -125,9 +126,10 @@ def handle_poller_equal_chapters(
                 next_check_at=next_check_at,
                 remote_chapters=chapter_count,
                 remote_updated_at=remote_updated_at,
-                remote_status=None,
+                remote_status="Completed" if mark_completed else None,
                 error_message=None,
                 advance_baseline=True,
+                mark_completed=mark_completed,
             )
         except Exception as e:
             ff_logging.log(
@@ -149,6 +151,8 @@ def _refresh_poller_after_download(
     fanfic: fanfic_info.FanficInfo,
     ctx: WorkerContext,
     known_chapters: int | None,
+    *,
+    mark_completed: bool = False,
 ) -> None:
     """Refresh poller tracking state after any successful Calibre download."""
     poller_store = ctx.poller_store
@@ -178,6 +182,7 @@ def _refresh_poller_after_download(
             downloaded_at=now,
             new_next_check_at=new_next_check_at,
             known_chapters=known_chapters,
+            mark_completed=mark_completed,
         )
     except Exception as e:
         ff_logging.log(
@@ -318,6 +323,7 @@ def process_fanfic_addition(
     path_or_url: str,
     *,
     known_chapters: int | None = None,
+    mark_completed: bool = False,
 ) -> bool:
     """
     Integrate downloaded fanfic with Calibre library.
@@ -388,7 +394,12 @@ def process_fanfic_addition(
             )
 
             if ctx.poller_store is not None:
-                _refresh_poller_after_download(fanfic, ctx, known_chapters)
+                _refresh_poller_after_download(
+                    fanfic,
+                    ctx,
+                    known_chapters,
+                    mark_completed=mark_completed,
+                )
 
             ff_logging.log_debug(
                 f"\t({site}) Sending success notification for {fanfic.title}"

@@ -214,11 +214,13 @@ def test_poll_check_update_detected_hands_off_without_premature_baseline_advance
         source="poller",
     )
 
-    # Baseline MUST NOT advance until Calibre actually succeeds
+    # Baseline MUST NOT advance until Calibre actually succeeds,
+    # but next_check_at MUST move into the future to prevent immediate re-trigger loops
     tracked = store.get_tracked_story(url)
     assert tracked is not None
     assert tracked.known_chapters == 10
     assert tracked.last_update_date == date(2026, 10, 1)
+    assert tracked.next_check_at > datetime.now(timezone.utc)
 
 
 def test_poll_check_first_probe_exact_vs_approximate_date(tmp_path: Path) -> None:
@@ -584,6 +586,12 @@ def test_poll_check_completed_status_hands_off_and_updates_baseline_on_calibre_s
     assert isinstance(recent_events, list)
     assert recent_events[0]["outcome"] == "completed"
 
+    # Completed story must be marked Completed and deactivated (active=False) so add_format does not loop
+    tracked = store.get_tracked_story(url)
+    assert tracked is not None
+    assert tracked.remote_status == "Completed"
+    assert tracked.active is False
+
 
 def test_url_worker_poll_check_unchanged_never_touches_active_urls_or_history(
     tmp_path: Path,
@@ -748,3 +756,58 @@ def test_poll_check_date_only_update_equal_chapters_advances_last_update_date(
     )
     with patch("workers.pipeline.fff_runner.probe_story_metadata", return_value=probe):
         assert pipeline._handle_poll_check(next_fanfic, h.ctx) is False
+
+
+def test_poll_check_completed_equal_chapters_deactivates_story(tmp_path: Path) -> None:
+    """When a Completed story hits equal_chapters no-op, it is marked Completed and deactivated."""
+    url = "https://archiveofourown.org/works/55556"
+    site = "archiveofourown"
+    store = _make_store_with_story(
+        tmp_path,
+        url=url,
+        site=site,
+        last_update_date=date(2026, 10, 1),
+        update_date_exact=True,
+        known_chapters=10,
+    )
+    active_polls: dict[str, object] = {site: url}
+    h = _make_worker_harness(store, active_polls=active_polls)
+    fanfic = FanficInfo(
+        url=url,
+        site=site,
+        calibre_id="42",
+        behavior="poll_check",
+        title="Completed Story",
+        source="poller",
+    )
+
+    probe = MetadataProbeResult(
+        num_chapters=10,
+        date_updated=date(2026, 10, 1),
+        status="Completed",
+        title="Completed Story",
+    )
+    fff_res = FanFicFareResult(
+        failure_messages=["Completed Story-42.epub already contains 10 chapters."],
+    )
+
+    with (
+        patch("workers.pipeline.fff_runner.probe_story_metadata", return_value=probe),
+        patch(
+            "workers.pipeline.common.get_path_or_url",
+            return_value="/tmp/Completed Story-42.epub",
+        ),
+        patch(
+            "workers.pipeline.fff_runner.execute_fanficfare_direct",
+            return_value=fff_res,
+        ),
+        patch("workers.pipeline.system_utils.temporary_directory") as mock_tmp,
+    ):
+        mock_tmp.return_value.__enter__.return_value = "/tmp"
+        should_remove = pipeline._process_task(fanfic, h.ctx)
+
+    assert should_remove is True
+    tracked = store.get_tracked_story(url)
+    assert tracked is not None
+    assert tracked.remote_status == "Completed"
+    assert tracked.active is False

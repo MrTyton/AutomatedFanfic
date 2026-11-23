@@ -1,12 +1,17 @@
 """Adaptive Calibre library update poller service running inside Supervisor."""
 
 from collections.abc import Mapping, MutableMapping
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import random
 import re
 from types import MappingProxyType
 
-from calibre_integration.client_interface import CalibreClient, build_site_poll_query
+from calibre_integration.client_interface import (
+    CalibreClient,
+    build_site_poll_query,
+    extract_story_base_url,
+)
 from config.schemas.poller import LibraryPollerConfig, SitePollerConfig
 from config.store import ConfigStore
 import ff_logging
@@ -14,6 +19,7 @@ from history.poller_store import PollerStore
 from models.active_urls import ActiveUrlsDict, is_url_active
 from models.fanfic_info import FanficInfo
 from models.queue_types import IngressQueue, ShutdownEvent, SyncPollerEvent
+from parsers import regex_parsing, url_patterns
 from services.poller_scheduler import (
     compute_initial_staggered_check,
     select_next_candidate,
@@ -21,6 +27,7 @@ from services.poller_scheduler import (
 
 _EMPTY_PARSERS: Mapping[str, tuple[object, str]] = MappingProxyType({})
 _PATTERN_DOMAIN_RE = re.compile(r"https\?://\(?([a-zA-Z0-9\\.-]+\\.[a-zA-Z0-9-]+)")
+_ACTIVE_POLL_STALE_SECONDS: float = 900.0
 
 _KNOWN_SITE_DOMAINS: dict[str, str] = {
     "fanfiction": "fanfiction.net",
@@ -137,10 +144,37 @@ def _is_site_disabled(
     if not disabled_sites:
         return False
     site_key = site.strip().lower()
-    if site_key in disabled_sites:
-        return True
     domain = resolve_site_domain(site_key, url_parsers)
-    return domain in disabled_sites
+
+    for raw_entry in disabled_sites:
+        entry = raw_entry.strip().lower()
+        if not entry:
+            continue
+        cleaned = (
+            entry.removeprefix("https://")
+            .removeprefix("http://")
+            .split("/", 1)[0]
+            .removeprefix("www.")
+        )
+        if site_key in (entry, cleaned) or domain in (entry, cleaned):
+            return True
+        if "." in cleaned:
+            derived_id = url_patterns.generate_site_identifier(cleaned, cleaned)
+            if derived_id == site_key:
+                return True
+            if url_parsers:
+                try:
+                    parsed = regex_parsing.generate_FanficInfo_from_url(
+                        f"https://{cleaned}/", dict(url_parsers)
+                    )
+                    if (
+                        parsed.site != "other"
+                        and parsed.site.strip().lower() == site_key
+                    ):
+                        return True
+                except Exception:
+                    pass
+    return False
 
 
 class LibraryPoller:
@@ -208,12 +242,93 @@ class LibraryPoller:
             return True
         return False
 
+    def _normalize_story_url(self, url: str) -> str:
+        """Normalize a Calibre story URL to the canonical FanficInfo format."""
+        if not self.url_parsers:
+            return url
+        try:
+            parsed = regex_parsing.generate_FanficInfo_from_url(
+                url, dict(self.url_parsers)
+            )
+            if parsed.url:
+                return parsed.url
+        except Exception as exc:
+            ff_logging.log_debug(
+                f"LibraryPoller: Failed to normalize URL '{url}': {exc}"
+            )
+        return url
+
     def _is_story_active(self, url: str) -> bool:
-        """Return True if `url` (with or without scheme) is active in `active_urls`."""
+        """Return True if `url` (across scheme/canonical/base variants) is active."""
         if is_url_active(self.active_urls, url):
             return True
+
         stripped = url.removeprefix("https://").removeprefix("http://")
-        if stripped != url and is_url_active(self.active_urls, stripped):
+        for candidate in (stripped, f"https://{stripped}", f"http://{stripped}"):
+            if candidate != url and is_url_active(self.active_urls, candidate):
+                return True
+
+        canonical = self._normalize_story_url(url)
+        if canonical != url:
+            if is_url_active(self.active_urls, canonical):
+                return True
+            canonical_stripped = canonical.removeprefix("https://").removeprefix(
+                "http://"
+            )
+            if canonical_stripped != canonical and is_url_active(
+                self.active_urls, canonical_stripped
+            ):
+                return True
+
+        try:
+            active_items = list(self.active_urls.items())
+        except Exception:
+            return False
+
+        target_stripped = stripped.lower()
+        target_canonical_stripped = (
+            canonical.removeprefix("https://").removeprefix("http://").lower()
+        )
+        target_base: str | None = None
+
+        for active_key, meta in active_items:
+            if isinstance(meta, Mapping) and meta.get("status") == "cancelled":
+                continue
+            active_stripped = (
+                active_key.removeprefix("https://").removeprefix("http://").lower()
+            )
+            if active_stripped in (target_stripped, target_canonical_stripped):
+                return True
+            if target_base is None:
+                target_base = extract_story_base_url(url).lower()
+            if (
+                target_base
+                and extract_story_base_url(active_key).lower() == target_base
+            ):
+                return True
+
+        return False
+
+    def _evict_stale_active_poll(self, site: str, now_utc: datetime) -> bool:
+        """Evict a stale active_polls entry older than 15 minutes when coordinator is idle."""
+        entry = self.active_polls.get(site)
+        if not isinstance(entry, Mapping):
+            return False
+        started_raw = entry.get("started_at")
+        if not isinstance(started_raw, str) or not started_raw:
+            return False
+        try:
+            started_dt = _to_utc(datetime.fromisoformat(started_raw))
+        except ValueError:
+            return False
+        age_seconds = (now_utc - started_dt).total_seconds()
+        if age_seconds > _ACTIVE_POLL_STALE_SECONDS:
+            self.active_polls.pop(site, None)
+            ff_logging.log(
+                f"LibraryPoller: Evicted stale active_polls entry for '{site}' "
+                f"(age={age_seconds:.0f}s > {_ACTIVE_POLL_STALE_SECONDS:.0f}s while coordinator idle)",
+                "WARNING",
+            )
             return True
         return False
 
@@ -246,9 +361,18 @@ class LibraryPoller:
             )
             return None
 
+        normalized_stories = [
+            (
+                replace(story, url=normalized_url)
+                if (normalized_url := self._normalize_story_url(story.url)) != story.url
+                else story
+            )
+            for story in stories
+        ]
+
         summary = self.poller_store.sync_site_stories(
             site=site,
-            stories=stories,
+            stories=normalized_stories,
             initial_next_check_fn=lambda story: compute_initial_staggered_check(
                 now_utc, story.last_update_date, site_cfg, self._rng
             ),
@@ -256,7 +380,7 @@ class LibraryPoller:
         self.poller_last_sync[site] = now_utc.isoformat()
         ff_logging.log(
             f"LibraryPoller: Synced '{site}' from Calibre "
-            f"(matched={len(stories)}, added={summary['added']}, "
+            f"(matched={len(normalized_stories)}, added={summary['added']}, "
             f"updated={summary['updated']}, deactivated={summary['deactivated']})"
         )
         return summary
@@ -291,7 +415,8 @@ class LibraryPoller:
                 continue
 
             if site in self.active_polls:
-                continue
+                if not self._evict_stale_active_poll(site, now_utc):
+                    continue
 
             checks_24h = self.poller_store.get_checks_in_window(
                 site, now_utc - timedelta(hours=24)

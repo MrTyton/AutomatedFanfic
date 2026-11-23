@@ -39,6 +39,12 @@ def _parse_date(value: str | None) -> date | None:
     return date.fromisoformat(value[:10])
 
 
+def _url_scheme_variants(url: str) -> tuple[str, str, str]:
+    """Return (schemeless, https://, http://) variants of a URL."""
+    clean_url = url.removeprefix("https://").removeprefix("http://")
+    return (clean_url, f"https://{clean_url}", f"http://{clean_url}")
+
+
 def _classify_tier(
     last_update_date: date | None, cfg: SitePollerConfig, today: date
 ) -> str:
@@ -162,7 +168,7 @@ class PollerStore:
 
         Preserves existing probe state (`known_chapters`, `next_check_at`,
         `consecutive_no_change`, `consecutive_errors`) and never re-activates
-        stories marked `deleted_remotely = 1`.
+        stories marked `deleted_remotely = 1` or `remote_status = 'Completed'`.
         """
         added = 0
         updated = 0
@@ -172,7 +178,7 @@ class PollerStore:
             for story in stories:
                 incoming_urls.add(story.url)
                 existing = conn.execute(
-                    """SELECT last_update_date, update_date_exact, deleted_remotely
+                    """SELECT last_update_date, update_date_exact, deleted_remotely, remote_status
                        FROM poll_tracked_stories
                        WHERE url = ?""",
                     (story.url,),
@@ -208,6 +214,9 @@ class PollerStore:
                     existing_date: str | None = existing["last_update_date"]
                     existing_exact: int = int(existing["update_date_exact"])
                     deleted_remotely: int = int(existing["deleted_remotely"])
+                    existing_remote_status: str = (
+                        (existing["remote_status"] or "").strip().lower()
+                    )
 
                     new_date = existing_date
                     new_exact = existing_exact
@@ -222,7 +231,14 @@ class PollerStore:
                         elif existing_exact == 0:
                             new_date = incoming_date
 
-                    new_active = 0 if deleted_remotely == 1 else 1
+                    new_active = (
+                        0
+                        if (
+                            deleted_remotely == 1
+                            or existing_remote_status == "completed"
+                        )
+                        else 1
+                    )
                     conn.execute(
                         """UPDATE poll_tracked_stories
                            SET site = ?,
@@ -323,6 +339,7 @@ class PollerStore:
         error_message: str | None,
         advance_baseline: bool,
         mark_deleted: bool = False,
+        mark_completed: bool = False,
     ) -> None:
         """Record a probe event and update the corresponding tracked story state."""
         checked_at_str = _format_dt(checked_at)
@@ -376,7 +393,14 @@ class PollerStore:
                     """UPDATE poll_tracked_stories
                        SET last_checked_at = ?,
                            known_chapters = COALESCE(?, known_chapters),
-                           remote_status = COALESCE(?, remote_status),
+                           remote_status = CASE
+                               WHEN ? = 1 THEN 'Completed'
+                               ELSE COALESCE(?, remote_status)
+                           END,
+                           active = CASE
+                               WHEN ? = 1 THEN 0
+                               ELSE active
+                           END,
                            last_update_date = CASE
                                WHEN ? IS NOT NULL THEN ?
                                ELSE last_update_date
@@ -396,7 +420,9 @@ class PollerStore:
                     (
                         checked_at_str,
                         remote_chapters,
+                        1 if mark_completed else 0,
                         remote_status,
+                        1 if mark_completed else 0,
                         remote_updated_str,
                         remote_updated_str,
                         remote_updated_str,
@@ -422,32 +448,63 @@ class PollerStore:
         downloaded_at: datetime,
         new_next_check_at: datetime,
         known_chapters: int | None = None,
+        mark_completed: bool = False,
     ) -> None:
         """Advance tracked baseline and next_check_at after a successful download."""
         downloaded_date_str = _to_utc(downloaded_at).date().isoformat()
         next_check_str = _format_dt(new_next_check_at)
+        url_candidates = _url_scheme_variants(url)
 
         with self._connect() as conn:
-            conn.execute(
-                """UPDATE poll_tracked_stories
-                   SET last_update_date = ?,
-                       update_date_exact = 1,
-                       next_check_at = ?,
-                       consecutive_no_change = 0,
-                       consecutive_errors = 0,
-                       last_error = NULL,
-                       known_chapters = COALESCE(?, known_chapters)
-                   WHERE url = ?""",
-                (downloaded_date_str, next_check_str, known_chapters, url),
-            )
+            if mark_completed:
+                conn.execute(
+                    """UPDATE poll_tracked_stories
+                       SET last_update_date = ?,
+                           update_date_exact = 1,
+                           next_check_at = ?,
+                           consecutive_no_change = 0,
+                           consecutive_errors = 0,
+                           last_error = NULL,
+                           known_chapters = ?,
+                           remote_status = 'Completed',
+                           active = 0
+                       WHERE (url = ? OR url = ? OR url = ?)""",
+                    (
+                        downloaded_date_str,
+                        next_check_str,
+                        known_chapters,
+                        url_candidates[0],
+                        url_candidates[1],
+                        url_candidates[2],
+                    ),
+                )
+            else:
+                conn.execute(
+                    """UPDATE poll_tracked_stories
+                       SET last_update_date = ?,
+                           update_date_exact = 1,
+                           next_check_at = ?,
+                           consecutive_no_change = 0,
+                           consecutive_errors = 0,
+                           last_error = NULL,
+                           known_chapters = ?
+                       WHERE (url = ? OR url = ? OR url = ?)""",
+                    (
+                        downloaded_date_str,
+                        next_check_str,
+                        known_chapters,
+                        url_candidates[0],
+                        url_candidates[1],
+                        url_candidates[2],
+                    ),
+                )
 
     def get_recent_download_timestamps(
         self, url: str, since: datetime
     ) -> list[datetime]:
         """Return completed_at timestamps of successful download_events since `since`."""
         since_str = _format_dt(since)
-        clean_url = url.removeprefix("https://").removeprefix("http://")
-        url_candidates = (clean_url, f"https://{clean_url}", f"http://{clean_url}")
+        url_candidates = _url_scheme_variants(url)
 
         with self._connect() as conn:
             rows = conn.execute(
