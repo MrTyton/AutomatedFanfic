@@ -440,6 +440,18 @@ def test_weekly_saturday_schedule_uses_after_buffer_and_handles_late_author() ->
         <= min(1.0, cfg.hot_interval_days) * (1.0 + cfg.jitter_ratio)
     )
 
+    # Hiatus decay: 3 weeks past missed Saturday (well beyond 7d grace) -> falls back to Warm tier (7d)
+    now_hiatus = datetime(2026, 12, 20, 12, 0, tzinfo=timezone.utc)
+    hiatus_check = compute_predictive_next_check(
+        now_hiatus, date(2026, 11, 21), sat_downloads, cfg, random.Random(7)
+    )
+    hiatus_delta_days = (hiatus_check - now_hiatus).total_seconds() / 86400.0
+    assert (
+        cfg.warm_interval_days * (1.0 - cfg.jitter_ratio)
+        <= hiatus_delta_days
+        <= cfg.warm_interval_days * (1.0 + cfg.jitter_ratio)
+    )
+
     # Irregular / insufficient downloads -> falls back to tier interval
     fallback_check = compute_predictive_next_check(
         now_friday, date(2026, 11, 21), [], cfg, random.Random(7)

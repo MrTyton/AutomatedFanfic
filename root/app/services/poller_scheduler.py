@@ -303,11 +303,18 @@ def compute_predictive_next_check(
                     max(target + timedelta(hours=jitter_hours), min_next), ceiling_dt
                 )
 
+            hiatus_grace_days = max(7.0, estimate.median_gap_days)
+            if (now_utc - predicted_dt) <= timedelta(days=hiatus_grace_days):
+                return compute_next_check(
+                    now_utc,
+                    min(1.0, cfg.hot_interval_days),
+                    cfg.jitter_ratio,
+                    rng,
+                )
+
+            _, tier_interval_days = classify_tier(last_update_date, now_utc.date(), cfg)
             return compute_next_check(
-                now_utc,
-                min(1.0, cfg.hot_interval_days),
-                cfg.jitter_ratio,
-                rng,
+                now_utc, tier_interval_days, cfg.jitter_ratio, rng
             )
 
     interval_days = compute_effective_interval_days(
