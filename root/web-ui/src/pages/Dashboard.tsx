@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
     DashboardSnapshot,
+    DownloadSource,
     AddUrlResult,
     addUrls,
     retryNow,
@@ -17,6 +18,7 @@ import {
 } from '../api'
 import { statusBadgeClass, getSiteBadgeInfo } from '../statusColors'
 import AttemptBlockCard from '../components/AttemptBlockCard'
+import { SourceBadge } from '../components/SourceBadge'
 import {
     parseAndValidateUrlLines,
     filterRemainingInputAfterSubmit,
@@ -57,6 +59,7 @@ interface RecentDownloadItem {
     site?: string
     title?: string
     status?: string
+    source?: DownloadSource
     calibre_id?: string
     completed_at?: string
     timestamp?: string
@@ -68,6 +71,7 @@ interface InFlightItem {
     site?: string
     title?: string
     calibre_id?: string
+    source?: DownloadSource
     stage: 'processing' | 'queued' | 'waiting'
     started_at?: string
     updated_at?: string
@@ -412,6 +416,7 @@ export default function Dashboard({ data }: Props) {
             url: a.url,
             site: a.site,
             title: a.title,
+            source: a.source,
             stage: 'processing' as const,
             started_at: a.started_at,
         })),
@@ -419,6 +424,7 @@ export default function Dashboard({ data }: Props) {
             url: q.url,
             site: q.site,
             title: q.title,
+            source: q.source,
             stage: 'queued' as const,
             started_at: q.started_at,
         })),
@@ -427,6 +433,7 @@ export default function Dashboard({ data }: Props) {
             site: w.site,
             title: w.title,
             calibre_id: w.calibre_id,
+            source: w.source,
             stage: 'waiting' as const,
             updated_at: w.updated_at,
             scheduled_at: w.scheduled_at,
@@ -1116,7 +1123,7 @@ export default function Dashboard({ data }: Props) {
                                                     <SiteBadge site={item.site} />
                                                 </td>
                                                 <td>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                                                         <span className={statusBadgeClass(item.stage)}>
                                                             {item.stage === 'waiting'
                                                                 ? item.action === 'hail_mary'
@@ -1124,6 +1131,7 @@ export default function Dashboard({ data }: Props) {
                                                                     : `Retry #${item.attempt_number || 1} / ${maxNormalRetries}`
                                                                 : item.stage}
                                                         </span>
+                                                        <SourceBadge source={item.source} />
                                                     </div>
                                                 </td>
                                                 <td>
@@ -1397,13 +1405,16 @@ export default function Dashboard({ data }: Props) {
                                             </div>
                                             <StoryUrlLink url={item.url} />
                                         </div>
-                                        <span className={statusBadgeClass(item.stage)}>
-                                            {item.stage === 'waiting'
-                                                ? item.action === 'hail_mary'
-                                                    ? `Hail-Mary #${item.attempt_number || maxNormalRetries}`
-                                                    : `Retry #${item.attempt_number || 1} / ${maxNormalRetries}`
-                                                : item.stage}
-                                        </span>
+                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                            <SourceBadge source={item.source} />
+                                            <span className={statusBadgeClass(item.stage)}>
+                                                {item.stage === 'waiting'
+                                                    ? item.action === 'hail_mary'
+                                                        ? `Hail-Mary #${item.attempt_number || maxNormalRetries}`
+                                                        : `Retry #${item.attempt_number || 1} / ${maxNormalRetries}`
+                                                    : item.stage}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     {item.stage === 'waiting' && (
@@ -1636,10 +1647,11 @@ export default function Dashboard({ data }: Props) {
                                             <SiteBadge site={dl.site} />
                                         </td>
                                         <td style={{ maxWidth: 250 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                                                 <span className={statusBadgeClass(dl.status)}>
                                                     {dl.status || 'unknown'}
                                                 </span>
+                                                <SourceBadge source={dl.source} />
                                                 {dl.error_message && (
                                                     <div style={{ display: 'inline-flex', gap: '0.25rem', flexShrink: 0 }}>
                                                         <button
@@ -1823,7 +1835,10 @@ export default function Dashboard({ data }: Props) {
                                     </div>
                                     <StoryUrlLink url={dl.url} />
                                 </div>
-                                <span className={statusBadgeClass(dl.status)}>{dl.status}</span>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                    <SourceBadge source={dl.source} />
+                                    <span className={statusBadgeClass(dl.status)}>{dl.status}</span>
+                                </div>
                             </div>
 
                             {dl.error_message && (

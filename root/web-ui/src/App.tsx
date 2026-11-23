@@ -12,6 +12,7 @@ import {
     Play,
     Cpu,
     X,
+    Radar,
 } from 'lucide-react'
 import { useDashboardSocket } from './hooks/useWebSocket'
 import { restartDaemon, toggleCoordinatorPause } from './api'
@@ -20,6 +21,7 @@ import History from './pages/History'
 import Logs from './pages/Logs'
 import Stats from './pages/Stats'
 import Config from './pages/Config'
+import Poller from './pages/Poller'
 
 function formatUptime(sec: number): string {
     if (sec < 60) return `${sec}s`
@@ -76,6 +78,7 @@ export default function App() {
 
     const navLinks = [
         { path: '/', label: 'Dashboard', icon: LayoutDashboard, badge: inFlightTotal > 0 ? inFlightTotal : undefined },
+        { path: '/poller', label: 'Poller', icon: Radar },
         { path: '/history', label: 'History', icon: HistoryIcon },
         { path: '/logs', label: 'Logs', icon: Terminal },
         { path: '/stats', label: 'Stats', icon: BarChart3 },
@@ -259,6 +262,7 @@ export default function App() {
             <main className="content">
                 <Routes>
                     <Route path="/" element={<Dashboard data={data} />} />
+                    <Route path="/poller" element={<Poller />} />
                     <Route path="/history" element={<History data={data} />} />
                     <Route path="/logs" element={<Logs />} />
                     <Route path="/stats" element={<Stats />} />

@@ -19,6 +19,7 @@ import {
 } from '../api'
 import { statusBadgeClass, getSiteBadgeInfo } from '../statusColors'
 import AttemptBlockCard from '../components/AttemptBlockCard'
+import { SourceBadge } from '../components/SourceBadge'
 import { ensureExternalUrl } from '../utils/dashboardLogic'
 import { CalibreIdBadge } from './Dashboard'
 import {
@@ -686,10 +687,11 @@ export default function History({ data }: HistoryProps = {}) {
                                                         <SiteBadge site={r.site} />
                                                     </td>
                                                     <td style={{ maxWidth: 250 }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                                                             <span className={statusBadgeClass(r.status)}>
                                                                 {r.status}
                                                             </span>
+                                                            <SourceBadge source={r.source} />
                                                             {r.error_message && (
                                                                 <div style={{ display: 'inline-flex', gap: '0.25rem', flexShrink: 0 }}>
                                                                     <button
@@ -867,9 +869,12 @@ export default function History({ data }: HistoryProps = {}) {
                                                 </div>
                                                 <StoryUrlLink url={r.url} />
                                             </div>
-                                            <span className={statusBadgeClass(r.status)}>
-                                                {r.status}
-                                            </span>
+                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                <SourceBadge source={r.source} />
+                                                <span className={statusBadgeClass(r.status)}>
+                                                    {r.status}
+                                                </span>
+                                            </div>
                                         </div>
                                         {r.error_message && (
                                             <div
