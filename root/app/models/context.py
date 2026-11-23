@@ -19,6 +19,7 @@ lazy from models.queue_types import (
     ScaleQueue,
     ShutdownEvent,
     SupervisorRestartEvent,
+    SyncPollerEvent,
     WaitingQueue,
     WorkerQueues,
     WorkerRestartEvent,
@@ -99,3 +100,7 @@ class SharedIPCContext:
     log_queue: LogQueue | None = None
     verbose: bool = False
     coordinator_status: MutableMapping[str, object] | None = None
+    sync_poller_event: SyncPollerEvent | None = None
+    active_polls: MutableMapping[str, object] | None = None
+    poller_last_sync: MutableMapping[str, str] | None = None
+    poller_store: PollerStore | None = None

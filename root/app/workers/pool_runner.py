@@ -100,6 +100,9 @@ def run_worker_pool(
         retry_config=retry_config,
         history_recorder=history_recorder,
         active_urls=active_urls,
+        poller_store=ipc.poller_store,
+        active_polls=ipc.active_polls,
+        config_store=config_store,
     )
 
     ff_logging.log_debug(f"Worker Pool Process using {len(worker_queues)} threads")

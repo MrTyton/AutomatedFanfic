@@ -11,9 +11,10 @@ import threading
 import signal
 import time
 
+from calibre_integration.client_interface import CalibreClient
 from notifications import notification_wrapper
 import ff_logging
-from services import ff_waiter, coordinator
+from services import ff_waiter, coordinator, library_poller
 from services.email_client import EmailInfo
 from services.email_watcher import email_watcher
 from models.context import SharedIPCContext
@@ -24,6 +25,7 @@ def run_supervisor(
     email_info: EmailInfo,
     notification_info: notification_wrapper.NotificationWrapper,
     url_parsers: dict,
+    calibre_client: CalibreClient | None = None,
 ) -> None:
     """Entry point for the Supervisor process.
 
@@ -57,6 +59,14 @@ def run_supervisor(
     coordinator_status = (
         ipc.coordinator_status if ipc.coordinator_status is not None else {}
     )
+    sync_poller_event = (
+        ipc.sync_poller_event
+        if ipc.sync_poller_event is not None
+        else threading.Event()
+    )
+    active_polls = ipc.active_polls if ipc.active_polls is not None else {}
+    poller_last_sync = ipc.poller_last_sync if ipc.poller_last_sync is not None else {}
+    poller_store = ipc.poller_store
 
     # Initialize logging for this process
     ff_logging.init_process_logging(
@@ -144,6 +154,27 @@ def run_supervisor(
             name="Coordinator",
         )
         threads.append(coord_thread)
+
+        # 4. Library Poller Thread
+        poller_thread = threading.Thread(
+            target=library_poller.run_library_poller,
+            args=(
+                ingress_queue,
+                active_urls,
+                config_store,
+                shutdown_event,
+                coordinator_status,
+                active_polls,
+                poller_last_sync,
+                sync_poller_event,
+                calibre_client,
+                poller_store,
+                url_parsers,
+                verbose,
+            ),
+            name="LibraryPoller",
+        )
+        threads.append(poller_thread)
 
         # Start all threads
         for t in threads:
