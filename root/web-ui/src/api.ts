@@ -606,6 +606,18 @@ export interface ActivePollInfo {
     started_at?: string | null
 }
 
+export interface PollerTierRule {
+    max_age_days: number | null
+    interval_days: number
+}
+
+export interface PollerTierConfigMap {
+    hot: PollerTierRule
+    warm: PollerTierRule
+    cool: PollerTierRule
+    dormant: PollerTierRule
+}
+
 export interface PollerTierCounts {
     hot: number
     warm: number
@@ -614,6 +626,24 @@ export interface PollerTierCounts {
 }
 
 export type PollerTier = 'hot' | 'warm' | 'cool' | 'dormant'
+
+export interface SitePollerConfigValues {
+    enabled: boolean
+    include_tags: string[]
+    exclude_tags: string[]
+    calibre_search_override: string
+    max_checks_per_day: number
+    min_interval_minutes: number
+    hot_max_age_days: number
+    hot_interval_days: number
+    warm_max_age_days: number
+    warm_interval_days: number
+    cool_max_age_days: number
+    cool_interval_days: number
+    dormant_interval_days: number
+    jitter_ratio: number
+    max_error_backoff_days: number
+}
 
 export interface PollerUpNextItem {
     url: string
@@ -626,6 +656,7 @@ export interface PollerUpNextItem {
     consecutive_no_change: number
     consecutive_errors: number
     tier: PollerTier
+    cadence_days?: number | null
 }
 
 export type PollOutcome =
@@ -655,6 +686,7 @@ export interface SitePollerStatus {
     tracked_count: number
     active_poll: ActivePollInfo | null
     last_sync_at: string | null
+    tiers?: PollerTierConfigMap
     tier_counts: PollerTierCounts
     up_next: PollerUpNextItem[]
     recent_events: PollEventItem[]

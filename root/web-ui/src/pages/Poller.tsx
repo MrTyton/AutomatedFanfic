@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
     Activity,
     AlertTriangle,
@@ -9,6 +10,7 @@ import {
     Info,
     Radar,
     RefreshCw,
+    Settings,
 } from 'lucide-react'
 import {
     fetchPollerStatus,
@@ -16,6 +18,7 @@ import {
     type PollEventItem,
     type PollerStatusResponse,
     type PollerTier,
+    type PollerTierConfigMap,
     type PollerUpNextItem,
     type SitePollerStatus,
 } from '../api'
@@ -100,6 +103,18 @@ function SiteBadge({ site }: { site: string }) {
     )
 }
 
+const DEFAULT_TIER_CONFIG: PollerTierConfigMap = {
+    hot: { max_age_days: 14, interval_days: 1.5 },
+    warm: { max_age_days: 90, interval_days: 7 },
+    cool: { max_age_days: 365, interval_days: 21 },
+    dormant: { max_age_days: null, interval_days: 60 },
+}
+
+function formatDays(days: number): string {
+    const rounded = Math.round(days * 10) / 10
+    return Number.isInteger(rounded) ? `${rounded}d` : `${rounded.toFixed(1)}d`
+}
+
 function TierBadge({ tier }: { tier: PollerTier }) {
     const style = TIER_STYLES[tier] ?? TIER_STYLES.dormant
     return (
@@ -112,6 +127,21 @@ function TierBadge({ tier }: { tier: PollerTier }) {
             }}
         >
             {style.label}
+        </span>
+    )
+}
+
+function CadenceBadge({ cadenceDays }: { cadenceDays?: number | null }) {
+    if (cadenceDays == null || !Number.isFinite(cadenceDays) || cadenceDays <= 0) {
+        return null
+    }
+    return (
+        <span
+            className="badge badge-info"
+            title="Detected from this story's regular update history"
+            style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}
+        >
+            ~{formatDays(cadenceDays)} schedule
         </span>
     )
 }
@@ -252,11 +282,34 @@ function SiteOverviewCard({
               ? 'var(--warning)'
               : 'var(--accent)'
 
-    const tiers: { key: PollerTier; count: number }[] = [
-        { key: 'hot', count: status.tier_counts?.hot ?? 0 },
-        { key: 'warm', count: status.tier_counts?.warm ?? 0 },
-        { key: 'cool', count: status.tier_counts?.cool ?? 0 },
-        { key: 'dormant', count: status.tier_counts?.dormant ?? 0 },
+    const tierRules = status.tiers ?? DEFAULT_TIER_CONFIG
+    const coolCutoff = tierRules.cool?.max_age_days ?? DEFAULT_TIER_CONFIG.cool.max_age_days ?? 365
+
+    const tiers: { key: PollerTier; count: number; ageLabel: string; intervalLabel: string }[] = [
+        {
+            key: 'hot',
+            count: status.tier_counts?.hot ?? 0,
+            ageLabel: `≤${formatDays(tierRules.hot?.max_age_days ?? 14)}`,
+            intervalLabel: `every ${formatDays(tierRules.hot?.interval_days ?? 1.5)}`,
+        },
+        {
+            key: 'warm',
+            count: status.tier_counts?.warm ?? 0,
+            ageLabel: `≤${formatDays(tierRules.warm?.max_age_days ?? 90)}`,
+            intervalLabel: `every ${formatDays(tierRules.warm?.interval_days ?? 7)}`,
+        },
+        {
+            key: 'cool',
+            count: status.tier_counts?.cool ?? 0,
+            ageLabel: `≤${formatDays(coolCutoff)}`,
+            intervalLabel: `every ${formatDays(tierRules.cool?.interval_days ?? 21)}`,
+        },
+        {
+            key: 'dormant',
+            count: status.tier_counts?.dormant ?? 0,
+            ageLabel: `>${formatDays(coolCutoff)}`,
+            intervalLabel: `every ${formatDays(tierRules.dormant?.interval_days ?? 60)}`,
+        },
     ]
 
     return (
@@ -420,46 +473,93 @@ function SiteOverviewCard({
             </div>
 
             {/* Tier Breakdown */}
-            <div
-                style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                    gap: '0.45rem',
-                }}
-            >
-                {tiers.map(({ key, count }) => {
-                    const st = TIER_STYLES[key]
-                    return (
-                        <div
-                            key={key}
-                            style={{
-                                padding: '0.45rem 0.5rem',
-                                borderRadius: 'var(--radius-sm)',
-                                background: st.bg,
-                                border: `1px solid ${st.border}`,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '0.1rem',
-                            }}
-                        >
-                            <span
-                                className="tabular-nums"
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                <div
+                    style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                        gap: '0.45rem',
+                    }}
+                >
+                    {tiers.map(({ key, count, ageLabel, intervalLabel }) => {
+                        const st = TIER_STYLES[key]
+                        return (
+                            <div
+                                key={key}
                                 style={{
-                                    fontSize: '1.05rem',
-                                    fontWeight: 700,
-                                    color: st.color,
-                                    lineHeight: 1.15,
+                                    padding: '0.45rem 0.6rem',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: st.bg,
+                                    border: `1px solid ${st.border}`,
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.15rem',
                                 }}
                             >
-                                {count}
-                            </span>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                                {st.label}
-                            </span>
-                        </div>
-                    )
-                })}
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'baseline',
+                                        justifyContent: 'space-between',
+                                        gap: '0.35rem',
+                                    }}
+                                >
+                                    <span
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'baseline',
+                                            gap: '0.35rem',
+                                        }}
+                                    >
+                                        <span
+                                            className="tabular-nums"
+                                            style={{
+                                                fontSize: '1.02rem',
+                                                fontWeight: 700,
+                                                color: st.color,
+                                                lineHeight: 1.15,
+                                            }}
+                                        >
+                                            {count}
+                                        </span>
+                                        <span
+                                            style={{
+                                                fontSize: '0.74rem',
+                                                color: st.color,
+                                                fontWeight: 700,
+                                            }}
+                                        >
+                                            {st.label}
+                                        </span>
+                                    </span>
+                                    <span
+                                        className="tabular-nums"
+                                        style={{
+                                            fontSize: '0.7rem',
+                                            fontFamily: 'var(--font-mono)',
+                                            color: 'var(--text-muted)',
+                                        }}
+                                    >
+                                        {ageLabel}
+                                    </span>
+                                </div>
+                                <span
+                                    className="tabular-nums"
+                                    style={{
+                                        fontSize: '0.69rem',
+                                        fontFamily: 'var(--font-mono)',
+                                        color: 'var(--text-muted)',
+                                    }}
+                                >
+                                    ({intervalLabel})
+                                </span>
+                            </div>
+                        )
+                    })}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-faint)', lineHeight: 1.35 }}>
+                    Tiers group stories by last update age; stories with regular update history automatically use their detected schedule.
+                </div>
             </div>
 
             {/* Footer: Last Sync & Min Interval */}
@@ -631,6 +731,14 @@ export default function Poller() {
                             ))}
                         </select>
                     )}
+                    <Link
+                        to="/config?section=library_poller"
+                        className="btn-link secondary"
+                        title="Configure Library Poller settings and per-site budgets"
+                    >
+                        <Settings size={14} />
+                        Configure
+                    </Link>
                     <button
                         type="button"
                         onClick={handleSyncNow}
@@ -867,7 +975,10 @@ min_interval_minutes = 30`}
                                                         <SiteBadge site={item.site} />
                                                     </td>
                                                     <td>
-                                                        <TierBadge tier={item.tier} />
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                                            <TierBadge tier={item.tier} />
+                                                            <CadenceBadge cadenceDays={item.cadence_days} />
+                                                        </div>
                                                     </td>
                                                     <td
                                                         className="tabular-nums"
@@ -926,7 +1037,19 @@ min_interval_minutes = 30`}
                                                     </div>
                                                     <StoryUrlLink url={item.url} />
                                                 </div>
-                                                <TierBadge tier={item.tier} />
+                                                <div
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.35rem',
+                                                        flexWrap: 'wrap',
+                                                        justifyContent: 'flex-end',
+                                                        flexShrink: 0,
+                                                    }}
+                                                >
+                                                    <TierBadge tier={item.tier} />
+                                                    <CadenceBadge cadenceDays={item.cadence_days} />
+                                                </div>
                                             </div>
                                             <div
                                                 style={{
